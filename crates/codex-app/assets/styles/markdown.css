@@ -11,10 +11,17 @@
 }
 
 .notes-pane {
-  flex:       1;
-  height:     100%;
-  overflow-y: auto;
-  padding:    var(--space-8) var(--space-10);
+  flex:           1;
+  height:         100%;
+  overflow:       hidden;
+  display:        flex;
+  flex-direction: column;
+  padding:        var(--space-8) var(--space-10);
+}
+
+/* In edit mode, remove padding so split pane fills edge-to-edge */
+.notes-pane:has(.editor-split) {
+  padding: 0;
 }
 
 .notes-pane > .doc-title,
@@ -352,4 +359,48 @@
 
 .markdown-body details[open] summary {
   margin-bottom: var(--space-3);
+}
+
+/* ── Split pane editor ────────────────────────────────────────────────────── */
+.editor-split {
+  display:  flex;
+  flex:     1;
+  height:   100%;
+  overflow: hidden;
+}
+
+.editor-pane {
+  flex:       1;
+  display:    flex;
+  min-width:  0;
+  overflow:   hidden;
+}
+
+.editor-textarea {
+  flex:        1;
+  width:       100%;
+  height:      100%;
+  background:  var(--surface);
+  border:      none;
+  border-right: none;
+  padding:     var(--space-8) var(--space-6);
+  font-family: var(--font-mono);
+  font-size:   var(--font-size-sm);
+  color:       var(--foreground);
+  line-height: var(--line-height);
+  resize:      none;
+  outline:     none;
+}
+
+.editor-divider {
+  width:      1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.preview-pane {
+  flex:       1;
+  overflow-y: auto;
+  padding:    var(--space-8) var(--space-8);
+  min-width:  0;
 }

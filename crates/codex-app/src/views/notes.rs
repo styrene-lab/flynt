@@ -173,30 +173,44 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
                                 }
                             },
                             EditMode::Edit => rsx! {
-                                textarea {
-                                    class: "editor-textarea",
-                                    value: "{edit_body}",
-                                    oninput: move |e| *edit_body.write() = e.value(),
-                                    onkeydown: move |e| {
-                                        let is_save = e.modifiers().meta() || e.modifiers().ctrl();
-                                        if is_save && e.key() == Key::Character("s".to_string()) {
-                                            let Some(Some((rel_path, _, _, _))) = &*rendered.read() else { return };
-                                            let path    = rel_path.clone();
-                                            let content = edit_body.read().clone();
-                                            let c       = ctx_save2.clone();
-                                            let mut re  = rendered;
-                                            spawn(async move {
-                                                match tokio::task::spawn_blocking(move || {
-                                                    c.vault.save_document_content(&path, &content)
-                                                }).await {
-                                                    Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
-                                                    Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
-                                                    Err(e)     => *save_err.write() = Some(e.to_string()),
+                                div { class: "editor-split",
+                                    // ── Left: raw markdown ───────────────────────────────
+                                    div { class: "editor-pane",
+                                        textarea {
+                                            class: "editor-textarea",
+                                            value: "{edit_body}",
+                                            oninput: move |e| *edit_body.write() = e.value(),
+                                            onkeydown: move |e| {
+                                                let save_key = e.modifiers().meta() || e.modifiers().ctrl();
+                                                if save_key && e.key() == Key::Character("s".to_string()) {
+                                                    let Some(Some((rel_path, _, _, _))) = &*rendered.read() else { return };
+                                                    let path    = rel_path.clone();
+                                                    let content = edit_body.read().clone();
+                                                    let c       = ctx_save2.clone();
+                                                    let mut re  = rendered;
+                                                    spawn(async move {
+                                                        match tokio::task::spawn_blocking(move || {
+                                                            c.vault.save_document_content(&path, &content)
+                                                        }).await {
+                                                            Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
+                                                            Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
+                                                            Err(e)     => *save_err.write() = Some(e.to_string()),
+                                                        }
+                                                    });
+                                                    *mode.write() = EditMode::Preview;
                                                 }
-                                            });
-                                            *mode.write() = EditMode::Preview;
+                                            },
                                         }
-                                    },
+                                    }
+                                    // ── Divider ─────────────────────────────────────
+                                    div { class: "editor-divider" }
+                                    // ── Right: live preview ──────────────────────────
+                                    div { class: "preview-pane",
+                                        div {
+                                            class: "markdown-body",
+                                            dangerous_inner_html: "{render_html(&edit_body.read())}",
+                                        }
+                                    }
                                 }
                             },
                         }

@@ -322,4 +322,35 @@ What are you seeing in the UI right now — anything broken or missing that need
   b68194e feat(renderer): full-featured markdown renderer + font system
   5b7d5fb fix(desktop): configure window size and disable always-on-top
   cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
+## 2026-04-15 — main (8t 241tc 3m50s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. What do you see now?
+
+**Model:** anthropic:claude-sonnet-4-6 — 36764042 in / 154145 out tokens across 252 turns
+
+**Commits:**
+  bee055b fix(stability): remove syntect from render path to stop crashes
+  b68194e feat(renderer): full-featured markdown renderer + font system
+  5b7d5fb fix(desktop): configure window size and disable always-on-top
+## 2026-04-15 — main (2t 242tc 47s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Here's the landscape honestly assessed:
+
+---
+
+## Live Markdown Editing: Options
+
+### Option A — Split Pane (1–2 hours)
+Left: textarea. Right: live-rendered preview, updates as you type. **This is what the current "Edit" mode already is** — just needs the pane split. Obsidian started this way. Very f
+
+**Model:** anthropic:claude-sonnet-4-6 — 37239372 in / 155521 out tokens across 254 turns
+
+**Commits:**
+  bee055b fix(stability): remove syntect from render path to stop crashes
+  b68194e feat(renderer): full-featured markdown renderer + font system
+  5b7d5fb fix(desktop): configure window size and disable always-on-top
 
