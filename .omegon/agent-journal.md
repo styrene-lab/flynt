@@ -220,4 +220,16 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   b8da5a3 chore: pin dioxus to =0.7.3 to match installed dx CLI version
   01927e4 chore: clean up dead deps, unused imports, and lint warnings
   2c90a37 refactor(agent): replace MCP/rmcp with Omegon extension protocol
+## 2026-04-15 — main (10t 149tc 1m29s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Codex is running. Build completed in 5.84s, vault opened at `~/Documents/Codex`, indexed and ready. The app is live — you can start building out the UI now.
+
+**Model:** anthropic:claude-sonnet-4-6 — 18438677 in / 121757 out tokens across 154 turns
+
+**Commits:**
+  b1b9c27 chore: unpin dioxus, update dx CLI to 0.7.5
+  b8da5a3 chore: pin dioxus to =0.7.3 to match installed dx CLI version
+  01927e4 chore: clean up dead deps, unused imports, and lint warnings
 
