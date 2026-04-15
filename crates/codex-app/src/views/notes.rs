@@ -15,8 +15,7 @@ fn render_html(content: &str) -> String {
     opts.extension.footnotes                  = true;
     opts.extension.wikilinks_title_after_pipe = true;
     opts.render.unsafe_                       = true;
-    let processed = preprocess(content);
-    markdown_to_html(&processed, &opts)
+    markdown_to_html(&preprocess(content), &opts)
 }
 
 fn preprocess(src: &str) -> String {
@@ -58,6 +57,8 @@ fn preprocess(src: &str) -> String {
     out
 }
 
+// ── Notes view ────────────────────────────────────────────────────────────────
+
 #[component]
 pub fn NotesView() -> Element {
     let ctx       = use_context::<AppContext>();
@@ -95,143 +96,137 @@ pub fn NotesView() -> Element {
 
     let has_active = tab_state.read().active_id().is_some();
 
+    // No tab open → prompt
+    if !has_active {
+        return rsx! {
+            div { class: "notes-empty",
+                p { class: "muted", "Select a note from the sidebar." }
+            }
+        };
+    }
+
+    // Tab open but content not yet loaded
+    let Some(data) = &*rendered.read() else {
+        return rsx! {
+            div { class: "notes-loading muted", "Loading…" }
+        };
+    };
+
+    // Tab open but document not found in store
+    let Some((rel_path, title, _body, html)) = data else {
+        return rsx! {
+            div { class: "notes-empty",
+                p { class: "muted", "Document not found." }
+            }
+        };
+    };
+
+    let title = title.clone();
+    let html  = html.clone();
+    let path  = rel_path.clone();
+
     rsx! {
-        div { class: "view-notes",
-            match &*rendered.read() {
-                None if has_active => rsx! {
-                    div { class: "notes-loading muted", "Loading…" }
-                },
-                None => rsx! {
-                    div { class: "notes-empty",
-                        p { class: "muted", "Select a note from the sidebar." }
+        div { class: "notes-pane",
+            div { class: "notes-topbar",
+                h1 { class: "doc-title", "{title}" }
+                div { class: "notes-actions",
+                    if let Some(ref err) = *save_err.read() {
+                        span { class: "save-msg err", "{err}" }
                     }
-                },
-                Some(None) => rsx! {
-                    div { class: "notes-empty",
-                        p { class: "muted", "Document not found." }
+                    match *mode.read() {
+                        EditMode::Preview => rsx! {
+                            button {
+                                class: "btn btn-ghost",
+                                onclick: move |_| *mode.write() = EditMode::Edit,
+                                "Edit"
+                            }
+                        },
+                        EditMode::Edit => rsx! {
+                            button {
+                                class: "btn btn-primary",
+                                onclick: move |_| {
+                                    let content = edit_body.read().clone();
+                                    let p       = path.clone();
+                                    let c       = ctx_save1.clone();
+                                    let mut re  = rendered;
+                                    spawn(async move {
+                                        match tokio::task::spawn_blocking(move || {
+                                            c.vault.save_document_content(&p, &content)
+                                        }).await {
+                                            Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
+                                            Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
+                                            Err(e)     => *save_err.write() = Some(e.to_string()),
+                                        }
+                                    });
+                                    *mode.write() = EditMode::Preview;
+                                },
+                                "Save"
+                            }
+                            button {
+                                class: "btn btn-ghost",
+                                onclick: move |_| *mode.write() = EditMode::Preview,
+                                "Cancel"
+                            }
+                        },
                     }
+                }
+            }
+
+            match *mode.read() {
+                EditMode::Preview => rsx! {
+                    { document::eval("document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b))"); }
+                    div { class: "markdown-body", dangerous_inner_html: "{html}" }
                 },
-                Some(Some((_, title, _, html))) => rsx! {
-                    div { class: "notes-pane",
-                        div { class: "notes-topbar",
-                            h1 { class: "doc-title", "{title}" }
-                            div { class: "notes-actions",
-                                if let Some(ref err) = *save_err.read() {
-                                    span { class: "save-msg err", "{err}" }
-                                }
-                                match *mode.read() {
-                                    EditMode::Preview => rsx! {
-                                        button {
-                                            class: "btn btn-ghost",
-                                            onclick: move |_| *mode.write() = EditMode::Edit,
-                                            "Edit"
-                                        }
-                                    },
-                                    EditMode::Edit => rsx! {
-                                        button {
-                                            class: "btn btn-primary",
-                                            onclick: move |_| {
-                                                let Some(Some((rel_path, _, _, _))) = &*rendered.read() else { return };
-                                                let path    = rel_path.clone();
-                                                let content = edit_body.read().clone();
-                                                let c       = ctx_save1.clone();
-                                                let mut re  = rendered;
-                                                spawn(async move {
-                                                    match tokio::task::spawn_blocking(move || {
-                                                        c.vault.save_document_content(&path, &content)
-                                                    }).await {
-                                                        Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
-                                                        Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
-                                                        Err(e)     => *save_err.write() = Some(e.to_string()),
-                                                    }
-                                                });
-                                                *mode.write() = EditMode::Preview;
-                                            },
-                                            "Save"
-                                        }
-                                        button {
-                                            class: "btn btn-ghost",
-                                            onclick: move |_| *mode.write() = EditMode::Preview,
-                                            "Cancel"
+                EditMode::Edit => {
+                    let path_save = rel_path.clone();
+                    rsx! {
+                        { document::eval(r#"(function(){
+                            const ed=document.getElementById('codex-editor');
+                            const pr=document.getElementById('codex-preview');
+                            if(typeof hljs!=='undefined') pr&&pr.querySelectorAll('pre code:not([data-highlighted])').forEach(b=>hljs.highlightElement(b));
+                            if(!ed||!pr||ed._codex_bound)return;
+                            ed._codex_bound=true;
+                            let busy=false;
+                            ed.addEventListener('scroll',function(){if(busy)return;busy=true;const p=ed.scrollTop/Math.max(1,ed.scrollHeight-ed.clientHeight);pr.scrollTop=p*(pr.scrollHeight-pr.clientHeight);requestAnimationFrame(()=>busy=false);});
+                            pr.addEventListener('scroll',function(){if(busy)return;busy=true;const p=pr.scrollTop/Math.max(1,pr.scrollHeight-pr.clientHeight);ed.scrollTop=p*(ed.scrollHeight-ed.clientHeight);requestAnimationFrame(()=>busy=false);});
+                        })();"#); }
+                        div { class: "editor-split",
+                            div { class: "editor-pane",
+                                textarea {
+                                    id: "codex-editor",
+                                    class: "editor-textarea",
+                                    value: "{edit_body}",
+                                    oninput: move |e| *edit_body.write() = e.value(),
+                                    onkeydown: move |e| {
+                                        let save_key = e.modifiers().meta() || e.modifiers().ctrl();
+                                        if save_key && e.key() == Key::Character("s".to_string()) {
+                                            let content = edit_body.read().clone();
+                                            let p       = path_save.clone();
+                                            let c       = ctx_save2.clone();
+                                            let mut re  = rendered;
+                                            spawn(async move {
+                                                match tokio::task::spawn_blocking(move || {
+                                                    c.vault.save_document_content(&p, &content)
+                                                }).await {
+                                                    Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
+                                                    Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
+                                                    Err(e)     => *save_err.write() = Some(e.to_string()),
+                                                }
+                                            });
+                                            *mode.write() = EditMode::Preview;
                                         }
                                     },
                                 }
                             }
-                        }
-
-                        match *mode.read() {
-                            EditMode::Preview => rsx! {
-                                { document::eval("document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b))"); }
+                            div { class: "editor-divider" }
+                            div {
+                                id: "codex-preview",
+                                class: "preview-pane",
                                 div {
                                     class: "markdown-body",
-                                    dangerous_inner_html: "{html}",
+                                    dangerous_inner_html: "{render_html(&edit_body.read())}",
                                 }
-                            },
-                            EditMode::Edit => rsx! {
-                                { document::eval(r#"
-                                    (function() {
-                                        const ed = document.getElementById('codex-editor');
-                                        const pr = document.getElementById('codex-preview');
-                                        if (typeof hljs !== 'undefined') {
-                                            pr && pr.querySelectorAll('pre code:not([data-highlighted])').forEach(b => hljs.highlightElement(b));
-                                        }
-                                        if (!ed || !pr || ed._codex_bound) return;
-                                        ed._codex_bound = true;
-                                        let busy = false;
-                                        ed.addEventListener('scroll', function() {
-                                            if (busy) return; busy = true;
-                                            const pct = ed.scrollTop / Math.max(1, ed.scrollHeight - ed.clientHeight);
-                                            pr.scrollTop = pct * (pr.scrollHeight - pr.clientHeight);
-                                            requestAnimationFrame(() => busy = false);
-                                        });
-                                        pr.addEventListener('scroll', function() {
-                                            if (busy) return; busy = true;
-                                            const pct = pr.scrollTop / Math.max(1, pr.scrollHeight - pr.clientHeight);
-                                            ed.scrollTop = pct * (ed.scrollHeight - ed.clientHeight);
-                                            requestAnimationFrame(() => busy = false);
-                                        });
-                                    })();
-                                "#); }
-                                div { class: "editor-split",
-                                    div { class: "editor-pane",
-                                        textarea {
-                                            id: "codex-editor",
-                                            class: "editor-textarea",
-                                            value: "{edit_body}",
-                                            oninput: move |e| *edit_body.write() = e.value(),
-                                            onkeydown: move |e| {
-                                                let save_key = e.modifiers().meta() || e.modifiers().ctrl();
-                                                if save_key && e.key() == Key::Character("s".to_string()) {
-                                                    let Some(Some((rel_path, _, _, _))) = &*rendered.read() else { return };
-                                                    let path    = rel_path.clone();
-                                                    let content = edit_body.read().clone();
-                                                    let c       = ctx_save2.clone();
-                                                    let mut re  = rendered;
-                                                    spawn(async move {
-                                                        match tokio::task::spawn_blocking(move || {
-                                                            c.vault.save_document_content(&path, &content)
-                                                        }).await {
-                                                            Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
-                                                            Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
-                                                            Err(e)     => *save_err.write() = Some(e.to_string()),
-                                                        }
-                                                    });
-                                                    *mode.write() = EditMode::Preview;
-                                                }
-                                            },
-                                        }
-                                    }
-                                    div { class: "editor-divider" }
-                                    div {
-                                        id: "codex-preview",
-                                        class: "preview-pane",
-                                        div {
-                                            class: "markdown-body",
-                                            dangerous_inner_html: "{render_html(&edit_body.read())}",
-                                        }
-                                    }
-                                }
-                            },
+                            }
                         }
                     }
                 },

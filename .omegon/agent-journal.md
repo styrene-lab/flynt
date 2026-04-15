@@ -437,4 +437,22 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   45c9fdf fix: search prefix matching, font system, sidebar visual polish
   f2049a7 fix(notes): restore scroll in preview mode; feat(sidebar): folder tree
   49e1031 fix(renderer): safe hljs integration — no per-render eval storm
+## 2026-04-15 — main (30t 37tc 9m39s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** App is running. Here's what changed:
+
+**Search improvements:**
+- FTS5 snippets now wrap matches in `<mark>` tags — highlighted in teal on the result card
+- Result cards show title + folder breadcrumb path (`styrene-lab › architecture`)
+- Results grouped by top-level folder with a count badge
+- Stats
+
+**Model:** anthropic:claude-sonnet-4-6 — 1257866 in / 30985 out tokens across 30 turns
+
+**Commits:**
+  5354799 feat(search): full search page, rich result cards with FTS5 highlights, Enter-to-search, multi-tab breadcrumbs in dropdown
+  45c9fdf fix: search prefix matching, font system, sidebar visual polish
+  f2049a7 fix(notes): restore scroll in preview mode; feat(sidebar): folder tree
 
