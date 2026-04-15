@@ -11,6 +11,12 @@
   background:     var(--background);
   color:          var(--foreground);
   overflow:       hidden;
+  /* Variables are scoped here — apply font explicitly so all children inherit */
+  font-family:    var(--font-sans);
+  font-size:      var(--font-size-base);
+  line-height:    1.45;                  /* UI line-height; prose overrides to 1.7 */
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ── Body row: sidebar + content + optional agent rail ───────────────────── */

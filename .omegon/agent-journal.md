@@ -455,4 +455,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   5354799 feat(search): full search page, rich result cards with FTS5 highlights, Enter-to-search, multi-tab breadcrumbs in dropdown
   45c9fdf fix: search prefix matching, font system, sidebar visual polish
   f2049a7 fix(notes): restore scroll in preview mode; feat(sidebar): folder tree
+## 2026-04-15 — main (20t 56tc 6m27s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** Running with 40 notes indexed from the Black Meridian vault. What do you see now?
+
+**Model:** anthropic:claude-sonnet-4-6 — 2808501 in / 44794 out tokens across 50 turns
+
+**Commits:**
+  a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
+  5354799 feat(search): full search page, rich result cards with FTS5 highlights, Enter-to-search, multi-tab breadcrumbs in dropdown
+  45c9fdf fix: search prefix matching, font system, sidebar visual polish
 
