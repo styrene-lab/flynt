@@ -101,6 +101,12 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
         }
     });
 
+    // Re-run highlight.js after every render that shows markdown.
+    // setTimeout(0) defers until after the DOM is painted.
+    let _ = document::eval(
+        "setTimeout(() => { if (typeof hljs !== 'undefined') hljs.highlightAll(); }, 0)"
+    );
+
     rsx! {
         div { class: "view-notes",
             match &*rendered.read() {

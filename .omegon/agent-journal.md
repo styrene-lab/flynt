@@ -377,4 +377,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
   bee055b fix(stability): remove syntect from render path to stop crashes
   b68194e feat(renderer): full-featured markdown renderer + font system
+## 2026-04-15 — main (6t 255tc 2m51s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. Open a long document, hit Edit, and scroll — both panes should track together.
+
+**Model:** anthropic:claude-sonnet-4-6 — 41130635 in / 162738 out tokens across 270 turns
+
+**Commits:**
+  5fbbdca feat(editor): synchronized scroll between editor and preview panes
+  fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
+  bee055b fix(stability): remove syntect from render path to stop crashes
 

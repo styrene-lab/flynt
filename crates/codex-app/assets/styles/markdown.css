@@ -404,3 +404,9 @@
   padding:    var(--space-8) var(--space-8);
   min-width:  0;
 }
+
+/* ── highlight.js integration ─────────────────────────────────────────────── */
+/* Override hljs theme background so our --prose-pre-bg controls the block */
+.hljs { background: transparent !important; padding: 0 !important; }
+.markdown-body pre { overflow-x: auto; }
+.markdown-body pre code.hljs { display: block; }
