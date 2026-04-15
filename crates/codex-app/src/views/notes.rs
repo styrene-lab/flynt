@@ -101,12 +101,6 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
         }
     });
 
-    // Re-run highlight.js after every render that shows markdown.
-    // setTimeout(0) defers until after the DOM is painted.
-    let _ = document::eval(
-        "setTimeout(() => { if (typeof hljs !== 'undefined') hljs.highlightAll(); }, 0)"
-    );
-
     rsx! {
         div { class: "view-notes",
             match &*rendered.read() {
@@ -173,17 +167,22 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
 
                         match *mode.read() {
                             EditMode::Preview => rsx! {
+                                { document::eval("document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b))"); }
                                 div {
                                     class: "markdown-body",
                                     dangerous_inner_html: "{html}",
                                 }
                             },
                             EditMode::Edit => rsx! {
-                                // Wire scroll sync after this render.
+                                // Wire scroll sync + hljs after this render.
                                 { document::eval(r#"
                                     (function() {
                                         const ed = document.getElementById('codex-editor');
                                         const pr = document.getElementById('codex-preview');
+                                        // Highlight any new code blocks in the preview
+                                        if (typeof hljs !== 'undefined') {
+                                            pr && pr.querySelectorAll('pre code:not([data-highlighted])').forEach(b => hljs.highlightElement(b));
+                                        }
                                         if (!ed || !pr || ed._codex_bound) return;
                                         ed._codex_bound = true;
                                         let busy = false;

@@ -389,4 +389,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   5fbbdca feat(editor): synchronized scroll between editor and preview panes
   fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
   bee055b fix(stability): remove syntect from render path to stop crashes
+## 2026-04-15 — main (9t 263tc 3m21s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. Open any note with a code block — you should see syntax highlighting. First load may be a beat slower (CDN fetch), subsequent renders are instant from cache. What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 43409057 in / 169243 out tokens across 279 turns
+
+**Commits:**
+  1172698 feat(renderer): highlight.js syntax highlighting with auto-detect
+  5fbbdca feat(editor): synchronized scroll between editor and preview panes
+  fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
 
