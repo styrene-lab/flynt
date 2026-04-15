@@ -18,6 +18,8 @@ pub trait VaultStore: Send + Sync {
     // ── Documents ─────────────────────────────────────────────────────────────
     fn get_document(&self, id: &DocumentId) -> Result<Option<Document>>;
     fn get_document_by_path(&self, path: &Path) -> Result<Option<Document>>;
+    /// Find a document whose title or filename slug loosely matches `slug`.
+    fn find_document_by_slug(&self, slug: &str) -> Result<Option<DocumentMeta>>;
     fn list_documents(&self) -> Result<Vec<DocumentMeta>>;
     fn save_document(&self, doc: &Document) -> Result<()>;
     fn delete_document(&self, id: &DocumentId) -> Result<()>;

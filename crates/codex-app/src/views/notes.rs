@@ -1,7 +1,7 @@
 use codex_core::store::VaultStore;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
-use crate::{bootstrap::AppContext, state::TabState};
+use crate::{bootstrap::AppContext, state::{Route, TabState}};
 
 #[derive(Clone, PartialEq)]
 enum EditMode { Preview, Edit }
@@ -96,6 +96,34 @@ pub fn NotesView() -> Element {
 
     let has_active = tab_state.read().active_id().is_some();
 
+    // Wire wikilink navigation: JS sends "codex-note://slug" via dioxus.send()
+    let ctx_link     = ctx.clone();
+    let mut ts_link  = tab_state;
+    let mut ar_link  = use_context::<Signal<Route>>();
+    use_effect(move || {
+        let mut eval = document::eval("dioxus.recv().then(function(msg){ dioxus.send(msg); });");
+        let c  = ctx_link.clone();
+        spawn(async move {
+            loop {
+                if let Ok(val) = eval.recv::<String>().await {
+                    let slug = val
+                        .trim_start_matches("codex-note://")
+                        .replace("%20", " ")
+                        .to_string();
+                    let c2 = c.clone();
+                    if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
+                        c2.vault.store.find_document_by_slug(&slug)
+                    }).await.unwrap_or(Ok(None)) {
+                        ts_link.write().open(meta.id.clone(), meta.title.clone());
+                        *ar_link.write() = Route::Notes;
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
+    });
+
     // No tab open → prompt
     if !has_active {
         return rsx! {
@@ -174,7 +202,17 @@ pub fn NotesView() -> Element {
 
             match *mode.read() {
                 EditMode::Preview => rsx! {
-                    { document::eval("document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b))"); }
+                    { document::eval(r#"
+                        document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b));
+                        document.querySelectorAll('.markdown-body a[href^="codex-note://"]').forEach(function(a) {
+                            if (a._codex_wired) return;
+                            a._codex_wired = true;
+                            a.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                dioxus.send(a.getAttribute('href'));
+                            });
+                        });
+                    "#); }
                     div { class: "markdown-body", dangerous_inner_html: "{html}" }
                 },
                 EditMode::Edit => {

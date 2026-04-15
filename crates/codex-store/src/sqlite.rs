@@ -132,9 +132,33 @@ impl VaultStore for SqliteStore {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    fn find_document_by_slug(&self, slug: &str) -> Result<Option<DocumentMeta>> {
+        // Decode %20 etc. and normalise to lowercase for matching
+        let decoded = slug.replace("%20", " ");
+        let needle  = decoded.to_lowercase();
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT id, path, title, frontmatter, updated_at FROM documents
+               WHERE LOWER(title) = ?1
+                  OR LOWER(REPLACE(path, '.md', '')) LIKE '%' || ?1
+               LIMIT 1"#,
+        )?;
+        let mut rows = stmt.query_map(params![needle], |row| {
+            let fm_json: String = row.get(3)?;
+            Ok(DocumentMeta {
+                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))? ),
+                path: row.get::<_, String>(1)?.into(),
+                title: row.get(2)?,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+            })
+        })?;
+        Ok(rows.next().transpose()?)
+    }
+
     fn save_document(&self, doc: &Document) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let fm = serde_json::to_string(&doc.frontmatter)?;
+        let fm   = serde_json::to_string(&doc.frontmatter)?;
         conn.execute(
             r#"INSERT INTO documents (id, path, title, content, frontmatter, created_at, updated_at)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)

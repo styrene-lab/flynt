@@ -479,4 +479,28 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
   a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
   5354799 feat(search): full search page, rich result cards with FTS5 highlights, Enter-to-search, multi-tab breadcrumbs in dropdown
+## 2026-04-15 — main (14t 81tc 3m44s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** Running with 40 files indexed. The sidebar should now populate — the previous `parse().unwrap()` on the UUID was silently swallowed by `unwrap_or_default()` returning an empty list. What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 5618864 in / 56651 out tokens across 77 turns
+
+**Commits:**
+  105fe72 fix(store): replace panicking unwrap() in list_documents with safe error handling
+  2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
+  a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
+## 2026-04-15 — main (7t 87tc 1m20s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** `codex-note://` clicks are falling through to the OS default browser handler. Need to intercept them in the Dioxus desktop WebView config. Check `main.rs`:
+
+**Model:** unknown — 6321576 in / 58807 out tokens across 84 turns
+
+**Commits:**
+  105fe72 fix(store): replace panicking unwrap() in list_documents with safe error handling
+  2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
+  a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
 
