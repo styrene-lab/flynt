@@ -1,0 +1,304 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Kanban board
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── View shell ───────────────────────────────────────────────────────────── */
+.view-kanban {
+  display:        flex;
+  flex-direction: column;
+  height:         100%;
+  overflow:       hidden;
+  background:     var(--kanban-bg);
+}
+
+.kanban-loading {
+  padding: var(--space-8);
+}
+
+/* ── Board tab bar ────────────────────────────────────────────────────────── */
+.board-tabs {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-1);
+  padding:     var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background:  var(--toolbar-bg);
+  flex-shrink: 0;
+  overflow-x:  auto;
+}
+
+.board-tab {
+  padding:       5px var(--space-3);
+  border-radius: var(--radius);
+  font-size:     var(--font-size-sm);
+  font-weight:   var(--font-weight-medium);
+  color:         var(--muted-foreground);
+  white-space:   nowrap;
+  transition:    color      var(--duration-fast) var(--ease),
+                 background var(--duration-fast) var(--ease);
+}
+
+.board-tab:hover {
+  color:      var(--foreground);
+  background: var(--accent);
+}
+
+.board-tab.active {
+  color:      var(--foreground);
+  background: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.new-board-btn {
+  color: var(--muted-foreground);
+}
+
+.new-board-inline {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  margin-left: var(--space-2);
+}
+
+.new-board-input {
+  width: 160px;
+  padding: 4px var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Board: horizontal column strip ──────────────────────────────────────── */
+.kanban-board {
+  display:        flex;
+  flex:           1;
+  gap:            var(--space-3);
+  padding:        var(--space-4);
+  overflow-x:     auto;
+  overflow-y:     hidden;
+  align-items:    flex-start;
+  min-height:     0;
+}
+
+/* ── Column ───────────────────────────────────────────────────────────────── */
+.kanban-column {
+  display:        flex;
+  flex-direction: column;
+  width:          280px;
+  min-width:      280px;
+  max-height:     100%;
+  background:     var(--kanban-column-bg);
+  border:         1px solid var(--kanban-column-border);
+  border-radius:  var(--radius-md);
+  overflow:       hidden;
+  flex-shrink:    0;
+}
+
+.column-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         var(--space-3) var(--space-3) var(--space-2);
+  border-bottom:   1px solid var(--kanban-column-border);
+  flex-shrink:     0;
+}
+
+.column-name {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+}
+
+.column-count {
+  font-size:     var(--font-size-xs);
+  font-weight:   var(--font-weight-medium);
+  color:         var(--muted-foreground);
+  background:    var(--surface);
+  padding:       1px var(--space-2);
+  border-radius: var(--radius-full);
+}
+
+.column-count.over-wip {
+  color:      var(--warning);
+  background: rgba(200, 100, 24, 0.15);
+}
+
+/* Cards scroll area */
+.column-cards {
+  flex:       1;
+  overflow-y: auto;
+  padding:    var(--space-2);
+  display:    flex;
+  flex-direction: column;
+  gap:        var(--space-2);
+  min-height: 0;
+}
+
+/* ── Task card ────────────────────────────────────────────────────────────── */
+.task-card {
+  background:    var(--kanban-card-bg);
+  border:        1px solid var(--kanban-card-border);
+  border-radius: var(--radius);
+  padding:       var(--space-3);
+  cursor:        grab;
+  box-shadow:    var(--kanban-card-shadow);
+  transition:    border-color var(--duration-fast) var(--ease),
+                 box-shadow   var(--duration-fast) var(--ease),
+                 transform    var(--duration-fast) var(--ease),
+                 opacity      var(--duration-fast) var(--ease);
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--space-2);
+  position:      relative;
+}
+
+.task-card:hover {
+  border-color: var(--border);
+  background:   var(--kanban-card-hover);
+  box-shadow:   var(--shadow);
+}
+
+.task-card.dragging {
+  opacity:   0.45;
+  transform: scale(0.97);
+  cursor:    grabbing;
+}
+
+.task-title {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color:       var(--foreground);
+  line-height: var(--line-height-tight);
+}
+
+/* Meta row: priority chip + due date */
+.task-meta {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  flex-wrap:   wrap;
+}
+
+.task-due {
+  font-size: var(--font-size-xs);
+}
+
+/* Tags */
+.task-tags {
+  display:  flex;
+  gap:      var(--space-1);
+  flex-wrap: wrap;
+}
+
+.task-tag {
+  font-size:     var(--font-size-xs);
+  color:         var(--primary-muted);
+  background:    rgba(42, 180, 200, 0.08);
+  border-radius: var(--radius-full);
+  padding:       1px 6px;
+}
+
+/* Archive button — shown on hover */
+.task-actions {
+  display:         flex;
+  justify-content: flex-end;
+  opacity:         0;
+  transition:      opacity var(--duration-fast) var(--ease);
+}
+
+.task-card:hover .task-actions {
+  opacity: 1;
+}
+
+.task-action-btn {
+  font-size:     var(--font-size-xs);
+  color:         var(--muted-foreground);
+  padding:       2px var(--space-1);
+  border-radius: var(--radius-sm);
+  transition:    color      var(--duration-fast) var(--ease),
+                 background var(--duration-fast) var(--ease);
+}
+
+.task-action-btn:hover {
+  color:      var(--error);
+  background: rgba(200, 48, 48, 0.12);
+}
+
+/* ── Inline add-task form ─────────────────────────────────────────────────── */
+.add-task-form {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  padding:        var(--space-2) var(--space-1);
+}
+
+.add-task-input {
+  width:      100%;
+  min-height: 60px;
+  resize:     none;
+  font-size:  var(--font-size-sm);
+  padding:    var(--space-2) var(--space-2);
+}
+
+.add-task-actions {
+  display: flex;
+  gap:     var(--space-2);
+}
+
+.add-task-btn {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-1);
+  width:         100%;
+  padding:       var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  font-size:     var(--font-size-sm);
+  color:         var(--muted-foreground);
+  transition:    color      var(--duration-fast) var(--ease),
+                 background var(--duration-fast) var(--ease);
+}
+
+.add-task-btn:hover {
+  color:      var(--foreground);
+  background: var(--accent);
+}
+
+.add-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.kanban-empty {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  flex:            1;
+  padding:         var(--space-8);
+}
+
+.kanban-empty-card {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-4);
+  background:     var(--card);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius-lg);
+  padding:        var(--space-8);
+  max-width:      400px;
+  width:          100%;
+}
+
+.kanban-empty-heading {
+  font-size:   var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--primary-bright);
+}
+
+.kanban-empty-form {
+  display:     flex;
+  gap:         var(--space-3);
+  align-items: center;
+}
+
+.kanban-empty-form .input {
+  flex: 1;
+}

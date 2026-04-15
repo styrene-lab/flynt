@@ -84,7 +84,7 @@ pub struct WikiLink {
 // ── Kanban Task ───────────────────────────────────────────────────────────────
 
 /// A task stored as a markdown file with TOML frontmatter under `.codex/tasks/`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub id: TaskId,
     pub board_id: BoardId,
@@ -127,7 +127,7 @@ pub enum TaskStatus {
 
 // ── Kanban Board ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Board {
     pub id: BoardId,
     pub name: String,
@@ -135,7 +135,7 @@ pub struct Board {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
     pub wip_limit: Option<u32>,
@@ -153,6 +153,31 @@ impl Board {
                 Column { name: "Done".into(), wip_limit: None },
             ],
             created_at: Utc::now(),
+        }
+    }
+}
+
+impl Task {
+    pub fn new(
+        board_id: BoardId,
+        column:   impl Into<String>,
+        title:    impl Into<String>,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id:            TaskId::new(),
+            board_id,
+            column:        column.into(),
+            title:         title.into(),
+            description:   String::new(),
+            priority:      Priority::Medium,
+            status:        TaskStatus::Todo,
+            tags:          Vec::new(),
+            document_refs: Vec::new(),
+            due_date:      None,
+            position:      u32::MAX, // store sorts by position asc; MAX = append
+            created_at:    now,
+            updated_at:    now,
         }
     }
 }

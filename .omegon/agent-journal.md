@@ -116,4 +116,19 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   48f566d feat(theme): parameterized theme engine with Alpharius token set
   bb5b808 feat(notes): Obsidian-style markdown preview with live sidebar doc list
   a341258 feat(app): wire AppContext into Dioxus context tree at launch
+## 2026-04-15 — main (16t 49tc 9m4s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Done. Here's what you have:
+
+**Settings view features:**
+- **Theme picker** — swatch cards render a mini preview using the theme's own raw hex tokens (the one justified use of inline style in the codebase). Clicking applies immediately via the `ThemeName` signal; the entire app repaints. The `THEMES
+
+**Model:** anthropic:claude-sonnet-4-6 — 3265769 in / 60423 out tokens across 48 turns
+
+**Commits:**
+  4946dd2 feat(settings): fully-wired settings view with theme + sync config
+  48f566d feat(theme): parameterized theme engine with Alpharius token set
+  bb5b808 feat(notes): Obsidian-style markdown preview with live sidebar doc list
 
