@@ -121,6 +121,29 @@ impl Vault {
         Ok(())
     }
 
+    /// Write updated markdown content back to disk and re-index.
+    /// Preserves the existing frontmatter UUID so document identity is stable.
+    pub fn save_document_content(&self, rel_path: &Path, content: &str) -> Result<()> {
+        let abs_path = self.root.join(rel_path);
+        if let Some(parent) = abs_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&abs_path, content)?;
+        self.index_file(&abs_path)
+    }
+
+    /// Write updated markdown content to a new file path and index it.
+    pub fn create_document(&self, rel_path: &Path, title: &str) -> Result<()> {
+        let abs_path = self.root.join(rel_path);
+        if let Some(parent) = abs_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if !abs_path.exists() {
+            fs::write(&abs_path, format!("# {title}\n"))?;
+        }
+        self.index_file(&abs_path)
+    }
+
     /// Write a new config to disk. Does not update `self.config` (the in-memory
     /// value is managed by callers via signals). Call this from the settings view.
     pub fn save_config(&self, config: &VaultConfig) -> Result<()> {

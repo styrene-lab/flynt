@@ -39,6 +39,8 @@ pub fn App() -> Element {
             Toolbar {
                 sync_status: sync_status.read().clone(),
                 show_agent,
+                selected_doc,
+                active_route,
             }
             div { class: "codex-body",
                 Sidebar { active_route, selected_doc }

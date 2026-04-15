@@ -1,53 +1,54 @@
 ---
 task_id: 2
-label: track-c-git-sync
-siblings: [0:track-a-launch, 1:track-b-ui-shell]
+label: track-c-toolbar-search-sidebar-boards
+siblings: [0:track-a-agent-binary, 1:track-b-notes-editor]
 ---
 
-# Task 2: track-c-git-sync
+# Task 2: track-c-toolbar-search-sidebar-boards
 
 ## Root Directive
 
-> Implement three parallel tracks for Codex: (A) Vault launch integration — Dioxus.toml, full macOS main.rs mirroring auspex, Vault::open reindex + FSEvents watcher feeding a tokio broadcast channel for signal invalidation; (B) UI shell — three-column layout sidebar/main/agent-rail, route enum, Notes/Kanban/Graph/Settings stub views wired to routing; (C) Git sync backend — git2-backed SyncBackend impl: auto-commit debounced 30s, pull, conflict detection stored in DB conflicts table.
+> Implement the remaining structural layers to make Codex UI stable: agent binary, notes write mode, toolbar search, sidebar boards + live refresh, mcp.json bootstrap.
 
 ## Mission
 
-Implement the git2-backed SyncBackend for codex-store. Do not touch any codex-app files. Tasks: (1) Add git2 = { version = '0.20', default-features = false } to crates/codex-store/Cargo.toml. (2) Write crates/codex-store/src/sync/mod.rs: pub mod git; pub use git::GitSync;. (3) Write crates/codex-store/src/sync/git.rs: use git2::Repository; pub struct GitSync { pub vault_root: PathBuf, pub remote: String, pub branch: String }. Implement codex_core::sync::SyncBackend: name() returns 'git'. status() opens repo, checks if HEAD is ahead of remote branch (unpushed commits) and if working tree is dirty (uncommitted changes) — returns SyncStatus::Idle if clean and up to date. pull() does: open repo, find remote, fetch with empty refspecs (fetch all), find remote branch ref, do merge analysis, if FastForward checkout the new tree and set HEAD, if Normal (non-FF) detect conflicted index entries (entries with CONFLICTED stage), return SyncResult with conflict paths. push() does: open repo, find remote, push current branch refspec, return SyncResult. sync() calls pull() then if no conflicts calls push(). auto_commit(message: &str) does: open repo, get index, add_all ['.'] callback, write tree, create commit with signature 'Codex <codex@local>', parent is current HEAD if exists. (4) Add conflicts table to SCHEMA in crates/codex-store/src/sqlite.rs: CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, path TEXT NOT NULL, ours TEXT NOT NULL, theirs TEXT NOT NULL, base TEXT NOT NULL DEFAULT '', detected_at TEXT NOT NULL). (5) Add get_conflicts() -> Result<Vec<ConflictRecord>> and resolve_conflict(id: &str) -> Result<()> methods to SqliteStore. Add pub struct ConflictRecord { pub id: String, pub path: String, pub ours: String, pub theirs: String, pub detected_at: DateTime<Utc> } in a new file crates/codex-store/src/conflicts.rs. (6) Update crates/codex-store/src/lib.rs: pub mod sync; pub mod conflicts;
+Improve the toolbar and sidebar. In crates/codex-app/src/components/toolbar.rs: add a centered search input that searches the vault using vault.store.search_documents. The search results should be displayed as an overlay dropdown list (div absolutely positioned below the input) showing document title + excerpt, clicking a result sets the selected_doc signal and navigates to Notes view. Pass selected_doc: Signal<Option<DocumentId>> and active_route: Signal<Route> as props to Toolbar. Thread these props through from app.rs. In crates/codex-app/src/components/sidebar.rs: add a 'Boards' section below the Notes section that lists all boards from vault.store.list_boards(), clicking a board sets the active_route to Route::Kanban. Also subscribe to vault_events broadcast to auto-refresh the document list: use tokio::sync::broadcast and a use_resource with a refresh counter. In crates/codex-app/assets/styles/components.css: add toolbar search input styles (.toolbar-search, .search-overlay, .search-result-item). Update crates/codex-app/src/app.rs to pass the new props to Toolbar. All code must compile with cargo check.
 
 ## Scope
 
-- `crates/codex-store/src/sync/mod.rs`
-- `crates/codex-store/src/sync/git.rs`
-- `crates/codex-store/src/sqlite.rs`
-- `crates/codex-store/src/lib.rs`
-- `crates/codex-store/Cargo.toml`
+- `crates/codex-app/src/components/toolbar.rs`
+- `crates/codex-app/src/components/sidebar.rs`
+- `crates/codex-app/src/app.rs`
+- `crates/codex-app/assets/styles/components.css`
 
-**Depends on:** none (independent)
+**Depends on:** track-b-notes-editor
 
 ## Siblings
 
-- **track-a-launch**: Implement vault launch integration for codex-app. Tasks: (1) Write Dioxus.toml at workspace root with bundle identifier com.black-meridian.codex, macOS category public.app-category.productivity, publisher Black Meridian. (2) Rewrite crates/codex-app/src/main.rs to match auspex pattern exactly: muda menu (Codex menu with Settings... Cmd+, and Quit, Edit menu with undo/redo/cut/copy/paste/select-all predefined items), tao macOS window extensions with_titlebar_transparent(false) with_fullsize_content_view(false), window size LogicalSize 1440x900 min 900x600, embed assets/main.css via include_str! in custom_head string, LaunchBuilder::desktop().with_cfg(Config::new().with_menu().with_window().with_custom_head().with_on_window()).with_context(bootstrap).launch(app::App). (3) Write crates/codex-app/src/bootstrap.rs: pub struct AppContext { pub vault: Arc<Vault>, pub vault_events: broadcast::Sender<VaultChangeEvent> }. Function bootstrap_from_env() reads CODEX_VAULT env var or defaults to ~/Documents/Codex, creates dir if missing, calls Vault::open, runs vault.reindex() logging results, creates broadcast::channel(256), spawns tokio::task that loops on VaultWatcher::new(&vault.root) receiving events and forwarding on sender, returns AppContext. (4) Add VaultChangeEvent enum to codex-store/src/watcher.rs: variants FileModified(PathBuf), FileCreated(PathBuf), FileDeleted(PathBuf). (5) Write assets/main.css: CSS variables and base styles using Alpharius palette. --bg: #06080e, --card-bg: #0e1622, --fg: #c4d8e4, --accent: #2ab4c8, --border: #1a3448. Style body, .codex-root, .sidebar, .main-content, .agent-rail, .toolbar with these vars. Dark scrollbars. Monospace font stack. (6) Update crates/codex-app/Cargo.toml to add dioxus with desktop feature, tokio with full features. (7) Update crates/codex-app/src/lib.rs to pub mod bootstrap.
-- **track-b-ui-shell**: Implement the three-column UI shell for codex-app. IMPORTANT: Do not touch main.rs or bootstrap.rs — those are owned by track-a-launch. Work only on the files in scope. Tasks: (1) Rewrite crates/codex-app/src/state.rs: define Route enum (Notes, Kanban, Graph, Settings) deriving Clone+PartialEq+Debug+Default(Notes). Define SyncStatus enum (Idle, Syncing, Conflict(usize)). Keep AppContext import as 'use crate::bootstrap::AppContext' but use a placeholder type alias if bootstrap is not yet complete — the important thing is the state compiles. (2) Rewrite crates/codex-app/src/app.rs: App component uses use_signal for active_route: Signal<Route> and show_agent: Signal<bool>. Renders div.codex-shell containing: Toolbar component at top, div.codex-body containing Sidebar on left (w-220), div.main-content in center, and conditionally AgentRail on right when show_agent is true. Match on active_route to render NotesView / KanbanView / GraphView / SettingsView in the center pane. (3) Write crates/codex-app/src/components/sidebar.rs: Sidebar component renders nav.sidebar with two sections: section.sidebar-notes (heading Notes, placeholder list) and section.sidebar-boards (heading Boards, placeholder list). Bottom icons row for route navigation using emoji or text labels. (4) Write crates/codex-app/src/components/toolbar.rs: Toolbar renders div.toolbar with span.app-title Codex, div.sync-status showing Idle/Syncing/Conflict text, button.agent-toggle text Agent toggling show_agent signal passed as prop. (5) Write crates/codex-app/src/components/agent_rail.rs: AgentRail renders div.agent-rail with header Omegon, div.agent-messages placeholder, div.agent-input with textarea and send button. (6) Write crates/codex-app/src/views/notes.rs full stub, views/kanban.rs full stub, views/graph.rs full stub, views/settings.rs full stub — each a #[component] returning a named div with class and a placeholder heading. (7) Update crates/codex-app/src/components/mod.rs and views/mod.rs to export all modules. Update lib.rs.
+- **track-a-agent-binary**: Wire the codex-agent into a real executable. Add [[bin]] to crates/codex-agent/Cargo.toml with a main.rs that uses clap to accept --vault <path> and calls run_mcp_server. Add a tracing_subscriber setup. Also update crates/codex-app/src/bootstrap.rs to write an mcp.json file at launch time pointing to the agent binary location so Omegon can discover it. The mcp.json should be written to the vault root's .codex/ directory as mcp.json with a 'codex' server entry using the command transport. Also add the 'clap' crate with derive feature to codex-agent's Cargo.toml. The agent binary must compile cleanly with cargo check.
+- **track-b-notes-editor**: Add a proper edit/preview mode to the notes view. In crates/codex-store/src/vault.rs, add a pub fn save_document_content(rel_path: &Path, content: &str) -> Result<()> method that writes the file to disk (preserving existing frontmatter UUID) and calls self.index_file on it. In crates/codex-app/src/views/notes.rs, add an edit mode toggle: when a document is selected, show an Edit button in the top-right of the notes pane. In edit mode, show a full-height textarea with the raw markdown content (not the rendered HTML). Show a Save button and a Preview button to toggle back. On Save, call vault.save_document_content via spawn_blocking and refresh the rendered preview. Also add a 'New Note' button to the sidebar (crates/codex-app/src/components/sidebar.rs) that creates a new .md file in the vault root and opens it for editing. The sidebar's document list must also subscribe to vault_events (the broadcast::Sender in AppContext) using use_resource with a refresh counter that increments when any VaultChangeEvent arrives. All new code must compile with cargo check.
 
 ## Dependency Versions
 
 Use these exact versions — do not rely on training data for API shapes:
 
 ```toml
-# crates/codex-store/Cargo.toml
+# crates/codex-app/Cargo.toml
 [dependencies]
-codex-core = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-toml = { workspace = true }
-uuid = { workspace = true }
-chrono = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-rusqlite = { workspace = true }
-notify = { workspace = true }
-tracing = { workspace = true }
-walkdir = "2"
+codex-core  = { workspace = true }
+codex-store = { workspace = true }
+codex-agent = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+anyhow      = { workspace = true }
+thiserror   = { workspace = true }
+tokio       = { workspace = true }
+tracing     = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono     = { workspace = true }
+comrak      = { workspace = true }
+dirs        = "5"
+dioxus      = { workspace = true, features = ["desktop"] }
 
 ```
 

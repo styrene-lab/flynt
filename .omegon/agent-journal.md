@@ -131,4 +131,33 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   4946dd2 feat(settings): fully-wired settings view with theme + sync config
   48f566d feat(theme): parameterized theme engine with Alpharius token set
   bb5b808 feat(notes): Obsidian-style markdown preview with live sidebar doc list
+## 2026-04-15 — main (14t 62tc 6m14s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Done. What you have:
+
+**Kanban board:**
+- **Multi-board** — tab bar, create new board inline (+ New board), auto-selects first on load
+- **Columns** — default sprint layout (Backlog → In Progress → Review → Done), WIP limits shown as `count/limit` with warning colour when exceeded
+- **Drag & drop** 
+
+**Model:** anthropic:claude-sonnet-4-6 — 4871324 in / 87666 out tokens across 62 turns
+
+**Commits:**
+  83f9ad5 feat(kanban): full Kanban board — columns, drag-and-drop, inline add, archive
+  4946dd2 feat(settings): fully-wired settings view with theme + sync config
+  48f566d feat(theme): parameterized theme engine with Alpharius token set
+## 2026-04-15 — main (19t 80tc 5m24s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** The Toolbar now requires `selected_doc` and `active_route` — fix the call site in `app.rs`:
+
+**Model:** anthropic:claude-sonnet-4-6 — 7175175 in / 103146 out tokens across 80 turns
+
+**Commits:**
+  83f9ad5 feat(kanban): full Kanban board — columns, drag-and-drop, inline add, archive
+  4946dd2 feat(settings): fully-wired settings view with theme + sync config
+  48f566d feat(theme): parameterized theme engine with Alpharius token set
 
