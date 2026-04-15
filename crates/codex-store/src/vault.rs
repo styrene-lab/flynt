@@ -79,7 +79,7 @@ impl Vault {
     pub fn index_file(&self, path: &Path) -> Result<()> {
         let raw = fs::read_to_string(path)?;
         let rel_path = path.strip_prefix(&self.root)?.to_owned();
-        let (body, frontmatter, links) = parse_document_source(&raw);
+        let (body, mut frontmatter, links) = parse_document_source(&raw);
 
         // Derive title: first H1 or filename stem
         let title = extract_h1(&body).unwrap_or_else(|| {
@@ -88,17 +88,32 @@ impl Vault {
                 .unwrap_or_else(|| "Untitled".to_string())
         });
 
-        // Check if existing document exists at this path
+        // Resolve stable ID: frontmatter > existing DB record > new UUID (written back to file)
         let existing = self.store.get_document_by_path(&rel_path)?;
+        let id = frontmatter
+            .id
+            .map(DocumentId)
+            .or_else(|| existing.as_ref().map(|d| d.id.clone()))
+            .unwrap_or_else(DocumentId::new);
+
+        // If the file has no id in frontmatter, write it back so it survives a DB wipe.
+        if frontmatter.id.is_none() {
+            frontmatter.id = Some(id.0);
+            let new_fm = toml::to_string(&frontmatter).unwrap_or_default();
+            let new_raw = format!("+++\n{new_fm}+++\n\n{body}");
+            std::fs::write(path, &new_raw)?;
+        }
+
         let now = Utc::now();
+        let created_at = existing.as_ref().map(|d| d.created_at).unwrap_or(now);
         let doc = Document {
-            id: existing.map(|d| d.id).unwrap_or_else(DocumentId::new),
+            id,
             path: rel_path,
             title,
             content: body,
             frontmatter,
             outgoing_links: links,
-            created_at: now,
+            created_at,
             updated_at: now,
         };
         self.store.save_document(&doc)?;

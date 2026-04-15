@@ -59,6 +59,9 @@ pub struct DocumentMeta {
 /// YAML/TOML frontmatter parsed from the top of a document.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Frontmatter {
+    /// Stable document identity — written on first index, survives DB wipe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<uuid::Uuid>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
