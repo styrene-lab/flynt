@@ -286,4 +286,28 @@ What are you seeing in the UI right now — anything broken or missing that need
   cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
   52c72a5 fix(css): link each stylesheet directly instead of via @import
   dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
+## 2026-04-15 — main (3t 183tc 7m60s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** The window is eating all input focus — classic macOS Dioxus issue when no window config is set. Fix `main.rs` to give it a proper window with explicit size and normal activation policy:
+
+**Model:** anthropic:claude-sonnet-4-6 — 25717843 in / 132874 out tokens across 192 turns
+
+**Commits:**
+  5b7d5fb fix(desktop): configure window size and disable always-on-top
+  cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
+  52c72a5 fix(css): link each stylesheet directly instead of via @import
+## 2026-04-15 — main (8t 190tc 2m39s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Codex is running with 40 files indexed from the Black Meridian vault. Let me know what you see and what to fix next.
+
+**Model:** anthropic:claude-sonnet-4-6 — 27374496 in / 133761 out tokens across 200 turns
+
+**Commits:**
+  5b7d5fb fix(desktop): configure window size and disable always-on-top
+  cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
+  52c72a5 fix(css): link each stylesheet directly instead of via @import
 

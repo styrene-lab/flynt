@@ -30,6 +30,20 @@ pub fn App() -> Element {
     let selected_doc: Signal<Option<DocumentId>> = use_signal(|| None);
 
     rsx! {
+        // Fonts — Inter for UI/prose, Fira Code for mono
+        document::Link {
+            rel: "preconnect",
+            href: "https://fonts.googleapis.com",
+        }
+        document::Link {
+            rel: "preconnect",
+            href: "https://fonts.gstatic.com",
+            crossorigin: "anonymous",
+        }
+        document::Link {
+            rel: "stylesheet",
+            href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap",
+        }
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
         document::Stylesheet { href: asset!("/assets/styles/layout.css") }
