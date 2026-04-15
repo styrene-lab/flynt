@@ -7,20 +7,31 @@ use crate::{
     views::{GraphView, KanbanView, NotesView, SettingsView},
 };
 
+/// Name of the active theme — provided via context so any component can read
+/// (or eventually swap) the theme without prop drilling.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ThemeName(pub String);
+
 #[component]
 pub fn App() -> Element {
-    // Bootstrap once: opens vault, reindexes, starts file watcher.
-    // use_context_provider only runs on first render.
     use_context_provider(bootstrap_from_env);
+
+    // Theme name drives the data-theme attribute on the root div.
+    // Any component can call use_context::<Signal<ThemeName>>() to swap it.
+    let theme = use_context_provider(|| Signal::new(ThemeName("alpharius".into())));
 
     let active_route = use_signal(|| Route::Notes);
     let mut show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
-    // Currently-open document — shared between sidebar (selection) and notes view (render).
     let selected_doc: Signal<Option<DocumentId>> = use_signal(|| None);
 
     rsx! {
-        div { class: "codex-shell",
+        document::Stylesheet { href: asset!("/assets/app.css") }
+
+        div {
+            class: "codex-shell",
+            "data-theme": "{theme.read().0}",
+
             Toolbar {
                 sync_status: sync_status.read().clone(),
                 show_agent,

@@ -1,0 +1,83 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Reset — minimal, opinionated
+   ───────────────────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  background:              var(--background);
+  color:                   var(--foreground);
+  font-family:             var(--font-sans);
+  font-size:               var(--font-size-base);
+  line-height:             var(--line-height);
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Interactive ──────────────────────────────────────────────────────────── */
+button,
+input,
+textarea,
+select {
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--prose-link);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--prose-link-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Scrollbars — thin, themed */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--dim);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Selections */
+::selection {
+  background: rgba(42, 180, 200, 0.25);
+  color:      var(--foreground);
+}

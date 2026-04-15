@@ -1,0 +1,235 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Components — all values via CSS tokens, no raw hex
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Sidebar
+   ══════════════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  width:          var(--sidebar-width);
+  display:        flex;
+  flex-direction: column;
+  background:     var(--sidebar-bg);
+  border-right:   1px solid var(--sidebar-border);
+  flex-shrink:    0;
+  overflow:       hidden;
+  user-select:    none;
+}
+
+/* Section: fills remaining space, scrollable */
+.sidebar-section {
+  flex:           1;
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  padding:        var(--space-2);
+  overflow-y:     auto;
+  min-height:     0;
+}
+
+.sidebar-heading {
+  font-size:      var(--font-size-xs);
+  font-weight:    var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color:          var(--sidebar-heading);
+  padding:        var(--space-2) var(--space-2) var(--space-1);
+}
+
+.sidebar-item {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-2);
+  padding:       5px var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size:     var(--font-size-sm);
+  color:         var(--sidebar-fg);
+  cursor:        pointer;
+  text-align:    left;
+  width:         100%;
+  transition:    background var(--duration-fast) var(--ease),
+                 color      var(--duration-fast) var(--ease);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-item:hover {
+  background: var(--sidebar-item-hover);
+}
+
+.sidebar-item.active {
+  background: var(--sidebar-item-active);
+  color:      var(--sidebar-item-active-fg);
+}
+
+.sidebar-item.muted {
+  color:  var(--muted-foreground);
+  cursor: default;
+}
+
+.sidebar-item.muted:hover {
+  background: transparent;
+}
+
+.doc-title {
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+
+/* Bottom nav strip */
+.sidebar-nav {
+  display:         flex;
+  flex-direction:  row;
+  justify-content: space-around;
+  padding:         var(--space-2);
+  border-top:      1px solid var(--sidebar-border);
+  flex-shrink:     0;
+}
+
+.nav-btn {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  width:           36px;
+  height:          36px;
+  border-radius:   var(--radius);
+  font-size:       16px;
+  color:           var(--muted-foreground);
+  transition:      color      var(--duration-fast) var(--ease),
+                   background var(--duration-fast) var(--ease);
+}
+
+.nav-btn:hover {
+  color:      var(--foreground);
+  background: var(--accent);
+}
+
+.nav-btn.active {
+  color: var(--primary);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Agent rail (right panel)
+   ══════════════════════════════════════════════════════════════════════════════ */
+.agent-rail {
+  width:        320px;
+  background:   var(--card);
+  border-left:  1px solid var(--border);
+  display:      flex;
+  flex-direction: column;
+  flex-shrink:  0;
+  overflow:     hidden;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Shared utilities
+   ══════════════════════════════════════════════════════════════════════════════ */
+.muted {
+  color: var(--muted-foreground);
+}
+
+.error-text {
+  color: var(--error);
+}
+
+.success-text {
+  color: var(--success);
+}
+
+/* ── Chip / badge ─────────────────────────────────────────────────────────── */
+.chip {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--space-1);
+  padding:       2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size:     var(--font-size-xs);
+  font-weight:   var(--font-weight-medium);
+}
+
+/* ── Priority chips ───────────────────────────────────────────────────────── */
+.priority-low      { background: var(--priority-low);      color: var(--priority-low-fg);      }
+.priority-medium   { background: var(--priority-medium);   color: var(--priority-medium-fg);   }
+.priority-high     { background: var(--priority-high);     color: var(--priority-high-fg);     }
+.priority-critical { background: var(--priority-critical); color: var(--priority-critical-fg); }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--space-2);
+  padding:       var(--space-1) var(--space-3);
+  border-radius: var(--radius);
+  font-size:     var(--font-size-sm);
+  font-weight:   var(--font-weight-medium);
+  transition:    background var(--duration-fast) var(--ease),
+                 color      var(--duration-fast) var(--ease),
+                 box-shadow var(--duration-fast) var(--ease);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color:      var(--primary-foreground);
+}
+
+.btn-primary:hover {
+  background:  var(--primary-bright);
+  box-shadow:  var(--shadow-glow);
+}
+
+.btn-ghost {
+  background: transparent;
+  color:      var(--muted-foreground);
+}
+
+.btn-ghost:hover {
+  background: var(--accent);
+  color:      var(--foreground);
+}
+
+.btn-destructive {
+  background: var(--destructive);
+  color:      var(--destructive-foreground);
+}
+
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+.input {
+  background:    var(--surface);
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  padding:       var(--space-2) var(--space-3);
+  font-size:     var(--font-size-base);
+  color:         var(--foreground);
+  transition:    border-color var(--duration-fast) var(--ease),
+                 box-shadow   var(--duration-fast) var(--ease);
+  width:         100%;
+}
+
+.input:focus {
+  border-color: var(--ring);
+  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  outline:      none;
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────────── */
+.card {
+  background:    var(--card);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow:      hidden;
+}
+
+.card-header {
+  padding:       var(--space-4);
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.card-body {
+  padding: var(--space-4);
+}

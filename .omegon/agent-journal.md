@@ -83,4 +83,21 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   a341258 feat(app): wire AppContext into Dioxus context tree at launch
   c21b698 feat: three-track parallel implementation
   09f9153 chore: stub files for cleave scope
+## 2026-04-15 — main (8t 20tc 4m12s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** **What's working now:**
+
+- Sidebar loads the real document list from SQLite on mount
+- Clicking a document sets the reactive `selected_doc` signal
+- `NotesView` re-fetches the document automatically when the signal changes (Dioxus reactive dep tracking in the `use_resource` closure)
+- comrak renders
+
+**Model:** anthropic:claude-sonnet-4-6 — 747311 in / 19847 out tokens across 17 turns
+
+**Commits:**
+  bb5b808 feat(notes): Obsidian-style markdown preview with live sidebar doc list
+  a341258 feat(app): wire AppContext into Dioxus context tree at launch
+  c21b698 feat: three-track parallel implementation
 

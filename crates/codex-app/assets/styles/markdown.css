@@ -1,0 +1,316 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Markdown prose rendering (comrak HTML output)
+   All values via CSS tokens.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Notes view shell ─────────────────────────────────────────────────────── */
+.view-notes {
+  display:  flex;
+  height:   100%;
+  overflow: hidden;
+}
+
+.notes-pane {
+  flex:       1;
+  height:     100%;
+  overflow-y: auto;
+  padding:    var(--space-8) var(--space-10);
+}
+
+.notes-pane > .doc-title {
+  font-size:     var(--font-size-2xl);
+  font-weight:   var(--font-weight-bold);
+  color:         var(--primary-bright);
+  margin-bottom: var(--space-6);
+  line-height:   var(--line-height-tight);
+}
+
+.notes-empty,
+.notes-loading {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  flex:            1;
+  height:          100%;
+  color:           var(--muted-foreground);
+  font-size:       var(--font-size-md);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Markdown body
+   ══════════════════════════════════════════════════════════════════════════════ */
+.markdown-body {
+  color:       var(--prose-body);
+  font-family: var(--font-sans);
+  font-size:   var(--font-size-md);
+  line-height: var(--line-height);
+  max-width:   var(--prose-max-width);
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color:         var(--prose-heading);
+  font-weight:   var(--font-weight-semibold);
+  line-height:   var(--line-height-tight);
+  margin-top:    var(--space-8);
+  margin-bottom: var(--space-3);
+}
+
+.markdown-body h1 { font-size: var(--font-size-2xl); margin-top: 0; }
+.markdown-body h2 { font-size: var(--font-size-xl);  border-bottom: 1px solid var(--border-dim); padding-bottom: var(--space-2); }
+.markdown-body h3 { font-size: var(--font-size-lg);  }
+.markdown-body h4 { font-size: var(--font-size-md);  }
+.markdown-body h5,
+.markdown-body h6 { font-size: var(--font-size-base); color: var(--prose-lead); }
+
+/* ── Paragraphs & flow ────────────────────────────────────────────────────── */
+.markdown-body p {
+  margin-bottom: var(--space-4);
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+.markdown-body a {
+  color:                   var(--prose-link);
+  text-decoration:         underline;
+  text-underline-offset:   2px;
+  text-decoration-color:   rgba(42, 180, 200, 0.4);
+  transition:              color var(--duration-fast) var(--ease),
+                           text-decoration-color var(--duration-fast) var(--ease);
+}
+
+.markdown-body a:hover {
+  color:                   var(--prose-link-hover);
+  text-decoration-color:   var(--prose-link-hover);
+}
+
+/* ── Wikilinks (rendered as plain links by comrak) ────────────────────────── */
+.markdown-body a[href^="#"],
+.markdown-body a[href^="[["] {
+  color: var(--primary-muted);
+}
+
+/* ── Inline formatting ────────────────────────────────────────────────────── */
+.markdown-body strong,
+.markdown-body b {
+  color:       var(--prose-bold);
+  font-weight: var(--font-weight-semibold);
+}
+
+.markdown-body em,
+.markdown-body i {
+  font-style: italic;
+}
+
+.markdown-body del,
+.markdown-body s {
+  text-decoration: line-through;
+  color:           var(--muted-foreground);
+}
+
+.markdown-body mark {
+  background:    var(--prose-mark-bg);
+  color:         var(--foreground);
+  border-radius: var(--radius-xs);
+  padding:       1px 3px;
+}
+
+/* ── Inline code ──────────────────────────────────────────────────────────── */
+.markdown-body code {
+  font-family:   var(--font-mono);
+  font-size:     0.875em;
+  color:         var(--prose-code);
+  background:    var(--prose-code-bg);
+  padding:       1px 5px;
+  border-radius: var(--radius-sm);
+  border:        1px solid var(--border-dim);
+}
+
+/* ── Code blocks ──────────────────────────────────────────────────────────── */
+.markdown-body pre {
+  background:    var(--prose-pre-bg);
+  border:        1px solid var(--prose-pre-border);
+  border-radius: var(--radius-md);
+  padding:       var(--space-4);
+  overflow-x:    auto;
+  margin-bottom: var(--space-4);
+  box-shadow:    var(--shadow-sm);
+}
+
+.markdown-body pre code {
+  background: transparent;
+  border:     none;
+  padding:    0;
+  color:      var(--foreground);
+  font-size:  var(--font-size-sm);
+  line-height: 1.6;
+}
+
+/* ── Blockquote ───────────────────────────────────────────────────────────── */
+.markdown-body blockquote {
+  border-left:  3px solid var(--prose-blockquote-bar);
+  padding-left: var(--space-4);
+  margin:       var(--space-4) 0;
+  color:        var(--prose-blockquote);
+  font-style:   italic;
+}
+
+.markdown-body blockquote p {
+  margin-bottom: var(--space-2);
+}
+
+.markdown-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────────── */
+.markdown-body ul,
+.markdown-body ol {
+  margin-bottom: var(--space-4);
+  padding-left:  var(--space-6);
+}
+
+.markdown-body ul { list-style-type: disc; }
+.markdown-body ol { list-style-type: decimal; }
+
+.markdown-body ul ul,
+.markdown-body ol ol,
+.markdown-body ul ol,
+.markdown-body ol ul {
+  margin-top:    var(--space-1);
+  margin-bottom: var(--space-1);
+}
+
+.markdown-body li {
+  margin-bottom: var(--space-1);
+  color:         var(--prose-body);
+}
+
+.markdown-body li > p {
+  margin-bottom: var(--space-2);
+}
+
+/* ── Task lists ───────────────────────────────────────────────────────────── */
+.markdown-body .task-list-item {
+  list-style: none;
+  margin-left: calc(-1 * var(--space-5));
+}
+
+.markdown-body input[type="checkbox"] {
+  accent-color:  var(--prose-task-check);
+  margin-right:  var(--space-2);
+  width:         14px;
+  height:        14px;
+  cursor:        pointer;
+  vertical-align: middle;
+  position:      relative;
+  top:           -1px;
+}
+
+/* ── Horizontal rule ──────────────────────────────────────────────────────── */
+.markdown-body hr {
+  border:     none;
+  border-top: 1px solid var(--prose-hr);
+  margin:     var(--space-8) 0;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+.markdown-body table {
+  width:           100%;
+  border-collapse: collapse;
+  margin-bottom:   var(--space-4);
+  font-size:       var(--font-size-sm);
+  overflow:        hidden;
+  border-radius:   var(--radius);
+  border:          1px solid var(--prose-table-border);
+}
+
+.markdown-body thead {
+  background: var(--prose-table-head-bg);
+}
+
+.markdown-body th {
+  color:       var(--prose-th);
+  font-weight: var(--font-weight-semibold);
+  text-align:  left;
+  padding:     var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--prose-table-border);
+}
+
+.markdown-body td {
+  color:         var(--prose-td);
+  padding:       var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-dim);
+  vertical-align: top;
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body tbody tr:hover td {
+  background: var(--surface);
+}
+
+/* ── Images ───────────────────────────────────────────────────────────────── */
+.markdown-body img {
+  max-width:     100%;
+  height:        auto;
+  border-radius: var(--radius);
+  border:        1px solid var(--border-dim);
+}
+
+/* ── Footnotes ────────────────────────────────────────────────────────────── */
+.markdown-body .footnote-ref a {
+  font-size:      var(--font-size-xs);
+  color:          var(--primary-muted);
+  vertical-align: super;
+  text-decoration: none;
+}
+
+.markdown-body .footnote-ref a:hover {
+  color: var(--primary);
+}
+
+.markdown-body section.footnotes {
+  margin-top:   var(--space-8);
+  padding-top:  var(--space-4);
+  border-top:   1px solid var(--border);
+  font-size:    var(--font-size-sm);
+  color:        var(--prose-footnote);
+}
+
+.markdown-body .footnotes ol {
+  padding-left: var(--space-5);
+}
+
+.markdown-body .footnotes li {
+  margin-bottom: var(--space-2);
+}
+
+/* ── Details / summary ────────────────────────────────────────────────────── */
+.markdown-body details {
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  padding:       var(--space-3);
+  margin-bottom: var(--space-4);
+  background:    var(--surface);
+}
+
+.markdown-body summary {
+  cursor:      pointer;
+  font-weight: var(--font-weight-medium);
+  color:       var(--primary);
+}
+
+.markdown-body details[open] summary {
+  margin-bottom: var(--space-3);
+}
