@@ -353,4 +353,28 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   bee055b fix(stability): remove syntect from render path to stop crashes
   b68194e feat(renderer): full-featured markdown renderer + font system
   5b7d5fb fix(desktop): configure window size and disable always-on-top
+## 2026-04-15 — main (6t 247tc 1m25s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** `dx serve` has hot-reload — the CSS change will apply immediately. Hit Edit on any note and you'll get the split pane. What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 38685772 in / 158537 out tokens across 260 turns
+
+**Commits:**
+  fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
+  bee055b fix(stability): remove syntect from render path to stop crashes
+  b68194e feat(renderer): full-featured markdown renderer + font system
+## 2026-04-15 — main (4t 250tc 1m1s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. Click Edit on any note.
+
+**Model:** anthropic:claude-sonnet-4-6 — 39655288 in / 158900 out tokens across 264 turns
+
+**Commits:**
+  fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
+  bee055b fix(stability): remove syntect from render path to stop crashes
+  b68194e feat(renderer): full-featured markdown renderer + font system
 

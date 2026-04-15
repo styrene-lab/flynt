@@ -173,10 +173,32 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
                                 }
                             },
                             EditMode::Edit => rsx! {
+                                // Wire scroll sync after this render.
+                                { document::eval(r#"
+                                    (function() {
+                                        const ed = document.getElementById('codex-editor');
+                                        const pr = document.getElementById('codex-preview');
+                                        if (!ed || !pr || ed._codex_bound) return;
+                                        ed._codex_bound = true;
+                                        let busy = false;
+                                        ed.addEventListener('scroll', function() {
+                                            if (busy) return; busy = true;
+                                            const pct = ed.scrollTop / Math.max(1, ed.scrollHeight - ed.clientHeight);
+                                            pr.scrollTop = pct * (pr.scrollHeight - pr.clientHeight);
+                                            requestAnimationFrame(() => busy = false);
+                                        });
+                                        pr.addEventListener('scroll', function() {
+                                            if (busy) return; busy = true;
+                                            const pct = pr.scrollTop / Math.max(1, pr.scrollHeight - pr.clientHeight);
+                                            ed.scrollTop = pct * (ed.scrollHeight - ed.clientHeight);
+                                            requestAnimationFrame(() => busy = false);
+                                        });
+                                    })();
+                                "#); }
                                 div { class: "editor-split",
-                                    // ── Left: raw markdown ───────────────────────────────
                                     div { class: "editor-pane",
                                         textarea {
+                                            id: "codex-editor",
                                             class: "editor-textarea",
                                             value: "{edit_body}",
                                             oninput: move |e| *edit_body.write() = e.value(),
@@ -202,10 +224,10 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
                                             },
                                         }
                                     }
-                                    // ── Divider ─────────────────────────────────────
                                     div { class: "editor-divider" }
-                                    // ── Right: live preview ──────────────────────────
-                                    div { class: "preview-pane",
+                                    div {
+                                        id: "codex-preview",
+                                        class: "preview-pane",
                                         div {
                                             class: "markdown-body",
                                             dangerous_inner_html: "{render_html(&edit_body.read())}",
