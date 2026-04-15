@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use crate::{
+    bootstrap::bootstrap_from_env,
     components::{AgentRail, Sidebar, Toolbar},
     state::{Route, SyncStatus},
     views::{GraphView, KanbanView, NotesView, SettingsView},
@@ -7,6 +8,10 @@ use crate::{
 
 #[component]
 pub fn App() -> Element {
+    // Bootstrap once: opens vault, reindexes, starts file watcher.
+    // use_context_provider only runs on first render.
+    use_context_provider(bootstrap_from_env);
+
     let active_route = use_signal(|| Route::Notes);
     let mut show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);

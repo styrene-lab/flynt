@@ -1,0 +1,17 @@
+/unshackle
+let's begin designing Codex, a pure-rust Dioxus app entirely designed to track work tasking and documents/notes. Think "obsidian and kanban" with full agent-surface tooling exposed for Omegon.  This will be a macos application and allow syncing via iCloud or standard upstream Git Repo for plain text, S3 compatible cloud or filesystems should be straightforward to add as a persistence layer for the internal state DB and the files themselves.
+/login
+let's begin designing Codex, a pure-rust Dioxus app entirely designed to track work tasking and documents/notes. Think "obsidian and kanban" with full agent-surface tooling exposed for Omegon.  This will be a macos application and allow syncing via iCloud or standard upstream Git Repo for plain text, S3 compatible cloud or filesystems should be straightforward to add as a persistence layer for the internal state DB and the files themselves.
+/logout anthropic
+/login
+/login
+let's begin designing Codex, a pure-rust Dioxus app entirely designed to track work tasking and documents/notes. Think "obsidian and kanban" with full agent-surface tooling exposed for Omegon.  This will be a macos application and allow syncing via iCloud or standard upstream Git Repo for plain text, S3 compatible cloud or filesystems should be straightforward to add as a persistence layer for the internal state DB and the files themselves.
+use the auspex repo above us as an example if needed
+once you're finished with that, let's get this set up into proper design tree nodes and begin architecting the codex system further.
+1. We need both I think, the primary key must be unique and indexable, but path-slugs are not that. The path-slug can be AN identifier, but can't be the PK.
+2. Look at Obsidian and lean into that as a reference for our MVP. Most of what we're doing will be markdown based and knowledge graph based, so this is an easy win.
+3. Definitely, we need this to be flexible and configurable, every knob should be surfaced to make the controls easy to design and implement later.
+4. Yeah let's see if they work before choosing bad UX as a necessity.
+5. plan for multi-user now
+6. codex should write the config, and we should be able to spawn a nice little agent sidebar within the app, which is just an Omegon instance behind the scenes that has access to the Codex tooling surface
+parallel

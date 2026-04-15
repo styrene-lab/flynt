@@ -55,4 +55,16 @@ Append-only record of agent sessions. Read recent entries for context.
   31aa618 feat(core): stable document identity via frontmatter UUID
   ba41820 docs: add architecture overview with decisions and open questions
   0cdb1cc feat: initial workspace scaffold
+## 2026-04-15 — main (37t 114tc 7m28s)
+
+**Task:** let's begin designing Codex, a pure-rust Dioxus app entirely designed to track work tasking and documents/notes. Think "obsidian and kanban" with full agent-surface tooling exposed for Omegon.  This w
+
+**Outcome:** Working tree is clean — everything is already committed. The last commit `c21b698` captured all three tracks (launch integration, UI shell, git sync backend). Nothing to commit.
+
+**Model:** anthropic:claude-sonnet-4-6 — 7478582 in / 57602 out tokens across 114 turns
+
+**Commits:**
+  c21b698 feat: three-track parallel implementation
+  09f9153 chore: stub files for cleave scope
+  31aa618 feat(core): stable document identity via frontmatter UUID
 
