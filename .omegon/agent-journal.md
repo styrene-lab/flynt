@@ -34,4 +34,25 @@ Append-only record of agent sessions. Read recent entries for context.
 **Commits:**
   ba41820 docs: add architecture overview with decisions and open questions
   0cdb1cc feat: initial workspace scaffold
+## 2026-04-15 — main (11t 79tc 2m41s)
+
+**Task:** let's begin designing Codex, a pure-rust Dioxus app entirely designed to track work tasking and documents/notes. Think "obsidian and kanban" with full agent-surface tooling exposed for Omegon.  This w
+
+**Outcome:** Here's the current state of the design and where to go next.
+
+---
+
+## Decisions recorded (all 6 resolved)
+
+| # | Decision | Status |
+|---|---|---|
+| 1 | UUID PK + path-slug secondary + UUID embedded in frontmatter | ✅ **Implemented** |
+| 2 | Obsidian split-pane, CodeMirror 6 via JS bridge + comrak p
+
+**Model:** anthropic:claude-sonnet-4-6 — 4161592 in / 39695 out tokens across 77 turns
+
+**Commits:**
+  31aa618 feat(core): stable document identity via frontmatter UUID
+  ba41820 docs: add architecture overview with decisions and open questions
+  0cdb1cc feat: initial workspace scaffold
 

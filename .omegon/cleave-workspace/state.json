@@ -1,0 +1,135 @@
+{
+  "runId": "clv-pl94qbf2-ag5f",
+  "directive": "Implement three parallel tracks for Codex: (A) Vault launch integration — Dioxus.toml, full macOS main.rs mirroring auspex, Vault::open reindex + FSEvents watcher feeding a tokio broadcast channel for signal invalidation; (B) UI shell — three-column layout sidebar/main/agent-rail, route enum, Notes/Kanban/Graph/Settings stub views wired to routing; (C) Git sync backend — git2-backed SyncBackend impl: auto-commit debounced 30s, pull, conflict detection stored in DB conflicts table.",
+  "repoPath": "/Users/cwilson/workspace/black-meridian/codex",
+  "workspacePath": "/Users/cwilson/workspace/black-meridian/codex/.omegon/cleave-workspace",
+  "supervisorToken": "supv-18a6896a697d8db0",
+  "children": [
+    {
+      "childId": 0,
+      "label": "track-a-launch",
+      "description": "Implement vault launch integration for codex-app. Tasks: (1) Create Dioxus.toml at workspace root with bundle identifier com.black-meridian.codex, macOS category productivity. (2) Rewrite crates/codex-app/src/main.rs to match auspex pattern: muda menu (Codex menu with Settings + Quit, Edit menu with standard items), tao macOS window extensions (titlebar_transparent=false, fullsize_content_view=false), window size 1440x900 min 900x600, embed assets/main.css via include_str! in custom_head, LaunchBuilder::desktop().with_cfg(...).with_context(bootstrap).launch(app::App). (3) Create crates/codex-app/src/bootstrap.rs: reads CODEX_VAULT env var or defaults to ~/Documents/Codex, calls Vault::open, runs reindex, spawns a tokio task that loops on VaultWatcher::rx and sends on a tokio::sync::broadcast::Sender<VaultEvent> (re-exported from codex-store). (4) Add broadcast channel re-export to codex-store/src/lib.rs. (5) Create assets/main.css with minimal dark theme stub matching Alpharius palette (#06080e background, #c4d8e4 foreground, #2ab4c8 accent). (6) Cargo.toml for codex-app: add dioxus desktop feature flag.",
+      "scope": [
+        "Dioxus.toml",
+        "crates/codex-app/src/main.rs",
+        "crates/codex-app/src/bootstrap.rs",
+        "crates/codex-app/src/lib.rs",
+        "crates/codex-store/src/lib.rs",
+        "crates/codex-store/src/watcher.rs",
+        "crates/codex-app/Cargo.toml",
+        "assets/main.css"
+      ],
+      "dependsOn": [],
+      "status": "failed",
+      "error": "scope file(s) not accessible after submodule init: assets/main.css",
+      "branch": "cleave/0-track-a-launch",
+      "backend": "native",
+      "executeModel": "anthropic:claude-sonnet-4-5"
+    },
+    {
+      "childId": 1,
+      "label": "track-b-ui-shell",
+      "description": "Implement the three-column UI shell for codex-app. Tasks: (1) Define Route enum in crates/codex-app/src/state.rs: Notes, Kanban, Graph, Settings. (2) Rewrite crates/codex-app/src/app.rs: top-level App component renders a three-column layout — left sidebar (220px fixed), center main-content (flex-grow), right agent-rail (320px, hidden by default, toggled by show_agent signal). Use Dioxus signals for active_route: Signal<Route> and show_agent: Signal<bool>. (3) Create crates/codex-app/src/components/sidebar.rs: file tree section listing document metas, boards section listing board names, nav icons for Notes/Kanban/Graph/Settings. Clicking items sets active_route signal. (4) Create crates/codex-app/src/components/agent_rail.rs: right panel stub with header 'Omegon' and a textarea for chat input placeholder. Toggled by Cmd+Shift+A (keyboard shortcut via onkeydown on document). (5) Create crates/codex-app/src/components/toolbar.rs: top bar with app name, sync status indicator (Idle/Syncing/Conflict), and agent toggle button. (6) Flesh out crates/codex-app/src/views/notes.rs, kanban.rs, and add graph.rs and settings.rs stubs. Each view gets a distinct placeholder with correct CSS class. (7) Update crates/codex-app/src/lib.rs to export all new modules.",
+      "scope": [
+        "crates/codex-app/src/app.rs",
+        "crates/codex-app/src/state.rs",
+        "crates/codex-app/src/lib.rs",
+        "crates/codex-app/src/components/mod.rs",
+        "crates/codex-app/src/components/sidebar.rs",
+        "crates/codex-app/src/components/toolbar.rs",
+        "crates/codex-app/src/components/agent_rail.rs",
+        "crates/codex-app/src/views/mod.rs",
+        "crates/codex-app/src/views/notes.rs",
+        "crates/codex-app/src/views/kanban.rs",
+        "crates/codex-app/src/views/graph.rs",
+        "crates/codex-app/src/views/settings.rs"
+      ],
+      "dependsOn": [
+        "track-a-launch"
+      ],
+      "status": "failed",
+      "error": "Child exited with code 1\n--- last 30 stderr lines ---\n\u001b[2m2026-04-15T13:03:13.325381Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"memory\"\n\u001b[2m2026-04-15T13:03:13.325513Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::lifecycle::context\u001b[0m\u001b[2m:\u001b[0m Lifecycle context initialized \u001b[3mnodes\u001b[0m\u001b[2m=\u001b[0m2 \u001b[3mchanges\u001b[0m\u001b[2m=\u001b[0m0\n\u001b[2m2026-04-15T13:03:13.325564Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"lifecycle\"\n\u001b[2m2026-04-15T13:03:13.325579Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"cleave\"\n\u001b[2m2026-04-15T13:03:13.325582Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"codescan\"\n\u001b[2m2026-04-15T13:03:13.325594Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"delegate\"\n\u001b[2m2026-04-15T13:03:13.325607Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"session-log\"\n\u001b[2m2026-04-15T13:03:13.325610Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"usage\"\n\u001b[2m2026-04-15T13:03:13.325611Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"clipboard\"\n\u001b[2m2026-04-15T13:03:13.325614Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"model-budget\"\n\u001b[2m2026-04-15T13:03:13.325616Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"manage-tools\"\n\u001b[2m2026-04-15T13:03:13.325619Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"auth\"\n\u001b[2m2026-04-15T13:03:13.326020Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"persona\"\n\u001b[2m2026-04-15T13:03:13.326026Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"harness-settings\"\n\u001b[2m2026-04-15T13:03:13.326028Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"auto-compact\"\n\u001b[2m2026-04-15T13:03:13.326031Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"terminal-title\"\n\u001b[2m2026-04-15T13:03:13.326035Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"version-check\"\n\u001b[2m2026-04-15T13:03:13.326040Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m registered feature \u001b[3mfeature\u001b[0m\u001b[2m=\u001b[0m\"context-provider\"\n\u001b[2m2026-04-15T13:03:13.326145Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2momegon::setup\u001b[0m\u001b[2m:\u001b[0m failed to spawn extension \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"vox\" \u001b[3mpath\u001b[0m\u001b[2m=\u001b[0m/Users/cwilson/.omegon/extensions/vox \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mnative extension binary not found: target/release/vox (resolved to /Users/cwilson/.omegon/extensions/vox/target/release/vox)\n\u001b[2m2026-04-15T13:03:13.326205Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2momegon::setup\u001b[0m\u001b[2m:\u001b[0m failed to spawn extension \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"scribe-rpc\" \u001b[3mpath\u001b[0m\u001b[2m=\u001b[0m/Users/cwilson/.omegon/extensions/scribe-rpc \u001b[3merror\u001b[0m\u001b[2m=\u001b[0mextension 'scribe-rpc' requires secrets that could not be resolved: GITHUB_TOKEN. Configure them with: omegon secret set GITHUB_TOKEN\n\u001b[2m2026-04-15T13:03:13.326377Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::bus\u001b[0m\u001b[2m:\u001b[0m event bus finalized \u001b[3mfeatures\u001b[0m\u001b[2m=\u001b[0m22 \u001b[3mtools\u001b[0m\u001b[2m=\u001b[0m57 \u001b[3mcommands\u001b[0m\u001b[2m=\u001b[0m14 \u001b[3mtool_names\u001b[0m\u001b[2m=\u001b[0m[\"bash\", \"read\", \"write\", \"edit\", \"change\", \"speculate_start\", \"speculate_check\", \"speculate_commit\", \"speculate_rollback\", \"commit\", \"whoami\", \"chronos\", \"serve\", \"web_search\", \"ask_local_model\", \"list_local_models\", \"manage_ollama\", \"view\", \"render_diagram\", \"generate_image_local\", \"memory_store\", \"memory_recall\", \"memory_query\", \"memory_archive\", \"memory_supersede\", \"memory_connect\", \"memory_focus\", \"memory_release\", \"memory_episodes\", \"memory_compact\", \"memory_search_archive\", \"memory_ingest_lifecycle\", \"design_tree\", \"design_tree_update\", \"openspec_manage\", \"lifecycle_doctor\", \"cleave_assess\", \"cleave_run\", \"codebase_search\", \"codebase_index\", \"delegate\", \"delegate_result\", \"delegate_status\", \"session_log\", \"set_model_tier\", \"switch_to_offline_driver\", \"set_thinking_level\", \"manage_tools\", \"auth_status\", \"switch_persona\", \"switch_tone\", \"list_personas\", \"harness_settings\", \"context_status\", \"request_context\", \"context_compact\", \"context_clear\"]\n\u001b[2m2026-04-15T13:03:13.326385Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::setup\u001b[0m\u001b[2m:\u001b[0m default tool profile applied — use manage_tools to re-enable \u001b[3mdisabled\u001b[0m\u001b[2m=\u001b[0m6 \u001b[3mslim\u001b[0m\u001b[2m=\u001b[0mfalse\n\u001b[2m2026-04-15T13:03:13.368135Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::setup\u001b[0m\u001b[2m:\u001b[0m harness status assembled \u001b[3mproviders\u001b[0m\u001b[2m=\u001b[0m5 \u001b[3mmcp\u001b[0m\u001b[2m=\u001b[0m0 \u001b[3minference\u001b[0m\u001b[2m=\u001b[0m1 \u001b[3mcontainer\u001b[0m\u001b[2m=\u001b[0mtrue \u001b[3mfacts\u001b[0m\u001b[2m=\u001b[0m6 \u001b[3mweb_auth_mode\u001b[0m\u001b[2m=\u001b[0m\"ephemeral-bearer\" \u001b[3mweb_auth_source\u001b[0m\u001b[2m=\u001b[0m\"generated\"\n\u001b[2m2026-04-15T13:03:13.369187Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon\u001b[0m\u001b[2m:\u001b[0m bench/headless provider resolution \u001b[3mrequested_model\u001b[0m\u001b[2m=\u001b[0manthropic:claude-sonnet-4-5 \u001b[3mrequested_provider\u001b[0m\u001b[2m=\u001b[0manthropic \u001b[3mresolved_provider\u001b[0m\u001b[2m=\u001b[0m\"anthropic\"\n\u001b[2m2026-04-15T13:03:13.369329Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon\u001b[0m\u001b[2m:\u001b[0m using native LLM provider\n\u001b[2m2026-04-15T13:03:13.369574Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon\u001b[0m\u001b[2m:\u001b[0m ── Turn 1 ──\n\u001b[2m2026-04-15T13:03:13.605587Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2momegon::providers\u001b[0m\u001b[2m:\u001b[0m Anthropic API error \u001b[3mstatus\u001b[0m\u001b[2m=\u001b[0m401 Unauthorized \u001b[3merror_body\u001b[0m\u001b[2m=\u001b[0m{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"Invalid authentication credentials\"},\"request_id\":\"req_011Ca5buUVvHT4SUPeie1VHG\"} \u001b[3mresponse_headers\u001b[0m\u001b[2m=\u001b[0m{\"date\": \"Wed, 15 Apr 2026 13:03:13 GMT\", \"content-type\": \"application/json\", \"x-should-retry\": \"false\", \"request-id\": \"req_011Ca5buUVvHT4SUPeie1VHG\", \"strict-transport-security\": \"max-age=31536000; includeSubDomains; preload\", \"server\": \"cloudflare\", \"x-envoy-upstream-service-time\": \"42\", \"x-robots-tag\": \"none\", \"vary\": \"Accept-Encoding\", \"server-timing\": \"x-originResponse;dur=44\", \"cf-cache-status\": \"DYNAMIC\", \"set-cookie\": \"_cfuvid=a2wBimISBnsaF4CIZ4.ma2_GsZ8xQ9ePArgCr0B.urM-1776258193.5077345-1.0.1.1-tr4ugoh03NDWJUa3mxNBMgUKLRYWC2_Brt1OzR._ugo; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com\", \"content-security-policy\": \"default-src 'none'; frame-ancestors 'none'\", \"cf-ray\": \"9ecb262d6fddc036-IAD\"} \u001b[3mbody_size\u001b[0m\u001b[2m=\u001b[0m108555 \u001b[3mtool_count\u001b[0m\u001b[2m=\u001b[0m51 \u001b[3msystem_len\u001b[0m\u001b[2m=\u001b[0m79287 \u001b[3mis_oauth\u001b[0m\u001b[2m=\u001b[0mtrue\n\u001b[2m2026-04-15T13:03:13.606240Z\u001b[0m \u001b[32m INFO\u001b[0m \u001b[2momegon::conversation\u001b[0m\u001b[2m:\u001b[0m session saved \u001b[3mpath\u001b[0m\u001b[2m=\u001b[0m/Users/cwilson/workspace/black-meridian/codex/.omegon/cleave-workspace/1-wt-track-b-ui-shell/.cleave-session.json \u001b[3mturns\u001b[0m\u001b[2m=\u001b[0m1\n\u001b[2m2026-04-15T13:03:13.858011Z\u001b[0m \u001b[33m WARN\u001b[0m \u001b[2momegon\u001b[0m\u001b[2m:\u001b[0m headless benchmark event-printer task did not drain before shutdown; aborting it\nError: LLM error: Anthropic 401 Unauthorized: Invalid authentication credentials\n---",
+      "branch": "cleave/1-track-b-ui-shell",
+      "backend": "native",
+      "executeModel": "anthropic:claude-sonnet-4-5",
+      "pid": 97426,
+      "startedAtUnixMs": 1776258193306,
+      "lastActivityUnixMs": 1776258193306,
+      "adoptionWorktreePath": "/Users/cwilson/workspace/black-meridian/codex/.omegon/cleave-workspace/1-wt-track-b-ui-shell",
+      "adoptionModel": "anthropic:claude-sonnet-4-5",
+      "supervisorToken": "supv-18a6896a697d8db0"
+    },
+    {
+      "childId": 2,
+      "label": "track-c-git-sync",
+      "description": "Implement the git2-backed SyncBackend for codex-store. Tasks: (1) Add git2 dependency to crates/codex-store/Cargo.toml. (2) Create crates/codex-store/src/sync/mod.rs re-exporting git module. (3) Create crates/codex-store/src/sync/git.rs implementing the SyncBackend trait from codex-core: struct GitSync { vault_root: PathBuf, remote: String, branch: String }. Implement: status() checks for uncommitted changes and unpushed commits using git2::Repository::open; pull() does fetch + merge (fast-forward only, conflict detection on non-FF); push() does push to remote with stored credentials (ssh-agent or credential helper via git2); sync() calls pull then push; auto_commit(message) stages all changes (git add -A equivalent via git2 index) and commits with author Codex <codex@local> and provided message. (4) Add a conflicts table to the SQLite SCHEMA in sqlite.rs: id TEXT PK, path TEXT, ours TEXT, theirs TEXT, base TEXT, detected_at TEXT. (5) Implement conflict detection: when merge is not fast-forward, detect conflicted files via git2 index entries with CONFLICTED flag, insert rows into conflicts table, return SyncResult with conflicts vec. (6) Add get_conflicts and resolve_conflict methods to SqliteStore (resolve deletes the row). (7) Update codex-store/src/lib.rs to pub mod sync.",
+      "scope": [
+        "crates/codex-store/src/sync/mod.rs",
+        "crates/codex-store/src/sync/git.rs",
+        "crates/codex-store/src/sqlite.rs",
+        "crates/codex-store/src/lib.rs",
+        "crates/codex-store/Cargo.toml"
+      ],
+      "dependsOn": [],
+      "status": "failed",
+      "error": "scope file(s) not accessible after submodule init: crates/codex-store/src/sync/mod.rs, crates/codex-store/src/sync/git.rs",
+      "branch": "cleave/2-track-c-git-sync",
+      "backend": "native",
+      "executeModel": "anthropic:claude-sonnet-4-5"
+    }
+  ],
+  "plan": {
+    "children": [
+      {
+        "depends_on": [],
+        "description": "Implement vault launch integration for codex-app. Tasks: (1) Create Dioxus.toml at workspace root with bundle identifier com.black-meridian.codex, macOS category productivity. (2) Rewrite crates/codex-app/src/main.rs to match auspex pattern: muda menu (Codex menu with Settings + Quit, Edit menu with standard items), tao macOS window extensions (titlebar_transparent=false, fullsize_content_view=false), window size 1440x900 min 900x600, embed assets/main.css via include_str! in custom_head, LaunchBuilder::desktop().with_cfg(...).with_context(bootstrap).launch(app::App). (3) Create crates/codex-app/src/bootstrap.rs: reads CODEX_VAULT env var or defaults to ~/Documents/Codex, calls Vault::open, runs reindex, spawns a tokio task that loops on VaultWatcher::rx and sends on a tokio::sync::broadcast::Sender<VaultEvent> (re-exported from codex-store). (4) Add broadcast channel re-export to codex-store/src/lib.rs. (5) Create assets/main.css with minimal dark theme stub matching Alpharius palette (#06080e background, #c4d8e4 foreground, #2ab4c8 accent). (6) Cargo.toml for codex-app: add dioxus desktop feature flag.",
+        "label": "track-a-launch",
+        "scope": [
+          "Dioxus.toml",
+          "crates/codex-app/src/main.rs",
+          "crates/codex-app/src/bootstrap.rs",
+          "crates/codex-app/src/lib.rs",
+          "crates/codex-store/src/lib.rs",
+          "crates/codex-store/src/watcher.rs",
+          "crates/codex-app/Cargo.toml",
+          "assets/main.css"
+        ]
+      },
+      {
+        "depends_on": [
+          "track-a-launch"
+        ],
+        "description": "Implement the three-column UI shell for codex-app. Tasks: (1) Define Route enum in crates/codex-app/src/state.rs: Notes, Kanban, Graph, Settings. (2) Rewrite crates/codex-app/src/app.rs: top-level App component renders a three-column layout — left sidebar (220px fixed), center main-content (flex-grow), right agent-rail (320px, hidden by default, toggled by show_agent signal). Use Dioxus signals for active_route: Signal<Route> and show_agent: Signal<bool>. (3) Create crates/codex-app/src/components/sidebar.rs: file tree section listing document metas, boards section listing board names, nav icons for Notes/Kanban/Graph/Settings. Clicking items sets active_route signal. (4) Create crates/codex-app/src/components/agent_rail.rs: right panel stub with header 'Omegon' and a textarea for chat input placeholder. Toggled by Cmd+Shift+A (keyboard shortcut via onkeydown on document). (5) Create crates/codex-app/src/components/toolbar.rs: top bar with app name, sync status indicator (Idle/Syncing/Conflict), and agent toggle button. (6) Flesh out crates/codex-app/src/views/notes.rs, kanban.rs, and add graph.rs and settings.rs stubs. Each view gets a distinct placeholder with correct CSS class. (7) Update crates/codex-app/src/lib.rs to export all new modules.",
+        "label": "track-b-ui-shell",
+        "scope": [
+          "crates/codex-app/src/app.rs",
+          "crates/codex-app/src/state.rs",
+          "crates/codex-app/src/lib.rs",
+          "crates/codex-app/src/components/mod.rs",
+          "crates/codex-app/src/components/sidebar.rs",
+          "crates/codex-app/src/components/toolbar.rs",
+          "crates/codex-app/src/components/agent_rail.rs",
+          "crates/codex-app/src/views/mod.rs",
+          "crates/codex-app/src/views/notes.rs",
+          "crates/codex-app/src/views/kanban.rs",
+          "crates/codex-app/src/views/graph.rs",
+          "crates/codex-app/src/views/settings.rs"
+        ]
+      },
+      {
+        "depends_on": [],
+        "description": "Implement the git2-backed SyncBackend for codex-store. Tasks: (1) Add git2 dependency to crates/codex-store/Cargo.toml. (2) Create crates/codex-store/src/sync/mod.rs re-exporting git module. (3) Create crates/codex-store/src/sync/git.rs implementing the SyncBackend trait from codex-core: struct GitSync { vault_root: PathBuf, remote: String, branch: String }. Implement: status() checks for uncommitted changes and unpushed commits using git2::Repository::open; pull() does fetch + merge (fast-forward only, conflict detection on non-FF); push() does push to remote with stored credentials (ssh-agent or credential helper via git2); sync() calls pull then push; auto_commit(message) stages all changes (git add -A equivalent via git2 index) and commits with author Codex <codex@local> and provided message. (4) Add a conflicts table to the SQLite SCHEMA in sqlite.rs: id TEXT PK, path TEXT, ours TEXT, theirs TEXT, base TEXT, detected_at TEXT. (5) Implement conflict detection: when merge is not fast-forward, detect conflicted files via git2 index entries with CONFLICTED flag, insert rows into conflicts table, return SyncResult with conflicts vec. (6) Add get_conflicts and resolve_conflict methods to SqliteStore (resolve deletes the row). (7) Update codex-store/src/lib.rs to pub mod sync.",
+        "label": "track-c-git-sync",
+        "scope": [
+          "crates/codex-store/src/sync/mod.rs",
+          "crates/codex-store/src/sync/git.rs",
+          "crates/codex-store/src/sqlite.rs",
+          "crates/codex-store/src/lib.rs",
+          "crates/codex-store/Cargo.toml"
+        ]
+      }
+    ],
+    "default_model": "anthropic:claude-sonnet-4-5",
+    "rationale": "Three independent implementation areas: launch wiring (A), UI structure (B depends on A for bootstrap context), git backend (C fully independent). B depends on A only for the AppContext type from bootstrap."
+  }
+}
