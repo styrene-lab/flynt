@@ -30,7 +30,13 @@ pub fn App() -> Element {
     let selected_doc: Signal<Option<DocumentId>> = use_signal(|| None);
 
     rsx! {
-        document::Stylesheet { href: asset!("/assets/app.css") }
+        document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
+        document::Stylesheet { href: asset!("/assets/styles/reset.css") }
+        document::Stylesheet { href: asset!("/assets/styles/layout.css") }
+        document::Stylesheet { href: asset!("/assets/styles/components.css") }
+        document::Stylesheet { href: asset!("/assets/styles/markdown.css") }
+        document::Stylesheet { href: asset!("/assets/styles/settings.css") }
+        document::Stylesheet { href: asset!("/assets/styles/kanban.css") }
 
         div {
             class: "codex-shell {font_size.read().css_class()}",

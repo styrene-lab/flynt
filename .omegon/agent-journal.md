@@ -232,4 +232,18 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   b1b9c27 chore: unpin dioxus, update dx CLI to 0.7.5
   b8da5a3 chore: pin dioxus to =0.7.3 to match installed dx CLI version
   01927e4 chore: clean up dead deps, unused imports, and lint warnings
+## 2026-04-15 — main (10t 158tc 1m30s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Done. `dx serve --platform desktop --package codex-app` will now open the Black Meridian vault by default without any env var. The `.env` is gitignored so it stays machine-local.
+
+What are you seeing in the UI right now — anything broken or missing that needs addressing before we build features?
+
+**Model:** anthropic:claude-sonnet-4-6 — 20325871 in / 123139 out tokens across 164 turns
+
+**Commits:**
+  dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
+  b1b9c27 chore: unpin dioxus, update dx CLI to 0.7.5
+  b8da5a3 chore: pin dioxus to =0.7.3 to match installed dx CLI version
 
