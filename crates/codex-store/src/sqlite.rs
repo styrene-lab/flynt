@@ -79,6 +79,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conflicts (
+    id          TEXT PRIMARY KEY,
+    path        TEXT NOT NULL,
+    ours        TEXT NOT NULL DEFAULT '',
+    theirs      TEXT NOT NULL DEFAULT '',
+    detected_at TEXT NOT NULL
+);
 "#;
 
 // ── VaultStore implementation ─────────────────────────────────────────────────

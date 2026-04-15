@@ -5,15 +5,16 @@ use std::{
     sync::mpsc,
 };
 
-pub enum VaultEvent {
-    Modified(PathBuf),
-    Created(PathBuf),
-    Deleted(PathBuf),
+#[derive(Debug, Clone)]
+pub enum VaultChangeEvent {
+    FileModified(PathBuf),
+    FileCreated(PathBuf),
+    FileDeleted(PathBuf),
 }
 
 pub struct VaultWatcher {
     _watcher: RecommendedWatcher,
-    pub rx: mpsc::Receiver<VaultEvent>,
+    pub rx: mpsc::Receiver<VaultChangeEvent>,
 }
 
 impl VaultWatcher {
@@ -24,18 +25,12 @@ impl VaultWatcher {
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
             let Ok(event) = res else { return };
             for path in event.paths {
-                // Skip .codex internals and non-markdown files
-                if path.starts_with(&codex_dir) {
-                    continue;
-                }
-                let is_md = path.extension().map(|e| e == "md").unwrap_or(false);
-                if !is_md {
-                    continue;
-                }
+                if path.starts_with(&codex_dir) { continue; }
+                if !path.extension().map(|e| e == "md").unwrap_or(false) { continue; }
                 let evt = match event.kind {
-                    notify::EventKind::Create(_) => VaultEvent::Created(path),
-                    notify::EventKind::Modify(_) => VaultEvent::Modified(path),
-                    notify::EventKind::Remove(_) => VaultEvent::Deleted(path),
+                    notify::EventKind::Create(_) => VaultChangeEvent::FileCreated(path),
+                    notify::EventKind::Modify(_) => VaultChangeEvent::FileModified(path),
+                    notify::EventKind::Remove(_) => VaultChangeEvent::FileDeleted(path),
                     _ => continue,
                 };
                 let _ = tx.send(evt);

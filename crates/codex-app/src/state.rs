@@ -1,24 +1,18 @@
-use codex_core::models::BoardId;
-use codex_store::vault::Vault;
-use std::sync::Arc;
+use dioxus::prelude::*;
 
-/// Top-level application state passed as Dioxus context.
-#[derive(Clone)]
-pub struct AppState {
-    pub vault: Arc<Vault>,
-    pub active_view: ActiveView,
-    pub selected_doc: Option<String>,
-    pub selected_board: Option<BoardId>,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum ActiveView {
+#[derive(Clone, PartialEq, Debug, Default)]
+pub enum Route {
+    #[default]
     Notes,
     Kanban,
-    Search,
+    Graph,
     Settings,
 }
 
-impl Default for ActiveView {
-    fn default() -> Self { Self::Notes }
+#[derive(Clone, PartialEq, Debug, Default)]
+pub enum SyncStatus {
+    #[default]
+    Idle,
+    Syncing,
+    Conflict(usize),
 }

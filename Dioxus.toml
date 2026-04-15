@@ -1,0 +1,15 @@
+[application]
+out_dir = "dist"
+
+[bundle]
+identifier = "com.black-meridian.codex"
+publisher = "Black Meridian"
+icon = ["assets/icon.icns"]
+copyright = "© 2026 Black Meridian"
+category = "public.app-category.productivity"
+short_description = "Notes and task tracker with Omegon agent surface."
+long_description = """
+Codex is a markdown-native notes and kanban task manager for macOS.
+It exposes a full MCP tool surface to the Omegon AI harness, enabling
+the embedded agent sidebar to read, write, and search your vault.
+"""

@@ -15,4 +15,5 @@ thiserror = { workspace = true }
 rusqlite = { workspace = true }
 notify = { workspace = true }
 tracing = { workspace = true }
+git2 = { version = "0.20", default-features = false }
 walkdir = "2"

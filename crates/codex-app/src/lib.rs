@@ -1,4 +1,5 @@
 pub mod app;
+pub mod bootstrap;
 pub mod components;
 pub mod state;
 pub mod views;

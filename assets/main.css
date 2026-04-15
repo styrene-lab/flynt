@@ -1,0 +1,233 @@
+/* ── Alpharius palette ─────────────────────────────────────────────────────── */
+:root {
+  --bg:         #06080e;
+  --card-bg:    #0e1622;
+  --surface-bg: #131e2e;
+  --fg:         #c4d8e4;
+  --muted-fg:   #607888;
+  --dim-fg:     #344858;
+  --accent:     #2ab4c8;
+  --accent-muted: #1a8898;
+  --accent-bright: #6ecad8;
+  --border:     #1a3448;
+  --border-dim: #0e1e30;
+  --green:      #1ab878;
+  --red:        #c83030;
+  --orange:     #c86418;
+  --yellow:     #b89020;
+}
+
+/* ── Reset & base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dark scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent-muted); }
+
+/* ── App shell ─────────────────────────────────────────────────────────────── */
+.codex-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.codex-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Toolbar ───────────────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 40px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.app-title {
+  font-weight: 600;
+  color: var(--accent-bright);
+  letter-spacing: 0.05em;
+}
+
+.sync-status {
+  font-size: 12px;
+  color: var(--muted-fg);
+  margin-left: auto;
+}
+
+.sync-status.syncing { color: var(--yellow); }
+.sync-status.conflict { color: var(--red); }
+
+.agent-toggle {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.agent-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Sidebar ───────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-section { padding: 12px 0; }
+
+.sidebar-heading {
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted-fg);
+  text-transform: uppercase;
+}
+
+.sidebar-item {
+  display: block;
+  padding: 5px 16px;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.sidebar-item:hover { background: var(--surface-bg); }
+.sidebar-item.active { color: var(--accent); background: var(--surface-bg); }
+
+.sidebar-nav {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+}
+.nav-btn {
+  flex: 1;
+  text-align: center;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted-fg);
+  cursor: pointer;
+  font-size: 16px;
+}
+.nav-btn:hover { background: var(--surface-bg); color: var(--fg); }
+.nav-btn.active { color: var(--accent); }
+
+/* ── Main content ──────────────────────────────────────────────────────────── */
+.main-content {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+  padding: 24px;
+}
+
+/* ── Agent rail ────────────────────────────────────────────────────────────── */
+.agent-rail {
+  width: 320px;
+  min-width: 320px;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.agent-rail-header {
+  padding: 10px 16px;
+  font-weight: 600;
+  color: var(--accent-bright);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.agent-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-input {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+
+.agent-input textarea {
+  flex: 1;
+  resize: none;
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  height: 60px;
+}
+.agent-input textarea:focus { outline: none; border-color: var(--accent); }
+
+.agent-send {
+  padding: 6px 12px;
+  background: var(--accent-muted);
+  border: none;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 13px;
+  align-self: flex-end;
+}
+.agent-send:hover { background: var(--accent); }
+
+/* ── View stubs ────────────────────────────────────────────────────────────── */
+.view-notes, .view-kanban, .view-graph, .view-settings {
+  max-width: 900px;
+}
+
+.view-heading {
+  font-size: 22px;
+  color: var(--accent-bright);
+  margin-bottom: 16px;
+}
+
+.placeholder {
+  color: var(--muted-fg);
+  font-size: 13px;
+}
