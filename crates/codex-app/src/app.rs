@@ -30,14 +30,7 @@ pub fn App() -> Element {
     let selected_doc: Signal<Option<DocumentId>> = use_signal(|| None);
 
     rsx! {
-        // Fonts
-        document::Link { rel: "preconnect", href: "https://fonts.googleapis.com" }
-        document::Link { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "anonymous" }
-        document::Link {
-            rel: "stylesheet",
-            href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap",
-        }
-        // Syntax highlighting — highlight.js (base16/ocean dark theme)
+        // Syntax highlighting
         document::Link {
             rel: "stylesheet",
             href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/base16/ocean.min.css",

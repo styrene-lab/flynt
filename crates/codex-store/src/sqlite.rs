@@ -171,6 +171,21 @@ impl VaultStore for SqliteStore {
     }
 
     fn search_documents(&self, query: &str) -> Result<Vec<SearchResult>> {
+        // Build a prefix-match FTS5 query: "Sty Lab" → "Sty* Lab*"
+        let fts_query: String = query
+            .split_whitespace()
+            .filter(|t| !t.is_empty())
+            .map(|t| {
+                // Escape any FTS5 special chars that aren't alphanumeric
+                let safe: String = t.chars()
+                    .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { ' ' })
+                    .collect();
+                format!("{}*", safe.trim())
+            })
+            .filter(|t| t.len() > 1)
+            .collect::<Vec<_>>()
+            .join(" ");
+        if fts_query.is_empty() { return Ok(vec![]); }
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT d.id, d.path, d.title, snippet(documents_fts, 1, '', '', '…', 20)
@@ -179,7 +194,7 @@ impl VaultStore for SqliteStore {
                WHERE documents_fts MATCH ?1
                ORDER BY bm25(documents_fts) LIMIT 50"#,
         )?;
-        let results = stmt.query_map(params![query], |row| {
+        let results = stmt.query_map(params![fts_query], |row| {
             Ok(SearchResult {
                 document_id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
                 path: row.get::<_, String>(1)?.into(),

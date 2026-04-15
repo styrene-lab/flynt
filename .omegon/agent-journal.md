@@ -413,4 +413,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   49e1031 fix(renderer): safe hljs integration — no per-render eval storm
   1172698 feat(renderer): highlight.js syntax highlighting with auto-detect
   5fbbdca feat(editor): synchronized scroll between editor and preview panes
+## 2026-04-15 — main (9t 279tc 2m21s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. You should now see: scrollable preview, folder groups in the sidebar (collapsible with ▸/▾), and root-level docs at the top. What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 48094052 in / 177687 out tokens across 297 turns
+
+**Commits:**
+  f2049a7 fix(notes): restore scroll in preview mode; feat(sidebar): folder tree
+  49e1031 fix(renderer): safe hljs integration — no per-render eval storm
+  1172698 feat(renderer): highlight.js syntax highlighting with auto-detect
 
