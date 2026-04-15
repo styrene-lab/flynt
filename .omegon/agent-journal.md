@@ -67,4 +67,20 @@ Append-only record of agent sessions. Read recent entries for context.
   c21b698 feat: three-track parallel implementation
   09f9153 chore: stub files for cleave scope
   31aa618 feat(core): stable document identity via frontmatter UUID
+## 2026-04-15 — main (9t 13tc 2m6s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** **What just happened and where we are:**
+
+The vault/watcher/context was completely disconnected from the UI — `bootstrap_from_env` was defined but never called. Fixed. Now every view has a live path to the SQLite store.
+
+**Next design decision needed:** The views are still placeholders. The three op
+
+**Model:** anthropic:claude-sonnet-4-6 — 301328 in / 5551 out tokens across 9 turns
+
+**Commits:**
+  a341258 feat(app): wire AppContext into Dioxus context tree at launch
+  c21b698 feat: three-track parallel implementation
+  09f9153 chore: stub files for cleave scope
 

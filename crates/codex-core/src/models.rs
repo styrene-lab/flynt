@@ -47,7 +47,7 @@ pub struct Document {
 }
 
 /// Lightweight index record — used for listing without loading full content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DocumentMeta {
     pub id: DocumentId,
     pub path: PathBuf,

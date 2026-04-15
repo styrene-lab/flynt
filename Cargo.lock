@@ -321,6 +321,7 @@ dependencies = [
  "codex-agent",
  "codex-core",
  "codex-store",
+ "comrak",
  "dioxus",
  "dirs 5.0.1",
  "serde",

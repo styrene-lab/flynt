@@ -1,18 +1,45 @@
+use codex_core::{models::{DocumentId, DocumentMeta}, store::VaultStore};
 use dioxus::prelude::*;
-use crate::state::Route;
+use crate::{bootstrap::AppContext, state::Route};
 
 #[component]
-pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
+pub fn Sidebar(
+    mut active_route: Signal<Route>,
+    mut selected_doc: Signal<Option<DocumentId>>,
+) -> Element {
+    let ctx = use_context::<AppContext>();
+
+    // Load document list; re-runs whenever the component re-renders with a changed signal.
+    let docs = use_resource(move || {
+        let vault = ctx.vault.clone();
+        async move {
+            tokio::task::spawn_blocking(move || {
+                vault.store.list_documents().unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default()
+        }
+    });
+
     rsx! {
         nav { class: "sidebar",
+            // ── Document list ─────────────────────────────────────────────
             div { class: "sidebar-section",
                 span { class: "sidebar-heading", "Notes" }
-                span { class: "sidebar-item placeholder", "No documents yet" }
+                match &*docs.read() {
+                    None => rsx! { span { class: "sidebar-item muted", "Loading…" } },
+                    Some(list) if list.is_empty() => rsx! {
+                        span { class: "sidebar-item muted", "No documents yet" }
+                    },
+                    Some(list) => rsx! {
+                        for meta in list.iter().cloned() {
+                            DocItem { meta, selected_doc }
+                        }
+                    },
+                }
             }
-            div { class: "sidebar-section",
-                span { class: "sidebar-heading", "Boards" }
-                span { class: "sidebar-item placeholder", "No boards yet" }
-            }
+
+            // ── Nav buttons ───────────────────────────────────────────────
             div { class: "sidebar-nav",
                 button {
                     class: if *active_route.read() == Route::Notes { "nav-btn active" } else { "nav-btn" },
@@ -35,6 +62,20 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     "⚙️"
                 }
             }
+        }
+    }
+}
+
+/// Single document row in the sidebar list.
+#[component]
+fn DocItem(meta: DocumentMeta, mut selected_doc: Signal<Option<DocumentId>>) -> Element {
+    let is_active = selected_doc.read().as_ref() == Some(&meta.id);
+    let id = meta.id.clone();
+    rsx! {
+        button {
+            class: if is_active { "sidebar-item active" } else { "sidebar-item" },
+            onclick: move |_| *selected_doc.write() = Some(id.clone()),
+            span { class: "doc-title", "{meta.title}" }
         }
     }
 }
