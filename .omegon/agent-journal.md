@@ -208,4 +208,16 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   2c90a37 refactor(agent): replace MCP/rmcp with Omegon extension protocol
   5af3a71 feat: notes editor write mode, toolbar search, vault write methods
   83f9ad5 feat(kanban): full Kanban board — columns, drag-and-drop, inline add, archive
+## 2026-04-15 — main (29t 140tc 4m10s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** It's serving despite the warning — `dx` found the package on the second pass. The app should be running. Let me confirm it actually built:
+
+**Model:** anthropic:claude-sonnet-4-6 — 16572532 in / 120850 out tokens across 144 turns
+
+**Commits:**
+  b8da5a3 chore: pin dioxus to =0.7.3 to match installed dx CLI version
+  01927e4 chore: clean up dead deps, unused imports, and lint warnings
+  2c90a37 refactor(agent): replace MCP/rmcp with Omegon extension protocol
 
