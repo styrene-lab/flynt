@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 codex-core  = { workspace = true }
 codex-store = { workspace = true }
-codex-agent = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 anyhow      = { workspace = true }

@@ -1,5 +1,3 @@
-use dioxus::prelude::*;
-
 #[derive(Clone, PartialEq, Debug, Default)]
 pub enum Route {
     #[default]

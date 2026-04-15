@@ -1,4 +1,3 @@
-use anyhow::Result;
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::broadcast;

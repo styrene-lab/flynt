@@ -53,7 +53,7 @@ async fn create_board(ctx: AppContext, name: String) {
 #[component]
 pub fn KanbanView() -> Element {
     let ctx = use_context::<AppContext>();
-    let mut refresh = use_signal(|| 0_u64);
+    let refresh = use_signal(|| 0_u64);
 
     let boards = use_resource(move || {
         let _ = refresh(); // reactive dep
@@ -138,7 +138,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
         }
     });
 
-    let mut dragging: Signal<Option<TaskId>> = use_signal(|| None);
+    let dragging: Signal<Option<TaskId>> = use_signal(|| None);
 
     rsx! {
         div { class: "kanban-board",

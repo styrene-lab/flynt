@@ -4,7 +4,7 @@ use crate::{bootstrap::AppContext, state::{Route, SyncStatus}};
 
 #[component]
 pub fn Toolbar(
-    sync_status:  ReadOnlySignal<SyncStatus>,
+    sync_status:     Signal<SyncStatus>,
     mut show_agent: Signal<bool>,
     mut selected_doc: Signal<Option<DocumentId>>,
     mut active_route: Signal<Route>,

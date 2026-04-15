@@ -1,4 +1,4 @@
-use codex_core::models::{DocumentId, FontSizePreset};
+use codex_core::models::DocumentId;
 use dioxus::prelude::*;
 use crate::{
     bootstrap::bootstrap_from_env,
@@ -25,7 +25,7 @@ pub fn App() -> Element {
     });
 
     let active_route = use_signal(|| Route::Notes);
-    let mut show_agent = use_signal(|| false);
+    let show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
     let selected_doc: Signal<Option<DocumentId>> = use_signal(|| None);
 
@@ -37,7 +37,7 @@ pub fn App() -> Element {
             "data-theme": "{theme.read().0}",
 
             Toolbar {
-                sync_status: sync_status.read().clone(),
+                sync_status: sync_status,
                 show_agent,
                 selected_doc,
                 active_route,

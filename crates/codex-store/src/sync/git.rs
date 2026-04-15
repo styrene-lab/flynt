@@ -1,6 +1,6 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use codex_core::sync::{SyncBackend, SyncResult, SyncStatus};
-use git2::{IndexAddOption, ObjectType, Repository, ResetType, Signature};
+use git2::{IndexAddOption, Repository, Signature};
 use std::path::PathBuf;
 
 pub struct GitSync {

@@ -192,4 +192,20 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   5af3a71 feat: notes editor write mode, toolbar search, vault write methods
   83f9ad5 feat(kanban): full Kanban board — columns, drag-and-drop, inline add, archive
   4946dd2 feat(settings): fully-wired settings view with theme + sync config
+## 2026-04-15 — main (25t 111tc 4m39s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Done. The agent is now a proper Omegon extension:
+
+- **Install**: build `codex-agent`, drop the binary + `manifest.toml` into `~/.omegon/extensions/codex/`
+- **Discovery**: Omegon finds it at startup via manifest scan, validates `sdk_version = "0.15"`, calls `get_tools` as health check
+- **Tools sur
+
+**Model:** anthropic:claude-sonnet-4-6 — 12309964 in / 115310 out tokens across 115 turns
+
+**Commits:**
+  2c90a37 refactor(agent): replace MCP/rmcp with Omegon extension protocol
+  5af3a71 feat: notes editor write mode, toolbar search, vault write methods
+  83f9ad5 feat(kanban): full Kanban board — columns, drag-and-drop, inline add, archive
 

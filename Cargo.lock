@@ -412,7 +412,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "codex-agent",
  "codex-core",
  "codex-store",
  "comrak",
