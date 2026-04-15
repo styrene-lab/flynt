@@ -1,58 +1,44 @@
 ---
 task_id: 0
-label: track-a-agent-binary
-siblings: [1:track-b-notes-editor, 2:track-c-toolbar-search-sidebar-boards]
+label: tabs
+siblings: [1:search]
 ---
 
-# Task 0: track-a-agent-binary
+# Task 0: tabs
 
 ## Root Directive
 
-> Implement the remaining structural layers to make Codex UI stable: agent binary, notes write mode, toolbar search, sidebar boards + live refresh, mcp.json bootstrap.
+> Implement multi-tab editor support and full-page search view for Codex
 
 ## Mission
 
-Wire the codex-agent into a real executable. Add [[bin]] to crates/codex-agent/Cargo.toml with a main.rs that uses clap to accept --vault <path> and calls run_mcp_server. Add a tracing_subscriber setup. Also update crates/codex-app/src/bootstrap.rs to write an mcp.json file at launch time pointing to the agent binary location so Omegon can discover it. The mcp.json should be written to the vault root's .codex/ directory as mcp.json with a 'codex' server entry using the command transport. Also add the 'clap' crate with derive feature to codex-agent's Cargo.toml. The agent binary must compile cleanly with cargo check.
+Implement multi-tab editor support. In crates/codex-app/src/state.rs: add a TabState struct with fields open_tabs: Vec<DocumentId> and active: usize, derive Clone+PartialEq. Add impl TabState with open(id: DocumentId) method that appends if not present and sets active index, and close(idx: usize) that removes the tab and adjusts active. In crates/codex-app/src/app.rs: replace selected_doc: Signal<Option<DocumentId>> with let tab_state = use_context_provider(|| TabState::default()); keep active_route signal. Pass tab_state as context — any component calls use_context::<Signal<TabState>>() to open docs. In crates/codex-app/src/components/ create tab_bar.rs: TabBar component reads tab_state context, renders a horizontal strip of tabs (each showing doc title from the vault store, a close button). Active tab is highlighted. Clicking a tab sets active index. Closing removes it. Add TabBar to mod.rs exports. In crates/codex-app/src/app.rs: render TabBar above the main content match block. In crates/codex-app/src/views/notes.rs: change NotesView to not take selected_doc prop — instead read active tab from use_context::<Signal<TabState>>(). Update crates/codex-app/src/components/sidebar.rs DocItem to use tab_state context to open docs instead of writing to selected_doc. Add CSS for tab bar in a new crates/codex-app/assets/styles/tabs.css (tabs strip, active/hover/close button styles using CSS vars). Add the stylesheet to app.rs. All code must compile with cargo check.
 
 ## Scope
 
-- `crates/codex-agent/Cargo.toml`
-- `crates/codex-agent/src/main.rs`
-- `crates/codex-app/src/bootstrap.rs`
+- `crates/codex-app/src/state.rs`
+- `crates/codex-app/src/app.rs`
+- `crates/codex-app/src/components/tab_bar.rs`
+- `crates/codex-app/src/components/mod.rs`
+- `crates/codex-app/src/views/notes.rs`
+- `crates/codex-app/src/components/sidebar.rs`
+- `crates/codex-app/assets/styles/tabs.css`
 
 **Depends on:** none (independent)
 
 ## Siblings
 
-- **track-b-notes-editor**: Add a proper edit/preview mode to the notes view. In crates/codex-store/src/vault.rs, add a pub fn save_document_content(rel_path: &Path, content: &str) -> Result<()> method that writes the file to disk (preserving existing frontmatter UUID) and calls self.index_file on it. In crates/codex-app/src/views/notes.rs, add an edit mode toggle: when a document is selected, show an Edit button in the top-right of the notes pane. In edit mode, show a full-height textarea with the raw markdown content (not the rendered HTML). Show a Save button and a Preview button to toggle back. On Save, call vault.save_document_content via spawn_blocking and refresh the rendered preview. Also add a 'New Note' button to the sidebar (crates/codex-app/src/components/sidebar.rs) that creates a new .md file in the vault root and opens it for editing. The sidebar's document list must also subscribe to vault_events (the broadcast::Sender in AppContext) using use_resource with a refresh counter that increments when any VaultChangeEvent arrives. All new code must compile with cargo check.
-- **track-c-toolbar-search-sidebar-boards**: Improve the toolbar and sidebar. In crates/codex-app/src/components/toolbar.rs: add a centered search input that searches the vault using vault.store.search_documents. The search results should be displayed as an overlay dropdown list (div absolutely positioned below the input) showing document title + excerpt, clicking a result sets the selected_doc signal and navigates to Notes view. Pass selected_doc: Signal<Option<DocumentId>> and active_route: Signal<Route> as props to Toolbar. Thread these props through from app.rs. In crates/codex-app/src/components/sidebar.rs: add a 'Boards' section below the Notes section that lists all boards from vault.store.list_boards(), clicking a board sets the active_route to Route::Kanban. Also subscribe to vault_events broadcast to auto-refresh the document list: use tokio::sync::broadcast and a use_resource with a refresh counter. In crates/codex-app/assets/styles/components.css: add toolbar search input styles (.toolbar-search, .search-overlay, .search-result-item). Update crates/codex-app/src/app.rs to pass the new props to Toolbar. All code must compile with cargo check.
+- **search**: Implement full-page search view with rich results. In crates/codex-app/src/state.rs: add Route::Search to the Route enum (no data — the query lives in a signal). In crates/codex-app/src/views/ create search.rs: SearchView component. It takes a search_query: Signal<String> prop. Uses use_resource to call vault.store.search_documents on query changes (reactive dep). Results are grouped by path folder prefix using BTreeMap. Render each group as a collapsible section showing folder name + match count. Each result shows: doc title (bold), path (muted), excerpt text with the query term wrapped in <mark> tags for highlighting (use string replace on excerpt, case-insensitive). Clicking a result opens the doc — write to tab_state context (from track 'tabs'). If tab_state is not yet available (this track runs in parallel), just write to a selected_doc Signal<Option<DocumentId>> prop as fallback. In crates/codex-app/src/components/toolbar.rs: add onkeydown to the search input that on Key::Enter sets active_route to Route::Search. Pass active_route as prop (it already is). In crates/codex-app/src/views/mod.rs: export SearchView. In crates/codex-app/src/app.rs: add Route::Search => rsx!{ SearchView { search_query } } match arm, where search_query is a signal threaded from the toolbar. Add CSS for search results in crates/codex-app/assets/styles/search.css (result cards, highlighted mark tag with yellow/teal background, folder group headers). Add stylesheet to app.rs. All code must compile with cargo check.
 
 ## Dependency Versions
 
 Use these exact versions — do not rely on training data for API shapes:
 
 ```toml
-# crates/codex-agent/Cargo.toml
-[dependencies]
-codex-core = { workspace = true }
-codex-store = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-rmcp = { workspace = true }
-schemars = { workspace = true }
-
-```
-
-```toml
 # crates/codex-app/Cargo.toml
 [dependencies]
 codex-core  = { workspace = true }
 codex-store = { workspace = true }
-codex-agent = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 anyhow      = { workspace = true }
@@ -62,6 +48,9 @@ tracing     = { workspace = true }
 tracing-subscriber = { workspace = true }
 chrono     = { workspace = true }
 comrak      = { workspace = true }
+syntect     = { workspace = true }
+once_cell   = { workspace = true }
+wry         = "0.53"
 dirs        = "5"
 dioxus      = { workspace = true, features = ["desktop"] }
 

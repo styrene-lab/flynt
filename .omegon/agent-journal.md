@@ -425,4 +425,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   f2049a7 fix(notes): restore scroll in preview mode; feat(sidebar): folder tree
   49e1031 fix(renderer): safe hljs integration — no per-render eval storm
   1172698 feat(renderer): highlight.js syntax highlighting with auto-detect
+## 2026-04-15 — main (15t 293tc 4m42s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. Try searching "Sty" — should now find all 17 Styrene Lab docs. Font should be SF Pro (sharp, native macOS). Folder headers are plain label weight, no capslock treatment.
+
+**Model:** anthropic:claude-sonnet-4-6 — 52115782 in / 182477 out tokens across 312 turns
+
+**Commits:**
+  45c9fdf fix: search prefix matching, font system, sidebar visual polish
+  f2049a7 fix(notes): restore scroll in preview mode; feat(sidebar): folder tree
+  49e1031 fix(renderer): safe hljs integration — no per-render eval storm
 

@@ -15,3 +15,35 @@ once you're finished with that, let's get this set up into proper design tree no
 5. plan for multi-user now
 6. codex should write the config, and we should be able to spawn a nice little agent sidebar within the app, which is just an Omegon instance behind the scenes that has access to the Codex tooling surface
 parallel
+/unshackle
+Let's proceed with codex design
+yes, agreed. Let's make sure we're doing some proper markdown rendering when the user selects a document, obsidian-style
+let's go with an entirely customizeable theme engine, using TweakCN upstream as our target for "do styling this way", no in-line crap, all parameterized, etc
+settings first
+proceed
+Continue laying down the structure until it is stable enough to support the UI
+continue
+look at auspex and omegon, and see if codex via MCP isn't the entirely wrong move for this before proceeding.
+no it should be upstream, did that earlier today
+Good, get it cleaned up. Once done, launch Codex so we can start building out the UI
+yeah, we should really be up to date
+first thing's first, we need a way to pre-populate this with the existing obsidian style vault at ~/workspace/black-meridia/obsidian (fuzzy)
+this is what I see 
+Cool - we have better visuals, but still kinda jank. Here's fullscreen:  and here is minimal (default): 
+i closed it, so you'll have to relaunch/reserve
+I had to close both of those, because they just sit on top of the entire screen and I cannot "click away" from their focus.
+were you expecting that to do something? I was busy. Retry
+sexy sexy sexy. Let's get a better font system in place, and get the rendering issues in the markdown worked out. I want full featured document renderer support. Markdown is our first-class citizen for editing and interactivity, but insofar as markdown itself can embed photos/files/links/references, we need to as well. I want the viewer to be able to handle the basics of imagery, and then we're going to handle our own document exportation system bcause the current world of PDF/Docs is fucking insanity.  For now, Markdown will be the canonical doc type, with full featured renderer support throughout, including all of the nice-to-have features of default obsidian and its highest rated productivity plugins that don't involve upstream account linking. No google docs bullshit, no microsoft trash, this is going to be the answer to "well, obsidian is great but has these issues." OK, codex exists, why on earth would you ever use Obsidian 
+ok these have to stop
+Phenomenally better! Need the ability to see what I'm editing in real time though, just like Zed or Obsidian. Go look at the landscape and return with recommendations! 
+do it
+it just says it failed to reload with a DNA symbol, i asume that's dioxus shitting its pants
+Excellent. Need to make sure the scrolls are linked, where I'm editing on the left should remain visible on the right
+Great work. We need full syntax highlighting and semantic detection for codeblocks. Looks like a lot more work to be done on the markdown rendering side: 
+Hmm. That broke scrolling and a whole host of other things
+no, i can't scroll within a normally selected document, before I even consider entering the edit mode. Also, the rendered mode is the default, gotta be able to scroll right off the bat. I also see no heirarchy on the left for the docs; there are multiple ways to organize that, filesystem tree, tags, relationships, etc. 
+looks good. Spacing is weird for the left nav, font is awful and archaic, need the search to actually work, it seems to only find SOME things SOME of the time, "Sty" didn't find anything related to Styrene at all. 
+Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ability to have multiple tabs/editors open.  Here is an image of obsidian for reference, searching and with multi-tabs opened
+Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ability to have multiple tabs/editors open.  Here is an image of obsidian for reference, searching and with multi-tabs opened
+/login
+Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ability to have multiple tabs/editors open.  Here is an image of obsidian for reference, searching and with multi-tabs opened

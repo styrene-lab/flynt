@@ -1,7 +1,7 @@
 use codex_core::models::{AppearanceConfig, FontSizePreset, SyncConfig, VaultConfig};
 use dioxus::prelude::*;
 use crate::{
-    app::ThemeName,
+    state::ThemeName,
     bootstrap::AppContext,
 };
 

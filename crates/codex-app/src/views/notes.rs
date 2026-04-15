@@ -1,7 +1,7 @@
-use codex_core::{models::DocumentId, store::VaultStore};
+use codex_core::store::VaultStore;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
-use crate::bootstrap::AppContext;
+use crate::{bootstrap::AppContext, state::TabState};
 
 #[derive(Clone, PartialEq)]
 enum EditMode { Preview, Edit }
@@ -19,26 +19,22 @@ fn render_html(content: &str) -> String {
     markdown_to_html(&processed, &opts)
 }
 
-/// Convert Obsidian-style embeds/links before comrak sees the source.
 fn preprocess(src: &str) -> String {
     let mut out = String::with_capacity(src.len() + 64);
     let mut chars = src.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '!' && chars.peek() == Some(&'[') {
-            chars.next(); // consume first [
+            chars.next();
             if chars.peek() == Some(&'[') {
-                chars.next(); // consume second [
+                chars.next();
                 let inner: String = chars.by_ref().take_while(|&ch| ch != ']').collect();
-                // consume trailing ]
                 if chars.peek() == Some(&']') { chars.next(); }
-                // Image embed: ![[file.png]] → ![file](vault://localhost/file.png)
                 let ext = std::path::Path::new(&inner)
                     .extension().and_then(|e| e.to_str()).unwrap_or("");
                 if matches!(ext, "png"|"jpg"|"jpeg"|"gif"|"svg"|"webp") {
                     let encoded = inner.replace(' ', "%20");
                     out.push_str(&format!("![{inner}](vault://localhost/{encoded})"));
                 } else {
-                    // Non-image embed — inline as a link for now
                     let encoded = inner.replace(' ', "%20");
                     out.push_str(&format!("[{inner}](vault://localhost/{encoded})"));
                 }
@@ -50,7 +46,6 @@ fn preprocess(src: &str) -> String {
             chars.next();
             let inner: String = chars.by_ref().take_while(|&ch| ch != ']').collect();
             if chars.peek() == Some(&']') { chars.next(); }
-            // [[target|display]] or [[target]]
             let (target, display) = inner.split_once('|')
                 .map(|(t, d)| (t, d))
                 .unwrap_or((&inner, &inner as &str));
@@ -64,22 +59,20 @@ fn preprocess(src: &str) -> String {
 }
 
 #[component]
-pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
-    let ctx = use_context::<AppContext>();
+pub fn NotesView() -> Element {
+    let ctx       = use_context::<AppContext>();
+    let tab_state = use_context::<Signal<TabState>>();
 
-    // Separate clones: one per closure that captures ctx.
-    let ctx_res   = ctx.clone(); // → use_resource
-    let ctx_save1 = ctx.clone(); // → Save button onclick
-    let ctx_save2 = ctx.clone(); // → editor Cmd+S onkeydown
+    let ctx_res   = ctx.clone();
+    let ctx_save1 = ctx.clone();
+    let ctx_save2 = ctx.clone();
 
     let mut mode      = use_signal(|| EditMode::Preview);
     let mut edit_body = use_signal(String::new);
     let mut save_err  = use_signal(|| Option::<String>::None);
 
-    // Resource: (rel_path, title, raw_content, rendered_html)
-    // Resource<T> is Copy in Dioxus 0.7 — safe to capture in multiple closures below.
     let rendered = use_resource(move || {
-        let selected_id = selected_doc.read().clone();
+        let selected_id = tab_state.read().active_id().cloned();
         let c = ctx_res.clone();
         async move {
             let Some(doc_id) = selected_id else { return None; };
@@ -93,7 +86,6 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
         }
     });
 
-    // Populate edit buffer when a new doc loads; reset mode to preview.
     use_effect(move || {
         if let Some(Some((_, _, body, _))) = &*rendered.read() {
             *edit_body.write() = body.clone();
@@ -101,10 +93,12 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
         }
     });
 
+    let has_active = tab_state.read().active_id().is_some();
+
     rsx! {
         div { class: "view-notes",
             match &*rendered.read() {
-                None if selected_doc.read().is_some() => rsx! {
+                None if has_active => rsx! {
                     div { class: "notes-loading muted", "Loading…" }
                 },
                 None => rsx! {
@@ -174,12 +168,10 @@ pub fn NotesView(selected_doc: Signal<Option<DocumentId>>) -> Element {
                                 }
                             },
                             EditMode::Edit => rsx! {
-                                // Wire scroll sync + hljs after this render.
                                 { document::eval(r#"
                                     (function() {
                                         const ed = document.getElementById('codex-editor');
                                         const pr = document.getElementById('codex-preview');
-                                        // Highlight any new code blocks in the preview
                                         if (typeof hljs !== 'undefined') {
                                             pr && pr.querySelectorAll('pre code:not([data-highlighted])').forEach(b => hljs.highlightElement(b));
                                         }

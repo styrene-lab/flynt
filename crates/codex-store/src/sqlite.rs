@@ -188,7 +188,7 @@ impl VaultStore for SqliteStore {
         if fts_query.is_empty() { return Ok(vec![]); }
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            r#"SELECT d.id, d.path, d.title, snippet(documents_fts, 1, '', '', '…', 20)
+            r#"SELECT d.id, d.path, d.title, snippet(documents_fts, 1, '<mark>', '</mark>', '…', 32)
                FROM documents_fts f
                JOIN documents d ON d.rowid = f.rowid
                WHERE documents_fts MATCH ?1

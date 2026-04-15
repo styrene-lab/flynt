@@ -1,0 +1,287 @@
+/* ── Search view ─────────────────────────────────────────────────────────── */
+.search-view {
+  display:        flex;
+  flex-direction: column;
+  height:         100%;
+  overflow:       hidden;
+  background:     var(--bg-base);
+}
+
+/* Search bar */
+.search-view-bar {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+  padding:        var(--space-3) var(--space-4);
+  border-bottom:  1px solid var(--border);
+  background:     var(--bg-card);
+  flex-shrink:    0;
+}
+
+.search-view-icon {
+  font-size:  1.2rem;
+  color:      var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.search-view-input {
+  flex:         1;
+  background:   transparent;
+  border:       none;
+  outline:      none;
+  font-size:    1rem;
+  font-family:  inherit;
+  color:        var(--fg);
+  padding:      0;
+}
+
+.search-view-input::placeholder { color: var(--fg-dim); }
+.search-view-input::-webkit-search-cancel-button { display: none; }
+
+/* Stats bar */
+.search-stats-bar {
+  display:     flex;
+  align-items: center;
+  padding:     var(--space-2) var(--space-4);
+  font-size:   0.78rem;
+  border-bottom: 1px solid var(--border-dim);
+  flex-shrink: 0;
+  gap:         2px;
+}
+
+.search-stats-count {
+  color:       var(--primary);
+  font-weight: 600;
+}
+
+/* Content scroll area */
+.search-content {
+  flex:     1;
+  overflow-y: auto;
+  padding:  var(--space-3) var(--space-2);
+}
+
+/* Empty / status states */
+.search-empty-state {
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  padding:         var(--space-8) var(--space-4);
+  text-align:      center;
+  gap:             var(--space-2);
+}
+
+.search-empty-icon {
+  font-size:  2.5rem;
+  opacity:    0.25;
+  line-height: 1;
+}
+
+.search-empty-msg {
+  font-size:  0.95rem;
+  color:      var(--fg);
+  margin:     0;
+}
+
+.search-empty-term {
+  color:       var(--primary);
+  font-weight: 500;
+}
+
+.search-empty-hint {
+  font-size:  0.82rem;
+  margin:     0;
+}
+
+.search-status {
+  padding: var(--space-4);
+  font-size: 0.88rem;
+}
+
+/* Groups */
+.search-results-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+}
+
+.search-group {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+}
+
+.search-group-header {
+  display:      flex;
+  align-items:  center;
+  gap:          var(--space-2);
+  padding:      var(--space-2) var(--space-3);
+  font-size:    0.73rem;
+  font-weight:  600;
+  color:        var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top:   var(--space-2);
+}
+
+.search-folder-icon { opacity: 0.5; font-size: 0.7rem; }
+.search-group-name  { flex: 1; }
+.search-group-badge {
+  background:   var(--bg-surface);
+  border:       1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding:      1px 6px;
+  font-size:    0.7rem;
+  color:        var(--fg-dim);
+  font-weight:  400;
+}
+
+/* Result cards */
+.search-result-card {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  width:          100%;
+  text-align:     left;
+  background:     transparent;
+  border:         1px solid transparent;
+  border-radius:  var(--radius);
+  padding:        var(--space-3) var(--space-3);
+  cursor:         pointer;
+  transition:     background var(--duration-fast), border-color var(--duration-fast);
+  color:          inherit;
+  font:           inherit;
+}
+
+.search-result-card:hover {
+  background:    var(--bg-surface);
+  border-color:  var(--border);
+}
+
+.search-result-card:active {
+  background: var(--bg-card);
+}
+
+/* Card header row */
+.src-header {
+  display:     flex;
+  align-items: flex-start;
+  gap:         var(--space-2);
+}
+
+.src-file-icon {
+  font-size:   0.9rem;
+  flex-shrink: 0;
+  opacity:     0.7;
+  margin-top:  1px;
+}
+
+.src-meta {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  min-width:      0;
+}
+
+.src-title {
+  font-size:     0.92rem;
+  font-weight:   500;
+  color:         var(--fg);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.src-path {
+  font-size:     0.74rem;
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+/* Excerpt with FTS5 highlights */
+.src-excerpt {
+  font-size:      0.8rem;
+  line-height:    1.55;
+  color:          var(--fg-muted);
+  padding:        var(--space-2) var(--space-3);
+  background:     var(--bg-card);
+  border-left:    2px solid var(--border);
+  border-radius:  0 var(--radius-sm) var(--radius-sm) 0;
+  white-space:    pre-wrap;
+  overflow-wrap:  break-word;
+}
+
+.src-excerpt mark {
+  background:    rgba(42, 180, 200, 0.22);
+  color:         var(--primary-bright);
+  border-radius: 2px;
+  padding:       0 2px;
+  font-weight:   600;
+}
+
+/* ── Toolbar inline results (quick dropdown) ─────────────────────────────── */
+.search-overlay {
+  position:      absolute;
+  top:           calc(100% + 4px);
+  left:          0;
+  right:         0;
+  background:    var(--bg-card);
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:    0 8px 32px rgba(0,0,0,0.45);
+  overflow-y:    auto;
+  max-height:    360px;
+  z-index:       100;
+}
+
+.search-overlay-empty {
+  padding:    var(--space-3) var(--space-4);
+  font-size:  0.85rem;
+  color:      var(--fg-dim);
+}
+
+.search-overlay-item {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  width:          100%;
+  text-align:     left;
+  background:     transparent;
+  border:         none;
+  padding:        var(--space-2) var(--space-3);
+  cursor:         pointer;
+  color:          inherit;
+  font:           inherit;
+  border-bottom:  1px solid var(--border-dim);
+  transition:     background var(--duration-fast);
+}
+
+.search-overlay-item:last-child { border-bottom: none; }
+
+.search-overlay-item:hover,
+.search-overlay-item:focus { background: var(--bg-surface); outline: none; }
+
+.search-overlay-title {
+  font-size:   0.88rem;
+  font-weight: 500;
+  color:       var(--fg);
+}
+
+.search-overlay-path {
+  font-size:  0.73rem;
+  color:      var(--fg-dim);
+  overflow:   hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-overlay-enter {
+  padding:    var(--space-2) var(--space-3);
+  font-size:  0.75rem;
+  color:      var(--primary-muted);
+  text-align: center;
+  border-top: 1px solid var(--border-dim);
+  background: var(--bg-base);
+}
