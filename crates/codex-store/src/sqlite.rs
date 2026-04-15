@@ -120,13 +120,13 @@ impl VaultStore for SqliteStore {
             let fm_json: String = row.get(3)?;
             let updated_at: String = row.get(4)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
+                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json)
                     .unwrap_or_default()
                     .tags,
-                updated_at: updated_at.parse().unwrap(),
+                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)

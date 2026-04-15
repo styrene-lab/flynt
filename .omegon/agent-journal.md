@@ -467,4 +467,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
   5354799 feat(search): full search page, rich result cards with FTS5 highlights, Enter-to-search, multi-tab breadcrumbs in dropdown
   45c9fdf fix: search prefix matching, font system, sidebar visual polish
+## 2026-04-15 — main (13t 68tc 2m18s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** CSS is hot-reloaded in the Dioxus dev server — the font and spacing fixes should be visible immediately without a restart. You should see SF Pro (system font) replacing the browser default, and UI line-height tightened from 1.7 to 1.45. What do you see now?
+
+**Model:** anthropic:claude-sonnet-4-6 — 4108553 in / 50022 out tokens across 63 turns
+
+**Commits:**
+  2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
+  a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
+  5354799 feat(search): full search page, rich result cards with FTS5 highlights, Enter-to-search, multi-tab breadcrumbs in dropdown
 
