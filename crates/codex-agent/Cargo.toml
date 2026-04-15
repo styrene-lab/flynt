@@ -3,14 +3,21 @@ name = "codex-agent"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "codex-agent"
+path = "src/main.rs"
+
 [dependencies]
-codex-core = { workspace = true }
+codex-core  = { workspace = true }
 codex-store = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-rmcp = { workspace = true }
-schemars = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+anyhow      = { workspace = true }
+thiserror   = { workspace = true }
+tokio       = { workspace = true }
+tracing     = { workspace = true }
+tracing-subscriber = { workspace = true }
+omegon-extension = "0.15"
+async-trait = "0.1"
+dirs        = "5"
+clap = { version = "4", features = ["derive", "env"] }
