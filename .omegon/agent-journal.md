@@ -258,4 +258,32 @@ What are you seeing in the UI right now — anything broken or missing that need
   52c72a5 fix(css): link each stylesheet directly instead of via @import
   dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
   b1b9c27 chore: unpin dioxus, update dx CLI to 0.7.5
+## 2026-04-15 — main (7t 172tc 2m56s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** `dx serve` will hot-reload the CSS — no rebuild needed. You should see:
+
+- Toolbar: vault name left-anchored, search input with border in the centre, agent toggle on the right
+- Notes pane: "Core Pedagogy" title in teal (`--primary-bright`), Edit button right-aligned beside it
+- Editor mode: monospa
+
+**Model:** anthropic:claude-sonnet-4-6 — 23473360 in / 130163 out tokens across 180 turns
+
+**Commits:**
+  cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
+  52c72a5 fix(css): link each stylesheet directly instead of via @import
+  dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
+## 2026-04-15 — main (9t 180tc 2m37s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** `.env` isn't being read — path has a space, needs quoting. Fix and re-serve:
+
+**Model:** unknown — 25101043 in / 131173 out tokens across 189 turns
+
+**Commits:**
+  cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
+  52c72a5 fix(css): link each stylesheet directly instead of via @import
+  dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
 
