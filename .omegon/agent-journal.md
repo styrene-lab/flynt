@@ -503,4 +503,28 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   105fe72 fix(store): replace panicking unwrap() in list_documents with safe error handling
   2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
   a5c0539 fix(notes): guard against Document-not-found when no tab open; fix(bootstrap): default vault path works; fix(search): borrow-after-move in SearchView
+## 2026-04-15 — main (18t 104tc 2m20s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** Running. The mechanism: JS intercepts `codex-note://` anchor clicks in preview, sends the href back to Rust via `dioxus.send()`, the component receives it, looks up the matching doc by slug/title, and opens it as a tab — no browser, no Google. Click a wikilink and let me know what happens.
+
+**Model:** anthropic:claude-sonnet-4-6 — 8342138 in / 64429 out tokens across 102 turns
+
+**Commits:**
+  7af015a feat(notes): intercept codex-note:// wikilinks; resolve slug via store and open as tab
+  105fe72 fix(store): replace panicking unwrap() in list_documents with safe error handling
+  2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
+## 2026-04-15 — main (4t 107tc 34s)
+
+**Task:** Good. Need those to be better, more interesting search results, and I need the ability to hit "enter" in the search and have it go to a proper search page like Obsidian does. We're also missing the ab
+
+**Outcome:** Up — 40 files indexed, window should be open. What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 8848319 in / 64751 out tokens across 106 turns
+
+**Commits:**
+  7af015a feat(notes): intercept codex-note:// wikilinks; resolve slug via store and open as tab
+  105fe72 fix(store): replace panicking unwrap() in list_documents with safe error handling
+  2e89acc fix(css): apply font-family/line-height on codex-shell; fix search.css variable names
 

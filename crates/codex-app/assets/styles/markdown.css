@@ -410,3 +410,33 @@
 .hljs { background: transparent !important; padding: 0 !important; }
 .markdown-body pre { overflow-x: auto; }
 .markdown-body pre code.hljs { display: block; }
+
+/* ── Link hover preview bar ──────────────────────────────────────────────── */
+.link-preview-bar {
+  position:    sticky;
+  bottom:      0;
+  left:        0;
+  right:       0;
+  padding:     3px var(--space-3);
+  font-size:   var(--font-size-xs);
+  font-family: var(--font-mono);
+  color:       var(--muted-foreground);
+  background:  var(--card);
+  border-top:  1px solid var(--border-dim);
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+  opacity:     0;
+  transform:   translateY(4px);
+  transition:  opacity var(--duration-fast), transform var(--duration-fast);
+  pointer-events: none;
+  min-height:  0;
+  max-height:  0;
+}
+
+.link-preview-bar.visible {
+  opacity:    1;
+  transform:  translateY(0);
+  min-height: 22px;
+  max-height: 22px;
+}

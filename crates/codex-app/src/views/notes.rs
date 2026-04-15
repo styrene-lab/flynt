@@ -15,7 +15,31 @@ fn render_html(content: &str) -> String {
     opts.extension.footnotes                  = true;
     opts.extension.wikilinks_title_after_pipe = true;
     opts.render.unsafe_                       = true;
-    markdown_to_html(&preprocess(content), &opts)
+    postprocess_html(markdown_to_html(&preprocess(content), &opts))
+}
+
+/// Replace `href="codex-note://slug"` with a data attribute so the WebView
+/// never navigates externally — our JS click listener handles it instead.
+fn postprocess_html(html: String) -> String {
+    let pattern = "href=\"codex-note://";
+    let mut result = String::with_capacity(html.len());
+    let mut rest   = html.as_str();
+    while let Some(idx) = rest.find(pattern) {
+        result.push_str(&rest[..idx]);
+        let after = &rest[idx + pattern.len()..];
+        if let Some(end) = after.find('"') {
+            let slug = &after[..end];
+            result.push_str("href=\"#\" data-codex-note=\"");
+            result.push_str(slug);
+            result.push('"');
+            rest = &after[end + 1..];
+        } else {
+            result.push_str(&rest[idx..]);
+            break;
+        }
+    }
+    result.push_str(rest);
+    result
 }
 
 fn preprocess(src: &str) -> String {
@@ -109,7 +133,7 @@ pub fn NotesView() -> Element {
                     let slug = val
                         .trim_start_matches("codex-note://")
                         .replace("%20", " ")
-                        .to_string();
+                        .to_lowercase();
                     let c2 = c.clone();
                     if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
                         c2.vault.store.find_document_by_slug(&slug)
@@ -203,17 +227,37 @@ pub fn NotesView() -> Element {
             match *mode.read() {
                 EditMode::Preview => rsx! {
                     { document::eval(r#"
+                        // Syntax highlight
                         document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b));
-                        document.querySelectorAll('.markdown-body a[href^="codex-note://"]').forEach(function(a) {
+                        // Wire internal wikilinks (data-codex-note) — never triggers navigation
+                        document.querySelectorAll('.markdown-body [data-codex-note]').forEach(function(a) {
                             if (a._codex_wired) return;
                             a._codex_wired = true;
                             a.addEventListener('click', function(e) {
                                 e.preventDefault();
-                                dioxus.send(a.getAttribute('href'));
+                                dioxus.send('codex-note://' + decodeURIComponent(a.dataset.codexNote));
                             });
                         });
+                        // Hover preview in footer
+                        const footer = document.getElementById('codex-link-preview');
+                        if (footer) {
+                            document.querySelectorAll('.markdown-body a').forEach(function(a) {
+                                if (a._preview_wired) return;
+                                a._preview_wired = true;
+                                a.addEventListener('mouseenter', function() {
+                                    const note = a.dataset.codexNote;
+                                    footer.textContent = note ? '→ ' + decodeURIComponent(note) : a.href;
+                                    footer.classList.add('visible');
+                                });
+                                a.addEventListener('mouseleave', function() {
+                                    footer.classList.remove('visible');
+                                    footer.textContent = '';
+                                });
+                            });
+                        }
                     "#); }
                     div { class: "markdown-body", dangerous_inner_html: "{html}" }
+                    div { id: "codex-link-preview", class: "link-preview-bar" }
                 },
                 EditMode::Edit => {
                     let path_save = rel_path.clone();
