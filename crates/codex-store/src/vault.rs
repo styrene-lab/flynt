@@ -48,6 +48,7 @@ impl Vault {
             let cfg = VaultConfig {
                 vault_name: default_name,
                 sync: SyncConfig::None,
+                appearance: Default::default(),
             };
             fs::write(&config_path, toml::to_string(&cfg)?)?;
             cfg
@@ -117,6 +118,14 @@ impl Vault {
             updated_at: now,
         };
         self.store.save_document(&doc)?;
+        Ok(())
+    }
+
+    /// Write a new config to disk. Does not update `self.config` (the in-memory
+    /// value is managed by callers via signals). Call this from the settings view.
+    pub fn save_config(&self, config: &VaultConfig) -> Result<()> {
+        let config_path = self.root.join(".codex").join("config.toml");
+        fs::write(&config_path, toml::to_string_pretty(config)?)?;
         Ok(())
     }
 

@@ -100,4 +100,20 @@ The vault/watcher/context was completely disconnected from the UI — `bootstrap
   bb5b808 feat(notes): Obsidian-style markdown preview with live sidebar doc list
   a341258 feat(app): wire AppContext into Dioxus context tree at launch
   c21b698 feat: three-track parallel implementation
+## 2026-04-15 — main (15t 34tc 6m1s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Here's what you have:
+
+**Theme engine architecture:**
+- **One `data-theme` attribute** on the root div — switching themes means writing to a `Signal<ThemeName>`, nothing else
+- **80+ design tokens** in `alpharius.css`: every surface, text colour, border, spacing step, radius, shadow, transition, and
+
+**Model:** anthropic:claude-sonnet-4-6 — 1834224 in / 43991 out tokens across 32 turns
+
+**Commits:**
+  48f566d feat(theme): parameterized theme engine with Alpharius token set
+  bb5b808 feat(notes): Obsidian-style markdown preview with live sidebar doc list
+  a341258 feat(app): wire AppContext into Dioxus context tree at launch
 

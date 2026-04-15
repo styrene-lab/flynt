@@ -1,4 +1,4 @@
-use codex_core::models::DocumentId;
+use codex_core::models::{DocumentId, FontSizePreset};
 use dioxus::prelude::*;
 use crate::{
     bootstrap::bootstrap_from_env,
@@ -7,18 +7,22 @@ use crate::{
     views::{GraphView, KanbanView, NotesView, SettingsView},
 };
 
-/// Name of the active theme — provided via context so any component can read
-/// (or eventually swap) the theme without prop drilling.
+/// Active theme name — context-provided so any component can read or swap it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThemeName(pub String);
 
 #[component]
 pub fn App() -> Element {
-    use_context_provider(bootstrap_from_env);
+    // Bootstrap vault; use_context_provider returns the value for use here too.
+    let ctx = use_context_provider(bootstrap_from_env);
 
-    // Theme name drives the data-theme attribute on the root div.
-    // Any component can call use_context::<Signal<ThemeName>>() to swap it.
-    let theme = use_context_provider(|| Signal::new(ThemeName("alpharius".into())));
+    // Seed appearance signals from persisted config so they survive restarts.
+    let theme = use_context_provider(|| {
+        Signal::new(ThemeName(ctx.vault.config.appearance.theme.clone()))
+    });
+    let font_size = use_context_provider(|| {
+        Signal::new(ctx.vault.config.appearance.font_size)
+    });
 
     let active_route = use_signal(|| Route::Notes);
     let mut show_agent = use_signal(|| false);
@@ -29,7 +33,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/app.css") }
 
         div {
-            class: "codex-shell",
+            class: "codex-shell {font_size.read().css_class()}",
             "data-theme": "{theme.read().0}",
 
             Toolbar {

@@ -171,13 +171,53 @@ pub struct SearchResult {
 // ── Vault config ──────────────────────────────────────────────────────────────
 
 /// Persisted configuration stored in `<vault_root>/.codex/config.toml`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultConfig {
     pub vault_name: String,
     pub sync: SyncConfig,
+    #[serde(default)]
+    pub appearance: AppearanceConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Appearance settings — theme name and prose font scale.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppearanceConfig {
+    #[serde(default = "AppearanceConfig::default_theme")]
+    pub theme: String,
+    #[serde(default)]
+    pub font_size: FontSizePreset,
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self { theme: Self::default_theme(), font_size: FontSizePreset::default() }
+    }
+}
+
+impl AppearanceConfig {
+    fn default_theme() -> String { "alpharius".into() }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FontSizePreset {
+    Small,
+    #[default]
+    Medium,
+    Large,
+    XLarge,
+}
+
+impl FontSizePreset {
+    pub fn label(self) -> &'static str {
+        match self { Self::Small => "S", Self::Medium => "M", Self::Large => "L", Self::XLarge => "XL" }
+    }
+    pub fn css_class(self) -> &'static str {
+        match self { Self::Small => "font-sm", Self::Medium => "font-md", Self::Large => "font-lg", Self::XLarge => "font-xl" }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(tag = "backend", rename_all = "snake_case")]
 pub enum SyncConfig {
     #[default]
