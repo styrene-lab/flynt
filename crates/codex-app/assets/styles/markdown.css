@@ -17,7 +17,8 @@
   padding:    var(--space-8) var(--space-10);
 }
 
-.notes-pane > .doc-title {
+.notes-pane > .doc-title,
+.notes-topbar .doc-title {
   font-size:     var(--font-size-2xl);
   font-weight:   var(--font-weight-bold);
   color:         var(--primary-bright);
@@ -34,6 +35,44 @@
   height:          100%;
   color:           var(--muted-foreground);
   font-size:       var(--font-size-md);
+}
+
+/* Notes top bar: title + actions row */
+.notes-topbar {
+  display:       flex;
+  align-items:   flex-start;
+  justify-content: space-between;
+  gap:           var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.notes-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  flex-shrink: 0;
+  padding-top: 6px; /* align with title cap height */
+}
+
+.editor-textarea {
+  width:       100%;
+  flex:        1;
+  min-height:  60vh;
+  background:  var(--surface);
+  border:      1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding:     var(--space-4);
+  font-family: var(--font-mono);
+  font-size:   var(--font-size-sm);
+  color:       var(--foreground);
+  line-height: var(--line-height);
+  resize:      vertical;
+}
+
+.editor-textarea:focus {
+  border-color: var(--ring);
+  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  outline:      none;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════

@@ -246,4 +246,16 @@ What are you seeing in the UI right now — anything broken or missing that need
   dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
   b1b9c27 chore: unpin dioxus, update dx CLI to 0.7.5
   b8da5a3 chore: pin dioxus to =0.7.3 to match installed dx CLI version
+## 2026-04-15 — main (9t 166tc 2m58s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Clean build, 40 docs indexed. The app should now show the Alpharius dark theme with proper layout — sidebar on the left with the document list, toolbar across the top, main content area on the right. What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 22067834 in / 125567 out tokens across 173 turns
+
+**Commits:**
+  52c72a5 fix(css): link each stylesheet directly instead of via @import
+  dd5fb34 chore: add .env with CODEX_VAULT pointing at obsidian vault
+  b1b9c27 chore: unpin dioxus, update dx CLI to 0.7.5
 

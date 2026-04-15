@@ -57,3 +57,82 @@
 .toolbar a {
   -webkit-app-region: no-drag;
 }
+
+/* ── Toolbar inner elements ───────────────────────────────────────────────── */
+.toolbar-vault-name {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  margin-right: var(--space-2);
+}
+
+.toolbar-search-wrap {
+  flex:      1;
+  max-width: 400px;
+  position:  relative;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-search {
+  width:         100%;
+  background:    var(--surface);
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  padding:       4px var(--space-3);
+  font-size:     var(--font-size-sm);
+  color:         var(--foreground);
+  transition:    border-color var(--duration-fast) var(--ease),
+                 box-shadow   var(--duration-fast) var(--ease);
+}
+
+.toolbar-search:focus {
+  border-color: var(--ring);
+  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  outline:      none;
+}
+
+.toolbar-search::placeholder { color: var(--muted-foreground); }
+
+.search-overlay {
+  position:   absolute;
+  top:        calc(100% + var(--space-1));
+  left:       0;
+  right:      0;
+  background: var(--card);
+  border:     1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index:    100;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  display:    flex;
+  padding:    var(--space-2) var(--space-3);
+  width:      100%;
+  text-align: left;
+  color:      var(--foreground);
+  font-size:  var(--font-size-sm);
+  border-bottom: 1px solid var(--border-dim);
+  transition: background var(--duration-fast) var(--ease);
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover      { background: var(--accent); }
+
+.toolbar-right {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  margin-left: auto;
+}
+
+.sync-badge {
+  font-size: var(--font-size-xs);
+  color:     var(--warning);
+}
