@@ -310,4 +310,16 @@ What are you seeing in the UI right now — anything broken or missing that need
   5b7d5fb fix(desktop): configure window size and disable always-on-top
   cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
   52c72a5 fix(css): link each stylesheet directly instead of via @import
+## 2026-04-15 — main (44t 234tc 8m29s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Update the font tokens in the theme:
+
+**Model:** anthropic:claude-sonnet-4-6 — 34896891 in / 148630 out tokens across 244 turns
+
+**Commits:**
+  b68194e feat(renderer): full-featured markdown renderer + font system
+  5b7d5fb fix(desktop): configure window size and disable always-on-top
+  cb925e0 fix(css): toolbar inner elements, notes topbar layout, editor textarea
 

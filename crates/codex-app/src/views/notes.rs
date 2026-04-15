@@ -1,19 +1,7 @@
 use codex_core::{models::DocumentId, store::VaultStore};
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
-use once_cell::sync::Lazy;
-use syntect::{
-    highlighting::{Theme, ThemeSet},
-    html::highlighted_html_for_string,
-    parsing::SyntaxSet,
-};
 use crate::bootstrap::AppContext;
-
-// ── Syntax highlighting globals (loaded once, reused) ─────────────────────
-static SS: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
-static THEME: Lazy<Theme> = Lazy::new(|| {
-    ThemeSet::load_defaults().themes["base16-ocean.dark"].clone()
-});
 
 #[derive(Clone, PartialEq)]
 enum EditMode { Preview, Edit }
@@ -28,53 +16,7 @@ fn render_html(content: &str) -> String {
     opts.extension.wikilinks_title_after_pipe = true;
     opts.render.unsafe_                       = true;
     let processed = preprocess(content);
-    let raw_html  = markdown_to_html(&processed, &opts);
-    highlight_code_blocks(&raw_html)
-}
-
-/// Post-process comrak's HTML output: replace <pre><code class="language-X">…</code></pre>
-/// with syntect-highlighted HTML.
-fn highlight_code_blocks(html: &str) -> String {
-    // Simple tag-based scanner — avoids pulling in a full HTML parser.
-    const OPEN: &str  = "<pre><code";
-    const CLOSE: &str = "</code></pre>";
-    let mut out = String::with_capacity(html.len());
-    let mut rest = html;
-    while let Some(start) = rest.find(OPEN) {
-        out.push_str(&rest[..start]);
-        rest = &rest[start + OPEN.len()..];
-        // Extract lang from class="language-X"
-        let lang = if rest.starts_with(" class=\"language-") {
-            let after = &rest[" class=\"language-".len()..];
-            let end   = after.find('"').unwrap_or(0);
-            &after[..end]
-        } else { "" };
-        // Advance past the > that closes the opening <code> tag
-        let gt = rest.find('>').unwrap_or(0);
-        rest = &rest[gt + 1..];
-        let end = rest.find(CLOSE).unwrap_or(rest.len());
-        let code_html_encoded = &rest[..end];
-        rest = &rest[end + CLOSE.len()..];
-        // Decode HTML entities (&amp; &lt; &gt; &quot;)
-        let code = code_html_encoded
-            .replace("&lt;",  "<")
-            .replace("&gt;",  ">")
-            .replace("&amp;", "&")
-            .replace("&quot;", "\"");
-        let syntax = SS.find_syntax_by_token(lang)
-            .or_else(|| SS.find_syntax_by_first_line(&code))
-            .unwrap_or_else(|| SS.find_syntax_plain_text());
-        match highlighted_html_for_string(&code, &SS, syntax, &THEME) {
-            Ok(highlighted) => out.push_str(&highlighted),
-            Err(_)          => {
-                out.push_str(OPEN);
-                out.push_str(code_html_encoded);
-                out.push_str(CLOSE);
-            }
-        }
-    }
-    out.push_str(rest);
-    out
+    markdown_to_html(&processed, &opts)
 }
 
 /// Convert Obsidian-style embeds/links before comrak sees the source.
