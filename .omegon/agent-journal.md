@@ -401,4 +401,16 @@ Left: textarea. Right: live-rendered preview, updates as you type. **This is wha
   1172698 feat(renderer): highlight.js syntax highlighting with auto-detect
   5fbbdca feat(editor): synchronized scroll between editor and preview panes
   fe9b377 feat(editor): live split-pane editor — textarea left, live preview right
+## 2026-04-15 — main (9t 271tc 2m24s)
+
+**Task:** Let's proceed with codex design
+
+**Outcome:** Running. Scrolling should be back to normal. Code blocks will highlight once hljs loads from CDN (first click on a note with code after a second or two). What do you see?
+
+**Model:** anthropic:claude-sonnet-4-6 — 45728596 in / 173199 out tokens across 288 turns
+
+**Commits:**
+  49e1031 fix(renderer): safe hljs integration — no per-render eval storm
+  1172698 feat(renderer): highlight.js syntax highlighting with auto-detect
+  5fbbdca feat(editor): synchronized scroll between editor and preview panes
 

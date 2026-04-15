@@ -233,3 +233,47 @@
 .card-body {
   padding: var(--space-4);
 }
+
+/* ── Sidebar folder tree ──────────────────────────────────────────────────── */
+.sidebar-section-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         var(--space-2) var(--space-2) var(--space-1);
+}
+
+.sidebar-new-btn {
+  font-size:     16px;
+  color:         var(--muted-foreground);
+  width:         20px;
+  height:        20px;
+  border-radius: var(--radius-sm);
+  line-height:   1;
+  transition:    color var(--duration-fast), background var(--duration-fast);
+}
+.sidebar-new-btn:hover { color: var(--primary); background: var(--accent); }
+
+.sidebar-folder { display: flex; flex-direction: column; }
+
+.sidebar-folder-header {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-1);
+  padding:       4px var(--space-2);
+  width:         100%;
+  text-align:    left;
+  border-radius: var(--radius-sm);
+  font-size:     var(--font-size-xs);
+  color:         var(--sidebar-heading);
+  font-weight:   var(--font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition:    background var(--duration-fast);
+}
+.sidebar-folder-header:hover { background: var(--sidebar-item-hover); color: var(--foreground); }
+
+.folder-chevron { font-size: 10px; flex-shrink: 0; width: 12px; }
+.folder-name    { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-count   { font-size: var(--font-size-xs); font-weight: normal; }
+
+.sidebar-folder-contents { display: flex; flex-direction: column; gap: 1px; }

@@ -11,17 +11,17 @@
 }
 
 .notes-pane {
-  flex:           1;
-  height:         100%;
+  flex:    1;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-10);
+}
+
+/* In edit mode the split pane manages its own scroll; pane becomes a flex container */
+.notes-pane:has(.editor-split) {
+  padding:        0;
   overflow:       hidden;
   display:        flex;
   flex-direction: column;
-  padding:        var(--space-8) var(--space-10);
-}
-
-/* In edit mode, remove padding so split pane fills edge-to-edge */
-.notes-pane:has(.editor-split) {
-  padding: 0;
 }
 
 .notes-pane > .doc-title,
