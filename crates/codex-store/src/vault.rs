@@ -5,6 +5,7 @@ use codex_core::{
     store::VaultStore,
 };
 use chrono::Utc;
+use comrak::{markdown_to_html, Options};
 use serde::Serialize;
 use std::{
     fs,
@@ -377,6 +378,7 @@ impl Vault {
 
         let slug = publication_slug(&document);
         let output_path = output_root.join(format!("{slug}.md"));
+        let html_path = output_root.join(format!("{slug}.html"));
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -388,8 +390,10 @@ impl Vault {
             title: document.title.clone(),
         };
 
-        let published = render_published_markdown(self, &document)?;
-        fs::write(&output_path, published)?;
+        let published_markdown = render_published_markdown(self, &document)?;
+        let published_html = render_published_html(self, &document)?;
+        fs::write(&output_path, published_markdown)?;
+        fs::write(&html_path, published_html)?;
         Ok(Some(manifest))
     }
 
@@ -463,7 +467,7 @@ fn publication_slug(document: &Document) -> String {
 }
 
 fn render_published_markdown(vault: &Vault, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(vault, &document.content)?;
+    let body = rewrite_wikilinks_for_publication(vault, &document.content, PublicationRender::Markdown)?;
     let mut frontmatter = document.frontmatter.clone();
     frontmatter.imported_reference = false;
     frontmatter.source_path = None;
@@ -473,7 +477,26 @@ fn render_published_markdown(vault: &Vault, document: &Document) -> Result<Strin
     Ok(format!("+++\n{frontmatter}\n+++\n\n{body}"))
 }
 
-fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str) -> Result<String> {
+fn render_published_html(vault: &Vault, document: &Document) -> Result<String> {
+    let body = rewrite_wikilinks_for_publication(vault, &document.content, PublicationRender::Html)?;
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.strikethrough = true;
+    options.extension.tasklist = true;
+    let html = markdown_to_html(&body, &options);
+    Ok(format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{}</title><style>body{{max-width:860px;margin:0 auto;padding:40px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;background:#0b0f16;color:#d7e0ea}}a{{color:#4cc9f0}}pre,code{{background:#111826;border-radius:6px}}pre{{padding:12px;overflow:auto}}blockquote{{border-left:3px solid #29465b;padding-left:12px;color:#9fb1c1}}</style></head><body><main>{}</main></body></html>",
+        document.title, html
+    ))
+}
+
+#[derive(Clone, Copy)]
+enum PublicationRender {
+    Markdown,
+    Html,
+}
+
+fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str, mode: PublicationRender) -> Result<String> {
     let mut rendered = String::new();
     let mut remaining = body;
 
@@ -511,11 +534,23 @@ fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str) -> Result<String
             }
             let slug = publication_slug(&linked_doc);
             let label = display.unwrap_or(&linked_doc.title);
-            if let Some(anchor) = anchor {
-                rendered.push_str(&format!("[{label}](/{}{slug}#{})", if slug.starts_with('/') { "" } else { "/" }, slugify_title(anchor)));
-            } else {
-                rendered.push_str(&format!("[{label}](/{})", slug));
-            }
+            let href = match mode {
+                PublicationRender::Markdown => {
+                    if let Some(anchor) = anchor {
+                        format!("/{slug}#{}", slugify_title(anchor))
+                    } else {
+                        format!("/{slug}")
+                    }
+                }
+                PublicationRender::Html => {
+                    if let Some(anchor) = anchor {
+                        format!("/{slug}.html#{}", slugify_title(anchor))
+                    } else {
+                        format!("/{slug}.html")
+                    }
+                }
+            };
+            rendered.push_str(&format!("[{label}]({href})"));
         } else {
             rendered.push_str(display.unwrap_or(target));
         }
@@ -701,6 +736,9 @@ See [[roadmap|the roadmap]].\n",
         let published = std::fs::read_to_string(output_root.join("design.md")).unwrap();
         assert!(published.contains("[the roadmap](/roadmap)"));
         assert!(!published.contains("source_path"));
+
+        let html = std::fs::read_to_string(output_root.join("design.html")).unwrap();
+        assert!(html.contains("href=\"/roadmap.html\""));
 
         let manifest: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(output_root.join("manifest.json")).unwrap(),

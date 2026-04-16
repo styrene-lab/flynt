@@ -2,12 +2,9 @@ use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
     state::ThemeName,
 };
-use codex_core::{
-    models::{
-        AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig,
-        OmegonProfile, OmegonProfileModel, SyncConfig, VaultConfig,
-    },
-    store::VaultStore,
+use codex_core::models::{
+    AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig,
+    OmegonProfile, OmegonProfileModel, SyncConfig, VaultConfig,
 };
 use dioxus::prelude::*;
 

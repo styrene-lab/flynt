@@ -244,7 +244,10 @@ impl OmegonRuntimeContext {
 #[cfg(test)]
 mod tests {
     use super::{publication_output_path, LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
-    use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, SyncConfig};
+    use codex_core::{
+        models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, PublicationTarget, SyncConfig},
+        store::VaultStore,
+    };
     use tempfile::TempDir;
 
     #[test]

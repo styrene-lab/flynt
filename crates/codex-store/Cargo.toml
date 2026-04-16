@@ -18,6 +18,7 @@ tracing = { workspace = true }
 git2 = { version = "0.20", default-features = false }
 walkdir = "2"
 dirs = { workspace = true }
+comrak = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
