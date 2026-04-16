@@ -476,7 +476,7 @@ fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str) -> Result<String
             if let Some(anchor) = anchor {
                 rendered.push_str(&format!("[{label}](/{}{slug}#{})", if slug.starts_with('/') { "" } else { "/" }, slugify_title(anchor)));
             } else {
-                rendered.push_str(&format!("[{label}](/{}{slug})", if slug.starts_with('/') { "" } else { "/" }));
+                rendered.push_str(&format!("[{label}](/{})", slug));
             }
         } else {
             rendered.push_str(display.unwrap_or(target));

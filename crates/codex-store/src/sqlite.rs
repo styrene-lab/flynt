@@ -196,6 +196,29 @@ impl VaultStore for SqliteStore {
     fn save_document(&self, doc: &Document) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let fm   = serde_json::to_string(&doc.frontmatter)?;
+        let path = doc.path.to_string_lossy().to_string();
+        let id = doc.id.0.to_string();
+        conn.execute(
+            r#"DELETE FROM document_links
+               WHERE source_id IN (
+                   SELECT id FROM documents
+                   WHERE (path = ?1 AND id != ?2) OR (id = ?2 AND path != ?1)
+               )"#,
+            params![path, id],
+        )?;
+        conn.execute(
+            r#"DELETE FROM document_metadata
+               WHERE document_id IN (
+                   SELECT id FROM documents
+                   WHERE (path = ?1 AND id != ?2) OR (id = ?2 AND path != ?1)
+               )"#,
+            params![path, id],
+        )?;
+        conn.execute(
+            r#"DELETE FROM documents
+               WHERE (path = ?1 AND id != ?2) OR (id = ?2 AND path != ?1)"#,
+            params![path, id],
+        )?;
         conn.execute(
             r#"INSERT INTO documents (id, path, title, content, frontmatter, created_at, updated_at)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
