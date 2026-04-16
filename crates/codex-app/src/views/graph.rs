@@ -1,10 +1,13 @@
-use crate::bootstrap::AppContext;
-use codex_core::graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind, GraphPayload};
+use crate::{bootstrap::AppContext, state::{Route, TabState}};
+use codex_core::{graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind, GraphPayload}, models::DocumentId};
 use dioxus::prelude::*;
+use std::str::FromStr;
 
 #[component]
 pub fn GraphView() -> Element {
     let ctx = use_context::<AppContext>();
+    let mut tab_state = use_context::<Signal<TabState>>();
+    let mut active_route = use_context::<Signal<Route>>();
     let mut selected_group = use_signal(|| Option::<String>::None);
     let mut selected_kind = use_signal(|| Option::<GraphNodeKind>::None);
 
@@ -72,7 +75,22 @@ pub fn GraphView() -> Element {
                         GraphSummary { payload: payload.clone(), filtered_node_ids: filtered_ids.into_iter().collect() }
                         div { class: "graph-list",
                             for node in filtered_nodes {
-                                div { class: "graph-node-row",
+                                button {
+                                    class: "graph-node-row",
+                                    onclick: {
+                                        let node_id = node.id.clone();
+                                        let node_title = node.title.clone();
+                                        let node_kind = node.kind.clone();
+                                        move |_| {
+                                            if node_kind == GraphNodeKind::Document {
+                                                if let Ok(uuid) = uuid::Uuid::from_str(&node_id) {
+                                                    let doc_id = DocumentId(uuid);
+                                                    tab_state.write().open(doc_id, node_title.clone());
+                                                    *active_route.write() = Route::Notes;
+                                                }
+                                            }
+                                        }
+                                    },
                                     strong { "{node.title}" }
                                     span { class: "muted", " {format_node_kind(&node.kind)} • {node.group}" }
                                 }

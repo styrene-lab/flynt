@@ -1,10 +1,7 @@
-use crate::{
-    models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, SearchResult, Task, TaskId, WikiLink},
-    store::{DocumentMetadataFilter, TaskFilter, VaultStore},
-};
+use crate::store::{TaskFilter, VaultStore};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -126,6 +123,11 @@ fn top_level_group(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{build_graph_payload, GraphEdgeKind, GraphNodeKind};
+    use crate::{
+        models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, SearchResult, Task, TaskId, WikiLink},
+        store::{DocumentMetadataFilter, TaskFilter, VaultStore},
+    };
+    use anyhow::Result;
     use chrono::Utc;
     use std::{collections::HashMap, path::{Path, PathBuf}};
 
