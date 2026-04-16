@@ -1,4 +1,4 @@
-use codex_core::models::{CodexOperatorSettings, OmegonProfile};
+use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
 use tokio::{process::Command, sync::broadcast};

@@ -246,6 +246,20 @@ pub struct VaultConfig {
     pub sync: SyncConfig,
     #[serde(default)]
     pub appearance: AppearanceConfig,
+    #[serde(default)]
+    pub local_runtime: LocalRuntimeConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct LocalRuntimeConfig {
+    #[serde(default)]
+    pub local_state_root: Option<PathBuf>,
+    #[serde(default)]
+    pub codex_index_db_path: Option<PathBuf>,
+    #[serde(default)]
+    pub omegon_runtime_root: Option<PathBuf>,
+    #[serde(default)]
+    pub omegon_mind_db_path: Option<PathBuf>,
 }
 
 /// Appearance settings — theme name and prose font scale.

@@ -49,6 +49,7 @@ impl Vault {
                 vault_name: default_name,
                 sync: SyncConfig::None,
                 appearance: Default::default(),
+                local_runtime: Default::default(),
             };
             fs::write(&config_path, toml::to_string(&cfg)?)?;
             cfg
