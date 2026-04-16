@@ -260,6 +260,8 @@ pub struct LocalRuntimeConfig {
     pub omegon_runtime_root: Option<PathBuf>,
     #[serde(default)]
     pub omegon_mind_db_path: Option<PathBuf>,
+    #[serde(default)]
+    pub styrene_identity_profile: Option<String>,
 }
 
 /// Appearance settings — theme name and prose font scale.

@@ -83,6 +83,14 @@ pub fn SettingsView() -> Element {
             .map(|path| path.display().to_string())
             .unwrap_or_default()
     });
+    let mut styrene_identity_profile = use_signal(|| {
+        ctx.vault
+            .config
+            .local_runtime
+            .styrene_identity_profile
+            .clone()
+            .unwrap_or_default()
+    });
 
     let mut project_profile_state = use_context::<Signal<OmegonProfile>>();
     let mut operator_settings_state = use_context::<Signal<CodexOperatorSettings>>();
@@ -130,6 +138,7 @@ pub fn SettingsView() -> Element {
             codex_index_db_path: path_from_input(codex_index_db_path.read().as_str()),
             omegon_runtime_root: path_from_input(omegon_runtime_root.read().as_str()),
             omegon_mind_db_path: path_from_input(omegon_mind_db_path.read().as_str()),
+            styrene_identity_profile: string_from_input(styrene_identity_profile.read().as_str()),
         };
         let config = VaultConfig {
             vault_name: vault_name.read().clone(),
@@ -382,6 +391,15 @@ pub fn SettingsView() -> Element {
                             oninput: move |e| *omegon_mind_db_path.write() = e.value(),
                         }
                     }
+                    SettingsRow { label: "Styrene Identity",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{styrene_identity_profile}",
+                            placeholder: "optional local identity profile",
+                            oninput: move |e| *styrene_identity_profile.write() = e.value(),
+                        }
+                    }
                 }
 
                 // ── Omegon profile ───────────────────────────────────────────
@@ -505,6 +523,15 @@ fn path_from_input(raw: &str) -> Option<std::path::PathBuf> {
         None
     } else {
         Some(std::path::PathBuf::from(trimmed))
+    }
+}
+
+fn string_from_input(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
