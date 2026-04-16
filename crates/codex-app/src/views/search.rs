@@ -1,7 +1,47 @@
-use codex_core::store::VaultStore;
+use codex_core::{models::SearchResult, store::VaultStore};
 use dioxus::prelude::*;
-use std::collections::BTreeMap;
 use crate::{bootstrap::AppContext, state::{Route, TabState}};
+
+#[derive(Clone)]
+struct SearchGroup {
+    folder: String,
+    items:  Vec<SearchResult>,
+}
+
+fn top_level_folder(path: &std::path::Path) -> String {
+    let mut comps = path.components();
+    let Some(first) = comps.next() else { return String::new(); };
+    if comps.next().is_some() {
+        first.as_os_str().to_string_lossy().into_owned()
+    } else {
+        String::new()
+    }
+}
+
+fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
+    let mut groups: Vec<SearchGroup> = Vec::new();
+
+    for item in list.iter().cloned() {
+        let folder = top_level_folder(&item.path);
+        if let Some(group) = groups.iter_mut().find(|group| group.folder == folder) {
+            group.items.push(item);
+        } else {
+            groups.push(SearchGroup { folder, items: vec![item] });
+        }
+    }
+
+    for group in &mut groups {
+        group.items.sort_by(|a, b| b.score.total_cmp(&a.score));
+    }
+
+    groups.sort_by(|a, b| {
+        let a_score = a.items.first().map(|item| item.score).unwrap_or(f32::NEG_INFINITY);
+        let b_score = b.items.first().map(|item| item.score).unwrap_or(f32::NEG_INFINITY);
+        b_score.total_cmp(&a_score).then_with(|| a.folder.cmp(&b.folder))
+    });
+
+    groups
+}
 
 #[component]
 pub fn SearchView(mut search_query: Signal<String>) -> Element {
@@ -22,15 +62,12 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
         }
     });
 
-    // Read once; clone into per-use bindings — avoids borrow-after-move in RSX
-    let q_val   = search_query.read().clone();  // input value=""
-    let q_match = q_val.clone();                // match guard comparisons
-    let q_disp  = q_val.clone();                // display in empty-state text
+    let q_val   = search_query.read().clone();
+    let q_match = q_val.clone();
+    let q_disp  = q_val.clone();
 
     rsx! {
         div { class: "search-view",
-
-            // ── Persistent search bar ────────────────────────────────────────
             div { class: "search-view-bar",
                 span { class: "search-view-icon", "⌕" }
                 input {
@@ -48,7 +85,6 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
                 }
             }
 
-            // ── Content area ─────────────────────────────────────────────────
             div { class: "search-content",
                 match &*results.read() {
                     None => rsx! {
@@ -75,42 +111,35 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
                     },
 
                     Some(list) => {
-                        let mut groups: BTreeMap<String, Vec<_>> = BTreeMap::new();
-                        for r in list {
-                            let comps: Vec<_> = r.path.components().collect();
-                            let folder = if comps.len() > 1 {
-                                comps[0].as_os_str().to_string_lossy().into_owned()
-                            } else {
-                                String::new()
-                            };
-                            groups.entry(folder).or_default().push(r.clone());
-                        }
-
-                        let total   = list.len();
-                        let n_files = groups.values().map(|v| v.len()).sum::<usize>();
-                        let res_word  = if total   == 1 { "result" } else { "results" };
-                        let file_word = if n_files == 1 { "file"   } else { "files"   };
+                        let groups = group_results(list);
+                        let total = list.len();
+                        let file_count = list.iter()
+                            .map(|item| item.document_id.clone())
+                            .collect::<std::collections::HashSet<_>>()
+                            .len();
+                        let res_word = if total == 1 { "result" } else { "results" };
+                        let file_word = if file_count == 1 { "file" } else { "files" };
 
                         rsx! {
                             div { class: "search-stats-bar",
                                 span { class: "search-stats-count", "{total}" }
                                 span { class: "muted", " {res_word} in " }
-                                span { class: "search-stats-count", "{n_files}" }
+                                span { class: "search-stats-count", "{file_count}" }
                                 span { class: "muted", " {file_word}" }
                             }
 
                             div { class: "search-results-list",
-                                for (folder, items) in &groups {
+                                for group in groups {
                                     div { class: "search-group",
-                                        if !folder.is_empty() {
+                                        if !group.folder.is_empty() {
                                             div { class: "search-group-header",
                                                 span { class: "search-folder-icon", "▶" }
-                                                span { class: "search-group-name", "{folder}" }
-                                                span { class: "search-group-badge", "{items.len()}" }
+                                                span { class: "search-group-name", "{group.folder}" }
+                                                span { class: "search-group-badge", "{group.items.len()}" }
                                             }
                                         }
 
-                                        for item in items {
+                                        for item in group.items {
                                             {
                                                 let doc_id  = item.document_id.clone();
                                                 let title   = item.title.clone();
@@ -157,5 +186,45 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{group_results, top_level_folder};
+    use codex_core::models::{DocumentId, SearchResult};
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn result(path: &str, score: f32) -> SearchResult {
+        SearchResult {
+            document_id: DocumentId(Uuid::nil()),
+            path: PathBuf::from(path),
+            title: path.to_string(),
+            excerpt: String::new(),
+            score,
+        }
+    }
+
+    #[test]
+    fn top_level_folder_only_for_nested_paths() {
+        assert_eq!(top_level_folder(PathBuf::from("notes/alpha.md").as_path()), "notes");
+        assert_eq!(top_level_folder(PathBuf::from("alpha.md").as_path()), "");
+    }
+
+    #[test]
+    fn groups_and_items_follow_best_score() {
+        let groups = group_results(&[
+            result("ideas/low.md", 0.2),
+            result("notes/high.md", 0.9),
+            result("notes/mid.md", 0.5),
+            result("ideas/top.md", 1.2),
+        ]);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].folder, "ideas");
+        assert_eq!(groups[0].items[0].path, PathBuf::from("ideas/top.md"));
+        assert_eq!(groups[1].folder, "notes");
+        assert_eq!(groups[1].items[0].path, PathBuf::from("notes/high.md"));
     }
 }
