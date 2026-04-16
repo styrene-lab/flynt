@@ -1,4 +1,4 @@
-use dioxus::prelude::Signal;
+use dioxus::prelude::{Signal, Writable};
 use codex_core::{
     models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, VaultConfig},
     store::VaultStore,
@@ -467,6 +467,24 @@ pub struct AppContext {
     pub runtime: Signal<RuntimeState>,
 }
 
+impl AppContext {
+    pub fn vault_root(&self) -> PathBuf {
+        self.runtime.read().vault_root.clone()
+    }
+
+    pub fn vault(&self) -> Arc<Vault> {
+        self.runtime.read().vault.clone()
+    }
+
+    pub fn vault_events(&self) -> broadcast::Sender<VaultChangeEvent> {
+        self.runtime.read().vault_events.clone()
+    }
+
+    pub fn set_runtime(&mut self, runtime: RuntimeState) {
+        *self.runtime.write() = runtime;
+    }
+}
+
 /// Build AppContext at launch. Reads persisted launcher profile first, then CODEX_VAULT,
 /// then falls back to ~/Documents/Codex.
 fn publication_output_path(vault: &Vault) -> PathBuf {
@@ -544,6 +562,12 @@ pub fn bootstrap_from_env() -> AppContext {
     });
 
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
+    let runtime = Signal::new(RuntimeState {
+        vault_root,
+        vault,
+        vault_events: tx,
+        omegon,
+    });
 
-    AppContext { vault, vault_events: tx, omegon }
+    AppContext { runtime }
 }
