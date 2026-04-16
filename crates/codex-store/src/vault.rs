@@ -656,16 +656,15 @@ fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
         return path.clone();
     }
 
-    let local_state_root = runtime
+    if let Some(local_state_root) = runtime
         .local_state_root
         .as_ref()
         .filter(|path| path.is_absolute())
-        .cloned()
-        .or_else(dirs::data_local_dir)
-        .unwrap_or_else(|| root.join(".codex-local"))
-        .join("codex");
+    {
+        return local_state_root.join("codex").join("codex-index.db");
+    }
 
-    local_state_root.join("codex-index.db")
+    root.join(".codex-local").join("codex").join("codex-index.db")
 }
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
