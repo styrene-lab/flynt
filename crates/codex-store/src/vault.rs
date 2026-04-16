@@ -162,6 +162,53 @@ impl Vault {
         self.index_file(&abs_path)
     }
 
+    /// Persist an internal agent communication as a canonical markdown reference document.
+    pub fn store_agent_communication(
+        &self,
+        channel: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<PathBuf> {
+        let now = Utc::now();
+        let slug = slugify_title(title);
+        let relative_path = PathBuf::from("references/comms")
+            .join(channel)
+            .join(format!("{}-{}.md", now.format("%Y%m%d%H%M%S"), slug));
+        let absolute_path = self.root.join(&relative_path);
+
+        let mut frontmatter = Frontmatter::default();
+        frontmatter.id = Some(DocumentId::new().0);
+        frontmatter.source_format = Some("omegon_comm".into());
+        frontmatter.source_path = Some(format!("omegon://{channel}"));
+        frontmatter.imported_at = Some(now);
+        frontmatter.imported_reference = true;
+        frontmatter
+            .metadata
+            .insert("channel".into(), MetadataValue::String(channel.to_string()));
+        frontmatter
+            .metadata
+            .insert("kind".into(), MetadataValue::String("agent_communication".into()));
+
+        let document = Document {
+            id: DocumentId(frontmatter.id.expect("frontmatter id set for communication")),
+            path: relative_path.clone(),
+            title: title.to_string(),
+            content: content.to_string(),
+            frontmatter,
+            outgoing_links: parse_document_source(content).2,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let canonical = canonical_document_source(&document);
+        if let Some(parent) = absolute_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&absolute_path, canonical)?;
+        self.index_file(&absolute_path)?;
+        Ok(relative_path)
+    }
+
     /// Import markdown documents from an external directory tree into this vault.
     /// The imported markdown becomes Codex canonical truth while preserving source provenance.
     pub fn import_markdown_tree(&self, source_root: &Path) -> Result<ImportReport> {
@@ -282,7 +329,20 @@ fn extract_h1(body: &str) -> Option<String> {
 
 fn canonical_document_source(document: &Document) -> String {
     let frontmatter = toml::to_string(&document.frontmatter).unwrap_or_default();
-    format!("+++\n{frontmatter}+++\n\n{}", document.content)
+    format!("+++\n{frontmatter}\n+++\n\n{}", document.content)
+}
+
+fn slugify_title(title: &str) -> String {
+    let slug: String = title
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let slug = slug
+        .split('-')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() { "note".into() } else { slug }
 }
 
 fn import_destination_path(relative_source_path: &Path) -> PathBuf {
@@ -313,7 +373,7 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{import_destination_path, resolve_index_db_path, Vault};
-    use codex_core::models::{LocalRuntimeConfig, MetadataValue};
+    use codex_core::{models::{LocalRuntimeConfig, MetadataValue}, store::VaultStore};
     use tempfile::TempDir;
 
     #[test]
@@ -393,5 +453,29 @@ See [[roadmap]].\n",
 
         let imported_meta = vault.store.get_document_by_path(&imported_rel).unwrap().unwrap();
         assert_eq!(imported_meta.path, imported_rel);
+    }
+
+    #[test]
+    fn stores_agent_communication_under_references_comms_with_metadata_and_links() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let relative_path = vault
+            .store_agent_communication("vox", "Standup Recall", "See [[design]].")
+            .unwrap();
+
+        assert!(relative_path.starts_with("references/comms/vox"));
+        let doc = vault.store.get_document_by_path(&relative_path).unwrap().unwrap();
+        assert_eq!(doc.title, "Standup Recall");
+        assert_eq!(doc.frontmatter.source_format.as_deref(), Some("omegon_comm"));
+        assert_eq!(doc.frontmatter.source_path.as_deref(), Some("omegon://vox"));
+        assert!(doc.frontmatter.imported_reference);
+        assert_eq!(
+            doc.frontmatter.metadata.get("channel"),
+            Some(&MetadataValue::String("vox".into()))
+        );
+        assert_eq!(doc.outgoing_links.len(), 1);
+        assert_eq!(doc.outgoing_links[0].target, "design");
     }
 }
