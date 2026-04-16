@@ -1,26 +1,6 @@
 use crate::bootstrap::AppContext;
-use codex_core::store::VaultStore;
+use codex_core::graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind};
 use dioxus::prelude::*;
-use serde::Serialize;
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct GraphNode {
-    id: String,
-    title: String,
-    group: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct GraphEdge {
-    source: String,
-    target: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct GraphPayload {
-    nodes: Vec<GraphNode>,
-    edges: Vec<GraphEdge>,
-}
 
 #[component]
 pub fn GraphView() -> Element {
@@ -29,7 +9,10 @@ pub fn GraphView() -> Element {
     let graph = use_resource(move || {
         let ctx = ctx.clone();
         async move {
-            tokio::task::spawn_blocking(move || build_graph_payload(&ctx)).await.ok().flatten()
+            tokio::task::spawn_blocking(move || build_graph_payload(&*ctx.vault.store))
+                .await
+                .ok()
+                .and_then(Result::ok)
         }
     });
 
@@ -47,7 +30,14 @@ pub fn GraphView() -> Element {
                         for node in &payload.nodes {
                             div { class: "graph-node-row",
                                 strong { "{node.title}" }
-                                span { class: "muted", " {node.group}" }
+                                span { class: "muted", " {format_node_kind(&node.kind)} • {node.group}" }
+                            }
+                        }
+                    }
+                    div { class: "graph-list",
+                        for edge in &payload.edges {
+                            div { class: "graph-node-row muted",
+                                "{edge.source} → {edge.target} • {format_edge_kind(&edge.kind)}"
                             }
                         }
                     }
@@ -58,37 +48,19 @@ pub fn GraphView() -> Element {
     }
 }
 
-fn build_graph_payload(ctx: &AppContext) -> Option<GraphPayload> {
-    let docs = ctx.vault.store.list_documents().ok()?;
-    let mut nodes = Vec::with_capacity(docs.len());
-    let mut edges = Vec::new();
-
-    for meta in docs {
-        let id = meta.id.0.to_string();
-        nodes.push(GraphNode {
-            id: id.clone(),
-            title: meta.title.clone(),
-            group: top_level_group(&meta.path),
-        });
-
-        if let Ok(Some(doc)) = ctx.vault.store.get_document(&meta.id) {
-            for link in doc.outgoing_links {
-                if let Ok(Some(target)) = ctx.vault.store.find_document_by_slug(&link.target) {
-                    edges.push(GraphEdge {
-                        source: id.clone(),
-                        target: target.id.0.to_string(),
-                    });
-                }
-            }
-        }
+fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
+    match kind {
+        GraphNodeKind::Document => "document",
+        GraphNodeKind::Task => "task",
+        GraphNodeKind::Board => "board",
+        GraphNodeKind::MemoryFact => "memory",
     }
-
-    Some(GraphPayload { nodes, edges })
 }
 
-fn top_level_group(path: &std::path::Path) -> String {
-    path.components()
-        .next()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .unwrap_or_else(|| "root".into())
+fn format_edge_kind(kind: &GraphEdgeKind) -> &'static str {
+    match kind {
+        GraphEdgeKind::Wikilink => "wikilink",
+        GraphEdgeKind::TaskMembership => "task-membership",
+        GraphEdgeKind::SemanticSupport => "semantic-support",
+    }
 }
