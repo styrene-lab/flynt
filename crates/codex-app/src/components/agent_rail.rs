@@ -1,14 +1,14 @@
 use crate::bootstrap::AppContext;
+use codex_core::models::{CodexOperatorSettings, OmegonProfile};
 use dioxus::prelude::*;
 
 #[component]
 pub fn AgentRail() -> Element {
     let ctx = use_context::<AppContext>();
-    let operator_settings = ctx.omegon.load_operator_settings();
-    let project_profile = ctx.omegon.load_project_profile();
+    let operator_settings = use_context::<Signal<CodexOperatorSettings>>().read().clone();
+    let project_profile = use_context::<Signal<OmegonProfile>>().read().clone();
 
     let mut input = use_signal(String::new);
-    let mut extension = use_signal(|| operator_settings.rail_extension.clone());
 
     let active_persona = if operator_settings.active_persona.trim().is_empty() {
         "off".to_string()
@@ -68,9 +68,10 @@ pub fn AgentRail() -> Element {
                     class: "settings-field",
                     span { "Extension" }
                     input {
-                        value: "{extension}",
+                        value: "{operator_settings.rail_extension}",
                         placeholder: "vox",
-                        oninput: move |e| *extension.write() = e.value(),
+                        disabled: true,
+                        title: "Configured from Codex operator settings",
                     }
                 }
 

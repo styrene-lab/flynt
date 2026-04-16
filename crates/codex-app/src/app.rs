@@ -1,10 +1,10 @@
-use dioxus::prelude::*;
 use crate::{
     bootstrap::bootstrap_from_env,
     components::{AgentRail, Sidebar, TabBar, Toolbar},
     state::{Route, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView},
 };
+use dioxus::prelude::*;
 
 #[component]
 pub fn App() -> Element {
@@ -15,16 +15,16 @@ pub fn App() -> Element {
     let theme = use_context_provider(|| {
         Signal::new(ThemeName(ctx.vault.config.appearance.theme.clone()))
     });
-    let font_size = use_context_provider(|| {
-        Signal::new(ctx.vault.config.appearance.font_size)
-    });
+    let font_size = use_context_provider(|| Signal::new(ctx.vault.config.appearance.font_size));
+    use_context_provider(|| Signal::new(ctx.omegon.load_project_profile()));
+    use_context_provider(|| Signal::new(ctx.omegon.load_operator_settings()));
 
     // Tab state — provided via context so sidebar, tab bar, and notes share it
     use_context_provider(|| Signal::new(TabState::default()));
 
     // Route — provided via context so search view can navigate back
     let active_route = use_context_provider(|| Signal::new(Route::default()));
-    let mut show_agent = use_signal(|| false);
+    let show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
 
     // Shared search query — lives here so toolbar and search view share it

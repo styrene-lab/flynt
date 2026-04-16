@@ -48,8 +48,12 @@ pub fn SettingsView() -> Element {
     let mut vault_name = use_signal(|| ctx.vault.config.vault_name.clone());
     let mut sync_config = use_signal(|| ctx.vault.config.sync.clone());
 
+    let mut project_profile_state = use_context::<Signal<OmegonProfile>>();
+    let mut operator_settings_state = use_context::<Signal<CodexOperatorSettings>>();
+    let initial_profile = project_profile_state.read().clone();
+    let initial_operator = operator_settings_state.read().clone();
+
     // Omegon-compatible persisted profile.
-    let initial_profile = ctx.omegon.load_project_profile();
     let mut model_provider = use_signal(|| {
         initial_profile
             .last_used_model
@@ -74,7 +78,6 @@ pub fn SettingsView() -> Element {
     });
 
     // Codex-owned operator preferences.
-    let initial_operator = ctx.omegon.load_operator_settings();
     let mut active_persona = use_signal(|| initial_operator.active_persona.clone());
     let mut rail_extension = use_signal(|| initial_operator.rail_extension.clone());
     let mut vox_enabled = use_signal(|| initial_operator.vox.enabled);
@@ -170,6 +173,8 @@ pub fn SettingsView() -> Element {
             return;
         }
 
+        *project_profile_state.write() = profile;
+        *operator_settings_state.write() = operator_settings;
         *save_msg.write() = Some(("ok", "Settings saved."));
     };
 
