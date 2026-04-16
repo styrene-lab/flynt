@@ -98,6 +98,13 @@ pub struct DocumentMeta {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PublicationTarget {
+    pub repo: String,
+    pub branch: String,
+    pub site_dir: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PublicationConfig {
     #[serde(default)]
@@ -106,6 +113,8 @@ pub struct PublicationConfig {
     pub slug: Option<String>,
     #[serde(default)]
     pub visibility: PublicationVisibility,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<PublicationTarget>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

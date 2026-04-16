@@ -82,9 +82,6 @@ pub fn App() -> Element {
                     }
                     match *active_route.read() {
                         Route::Welcome => {
-                            let current_vault_root = ctx.vault.root.clone();
-                            let choose_existing_root = current_vault_root.clone();
-                            let imported_root = current_vault_root.join("references/imported");
                             let on_choose_existing = move |_| {
                                 let Some(selected_root) = FileDialog::new().pick_folder() else {
                                     return;
@@ -164,11 +161,11 @@ pub fn App() -> Element {
                                     .and_then(|name| name.to_str())
                                     .unwrap_or("Black Meridian")
                                     .to_string();
-                                if let Ok(_vault) = OmegonRuntimeContext::initialize_github_linked_vault(
+                                if let Ok(_vault) = OmegonRuntimeContext::initialize_github_pages_publication(
                                     &local_path,
                                     &name,
-                                    "https://github.com/black-meridian/codex-vault.git",
-                                    "main",
+                                    "https://github.com/black-meridian/codex-site.git",
+                                    "gh-pages",
                                 ) {
                                     let mut profile = launcher_profile();
                                     profile.pending_setup = Some(PendingVaultSetup::LinkGithub {

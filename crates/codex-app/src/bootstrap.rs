@@ -1,4 +1,4 @@
-use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, SyncConfig, VaultConfig};
+use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationConfig, PublicationTarget, SyncConfig, VaultConfig};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
 use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
@@ -91,6 +91,26 @@ impl OmegonRuntimeContext {
                 auto_commit_seconds: 60,
             },
         )
+    }
+
+    pub fn initialize_github_pages_publication(
+        local_path: &Path,
+        name: &str,
+        repo: &str,
+        branch: &str,
+    ) -> anyhow::Result<Vault> {
+        let vault = Self::initialize_github_linked_vault(local_path, name, repo, branch)?;
+        let home_path = local_path.join("home.md");
+        if !home_path.exists() {
+            std::fs::write(
+                &home_path,
+                format!(
+                    "+++\ntitle = \"Home\"\n[publication]\nenabled = true\nvisibility = \"public\"\n[publication.target]\nrepo = \"{repo}\"\nbranch = \"{branch}\"\nsite_dir = \"site\"\n+++\n\n# Home\n\nWelcome to {name}.\n"
+                ),
+            )?;
+            vault.index_file(&home_path)?;
+        }
+        Ok(vault)
     }
 
     fn discover(vault_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
@@ -260,6 +280,31 @@ mod tests {
                 branch: "main".into(),
                 auto_commit_seconds: 60,
             }
+        );
+    }
+
+    #[test]
+    fn initializes_github_pages_publication_seed_document() {
+        let tmp = TempDir::new().unwrap();
+        let local_path = tmp.path().join("vault");
+        let vault = OmegonRuntimeContext::initialize_github_pages_publication(
+            &local_path,
+            "Black Meridian",
+            "https://github.com/black-meridian/codex-site.git",
+            "gh-pages",
+        )
+        .unwrap();
+
+        let home = vault.store.get_document_by_path(std::path::Path::new("home.md")).unwrap().unwrap();
+        assert!(home.frontmatter.publication.enabled);
+        assert_eq!(home.frontmatter.publication.visibility, codex_core::models::PublicationVisibility::Public);
+        assert_eq!(
+            home.frontmatter.publication.target,
+            Some(PublicationTarget {
+                repo: "https://github.com/black-meridian/codex-site.git".into(),
+                branch: "gh-pages".into(),
+                site_dir: "site".into(),
+            })
         );
     }
 

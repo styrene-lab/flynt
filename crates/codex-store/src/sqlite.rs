@@ -130,7 +130,6 @@ impl VaultStore for SqliteStore {
             .prepare("SELECT id, path, title, frontmatter, updated_at FROM documents ORDER BY updated_at DESC")?;
         let rows = stmt.query_map([], |row| {
             let fm_json: String = row.get(3)?;
-            let updated_at: String = row.get(4)?;
             Ok(DocumentMeta {
                 id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
                 path: row.get::<_, String>(1)?.into(),
