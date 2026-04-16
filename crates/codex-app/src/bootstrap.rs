@@ -455,11 +455,16 @@ mod tests {
 
 /// Top-level runtime context injected into the Dioxus app.
 #[derive(Clone)]
+pub struct RuntimeState {
+    pub vault_root: PathBuf,
+    pub vault: Arc<Vault>,
+    pub vault_events: broadcast::Sender<VaultChangeEvent>,
+    pub omegon: OmegonRuntimeContext,
+}
+
+#[derive(Clone)]
 pub struct AppContext {
-    pub vault_root: Signal<PathBuf>,
-    pub vault: Signal<Arc<Vault>>,
-    pub vault_events: Signal<broadcast::Sender<VaultChangeEvent>>,
-    pub omegon: Signal<OmegonRuntimeContext>,
+    pub runtime: Signal<RuntimeState>,
 }
 
 /// Build AppContext at launch. Reads persisted launcher profile first, then CODEX_VAULT,
