@@ -1,7 +1,10 @@
-use crate::{models::*, store::{DocumentMetadataFilter, TaskFilter, VaultStore}};
+use crate::{
+    models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, SearchResult, Task, TaskId, WikiLink},
+    store::{DocumentMetadataFilter, TaskFilter, VaultStore},
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,6 +71,39 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
         }
     }
 
+    let boards = store.list_boards()?;
+    for board in &boards {
+        nodes.push(GraphNode {
+            id: format!("board:{}", board.id.0),
+            kind: GraphNodeKind::Board,
+            title: board.name.clone(),
+            group: "boards".into(),
+        });
+    }
+
+    let tasks = store.list_tasks(&TaskFilter::default())?;
+    for task in tasks {
+        let task_id = format!("task:{}", task.id.0);
+        nodes.push(GraphNode {
+            id: task_id.clone(),
+            kind: GraphNodeKind::Task,
+            title: task.title.clone(),
+            group: task.column.clone(),
+        });
+        edges.push(GraphEdge {
+            source: format!("board:{}", task.board_id.0),
+            target: task_id.clone(),
+            kind: GraphEdgeKind::TaskMembership,
+        });
+        for doc_ref in task.document_refs {
+            edges.push(GraphEdge {
+                source: task_id.clone(),
+                target: doc_ref.0.to_string(),
+                kind: GraphEdgeKind::SemanticSupport,
+            });
+        }
+    }
+
     Ok(GraphPayload { nodes, edges })
 }
 
@@ -81,12 +117,14 @@ fn top_level_group(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{build_graph_payload, GraphEdgeKind, GraphNodeKind};
-    use super::*;
     use chrono::Utc;
+    use std::{collections::HashMap, path::{Path, PathBuf}};
 
     struct StubStore {
         docs: Vec<DocumentMeta>,
         full_docs: HashMap<String, Document>,
+        boards: Vec<Board>,
+        tasks: Vec<Task>,
     }
 
     impl VaultStore for StubStore {
@@ -104,11 +142,11 @@ mod tests {
         fn search_documents(&self, _query: &str) -> Result<Vec<SearchResult>> { Ok(vec![]) }
         fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
         fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
-        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(vec![]) }
+        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
         fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }
         fn delete_task(&self, _id: &TaskId) -> Result<()> { Ok(()) }
         fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
-        fn list_boards(&self) -> Result<Vec<Board>> { Ok(vec![]) }
+        fn list_boards(&self) -> Result<Vec<Board>> { Ok(self.boards.clone()) }
         fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
     }
 
@@ -117,6 +155,8 @@ mod tests {
         let now = Utc::now();
         let a = DocumentId::new();
         let b = DocumentId::new();
+        let board_id = BoardId::new();
+        let task_id = TaskId::new();
         let docs = vec![
             DocumentMeta { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), tags: vec![], metadata: Default::default(), updated_at: now },
             DocumentMeta { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), tags: vec![], metadata: Default::default(), updated_at: now },
@@ -125,13 +165,33 @@ mod tests {
             (a.0.to_string(), Document { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![WikiLink { target: "beta".into(), display: None, anchor: None }], created_at: now, updated_at: now }),
             (b.0.to_string(), Document { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![], created_at: now, updated_at: now }),
         ]);
-        let store = StubStore { docs, full_docs };
+        let store = StubStore {
+            docs,
+            full_docs,
+            boards: vec![Board::default_sprint("Sprint")],
+            tasks: vec![Task {
+                id: task_id,
+                board_id,
+                column: "Backlog".into(),
+                title: "Task one".into(),
+                description: String::new(),
+                priority: Default::default(),
+                status: Default::default(),
+                tags: vec![],
+                document_refs: vec![a.clone()],
+                due_date: None,
+                position: 0,
+                created_at: now,
+                updated_at: now,
+            }],
+        };
 
         let graph = build_graph_payload(&store).unwrap();
-        assert_eq!(graph.nodes.len(), 2);
-        assert_eq!(graph.nodes[0].kind, GraphNodeKind::Document);
-        assert_eq!(graph.nodes[0].group, "design");
-        assert_eq!(graph.edges.len(), 1);
-        assert_eq!(graph.edges[0].kind, GraphEdgeKind::Wikilink);
+        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Document));
+        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Board));
+        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Task));
+        assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::Wikilink));
+        assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::TaskMembership));
+        assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::SemanticSupport));
     }
 }
