@@ -43,6 +43,23 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
     groups
 }
 
+fn flatten_grouped_results(groups: &[SearchGroup]) -> Vec<SearchResult> {
+    groups.iter().flat_map(|group| group.items.iter().cloned()).collect()
+}
+
+fn cycle_active_index(current: Option<usize>, len: usize, step: isize) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+
+    match (current, step.is_negative()) {
+        (None, false) => Some(0),
+        (None, true) => Some(len - 1),
+        (Some(index), false) => Some((index + 1) % len),
+        (Some(index), true) => Some((index + len - 1) % len),
+    }
+}
+
 #[component]
 pub fn Toolbar(
     sync_status:      Signal<SyncStatus>,
@@ -54,11 +71,13 @@ pub fn Toolbar(
     let mut tab_state = use_context::<Signal<TabState>>();
     let mut results:  Signal<Vec<SearchResult>> = use_signal(Vec::new);
     let mut focused = use_signal(|| false);
+    let mut active_index = use_signal(|| None::<usize>);
 
     let ctx_search = ctx.clone();
     let on_input = move |e: Event<FormData>| {
         let q = e.value();
         *search_query.write() = q.clone();
+        *active_index.write() = None;
         if q.trim().is_empty() { *results.write() = Vec::new(); return; }
         let c = ctx_search.clone();
         spawn(async move {
@@ -75,6 +94,9 @@ pub fn Toolbar(
         SyncStatus::Conflict(_) => "⚠",
     };
 
+    let grouped_results = group_results(&results.read());
+    let flat_results = flatten_grouped_results(&grouped_results);
+
     rsx! {
         div { class: "toolbar",
             span { class: "toolbar-vault-name", "{ctx.vault.config.vault_name}" }
@@ -88,14 +110,37 @@ pub fn Toolbar(
                     oninput:  on_input,
                     onfocus:  move |_| *focused.write() = true,
                     onkeydown: move |e| {
+                        if e.key() == Key::ArrowDown {
+                            e.prevent_default();
+                            let current = *active_index.read();
+                            *active_index.write() = cycle_active_index(current, flat_results.len(), 1);
+                        }
+                        if e.key() == Key::ArrowUp {
+                            e.prevent_default();
+                            let current = *active_index.read();
+                            *active_index.write() = cycle_active_index(current, flat_results.len(), -1);
+                        }
                         if e.key() == Key::Enter {
+                            let selected_index = *active_index.read();
+                            if let Some(index) = selected_index {
+                                if let Some(item) = flat_results.get(index) {
+                                    tab_state.write().open(item.document_id.clone(), item.title.clone());
+                                    *active_route.write() = Route::Notes;
+                                    *focused.write() = false;
+                                    *results.write() = Vec::new();
+                                    *active_index.write() = None;
+                                    return;
+                                }
+                            }
                             *active_route.write() = Route::Search;
                             *focused.write()  = false;
                             *results.write()  = Vec::new();
+                            *active_index.write() = None;
                         }
                         if e.key() == Key::Escape {
                             *focused.write()  = false;
                             *results.write()  = Vec::new();
+                            *active_index.write() = None;
                         }
                     },
                     onblur: move |_| {
@@ -103,50 +148,61 @@ pub fn Toolbar(
                             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                             *focused.write() = false;
                             *results.write() = Vec::new();
+                            *active_index.write() = None;
                         });
                     },
                 }
 
                 if *focused.read() && !results.read().is_empty() {
                     div { class: "search-overlay",
-                        for group in group_results(&results.read()) {
-                            if !group.folder.is_empty() {
-                                div { class: "search-group-header",
-                                    span { class: "search-folder-icon", "▶" }
-                                    span { class: "search-group-name", "{group.folder}" }
-                                    span { class: "search-group-badge", "{group.items.len()}" }
-                                }
-                            }
+                        {
+                            let mut result_index = 0usize;
+                            rsx! {
+                                for group in grouped_results {
+                                    if !group.folder.is_empty() {
+                                        div { class: "search-group-header",
+                                            span { class: "search-folder-icon", "▶" }
+                                            span { class: "search-group-name", "{group.folder}" }
+                                            span { class: "search-group-badge", "{group.items.len()}" }
+                                        }
+                                    }
 
-                            for item in group.items {
-                                {
-                                    let id      = item.document_id.clone();
-                                    let title   = item.title.clone();
-                                    let t2      = title.clone();
-                                    let path    = item.path.to_string_lossy().to_string();
-                                    let excerpt = item.excerpt.clone();
-                                    let breadcrumb: String = {
-                                        let mut parts: Vec<&str> = path.split('/').collect();
-                                        if parts.len() > 1 { parts.pop(); }
-                                        parts.join(" › ")
-                                    };
-                                    rsx! {
-                                        button {
-                                            class: "search-overlay-item",
-                                            onmousedown: move |_| {
-                                                tab_state.write().open(id.clone(), t2.clone());
-                                                *active_route.write() = Route::Notes;
-                                                *focused.write() = false;
-                                                *results.write() = Vec::new();
-                                            },
-                                            span { class: "search-overlay-title", "{title}" }
-                                            if !breadcrumb.is_empty() {
-                                                span { class: "search-overlay-path", "{breadcrumb}" }
-                                            }
-                                            if !excerpt.is_empty() {
-                                                div {
-                                                    class: "src-excerpt",
-                                                    dangerous_inner_html: "{excerpt}",
+                                    for item in group.items {
+                                        {
+                                            let id = item.document_id.clone();
+                                            let title = item.title.clone();
+                                            let t2 = title.clone();
+                                            let path = item.path.to_string_lossy().to_string();
+                                            let excerpt = item.excerpt.clone();
+                                            let is_active = *active_index.read() == Some(result_index);
+                                            let item_index = result_index;
+                                            result_index += 1;
+                                            let breadcrumb: String = {
+                                                let mut parts: Vec<&str> = path.split('/').collect();
+                                                if parts.len() > 1 { parts.pop(); }
+                                                parts.join(" › ")
+                                            };
+                                            rsx! {
+                                                button {
+                                                    class: if is_active { "search-overlay-item active" } else { "search-overlay-item" },
+                                                    onmouseenter: move |_| *active_index.write() = Some(item_index),
+                                                    onmousedown: move |_| {
+                                                        tab_state.write().open(id.clone(), t2.clone());
+                                                        *active_route.write() = Route::Notes;
+                                                        *focused.write() = false;
+                                                        *results.write() = Vec::new();
+                                                        *active_index.write() = None;
+                                                    },
+                                                    span { class: "search-overlay-title", "{title}" }
+                                                    if !breadcrumb.is_empty() {
+                                                        span { class: "search-overlay-path", "{breadcrumb}" }
+                                                    }
+                                                    if !excerpt.is_empty() {
+                                                        div {
+                                                            class: "src-excerpt",
+                                                            dangerous_inner_html: "{excerpt}",
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -155,7 +211,13 @@ pub fn Toolbar(
                             }
                         }
                         div { class: "search-overlay-enter",
-                            "Press ↵ to see all results"
+                            if flat_results.is_empty() {
+                                "Press ↵ to see all results"
+                            } else if active_index.read().is_some() {
+                                "↵ open selected • ↑↓ move • Esc close"
+                            } else {
+                                "Press ↵ to see all results • ↑↓ to select"
+                            }
                         }
                     }
                 }
@@ -178,7 +240,7 @@ pub fn Toolbar(
 
 #[cfg(test)]
 mod tests {
-    use super::group_results;
+    use super::{cycle_active_index, flatten_grouped_results, group_results};
     use codex_core::models::{DocumentId, SearchResult};
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -207,5 +269,27 @@ mod tests {
         assert_eq!(groups[0].items[0].path, PathBuf::from("ideas/top.md"));
         assert_eq!(groups[1].folder, "notes");
         assert_eq!(groups[1].items[0].path, PathBuf::from("notes/high.md"));
+    }
+
+    #[test]
+    fn flattened_results_preserve_render_order() {
+        let groups = group_results(&[
+            result("ideas/top.md", 1.2),
+            result("ideas/low.md", 0.2),
+            result("notes/high.md", 0.9),
+        ]);
+
+        let flattened = flatten_grouped_results(&groups);
+        assert_eq!(flattened[0].path, PathBuf::from("ideas/top.md"));
+        assert_eq!(flattened[1].path, PathBuf::from("ideas/low.md"));
+        assert_eq!(flattened[2].path, PathBuf::from("notes/high.md"));
+    }
+
+    #[test]
+    fn keyboard_selection_wraps() {
+        assert_eq!(cycle_active_index(None, 3, 1), Some(0));
+        assert_eq!(cycle_active_index(Some(0), 3, -1), Some(2));
+        assert_eq!(cycle_active_index(Some(2), 3, 1), Some(0));
+        assert_eq!(cycle_active_index(None, 0, 1), None);
     }
 }

@@ -17,6 +17,7 @@ chrono     = { workspace = true }
 comrak      = { workspace = true }
 syntect     = { workspace = true }
 once_cell   = { workspace = true }
+uuid        = { workspace = true }
 wry         = "0.53"
 dirs        = "5"
 dioxus      = { workspace = true, features = ["desktop"] }
