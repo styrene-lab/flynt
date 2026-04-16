@@ -110,7 +110,7 @@ impl VaultStore for SqliteStore {
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
-        Ok(Some(row_to_document(row)?))
+        Ok(Some(row_to_document(&conn, row)?))
     }
 
     fn get_document_by_path(&self, path: &Path) -> Result<Option<Document>> {
@@ -121,7 +121,7 @@ impl VaultStore for SqliteStore {
         )?;
         let mut rows = stmt.query(params![path_str.as_ref()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
-        Ok(Some(row_to_document(row)?))
+        Ok(Some(row_to_document(&conn, row)?))
     }
 
     fn list_documents(&self) -> Result<Vec<DocumentMeta>> {
@@ -420,19 +420,30 @@ impl VaultStore for SqliteStore {
 
 // ── Row deserializers ─────────────────────────────────────────────────────────
 
-fn row_to_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
+fn row_to_document(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Result<Document> {
     let fm_json: String = row.get(4)?;
     let created_at: String = row.get(5)?;
     let updated_at: String = row.get(6)?;
     let path_str: String = row.get(1)?;
-    let frontmatter: Frontmatter =
-        serde_json::from_str(&fm_json).unwrap_or_default();
+    let source_id: String = row.get(0)?;
+    let frontmatter: Frontmatter = serde_json::from_str(&fm_json).unwrap_or_default();
+    let mut link_stmt = conn.prepare("SELECT target FROM document_links WHERE source_id = ?1 ORDER BY target ASC")?;
+    let outgoing_links = link_stmt
+        .query_map(params![source_id], |row| {
+            let target: String = row.get(0)?;
+            Ok(WikiLink {
+                target,
+                display: None,
+                anchor: None,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(Document {
-        id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
+        id: DocumentId(source_id.parse().unwrap()),
         path: path_str.into(),
         title: row.get(2)?,
         content: row.get(3)?,
-        outgoing_links: vec![], // populated by caller if needed
+        outgoing_links,
         frontmatter,
         created_at: created_at.parse().unwrap(),
         updated_at: updated_at.parse().unwrap(),
