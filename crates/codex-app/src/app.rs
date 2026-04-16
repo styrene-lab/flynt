@@ -170,8 +170,8 @@ pub fn App() -> Element {
                                     let mut profile = launcher_profile();
                                     profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
                                         local_path: local_path.clone(),
-                                        repo: "https://github.com/black-meridian/codex-vault.git".into(),
-                                        branch: "main".into(),
+                                        repo: "https://github.com/black-meridian/codex-site.git".into(),
+                                        branch: "gh-pages".into(),
                                     });
                                     profile.last_vault_root = Some(local_path.clone());
                                     profile.wizard_completed = true;
