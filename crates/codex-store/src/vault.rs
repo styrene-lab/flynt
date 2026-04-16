@@ -106,6 +106,7 @@ impl Vault {
             fs::create_dir_all(parent)?;
         }
         let store = Arc::new(SqliteStore::open(&db_path)?);
+        store.purge_paths_outside_root(root)?;
 
         info!("Vault opened at {:?}, store ready at {:?}", root, db_path);
         Ok(Self { root: root.to_owned(), store, config })
