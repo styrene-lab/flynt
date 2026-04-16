@@ -1,6 +1,6 @@
 use codex_core::{models::DocumentMeta, store::VaultStore};
 use dioxus::prelude::*;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 use crate::{bootstrap::AppContext, state::{Route, TabState}};
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -158,4 +158,22 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
             span { class: "doc-title", "{meta.title}" }
         }
     }
+}
+
+pub fn initial_note_id_for_vault(vault_root: &PathBuf) -> Option<String> {
+    let vault = crate::bootstrap::OmegonRuntimeContext::initialize_vault(
+        vault_root,
+        vault_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Codex"),
+        codex_core::models::SyncConfig::None,
+    ).ok()?;
+    vault
+        .store
+        .list_documents()
+        .ok()?
+        .into_iter()
+        .next()
+        .map(|doc| doc.id.0.to_string())
 }

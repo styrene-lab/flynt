@@ -1,6 +1,6 @@
 use crate::{
     bootstrap::{bootstrap_from_env, OmegonRuntimeContext, PendingVaultSetup},
-    components::{AgentRail, Sidebar, TabBar, Toolbar},
+    components::{initial_note_id_for_vault, AgentRail, Sidebar, TabBar, Toolbar},
     state::{Route, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
@@ -36,6 +36,7 @@ pub fn App() -> Element {
         };
         Signal::new(route)
     });
+    let mut tab_state = use_context::<Signal<TabState>>();
     let show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
 
@@ -109,6 +110,14 @@ pub fn App() -> Element {
                                 }
                                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                 launcher_profile.set(profile);
+                                if let Some(note_id) = initial_note_id_for_vault(&selected_root) {
+                                    if let Ok(parsed) = uuid::Uuid::parse_str(&note_id) {
+                                        tab_state.write().open(
+                                            codex_core::models::DocumentId(parsed),
+                                            "Notes".into(),
+                                        );
+                                    }
+                                }
                                 *active_route.write() = Route::Notes;
                             };
                             let on_create_local = move |_| {
