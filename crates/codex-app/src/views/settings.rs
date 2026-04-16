@@ -137,7 +137,6 @@ pub fn SettingsView() -> Element {
     let mut publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
     let vault = ctx.vault.clone();
-    let publication_policy = ctx.vault.config.publication.clone();
     let omegon = ctx.omegon.clone();
     let publish_vault = ctx.vault.clone();
     let publish_preview = move |_| {
