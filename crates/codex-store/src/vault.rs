@@ -36,6 +36,21 @@ pub struct ImportReport {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicationExportReport {
+    pub exported: usize,
+    pub skipped_private: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedDocument {
+    pub source_path: PathBuf,
+    pub output_path: PathBuf,
+    pub slug: String,
+    pub title: String,
+}
+
 enum ImportDisposition {
     Imported,
     Skipped,
@@ -295,6 +310,51 @@ impl Vault {
         Ok(ImportDisposition::Imported)
     }
 
+    /// Export public knowledge documents into a normalized publish tree suitable for a static site generator.
+    pub fn export_publication_tree(&self, output_root: &Path) -> Result<PublicationExportReport> {
+        let mut exported = 0usize;
+        let mut skipped_private = 0usize;
+        let mut errors = Vec::new();
+
+        for document in self.store.list_documents()? {
+            match self.export_published_document(&document.path, output_root) {
+                Ok(Some(_published)) => exported += 1,
+                Ok(None) => skipped_private += 1,
+                Err(err) => errors.push(format!("{}: {err}", document.path.display())),
+            }
+        }
+
+        Ok(PublicationExportReport { exported, skipped_private, errors })
+    }
+
+    fn export_published_document(&self, relative_path: &Path, output_root: &Path) -> Result<Option<PublishedDocument>> {
+        let Some(document) = self.store.get_document_by_path(relative_path)? else {
+            return Ok(None);
+        };
+        if !document.frontmatter.publication.enabled
+            || document.frontmatter.publication.visibility == PublicationVisibility::Private
+        {
+            return Ok(None);
+        }
+
+        let slug = publication_slug(&document);
+        let output_path = output_root.join(format!("{slug}.md"));
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let manifest = PublishedDocument {
+            source_path: document.path.clone(),
+            output_path: output_path.clone(),
+            slug: slug.clone(),
+            title: document.title.clone(),
+        };
+
+        let published = render_published_markdown(self, &document)?;
+        fs::write(&output_path, published)?;
+        Ok(Some(manifest))
+    }
+
     /// Write a new config to disk. Does not update `self.config` (the in-memory
     /// value is managed by callers via signals). Call this from the settings view.
     pub fn save_config(&self, config: &VaultConfig) -> Result<()> {
@@ -353,6 +413,78 @@ fn slugify_title(title: &str) -> String {
 
 fn import_destination_path(relative_source_path: &Path) -> PathBuf {
     PathBuf::from("references/imported").join(relative_source_path)
+}
+
+fn publication_slug(document: &Document) -> String {
+    document
+        .frontmatter
+        .publication
+        .slug
+        .clone()
+        .unwrap_or_else(|| slugify_title(&document.title))
+}
+
+fn render_published_markdown(vault: &Vault, document: &Document) -> Result<String> {
+    let body = rewrite_wikilinks_for_publication(vault, &document.content)?;
+    let mut frontmatter = document.frontmatter.clone();
+    frontmatter.imported_reference = false;
+    frontmatter.source_path = None;
+    frontmatter.source_format = None;
+    frontmatter.imported_at = None;
+    let frontmatter = toml::to_string(&frontmatter).unwrap_or_default();
+    Ok(format!("+++\n{frontmatter}\n+++\n\n{body}"))
+}
+
+fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str) -> Result<String> {
+    let mut rendered = String::new();
+    let mut remaining = body;
+
+    while let Some(start) = remaining.find("[[") {
+        rendered.push_str(&remaining[..start]);
+        let after = &remaining[start + 2..];
+        let Some(end) = after.find("]]" ) else {
+            rendered.push_str(&remaining[start..]);
+            return Ok(rendered);
+        };
+        let inner = &after[..end];
+        remaining = &after[end + 2..];
+
+        let (target_part, display) = if let Some(pipe) = inner.find('|') {
+            (&inner[..pipe], Some(&inner[pipe + 1..]))
+        } else {
+            (inner, None)
+        };
+        let (target, anchor) = if let Some(hash) = target_part.find('#') {
+            (&target_part[..hash], Some(&target_part[hash + 1..]))
+        } else {
+            (target_part, None)
+        };
+
+        if let Some(linked) = vault.store.find_document_by_slug(target)? {
+            let Some(linked_doc) = vault.store.get_document(&linked.id)? else {
+                rendered.push_str(display.unwrap_or(target));
+                continue;
+            };
+            if !linked_doc.frontmatter.publication.enabled
+                || linked_doc.frontmatter.publication.visibility == PublicationVisibility::Private
+            {
+                rendered.push_str(display.unwrap_or(target));
+                continue;
+            }
+            let slug = publication_slug(&linked_doc);
+            let label = display.unwrap_or(&linked_doc.title);
+            if let Some(anchor) = anchor {
+                rendered.push_str(&format!("[{label}](/{}{slug}#{})", if slug.starts_with('/') { "" } else { "/" }, slugify_title(anchor)));
+            } else {
+                rendered.push_str(&format!("[{label}](/{}{slug})", if slug.starts_with('/') { "" } else { "/" }));
+            }
+        } else {
+            rendered.push_str(display.unwrap_or(target));
+        }
+    }
+
+    rendered.push_str(remaining);
+    Ok(rendered)
 }
 
 fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
@@ -483,5 +615,53 @@ See [[roadmap]].\n",
         );
         assert_eq!(doc.outgoing_links.len(), 1);
         assert_eq!(doc.outgoing_links[0].target, "design");
+    }
+
+    #[test]
+    fn exports_public_documents_with_resolved_wikilinks() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let output_root = tmp.path().join("published");
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let roadmap_path = vault_root.join("roadmap.md");
+        std::fs::write(
+            &roadmap_path,
+            "+++
+title = \"Roadmap\"
+[publication]
+enabled = true
+visibility = \"public\"
++++
+
+# Roadmap\n",
+        )
+        .unwrap();
+        vault.index_file(&roadmap_path).unwrap();
+
+        let design_path = vault_root.join("design.md");
+        std::fs::write(
+            &design_path,
+            "+++
+title = \"Design\"
+[publication]
+enabled = true
+visibility = \"public\"
++++
+
+# Design
+
+See [[roadmap|the roadmap]].\n",
+        )
+        .unwrap();
+        vault.index_file(&design_path).unwrap();
+
+        let report = vault.export_publication_tree(&output_root).unwrap();
+        assert_eq!(report.exported, 2);
+        assert!(report.errors.is_empty());
+
+        let published = std::fs::read_to_string(output_root.join("design.md")).unwrap();
+        assert!(published.contains("[the roadmap](/roadmap)"));
+        assert!(!published.contains("source_path"));
     }
 }

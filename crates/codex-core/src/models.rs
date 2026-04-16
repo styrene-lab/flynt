@@ -98,6 +98,25 @@ pub struct DocumentMeta {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PublicationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+    #[serde(default)]
+    pub visibility: PublicationVisibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PublicationVisibility {
+    #[default]
+    Private,
+    Public,
+    Unlisted,
+}
+
 /// YAML/TOML frontmatter parsed from the top of a document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Frontmatter {
@@ -112,6 +131,8 @@ pub struct Frontmatter {
     pub aliases: Vec<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub publication: PublicationConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_format: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
