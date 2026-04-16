@@ -1,8 +1,29 @@
-use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile};
+use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, SyncConfig, VaultConfig};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
+use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
 use tokio::{process::Command, sync::broadcast};
 use tracing::{info, warn};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct LauncherProfile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_vault_root: Option<PathBuf>,
+    #[serde(default)]
+    pub wizard_completed: bool,
+    #[serde(default)]
+    pub recent_vaults: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_setup: Option<PendingVaultSetup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PendingVaultSetup {
+    OpenExisting { path: PathBuf },
+    CreateLocal { path: PathBuf, name: String },
+    LinkGithub { local_path: PathBuf, repo: String, branch: String },
+}
 
 #[derive(Clone)]
 pub struct OmegonRuntimeContext {
@@ -19,6 +40,59 @@ pub struct OmegonRuntimeContext {
 }
 
 impl OmegonRuntimeContext {
+    fn launcher_profile_path() -> PathBuf {
+        std::env::var("CODEX_LAUNCHER_PROFILE")
+            .map(PathBuf::from)
+            .ok()
+            .filter(|path| path.is_absolute())
+            .or_else(|| dirs::config_local_dir().map(|dir| dir.join("codex/launcher-profile.json")))
+            .unwrap_or_else(|| PathBuf::from("/tmp/codex-launcher-profile.json"))
+    }
+
+    pub fn load_launcher_profile() -> LauncherProfile {
+        let path = Self::launcher_profile_path();
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save_launcher_profile(profile: &LauncherProfile) -> anyhow::Result<()> {
+        let path = Self::launcher_profile_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, serde_json::to_string_pretty(profile)?)?;
+        Ok(())
+    }
+
+    pub fn initialize_vault(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Vault> {
+        std::fs::create_dir_all(path)?;
+        let vault = Vault::open(path)?;
+        let mut config: VaultConfig = vault.config.clone();
+        config.vault_name = name.to_string();
+        config.sync = sync;
+        vault.save_config(&config)?;
+        Ok(Vault::open(path)?)
+    }
+
+    pub fn initialize_github_linked_vault(
+        local_path: &Path,
+        name: &str,
+        repo: &str,
+        branch: &str,
+    ) -> anyhow::Result<Vault> {
+        Self::initialize_vault(
+            local_path,
+            name,
+            SyncConfig::Git {
+                remote: repo.to_string(),
+                branch: branch.to_string(),
+                auto_commit_seconds: 60,
+            },
+        )
+    }
+
     fn discover(vault_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
         let default_local_state_root = std::env::var("CODEX_LOCAL_STATE")
             .map(PathBuf::from)
@@ -121,8 +195,8 @@ impl OmegonRuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::OmegonRuntimeContext;
-    use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel};
+    use super::{LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
+    use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, SyncConfig};
     use tempfile::TempDir;
 
     #[test]
@@ -144,6 +218,51 @@ mod tests {
         assert_eq!(runtime.codex_index_db_path, tmp.path().join("state/custom-index.db"));
         assert_eq!(runtime.omegon_runtime_root, tmp.path().join("state/omegon-runtime"));
         assert_eq!(runtime.omegon_mind_db_path, tmp.path().join("state/omegon-runtime/minds/codex-mind.db"));
+    }
+
+    #[test]
+    fn round_trips_launcher_profile() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("launcher-profile.json");
+        std::env::set_var("CODEX_LAUNCHER_PROFILE", &path);
+
+        let profile = LauncherProfile {
+            last_vault_root: Some(tmp.path().join("vaults/black-meridian")),
+            wizard_completed: true,
+            recent_vaults: vec![tmp.path().join("vaults/black-meridian")],
+            pending_setup: Some(PendingVaultSetup::LinkGithub {
+                local_path: tmp.path().join("vaults/black-meridian"),
+                repo: "git@github.com:black-meridian/codex-vault.git".into(),
+                branch: "main".into(),
+            }),
+        };
+
+        OmegonRuntimeContext::save_launcher_profile(&profile).unwrap();
+        let loaded = OmegonRuntimeContext::load_launcher_profile();
+        assert_eq!(loaded, profile);
+    }
+
+    #[test]
+    fn initializes_github_linked_vault_with_git_sync_config() {
+        let tmp = TempDir::new().unwrap();
+        let local_path = tmp.path().join("vault");
+        let vault = OmegonRuntimeContext::initialize_github_linked_vault(
+            &local_path,
+            "Black Meridian",
+            "git@github.com:black-meridian/codex-vault.git",
+            "main",
+        )
+        .unwrap();
+
+        assert_eq!(vault.config.vault_name, "Black Meridian");
+        assert_eq!(
+            vault.config.sync,
+            SyncConfig::Git {
+                remote: "git@github.com:black-meridian/codex-vault.git".into(),
+                branch: "main".into(),
+                auto_commit_seconds: 60,
+            }
+        );
     }
 
     #[test]
@@ -214,11 +333,15 @@ pub struct AppContext {
     pub omegon: OmegonRuntimeContext,
 }
 
-/// Build AppContext at launch. Reads CODEX_VAULT env var or defaults to ~/Documents/Codex.
+/// Build AppContext at launch. Reads persisted launcher profile first, then CODEX_VAULT,
+/// then falls back to ~/Documents/Codex.
 pub fn bootstrap_from_env() -> AppContext {
-    let vault_root = std::env::var("CODEX_VAULT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
+    let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
+    let vault_root = launcher_profile
+        .last_vault_root
+        .clone()
+        .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
+        .unwrap_or_else(|| {
             dirs::document_dir()
                 .unwrap_or_else(|| PathBuf::from("/tmp"))
                 .join("Codex")
