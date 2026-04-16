@@ -93,6 +93,10 @@ pub fn SettingsView() -> Element {
             .unwrap_or_default()
     });
 
+    let publication_default_visibility =
+        use_signal(|| ctx.vault.config.publication.default_visibility);
+    let publication_rules = use_signal(|| ctx.vault.config.publication.rules.clone());
+
     let mut project_profile_state = use_context::<Signal<OmegonProfile>>();
     let mut operator_settings_state = use_context::<Signal<CodexOperatorSettings>>();
     let initial_profile = project_profile_state.read().clone();
@@ -170,7 +174,10 @@ pub fn SettingsView() -> Element {
                 font_size: *font_sz.read(),
             },
             local_runtime,
-            publication: publication_policy.clone(),
+            publication: codex_core::models::PublicationPolicy {
+                default_visibility: *publication_default_visibility.read(),
+                rules: publication_rules.read().clone(),
+            },
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {
@@ -378,7 +385,10 @@ pub fn SettingsView() -> Element {
                 }
 
                 SettingsSection { heading: "Publication",
-                    PublicationRulesEditor {}
+                    PublicationRulesEditor {
+                        default_visibility: publication_default_visibility,
+                        rules: publication_rules,
+                    }
                 }
 
                 SettingsSection { heading: "Local runtime",
