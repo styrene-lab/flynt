@@ -16,6 +16,9 @@ pub fn WelcomeView(
         PendingVaultSetup::LinkGithub { local_path, repo, branch } => {
             format!("Link {repo} ({branch}) at {}", local_path.display())
         }
+        PendingVaultSetup::PublishPreview { output_path, repo, branch } => {
+            format!("Preview at {} for {repo} ({branch})", output_path.display())
+        }
     });
 
     rsx! {

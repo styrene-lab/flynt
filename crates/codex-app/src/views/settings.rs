@@ -1,10 +1,13 @@
 use crate::{
-    bootstrap::AppContext,
+    bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
     state::ThemeName,
 };
-use codex_core::models::{
-    AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig, OmegonProfile,
-    OmegonProfileModel, SyncConfig, VaultConfig,
+use codex_core::{
+    models::{
+        AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig,
+        OmegonProfile, OmegonProfileModel, SyncConfig, VaultConfig,
+    },
+    store::VaultStore,
 };
 use dioxus::prelude::*;
 
@@ -129,9 +132,29 @@ pub fn SettingsView() -> Element {
     let mut vox_voice = use_signal(|| initial_operator.vox.voice.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
+    let mut publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
     let vault = ctx.vault.clone();
     let omegon = ctx.omegon.clone();
+    let publish_vault = ctx.vault.clone();
+    let publish_preview = move |_| {
+        match OmegonRuntimeContext::export_publication_preview(&publish_vault) {
+            Ok(output_path) => {
+                let mut profile = OmegonRuntimeContext::load_launcher_profile();
+                let target = OmegonRuntimeContext::publication_target(&publish_vault);
+                profile.pending_setup = Some(PendingVaultSetup::PublishPreview {
+                    output_path: output_path.clone(),
+                    repo: target.as_ref().map(|target| target.repo.clone()).unwrap_or_default(),
+                    branch: target.as_ref().map(|target| target.branch.clone()).unwrap_or_default(),
+                });
+                let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                *publish_msg.write() = Some(("ok", format!("Local preview exported to {}", output_path.display())));
+            }
+            Err(err) => {
+                *publish_msg.write() = Some(("err", format!("Publish preview failed: {err}")));
+            }
+        }
+    };
     let save = move |_| {
         let local_runtime = LocalRuntimeConfig {
             local_state_root: path_from_input(local_state_root.read().as_str()),
@@ -503,9 +526,16 @@ pub fn SettingsView() -> Element {
                 // ── Save bar ─────────────────────────────────────────────────
                 div { class: "settings-save-bar",
                     button { class: "btn btn-primary", onclick: save, "Save changes" }
+                    button { class: "btn btn-ghost", onclick: publish_preview, "Export local preview" }
                     if let Some((kind, msg)) = *save_msg.read() {
                         span {
                             class: if kind == "ok" { "save-msg ok" } else { "save-msg err" },
+                            "{msg}"
+                        }
+                    }
+                    if let Some((kind, msg)) = &*publish_msg.read() {
+                        span {
+                            class: if *kind == "ok" { "save-msg ok" } else { "save-msg err" },
                             "{msg}"
                         }
                     }

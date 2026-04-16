@@ -1,4 +1,7 @@
-use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationConfig, PublicationTarget, SyncConfig, VaultConfig};
+use codex_core::{
+    models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, VaultConfig},
+    store::VaultStore,
+};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
 use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
@@ -23,6 +26,7 @@ pub enum PendingVaultSetup {
     OpenExisting { path: PathBuf },
     CreateLocal { path: PathBuf, name: String },
     LinkGithub { local_path: PathBuf, repo: String, branch: String },
+    PublishPreview { output_path: PathBuf, repo: String, branch: String },
 }
 
 #[derive(Clone)]
@@ -111,6 +115,30 @@ impl OmegonRuntimeContext {
             vault.index_file(&home_path)?;
         }
         Ok(vault)
+    }
+
+    pub fn export_publication_preview(vault: &Vault) -> anyhow::Result<PathBuf> {
+        let target = publication_output_path(vault);
+        std::fs::create_dir_all(&target)?;
+        let report = vault.export_publication_tree(&target)?;
+        if !report.errors.is_empty() {
+            anyhow::bail!(report.errors.join("; "));
+        }
+        Ok(target)
+    }
+
+    pub fn publication_target(vault: &Vault) -> Option<PublicationTarget> {
+        vault
+            .store
+            .list_documents()
+            .ok()
+            .and_then(|docs: Vec<codex_core::models::DocumentMeta>| {
+                docs.into_iter().find_map(|meta| {
+                    vault.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
+                        doc.frontmatter.publication.target.clone()
+                    })
+                })
+            })
     }
 
     fn discover(vault_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
@@ -215,7 +243,7 @@ impl OmegonRuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
+    use super::{publication_output_path, LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
     use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, SyncConfig};
     use tempfile::TempDir;
 
@@ -306,6 +334,7 @@ mod tests {
                 site_dir: "site".into(),
             })
         );
+        assert_eq!(publication_output_path(&vault), local_path.join("site"));
     }
 
     #[test]
@@ -378,6 +407,23 @@ pub struct AppContext {
 
 /// Build AppContext at launch. Reads persisted launcher profile first, then CODEX_VAULT,
 /// then falls back to ~/Documents/Codex.
+fn publication_output_path(vault: &Vault) -> PathBuf {
+    let target = vault
+        .store
+        .list_documents()
+        .ok()
+        .and_then(|docs| {
+            docs.into_iter().find_map(|meta| {
+                vault.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
+                    doc.frontmatter.publication.target.map(|target| target.site_dir)
+                })
+            })
+        })
+        .unwrap_or_else(|| "site".into());
+
+    vault.root.join(target)
+}
+
 pub fn bootstrap_from_env() -> AppContext {
     let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
     let vault_root = launcher_profile
