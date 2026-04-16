@@ -19,24 +19,6 @@ impl SqliteStore {
         conn.execute_batch(SCHEMA)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
-
-    pub fn purge_paths_outside_root(&self, root: &Path) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let prefix = root.to_string_lossy();
-        conn.execute(
-            "DELETE FROM document_links WHERE source_id IN (SELECT id FROM documents WHERE path LIKE '/' || ?1 || '/%')",
-            params![prefix.as_ref()],
-        )?;
-        conn.execute(
-            "DELETE FROM document_metadata WHERE document_id IN (SELECT id FROM documents WHERE path LIKE '/' || ?1 || '/%')",
-            params![prefix.as_ref()],
-        )?;
-        conn.execute(
-            "DELETE FROM documents WHERE path LIKE '/' || ?1 || '/%'",
-            params![prefix.as_ref()],
-        )?;
-        Ok(())
-    }
 }
 
 const SCHEMA: &str = r#"
