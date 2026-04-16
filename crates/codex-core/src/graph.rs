@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{collections::HashMap, path::{Path, PathBuf}};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -38,24 +38,28 @@ pub struct GraphEdge {
     pub kind: GraphEdgeKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphPayload {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
+    pub groups: Vec<String>,
 }
 
 pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
     let docs = store.list_documents()?;
     let mut nodes = Vec::with_capacity(docs.len());
     let mut edges = Vec::new();
+    let mut groups = HashMap::<String, ()>::new();
 
     for meta in docs {
         let id = meta.id.0.to_string();
+        let group = top_level_group(&meta.path);
+        groups.insert(group.clone(), ());
         nodes.push(GraphNode {
             id: id.clone(),
             kind: GraphNodeKind::Document,
             title: meta.title.clone(),
-            group: top_level_group(&meta.path),
+            group,
         });
 
         if let Some(doc) = store.get_document(&meta.id)? {
@@ -73,6 +77,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
 
     let boards = store.list_boards()?;
     for board in &boards {
+        groups.insert("boards".into(), ());
         nodes.push(GraphNode {
             id: format!("board:{}", board.id.0),
             kind: GraphNodeKind::Board,
@@ -84,6 +89,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
     let tasks = store.list_tasks(&TaskFilter::default())?;
     for task in tasks {
         let task_id = format!("task:{}", task.id.0);
+        groups.insert(task.column.clone(), ());
         nodes.push(GraphNode {
             id: task_id.clone(),
             kind: GraphNodeKind::Task,
@@ -104,7 +110,10 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
         }
     }
 
-    Ok(GraphPayload { nodes, edges })
+    let mut groups = groups.into_keys().collect::<Vec<_>>();
+    groups.sort();
+
+    Ok(GraphPayload { nodes, edges, groups })
 }
 
 fn top_level_group(path: &Path) -> String {
@@ -193,5 +202,8 @@ mod tests {
         assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::Wikilink));
         assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::TaskMembership));
         assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::SemanticSupport));
+        assert!(graph.groups.contains(&"design".into()));
+        assert!(graph.groups.contains(&"boards".into()));
+        assert!(graph.groups.contains(&"Backlog".into()));
     }
 }
