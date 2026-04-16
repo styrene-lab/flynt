@@ -1,6 +1,7 @@
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
     state::ThemeName,
+    views::PublicationRulesEditor,
 };
 use codex_core::models::{
     AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig,
@@ -374,6 +375,10 @@ pub fn SettingsView() -> Element {
                             span { class: "settings-hint muted", "(0 = manual only)" }
                         }
                     }
+                }
+
+                SettingsSection { heading: "Publication",
+                    PublicationRulesEditor {}
                 }
 
                 SettingsSection { heading: "Local runtime",
