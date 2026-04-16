@@ -1,3 +1,4 @@
+use dioxus::prelude::Signal;
 use codex_core::{
     models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, VaultConfig},
     store::VaultStore,
@@ -455,9 +456,10 @@ mod tests {
 /// Top-level runtime context injected into the Dioxus app.
 #[derive(Clone)]
 pub struct AppContext {
-    pub vault: Arc<Vault>,
-    pub vault_events: broadcast::Sender<VaultChangeEvent>,
-    pub omegon: OmegonRuntimeContext,
+    pub vault_root: Signal<PathBuf>,
+    pub vault: Signal<Arc<Vault>>,
+    pub vault_events: Signal<broadcast::Sender<VaultChangeEvent>>,
+    pub omegon: Signal<OmegonRuntimeContext>,
 }
 
 /// Build AppContext at launch. Reads persisted launcher profile first, then CODEX_VAULT,
