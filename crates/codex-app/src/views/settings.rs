@@ -132,6 +132,7 @@ pub fn SettingsView() -> Element {
     let mut publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
     let vault = ctx.vault.clone();
+    let publication_policy = ctx.vault.config.publication.clone();
     let omegon = ctx.omegon.clone();
     let publish_vault = ctx.vault.clone();
     let publish_preview = move |_| {
@@ -168,6 +169,7 @@ pub fn SettingsView() -> Element {
                 font_size: *font_sz.read(),
             },
             local_runtime,
+            publication: publication_policy.clone(),
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {

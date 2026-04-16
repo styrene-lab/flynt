@@ -106,6 +106,24 @@ pub struct PublicationTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PublicationRule {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_path_prefix: Option<String>,
+    #[serde(default)]
+    pub visibility: PublicationVisibility,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PublicationPolicy {
+    #[serde(default)]
+    pub default_visibility: PublicationVisibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<PublicationRule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PublicationConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -115,6 +133,8 @@ pub struct PublicationConfig {
     pub visibility: PublicationVisibility,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<PublicationTarget>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collections: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -288,6 +308,8 @@ pub struct VaultConfig {
     pub appearance: AppearanceConfig,
     #[serde(default)]
     pub local_runtime: LocalRuntimeConfig,
+    #[serde(default)]
+    pub publication: PublicationPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

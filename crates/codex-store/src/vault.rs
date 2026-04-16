@@ -94,6 +94,7 @@ impl Vault {
                 sync: SyncConfig::None,
                 appearance: Default::default(),
                 local_runtime: Default::default(),
+                publication: Default::default(),
             };
             fs::write(&config_path, toml::to_string(&cfg)?)?;
             cfg
@@ -427,9 +428,8 @@ impl Vault {
         let Some(document) = self.store.get_document_by_path(relative_path)? else {
             return Ok(None);
         };
-        if !document.frontmatter.publication.enabled
-            || document.frontmatter.publication.visibility == PublicationVisibility::Private
-        {
+        let visibility = effective_publication_visibility(&document, &self.config.publication);
+        if !document.frontmatter.publication.enabled || visibility == PublicationVisibility::Private {
             return Ok(None);
         }
 
@@ -523,6 +523,36 @@ fn publication_slug(document: &Document) -> String {
         .clone()
         .filter(|slug| !slug.trim().is_empty())
         .unwrap_or_else(|| slugify_title(&document.title))
+}
+
+fn effective_publication_visibility(
+    document: &Document,
+    policy: &PublicationPolicy,
+) -> PublicationVisibility {
+    let mut visibility = policy.default_visibility;
+
+    for rule in &policy.rules {
+        let tag_match = rule
+            .match_tag
+            .as_ref()
+            .map(|tag| document.frontmatter.tags.iter().any(|doc_tag| doc_tag == tag))
+            .unwrap_or(false);
+        let path_match = rule
+            .match_path_prefix
+            .as_ref()
+            .map(|prefix| document.path.starts_with(prefix))
+            .unwrap_or(false);
+
+        if tag_match || path_match {
+            visibility = rule.visibility;
+        }
+    }
+
+    if document.frontmatter.publication.visibility != PublicationVisibility::Private {
+        document.frontmatter.publication.visibility
+    } else {
+        visibility
+    }
 }
 
 fn render_published_markdown(vault: &Vault, document: &Document) -> Result<String> {
@@ -642,8 +672,13 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{import_destination_path, resolve_index_db_path, Vault};
-    use codex_core::{models::{LocalRuntimeConfig, MetadataValue}, store::VaultStore};
+    use super::{canonical_document_source, import_destination_path, resolve_index_db_path, Vault};
+    use chrono::Utc;
+    use codex_core::{
+        models::{Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue, PublicationRule, PublicationVisibility},
+        store::VaultStore,
+    };
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]
@@ -818,6 +853,45 @@ See [[roadmap]].\n",
         assert_eq!(report.exported, 1);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("duplicate publication slug"));
+    }
+
+    #[test]
+    fn publication_policy_rules_can_publish_selected_subset() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let public_path = vault_root.join("docs/public.md");
+        std::fs::write(
+            &public_path,
+            "+++\ntitle = \"Public\"\ntags = [\"public\"]\n[publication]\nenabled = true\n+++\n\n# Public\n",
+        )
+        .unwrap();
+        vault.index_file(&public_path).unwrap();
+
+        let private_path = vault_root.join("private.md");
+        std::fs::write(
+            &private_path,
+            "+++\ntitle = \"Private\"\n[publication]\nenabled = true\n+++\n\n# Private\n",
+        )
+        .unwrap();
+        vault.index_file(&private_path).unwrap();
+
+        let mut config = vault.config.clone();
+        config.publication.default_visibility = PublicationVisibility::Private;
+        config.publication.rules = vec![PublicationRule {
+            match_tag: Some("public".into()),
+            match_path_prefix: None,
+            visibility: PublicationVisibility::Public,
+        }];
+        vault.save_config(&config).unwrap();
+        let filtered_vault = Vault::open(&vault_root).unwrap();
+
+        let report = filtered_vault
+            .export_publication_tree(&tmp.path().join("published"))
+            .unwrap();
+        assert_eq!(report.exported, 1);
+        assert_eq!(report.skipped_private, 1);
     }
 
     #[test]
