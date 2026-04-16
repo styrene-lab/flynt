@@ -7,6 +7,7 @@ pub struct ThemeName(pub String);
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub enum Route {
+    Welcome,
     #[default]
     Notes,
     Search,

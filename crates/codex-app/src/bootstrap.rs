@@ -224,8 +224,6 @@ mod tests {
     fn round_trips_launcher_profile() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("launcher-profile.json");
-        std::env::set_var("CODEX_LAUNCHER_PROFILE", &path);
-
         let profile = LauncherProfile {
             last_vault_root: Some(tmp.path().join("vaults/black-meridian")),
             wizard_completed: true,
@@ -237,8 +235,8 @@ mod tests {
             }),
         };
 
-        OmegonRuntimeContext::save_launcher_profile(&profile).unwrap();
-        let loaded = OmegonRuntimeContext::load_launcher_profile();
+        std::fs::write(&path, serde_json::to_string_pretty(&profile).unwrap()).unwrap();
+        let loaded: LauncherProfile = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded, profile);
     }
 

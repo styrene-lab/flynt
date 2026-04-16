@@ -1,8 +1,8 @@
 use crate::{
-    bootstrap::bootstrap_from_env,
+    bootstrap::{bootstrap_from_env, OmegonRuntimeContext, PendingVaultSetup},
     components::{AgentRail, Sidebar, TabBar, Toolbar},
     state::{Route, SyncStatus, TabState, ThemeName},
-    views::{GraphView, KanbanView, NotesView, SearchView, SettingsView},
+    views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use dioxus::prelude::*;
 
@@ -26,12 +26,22 @@ pub fn App() -> Element {
     use_context_provider(|| Signal::new(TabState::default()));
 
     // Route — provided via context so search view can navigate back
-    let active_route = use_context_provider(|| Signal::new(Route::default()));
+    let mut active_route = use_context_provider(|| {
+        let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
+        let route = if launcher_profile.wizard_completed || launcher_profile.last_vault_root.is_some() {
+            Route::Notes
+        } else {
+            Route::Welcome
+        };
+        Signal::new(route)
+    });
     let show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
 
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
+
+    let mut launcher_profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
 
     rsx! {
         document::Link {
@@ -69,6 +79,94 @@ pub fn App() -> Element {
                         TabBar {}
                     }
                     match *active_route.read() {
+                        Route::Welcome => {
+                            let current_vault_root = ctx.vault.root.clone();
+                            let choose_existing_root = current_vault_root.clone();
+                            let imported_root = current_vault_root.join("references/imported");
+                            let on_choose_existing = move |_| {
+                                let mut profile = launcher_profile();
+                                profile.pending_setup = Some(PendingVaultSetup::OpenExisting {
+                                    path: choose_existing_root.clone(),
+                                });
+                                profile.last_vault_root = Some(choose_existing_root.clone());
+                                profile.wizard_completed = true;
+                                if !profile.recent_vaults.contains(&choose_existing_root) {
+                                    profile.recent_vaults.push(choose_existing_root.clone());
+                                }
+                                let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                launcher_profile.set(profile);
+                                *active_route.write() = Route::Notes;
+                            };
+                            let on_create_local = move |_| {
+                                let local_path = dirs::document_dir()
+                                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                                    .join("Black Meridian");
+                                if let Ok(_vault) = OmegonRuntimeContext::initialize_vault(
+                                    &local_path,
+                                    "Black Meridian",
+                                    codex_core::models::SyncConfig::None,
+                                ) {
+                                    let mut profile = launcher_profile();
+                                    profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
+                                        path: local_path.clone(),
+                                        name: "Black Meridian".into(),
+                                    });
+                                    profile.last_vault_root = Some(local_path.clone());
+                                    profile.wizard_completed = true;
+                                    if !profile.recent_vaults.contains(&local_path) {
+                                        profile.recent_vaults.push(local_path);
+                                    }
+                                    let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                    launcher_profile.set(profile);
+                                    *active_route.write() = Route::Notes;
+                                }
+                            };
+                            let on_link_github = move |_| {
+                                let local_path = dirs::document_dir()
+                                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                                    .join("Black Meridian");
+                                if let Ok(_vault) = OmegonRuntimeContext::initialize_github_linked_vault(
+                                    &local_path,
+                                    "Black Meridian",
+                                    "https://github.com/black-meridian/codex-vault.git",
+                                    "main",
+                                ) {
+                                    let mut profile = launcher_profile();
+                                    profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
+                                        local_path: local_path.clone(),
+                                        repo: "https://github.com/black-meridian/codex-vault.git".into(),
+                                        branch: "main".into(),
+                                    });
+                                    profile.last_vault_root = Some(local_path.clone());
+                                    profile.wizard_completed = true;
+                                    if !profile.recent_vaults.contains(&local_path) {
+                                        profile.recent_vaults.push(local_path);
+                                    }
+                                    let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                    launcher_profile.set(profile);
+                                    *active_route.write() = Route::Notes;
+                                }
+                            };
+                            let imported_root = current_vault_root.join("references/imported");
+                            let on_import_markdown = move |_| {
+                                let mut profile = launcher_profile();
+                                profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
+                                    path: imported_root.clone(),
+                                    name: "Imported References".into(),
+                                });
+                                let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                launcher_profile.set(profile);
+                            };
+                            rsx! {
+                                WelcomeView {
+                                    launcher_profile: launcher_profile(),
+                                    on_choose_existing,
+                                    on_create_local,
+                                    on_link_github,
+                                    on_import_markdown,
+                                }
+                            }
+                        },
                         Route::Notes    => rsx! { NotesView {} },
 
                         Route::Search   => rsx! { SearchView { search_query } },
