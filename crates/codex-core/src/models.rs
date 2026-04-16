@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 use uuid::Uuid;
 
 // ── Newtype IDs ───────────────────────────────────────────────────────────────
@@ -28,6 +28,46 @@ impl Default for DocumentId { fn default() -> Self { Self::new() } }
 impl Default for TaskId { fn default() -> Self { Self::new() } }
 impl Default for BoardId { fn default() -> Self { Self::new() } }
 
+// ── Metadata ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataProtection {
+    PlaintextIndexed,
+    EncryptedOpaque,
+}
+
+impl Default for MetadataProtection {
+    fn default() -> Self { Self::PlaintextIndexed }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MetadataValue {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(String),
+    StringList(Vec<String>),
+}
+
+impl Default for MetadataValue {
+    fn default() -> Self { Self::Null }
+}
+
+pub type MetadataMap = BTreeMap<String, MetadataValue>;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct MetadataField {
+    #[serde(default)]
+    pub value: MetadataValue,
+    #[serde(default)]
+    pub protection: MetadataProtection,
+}
+
+pub type MetadataFieldMap = BTreeMap<String, MetadataField>;
+
 // ── Document ─────────────────────────────────────────────────────────────────
 
 /// A note or wiki page stored as a markdown file.
@@ -53,6 +93,8 @@ pub struct DocumentMeta {
     pub path: PathBuf,
     pub title: String,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub metadata: MetadataFieldMap,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -68,6 +110,8 @@ pub struct Frontmatter {
     pub aliases: Vec<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default, flatten)]
+    pub metadata: MetadataMap,
 }
 
 /// A `[[wikilink]]` extracted from document content.

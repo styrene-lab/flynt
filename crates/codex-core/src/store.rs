@@ -4,6 +4,11 @@ use crate::models::{
 use anyhow::Result;
 use std::path::Path;
 
+#[derive(Debug, Clone, Default)]
+pub struct DocumentMetadataFilter {
+    pub field: String,
+    pub value: String,
+}
 /// Filter for task queries.
 #[derive(Debug, Clone, Default)]
 pub struct TaskFilter {
@@ -21,6 +26,7 @@ pub trait VaultStore: Send + Sync {
     /// Find a document whose title or filename slug loosely matches `slug`.
     fn find_document_by_slug(&self, slug: &str) -> Result<Option<DocumentMeta>>;
     fn list_documents(&self) -> Result<Vec<DocumentMeta>>;
+    fn list_documents_by_metadata(&self, filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>>;
     fn save_document(&self, doc: &Document) -> Result<()>;
     fn delete_document(&self, id: &DocumentId) -> Result<()>;
     fn search_documents(&self, query: &str) -> Result<Vec<SearchResult>>;

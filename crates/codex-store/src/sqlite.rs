@@ -1,7 +1,7 @@
 use anyhow::Result;
 use codex_core::{
     models::*,
-    store::{TaskFilter, VaultStore},
+    store::{DocumentMetadataFilter, TaskFilter, VaultStore},
 };
 use rusqlite::{Connection, params};
 use std::{path::Path, sync::Mutex};
@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS document_links (
     target      TEXT NOT NULL,
     PRIMARY KEY (source_id, target)
 );
+
+CREATE TABLE IF NOT EXISTS document_metadata (
+    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    key           TEXT NOT NULL,
+    value_type    TEXT NOT NULL,
+    string_value  TEXT,
+    protection    TEXT NOT NULL DEFAULT 'plaintext_indexed',
+    PRIMARY KEY (document_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_metadata_key_value
+    ON document_metadata (key, string_value);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     title, content, content=documents, content_rowid=rowid
@@ -126,6 +138,7 @@ impl VaultStore for SqliteStore {
                 tags: serde_json::from_str::<Frontmatter>(&fm_json)
                     .unwrap_or_default()
                     .tags,
+                metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
@@ -150,10 +163,34 @@ impl VaultStore for SqliteStore {
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.next().transpose()?)
+    }
+
+    fn list_documents_by_metadata(&self, filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT d.id, d.path, d.title, d.frontmatter, d.updated_at
+               FROM document_metadata m
+               JOIN documents d ON d.id = m.document_id
+               WHERE m.key = ?1 AND m.string_value = ?2
+               ORDER BY d.updated_at DESC"#,
+        )?;
+        let rows = stmt.query_map(params![filter.field, filter.value], |row| {
+            let fm_json: String = row.get(3)?;
+            Ok(DocumentMeta {
+                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
+                path: row.get::<_, String>(1)?.into(),
+                title: row.get(2)?,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
+                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     fn save_document(&self, doc: &Document) -> Result<()> {
@@ -182,6 +219,21 @@ impl VaultStore for SqliteStore {
                 "INSERT OR IGNORE INTO document_links (source_id, target) VALUES (?1, ?2)",
                 params![doc.id.0.to_string(), link.target],
             )?;
+        }
+        conn.execute("DELETE FROM document_metadata WHERE document_id = ?1", params![doc.id.0.to_string()])?;
+        for (key, field) in frontmatter_metadata_fields(&doc.frontmatter) {
+            if let Some((value_type, string_value)) = string_indexable_metadata_value(&field.value) {
+                conn.execute(
+                    "INSERT OR REPLACE INTO document_metadata (document_id, key, value_type, string_value, protection) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        doc.id.0.to_string(),
+                        key,
+                        value_type,
+                        string_value,
+                        metadata_protection_label(&field.protection),
+                    ],
+                )?;
+            }
         }
         Ok(())
     }
@@ -251,6 +303,7 @@ impl VaultStore for SqliteStore {
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 updated_at: updated_at.parse().unwrap(),
             })
         })?;
@@ -420,4 +473,55 @@ fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
         columns: serde_json::from_str(&cols_json).unwrap_or_default(),
         created_at: created_at.parse().unwrap(),
     })
+}
+
+fn document_metadata_fields_from_frontmatter_json(frontmatter_json: &str) -> MetadataFieldMap {
+    serde_json::from_str::<Frontmatter>(frontmatter_json)
+        .unwrap_or_default()
+        .metadata
+        .into_iter()
+        .map(|(key, value)| {
+            (
+                key,
+                MetadataField {
+                    value,
+                    protection: MetadataProtection::PlaintextIndexed,
+                },
+            )
+        })
+        .collect()
+}
+
+fn frontmatter_metadata_fields(frontmatter: &Frontmatter) -> MetadataFieldMap {
+    frontmatter
+        .metadata
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                MetadataField {
+                    value: value.clone(),
+                    protection: MetadataProtection::PlaintextIndexed,
+                },
+            )
+        })
+        .collect()
+}
+
+fn string_indexable_metadata_value(value: &MetadataValue) -> Option<(&'static str, String)> {
+    match value {
+        MetadataValue::Null => None,
+        MetadataValue::Bool(value) => Some(("bool", value.to_string())),
+        MetadataValue::Integer(value) => Some(("integer", value.to_string())),
+        MetadataValue::Float(value) => Some(("float", value.to_string())),
+        MetadataValue::String(value) => Some(("string", value.clone())),
+        MetadataValue::StringList(values) => Some(("string_list", values.join("\u{001f}"))),
+    }
+}
+
+fn metadata_protection_label(protection: &MetadataProtection) -> &'static str {
+    match protection {
+        MetadataProtection::PlaintextIndexed => "plaintext_indexed",
+        MetadataProtection::EncryptedOpaque => "encrypted_opaque",
+    }
 }
