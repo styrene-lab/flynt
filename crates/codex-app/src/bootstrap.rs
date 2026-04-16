@@ -3,11 +3,40 @@ use std::{path::PathBuf, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
+#[derive(Clone)]
+pub struct OmegonRuntimeContext {
+    pub home_dir: PathBuf,
+    pub project_profile_path: PathBuf,
+    pub global_profile_path: PathBuf,
+    pub extensions_dir: PathBuf,
+    pub vox_manifest_path: PathBuf,
+}
+
+impl OmegonRuntimeContext {
+    fn discover(vault_root: &std::path::Path) -> Self {
+        let home_dir = std::env::var("OMEGON_HOME")
+            .map(PathBuf::from)
+            .ok()
+            .filter(|path| path.is_absolute())
+            .or_else(|| dirs::home_dir().map(|home| home.join(".omegon")))
+            .unwrap_or_else(|| vault_root.join(".omegon-runtime"));
+
+        Self {
+            project_profile_path: vault_root.join(".omegon/profile.json"),
+            global_profile_path: home_dir.join("profile.json"),
+            extensions_dir: home_dir.join("extensions"),
+            vox_manifest_path: home_dir.join("extensions/vox/manifest.toml"),
+            home_dir,
+        }
+    }
+}
+
 /// Top-level runtime context injected into the Dioxus app.
 #[derive(Clone)]
 pub struct AppContext {
     pub vault: Arc<Vault>,
     pub vault_events: broadcast::Sender<VaultChangeEvent>,
+    pub omegon: OmegonRuntimeContext,
 }
 
 /// Build AppContext at launch. Reads CODEX_VAULT env var or defaults to ~/Documents/Codex.
@@ -47,7 +76,6 @@ pub fn bootstrap_from_env() -> AppContext {
         loop {
             match watcher.rx.recv() {
                 Ok(evt) => {
-                    // Re-index the changed file
                     let path = match &evt {
                         VaultChangeEvent::FileModified(p) | VaultChangeEvent::FileCreated(p) => {
                             Some(p.clone())
@@ -66,5 +94,7 @@ pub fn bootstrap_from_env() -> AppContext {
         }
     });
 
-    AppContext { vault, vault_events: tx }
+    let omegon = OmegonRuntimeContext::discover(&vault_root);
+
+    AppContext { vault, vault_events: tx, omegon }
 }
