@@ -17,10 +17,12 @@ use crate::sqlite::SqliteStore;
 ///
 ///   <vault_root>/
 ///     .codex/
-///       state.db       ← SQLite index
 ///       config.toml    ← sync + preferences
 ///     **/*.md          ← notes/documents
 ///
+/// Local SQLite state is materialized outside the syncable vault whenever
+/// `local_runtime.codex_index_db_path` (or its derived default) resolves to a
+/// local app-state directory.
 pub struct Vault {
     pub root: PathBuf,
     pub store: Arc<SqliteStore>,
@@ -32,9 +34,6 @@ impl Vault {
     pub fn open(root: &Path) -> Result<Self> {
         let codex_dir = root.join(".codex");
         fs::create_dir_all(&codex_dir)?;
-
-        let db_path = codex_dir.join("state.db");
-        let store = Arc::new(SqliteStore::open(&db_path)?);
 
         let config_path = codex_dir.join("config.toml");
         let config = if config_path.exists() {
@@ -55,7 +54,13 @@ impl Vault {
             cfg
         };
 
-        info!("Vault opened at {:?}, store ready", root);
+        let db_path = resolve_index_db_path(root, &config.local_runtime);
+        if let Some(parent) = db_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let store = Arc::new(SqliteStore::open(&db_path)?);
+
+        info!("Vault opened at {:?}, store ready at {:?}", root, db_path);
         Ok(Self { root: root.to_owned(), store, config })
     }
 
@@ -183,6 +188,64 @@ fn extract_h1(body: &str) -> Option<String> {
     None
 }
 
+fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
+    if let Some(path) = runtime.codex_index_db_path.as_ref().filter(|path| path.is_absolute()) {
+        return path.clone();
+    }
+
+    let local_state_root = runtime
+        .local_state_root
+        .as_ref()
+        .filter(|path| path.is_absolute())
+        .cloned()
+        .or_else(dirs::data_local_dir)
+        .unwrap_or_else(|| root.join(".codex-local"))
+        .join("codex");
+
+    local_state_root.join("codex-index.db")
+}
+
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
     entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_index_db_path;
+    use codex_core::models::LocalRuntimeConfig;
+    use tempfile::TempDir;
+
+    #[test]
+    fn uses_explicit_absolute_index_db_path_when_configured() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("vault");
+        let explicit = tmp.path().join("state/custom-index.db");
+
+        let resolved = resolve_index_db_path(
+            &root,
+            &LocalRuntimeConfig {
+                codex_index_db_path: Some(explicit.clone()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(resolved, explicit);
+    }
+
+    #[test]
+    fn derives_index_db_under_local_state_root_when_only_root_is_configured() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("vault");
+        let local_state_root = tmp.path().join("state-root");
+
+        let resolved = resolve_index_db_path(
+            &root,
+            &LocalRuntimeConfig {
+                local_state_root: Some(local_state_root.clone()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(resolved, local_state_root.join("codex/codex-index.db"));
+    }
 }
