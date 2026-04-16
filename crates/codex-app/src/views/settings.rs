@@ -87,6 +87,7 @@ pub fn SettingsView() -> Element {
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
 
     let vault = ctx.vault.clone();
+    let local_runtime = ctx.vault.config.local_runtime.clone();
     let omegon = ctx.omegon.clone();
     let save = move |_| {
         let config = VaultConfig {
@@ -96,6 +97,7 @@ pub fn SettingsView() -> Element {
                 theme: theme.read().0.clone(),
                 font_size: *font_sz.read(),
             },
+            local_runtime: local_runtime.clone(),
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {
