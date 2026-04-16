@@ -69,6 +69,7 @@ pub fn Toolbar(
 ) -> Element {
     let ctx = use_context::<AppContext>();
     let mut tab_state = use_context::<Signal<TabState>>();
+    let mut omegon_child = use_context::<Signal<Option<tokio::process::Child>>>();
     let mut omegon_pid = use_context::<Signal<Option<u32>>>();
     let mut omegon_launch_error = use_context::<Signal<Option<String>>>();
     let mut results: Signal<Vec<SearchResult>> = use_signal(Vec::new);
@@ -234,16 +235,57 @@ pub fn Toolbar(
                     title: "Toggle agent rail",
                     onclick: move |_| {
                         let opening = !*show_agent.read();
-                        if opening && omegon_pid.read().is_none() {
-                            match ctx.omegon.spawn_background_host(&ctx.vault.root) {
-                                Ok(pid) => {
-                                    *omegon_pid.write() = Some(pid);
-                                    *omegon_launch_error.write() = None;
+                        let ctx = ctx.clone();
+                        if opening {
+                            let mut should_clear_child = false;
+                            let mut child_check_error = None;
+                            {
+                                let mut child_slot = omegon_child.write();
+                                if let Some(child) = child_slot.as_mut() {
+                                    match child.try_wait() {
+                                        Ok(Some(_status)) => should_clear_child = true,
+                                        Ok(None) => {}
+                                        Err(err) => {
+                                            should_clear_child = true;
+                                            child_check_error = Some(err.to_string());
+                                        }
+                                    }
                                 }
-                                Err(err) => {
-                                    *omegon_launch_error.write() = Some(err.to_string());
+                                if should_clear_child {
+                                    *child_slot = None;
                                 }
                             }
+                            if should_clear_child {
+                                *omegon_pid.write() = None;
+                            }
+                            if let Some(err) = child_check_error {
+                                *omegon_launch_error.write() = Some(err);
+                            }
+
+                            if omegon_child.read().is_none() {
+                                spawn(async move {
+                                    match ctx.omegon.spawn_background_host(&ctx.vault.root).await {
+                                        Ok(child) => {
+                                            let pid = child.id();
+                                            *omegon_child.write() = Some(child);
+                                            *omegon_pid.write() = pid;
+                                            *omegon_launch_error.write() = None;
+                                        }
+                                        Err(err) => {
+                                            *omegon_child.write() = None;
+                                            *omegon_pid.write() = None;
+                                            *omegon_launch_error.write() = Some(err.to_string());
+                                        }
+                                    }
+                                });
+                            }
+                        } else if let Some(mut child) = omegon_child.write().take() {
+                            spawn(async move {
+                                let _ = child.kill().await;
+                                let _ = child.wait().await;
+                            });
+                            *omegon_pid.write() = None;
+                            *omegon_launch_error.write() = None;
                         }
                         *show_agent.write() = opening;
                     },

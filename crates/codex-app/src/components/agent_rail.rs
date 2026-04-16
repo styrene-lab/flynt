@@ -9,6 +9,7 @@ pub fn AgentRail() -> Element {
     let project_profile = use_context::<Signal<OmegonProfile>>().read().clone();
     let omegon_pid = *use_context::<Signal<Option<u32>>>().read();
     let omegon_launch_error = use_context::<Signal<Option<String>>>().read().clone();
+    let runtime_ready = omegon_pid.is_some() && omegon_launch_error.is_none();
 
     let mut input = use_signal(String::new);
 
@@ -94,9 +95,21 @@ pub fn AgentRail() -> Element {
 
                 button {
                     class: "agent-send",
-                    disabled: true,
-                    title: if vox_installed { "Background Omegon host is launched when the rail opens; RPC wiring is not implemented yet" } else { "Install vox into ~/.omegon/extensions/vox first" },
-                    if vox_installed { "Runtime launched on open" } else { "Vox not installed" }
+                    disabled: !runtime_ready || !vox_installed,
+                    title: if !vox_installed {
+                        "Install vox into ~/.omegon/extensions/vox first"
+                    } else if runtime_ready {
+                        "Background Omegon host is running; RPC wiring is the next slice"
+                    } else {
+                        "Open the rail to start Omegon, or inspect launch failure above"
+                    },
+                    if runtime_ready {
+                        "Host running"
+                    } else if vox_installed {
+                        "Waiting for host"
+                    } else {
+                        "Vox not installed"
+                    }
                 }
             }
         }

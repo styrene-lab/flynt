@@ -18,6 +18,7 @@ pub fn App() -> Element {
     let font_size = use_context_provider(|| Signal::new(ctx.vault.config.appearance.font_size));
     use_context_provider(|| Signal::new(ctx.omegon.load_project_profile()));
     use_context_provider(|| Signal::new(ctx.omegon.load_operator_settings()));
+    use_context_provider(|| Signal::new(None::<tokio::process::Child>));
     use_context_provider(|| Signal::new(None::<u32>));
     use_context_provider(|| Signal::new(None::<String>));
 

@@ -1,7 +1,7 @@
 use codex_core::models::{CodexOperatorSettings, OmegonProfile};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
-use tokio::sync::broadcast;
+use tokio::{process::Command, sync::broadcast};
 use tracing::{info, warn};
 
 #[derive(Clone)]
@@ -71,9 +71,9 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    pub fn spawn_background_host(&self, vault_root: &Path) -> anyhow::Result<u32> {
+    pub async fn spawn_background_host(&self, vault_root: &Path) -> anyhow::Result<tokio::process::Child> {
         let binary = std::env::var("OMEGON_BIN").unwrap_or_else(|_| "omegon".into());
-        let child = std::process::Command::new(binary)
+        let child = Command::new(binary)
             .current_dir(vault_root)
             .env("CODEX_VAULT", vault_root)
             .env("OMEGON_HOME", &self.home_dir)
@@ -81,7 +81,7 @@ impl OmegonRuntimeContext {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-        Ok(child.id())
+        Ok(child)
     }
 }
 
