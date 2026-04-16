@@ -262,3 +262,75 @@ pub enum SyncConfig {
         endpoint: Option<String>,
     },
 }
+
+// ── Omegon profile + Codex operator settings ────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OmegonProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_used_model: Option<OmegonProfileModel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_order: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub avoid_providers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_floor_pin: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downgrade_overrides: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmegonProfileModel {
+    pub provider: String,
+    pub model_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexOperatorSettings {
+    pub active_persona: String,
+    pub enabled_skills: Vec<String>,
+    pub preferred_extensions: Vec<String>,
+    pub rail_extension: String,
+    pub vox: VoxSettings,
+}
+
+impl Default for CodexOperatorSettings {
+    fn default() -> Self {
+        Self {
+            active_persona: "off".into(),
+            enabled_skills: Vec::new(),
+            preferred_extensions: vec!["vox".into()],
+            rail_extension: "vox".into(),
+            vox: VoxSettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoxSettings {
+    pub enabled: bool,
+    pub tts_enabled: bool,
+    pub voice: String,
+}
+
+impl Default for VoxSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            tts_enabled: false,
+            voice: "default".into(),
+        }
+    }
+}
