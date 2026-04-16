@@ -67,9 +67,11 @@ pub fn Toolbar(
     mut active_route: Signal<Route>,
     mut search_query: Signal<String>,
 ) -> Element {
-    let ctx           = use_context::<AppContext>();
+    let ctx = use_context::<AppContext>();
     let mut tab_state = use_context::<Signal<TabState>>();
-    let mut results:  Signal<Vec<SearchResult>> = use_signal(Vec::new);
+    let mut omegon_pid = use_context::<Signal<Option<u32>>>();
+    let mut omegon_launch_error = use_context::<Signal<Option<String>>>();
+    let mut results: Signal<Vec<SearchResult>> = use_signal(Vec::new);
     let mut focused = use_signal(|| false);
     let mut active_index = use_signal(|| None::<usize>);
 
@@ -230,7 +232,21 @@ pub fn Toolbar(
                 button {
                     class: if *show_agent.read() { "btn btn-ghost active" } else { "btn btn-ghost" },
                     title: "Toggle agent rail",
-                    onclick: move |_| { let v = *show_agent.read(); *show_agent.write() = !v; },
+                    onclick: move |_| {
+                        let opening = !*show_agent.read();
+                        if opening && omegon_pid.read().is_none() {
+                            match ctx.omegon.spawn_background_host(&ctx.vault.root) {
+                                Ok(pid) => {
+                                    *omegon_pid.write() = Some(pid);
+                                    *omegon_launch_error.write() = None;
+                                }
+                                Err(err) => {
+                                    *omegon_launch_error.write() = Some(err.to_string());
+                                }
+                            }
+                        }
+                        *show_agent.write() = opening;
+                    },
                     "✦"
                 }
             }

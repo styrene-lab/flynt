@@ -7,6 +7,8 @@ pub fn AgentRail() -> Element {
     let ctx = use_context::<AppContext>();
     let operator_settings = use_context::<Signal<CodexOperatorSettings>>().read().clone();
     let project_profile = use_context::<Signal<OmegonProfile>>().read().clone();
+    let omegon_pid = *use_context::<Signal<Option<u32>>>().read();
+    let omegon_launch_error = use_context::<Signal<Option<String>>>().read().clone();
 
     let mut input = use_signal(String::new);
 
@@ -34,6 +36,15 @@ pub fn AgentRail() -> Element {
                     strong { "Native integration" }
                     p { "Codex will use Omegon's real native extension runtime under ~/.omegon/extensions. MCP is not part of this path." }
                     ul {
+                        li {
+                            if let Some(pid) = omegon_pid {
+                                "Runtime: running (pid {pid})"
+                            } else if let Some(err) = omegon_launch_error.as_ref() {
+                                "Runtime: launch failed ({err})"
+                            } else {
+                                "Runtime: not started"
+                            }
+                        }
                         li { "Persona: {active_persona}" }
                         li { "Model: {model_summary}" }
                         li { "Home: {ctx.omegon.home_dir.display()}" }
@@ -84,8 +95,8 @@ pub fn AgentRail() -> Element {
                 button {
                     class: "agent-send",
                     disabled: true,
-                    title: if vox_installed { "Runtime discovered; RPC wiring not implemented yet" } else { "Install vox into ~/.omegon/extensions/vox first" },
-                    if vox_installed { "Runtime discovered" } else { "Vox not installed" }
+                    title: if vox_installed { "Background Omegon host is launched when the rail opens; RPC wiring is not implemented yet" } else { "Install vox into ~/.omegon/extensions/vox first" },
+                    if vox_installed { "Runtime launched on open" } else { "Vox not installed" }
                 }
             }
         }

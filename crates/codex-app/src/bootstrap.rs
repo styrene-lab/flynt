@@ -1,5 +1,6 @@
+use codex_core::models::{CodexOperatorSettings, OmegonProfile};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
-use std::{path::PathBuf, sync::Arc};
+use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
@@ -8,6 +9,7 @@ pub struct OmegonRuntimeContext {
     pub home_dir: PathBuf,
     pub project_profile_path: PathBuf,
     pub global_profile_path: PathBuf,
+    pub operator_settings_path: PathBuf,
     pub extensions_dir: PathBuf,
     pub vox_manifest_path: PathBuf,
 }
@@ -24,10 +26,120 @@ impl OmegonRuntimeContext {
         Self {
             project_profile_path: vault_root.join(".omegon/profile.json"),
             global_profile_path: home_dir.join("profile.json"),
+            operator_settings_path: vault_root.join(".codex/operator-settings.json"),
             extensions_dir: home_dir.join("extensions"),
             vox_manifest_path: home_dir.join("extensions/vox/manifest.toml"),
             home_dir,
         }
+    }
+
+    pub fn load_project_profile(&self) -> OmegonProfile {
+        std::fs::read_to_string(&self.project_profile_path)
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .or_else(|| {
+                std::fs::read_to_string(&self.global_profile_path)
+                    .ok()
+                    .and_then(|content| serde_json::from_str(&content).ok())
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn save_project_profile(&self, profile: &OmegonProfile) -> anyhow::Result<()> {
+        if let Some(parent) = self.project_profile_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&self.project_profile_path, serde_json::to_string_pretty(profile)?)?;
+        Ok(())
+    }
+
+    pub fn load_operator_settings(&self) -> CodexOperatorSettings {
+        std::fs::read_to_string(&self.operator_settings_path)
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save_operator_settings(&self, settings: &CodexOperatorSettings) -> anyhow::Result<()> {
+        if let Some(parent) = self.operator_settings_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            &self.operator_settings_path,
+            serde_json::to_string_pretty(settings)?,
+        )?;
+        Ok(())
+    }
+
+    pub fn spawn_background_host(&self, vault_root: &Path) -> anyhow::Result<u32> {
+        let binary = std::env::var("OMEGON_BIN").unwrap_or_else(|_| "omegon".into());
+        let child = std::process::Command::new(binary)
+            .current_dir(vault_root)
+            .env("CODEX_VAULT", vault_root)
+            .env("OMEGON_HOME", &self.home_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        Ok(child.id())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OmegonRuntimeContext;
+    use codex_core::models::{CodexOperatorSettings, OmegonProfile, OmegonProfileModel};
+    use tempfile::TempDir;
+
+    #[test]
+    fn loads_global_profile_when_project_profile_missing() {
+        let tmp = TempDir::new().unwrap();
+        let runtime = OmegonRuntimeContext {
+            home_dir: tmp.path().join("home"),
+            project_profile_path: tmp.path().join("vault/.omegon/profile.json"),
+            global_profile_path: tmp.path().join("home/profile.json"),
+            operator_settings_path: tmp.path().join("vault/.codex/operator-settings.json"),
+            extensions_dir: tmp.path().join("home/extensions"),
+            vox_manifest_path: tmp.path().join("home/extensions/vox/manifest.toml"),
+        };
+        std::fs::create_dir_all(runtime.global_profile_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &runtime.global_profile_path,
+            serde_json::to_string(&OmegonProfile {
+                last_used_model: Some(OmegonProfileModel {
+                    provider: "anthropic".into(),
+                    model_id: "claude-sonnet-4-6".into(),
+                }),
+                ..OmegonProfile::default()
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let loaded = runtime.load_project_profile();
+        assert_eq!(loaded.last_used_model.unwrap().provider, "anthropic");
+    }
+
+    #[test]
+    fn round_trips_operator_settings() {
+        let tmp = TempDir::new().unwrap();
+        let runtime = OmegonRuntimeContext {
+            home_dir: tmp.path().join("home"),
+            project_profile_path: tmp.path().join("vault/.omegon/profile.json"),
+            global_profile_path: tmp.path().join("home/profile.json"),
+            operator_settings_path: tmp.path().join("vault/.codex/operator-settings.json"),
+            extensions_dir: tmp.path().join("home/extensions"),
+            vox_manifest_path: tmp.path().join("home/extensions/vox/manifest.toml"),
+        };
+
+        let settings = CodexOperatorSettings {
+            active_persona: "scribe".into(),
+            ..CodexOperatorSettings::default()
+        };
+        runtime.save_operator_settings(&settings).unwrap();
+
+        let loaded = runtime.load_operator_settings();
+        assert_eq!(loaded.active_persona, "scribe");
     }
 }
 
