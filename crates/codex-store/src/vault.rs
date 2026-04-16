@@ -834,6 +834,7 @@ See [[roadmap]].\n",
     fn publication_export_reports_duplicate_slugs() {
         let tmp = TempDir::new().unwrap();
         let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
         let output_root = tmp.path().join("published");
         let vault = Vault::open(&vault_root).unwrap();
 
@@ -850,6 +851,7 @@ See [[roadmap]].\n",
         }
 
         let report = vault.export_publication_tree(&output_root).unwrap();
+        dbg!(&report);
         assert_eq!(report.exported, 1);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("duplicate publication slug"));
@@ -859,9 +861,11 @@ See [[roadmap]].\n",
     fn publication_policy_rules_can_publish_selected_subset() {
         let tmp = TempDir::new().unwrap();
         let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
         let vault = Vault::open(&vault_root).unwrap();
 
         let public_path = vault_root.join("docs/public.md");
+        std::fs::create_dir_all(public_path.parent().unwrap()).unwrap();
         std::fs::write(
             &public_path,
             "+++\ntitle = \"Public\"\ntags = [\"public\"]\n[publication]\nenabled = true\n+++\n\n# Public\n",
