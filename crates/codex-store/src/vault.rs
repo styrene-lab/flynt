@@ -100,12 +100,14 @@ impl Vault {
         let rel_path = path.strip_prefix(&self.root)?.to_owned();
         let (body, mut frontmatter, links) = parse_document_source(&raw);
 
-        // Derive title: first H1 or filename stem
-        let title = extract_h1(&body).unwrap_or_else(|| {
-            path.file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Untitled".to_string())
-        });
+        // Derive title: H1 > frontmatter title > filename stem
+        let title = extract_h1(&body)
+            .or_else(|| frontmatter.title.clone())
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Untitled".to_string())
+            });
 
         // Resolve stable ID: frontmatter > existing DB record > new UUID (written back to file)
         let existing = self.store.get_document_by_path(&rel_path)?;
@@ -178,6 +180,7 @@ impl Vault {
 
         let mut frontmatter = Frontmatter::default();
         frontmatter.id = Some(DocumentId::new().0);
+        frontmatter.title = Some(title.to_string());
         frontmatter.source_format = Some("omegon_comm".into());
         frontmatter.source_path = Some(format!("omegon://{channel}"));
         frontmatter.imported_at = Some(now);
@@ -257,6 +260,9 @@ impl Vault {
 
         if frontmatter.id.is_none() {
             frontmatter.id = Some(DocumentId::new().0);
+        }
+        if frontmatter.title.is_none() {
+            frontmatter.title = Some(title.clone());
         }
         if frontmatter.source_format.is_none() {
             frontmatter.source_format = Some("markdown".into());
