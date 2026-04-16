@@ -3,8 +3,8 @@ use crate::{
     state::ThemeName,
 };
 use codex_core::models::{
-    AppearanceConfig, CodexOperatorSettings, FontSizePreset, OmegonProfile, OmegonProfileModel,
-    SyncConfig, VaultConfig,
+    AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig, OmegonProfile,
+    OmegonProfileModel, SyncConfig, VaultConfig,
 };
 use dioxus::prelude::*;
 
@@ -47,6 +47,42 @@ pub fn SettingsView() -> Element {
     // Vault + sync — local form state; persisted on explicit Save.
     let mut vault_name = use_signal(|| ctx.vault.config.vault_name.clone());
     let mut sync_config = use_signal(|| ctx.vault.config.sync.clone());
+    let mut local_state_root = use_signal(|| {
+        ctx.vault
+            .config
+            .local_runtime
+            .local_state_root
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    });
+    let mut codex_index_db_path = use_signal(|| {
+        ctx.vault
+            .config
+            .local_runtime
+            .codex_index_db_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    });
+    let mut omegon_runtime_root = use_signal(|| {
+        ctx.vault
+            .config
+            .local_runtime
+            .omegon_runtime_root
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    });
+    let mut omegon_mind_db_path = use_signal(|| {
+        ctx.vault
+            .config
+            .local_runtime
+            .omegon_mind_db_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    });
 
     let mut project_profile_state = use_context::<Signal<OmegonProfile>>();
     let mut operator_settings_state = use_context::<Signal<CodexOperatorSettings>>();
@@ -87,9 +123,14 @@ pub fn SettingsView() -> Element {
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
 
     let vault = ctx.vault.clone();
-    let local_runtime = ctx.vault.config.local_runtime.clone();
     let omegon = ctx.omegon.clone();
     let save = move |_| {
+        let local_runtime = LocalRuntimeConfig {
+            local_state_root: path_from_input(local_state_root.read().as_str()),
+            codex_index_db_path: path_from_input(codex_index_db_path.read().as_str()),
+            omegon_runtime_root: path_from_input(omegon_runtime_root.read().as_str()),
+            omegon_mind_db_path: path_from_input(omegon_mind_db_path.read().as_str()),
+        };
         let config = VaultConfig {
             vault_name: vault_name.read().clone(),
             sync: sync_config.read().clone(),
@@ -97,7 +138,7 @@ pub fn SettingsView() -> Element {
                 theme: theme.read().0.clone(),
                 font_size: *font_sz.read(),
             },
-            local_runtime: local_runtime.clone(),
+            local_runtime,
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {
@@ -304,6 +345,45 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
+                SettingsSection { heading: "Local runtime",
+                    SettingsRow { label: "State root",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{local_state_root}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *local_state_root.write() = e.value(),
+                        }
+                    }
+                    SettingsRow { label: "Codex index DB",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{codex_index_db_path}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *codex_index_db_path.write() = e.value(),
+                        }
+                    }
+                    SettingsRow { label: "Omegon runtime root",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{omegon_runtime_root}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *omegon_runtime_root.write() = e.value(),
+                        }
+                    }
+                    SettingsRow { label: "Omegon mind DB",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{omegon_mind_db_path}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *omegon_mind_db_path.write() = e.value(),
+                        }
+                    }
+                }
+
                 // ── Omegon profile ───────────────────────────────────────────
                 SettingsSection { heading: "Omegon profile",
                     SettingsRow { label: "Model provider",
@@ -418,6 +498,15 @@ pub fn SettingsView() -> Element {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+fn path_from_input(raw: &str) -> Option<std::path::PathBuf> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(trimmed))
+    }
+}
 
 #[component]
 fn SettingsSection(heading: &'static str, children: Element) -> Element {

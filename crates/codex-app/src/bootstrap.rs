@@ -1,4 +1,4 @@
-use codex_core::models::{CodexOperatorSettings, OmegonProfile};
+use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile};
 use codex_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
 use tokio::{process::Command, sync::broadcast};
@@ -6,6 +6,10 @@ use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct OmegonRuntimeContext {
+    pub local_state_root: PathBuf,
+    pub codex_index_db_path: PathBuf,
+    pub omegon_runtime_root: PathBuf,
+    pub omegon_mind_db_path: PathBuf,
     pub home_dir: PathBuf,
     pub project_profile_path: PathBuf,
     pub global_profile_path: PathBuf,
@@ -15,15 +19,45 @@ pub struct OmegonRuntimeContext {
 }
 
 impl OmegonRuntimeContext {
-    fn discover(vault_root: &std::path::Path) -> Self {
+    fn discover(vault_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
+        let default_local_state_root = std::env::var("CODEX_LOCAL_STATE")
+            .map(PathBuf::from)
+            .ok()
+            .filter(|path| path.is_absolute())
+            .or_else(dirs::data_local_dir)
+            .unwrap_or_else(|| vault_root.join(".codex-local"))
+            .join("codex");
+        let local_state_root = runtime
+            .local_state_root
+            .clone()
+            .filter(|path| path.is_absolute())
+            .unwrap_or(default_local_state_root);
+        let omegon_runtime_root = runtime
+            .omegon_runtime_root
+            .clone()
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| local_state_root.join("omegon"));
+        let codex_index_db_path = runtime
+            .codex_index_db_path
+            .clone()
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| local_state_root.join("codex-index.db"));
+        let omegon_mind_db_path = runtime
+            .omegon_mind_db_path
+            .clone()
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| omegon_runtime_root.join("minds/codex.db"));
         let home_dir = std::env::var("OMEGON_HOME")
             .map(PathBuf::from)
             .ok()
             .filter(|path| path.is_absolute())
-            .or_else(|| dirs::home_dir().map(|home| home.join(".omegon")))
-            .unwrap_or_else(|| vault_root.join(".omegon-runtime"));
+            .unwrap_or_else(|| omegon_runtime_root.clone());
 
         Self {
+            local_state_root,
+            codex_index_db_path,
+            omegon_runtime_root,
+            omegon_mind_db_path,
             project_profile_path: vault_root.join(".omegon/profile.json"),
             global_profile_path: home_dir.join("profile.json"),
             operator_settings_path: vault_root.join(".codex/operator-settings.json"),
@@ -88,13 +122,37 @@ impl OmegonRuntimeContext {
 #[cfg(test)]
 mod tests {
     use super::OmegonRuntimeContext;
-    use codex_core::models::{CodexOperatorSettings, OmegonProfile, OmegonProfileModel};
+    use codex_core::models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel};
     use tempfile::TempDir;
+
+    #[test]
+    fn derives_runtime_paths_from_local_runtime_config() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let runtime = OmegonRuntimeContext::discover(
+            &vault_root,
+            &LocalRuntimeConfig {
+                local_state_root: Some(tmp.path().join("state")),
+                codex_index_db_path: Some(tmp.path().join("state/custom-index.db")),
+                omegon_runtime_root: Some(tmp.path().join("state/omegon-runtime")),
+                omegon_mind_db_path: Some(tmp.path().join("state/omegon-runtime/minds/codex-mind.db")),
+            },
+        );
+
+        assert_eq!(runtime.local_state_root, tmp.path().join("state"));
+        assert_eq!(runtime.codex_index_db_path, tmp.path().join("state/custom-index.db"));
+        assert_eq!(runtime.omegon_runtime_root, tmp.path().join("state/omegon-runtime"));
+        assert_eq!(runtime.omegon_mind_db_path, tmp.path().join("state/omegon-runtime/minds/codex-mind.db"));
+    }
 
     #[test]
     fn loads_global_profile_when_project_profile_missing() {
         let tmp = TempDir::new().unwrap();
         let runtime = OmegonRuntimeContext {
+            local_state_root: tmp.path().join("local"),
+            codex_index_db_path: tmp.path().join("local/codex-index.db"),
+            omegon_runtime_root: tmp.path().join("local/omegon"),
+            omegon_mind_db_path: tmp.path().join("local/omegon/minds/codex.db"),
             home_dir: tmp.path().join("home"),
             project_profile_path: tmp.path().join("vault/.omegon/profile.json"),
             global_profile_path: tmp.path().join("home/profile.json"),
@@ -124,6 +182,10 @@ mod tests {
     fn round_trips_operator_settings() {
         let tmp = TempDir::new().unwrap();
         let runtime = OmegonRuntimeContext {
+            local_state_root: tmp.path().join("local"),
+            codex_index_db_path: tmp.path().join("local/codex-index.db"),
+            omegon_runtime_root: tmp.path().join("local/omegon"),
+            omegon_mind_db_path: tmp.path().join("local/omegon/minds/codex.db"),
             home_dir: tmp.path().join("home"),
             project_profile_path: tmp.path().join("vault/.omegon/profile.json"),
             global_profile_path: tmp.path().join("home/profile.json"),
@@ -206,7 +268,7 @@ pub fn bootstrap_from_env() -> AppContext {
         }
     });
 
-    let omegon = OmegonRuntimeContext::discover(&vault_root);
+    let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
 
     AppContext { vault, vault_events: tx, omegon }
 }
