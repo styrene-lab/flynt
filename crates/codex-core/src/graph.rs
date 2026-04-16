@@ -1,4 +1,7 @@
-use crate::store::{TaskFilter, VaultStore};
+use crate::{
+    models::{MetadataValue},
+    store::{TaskFilter, VaultStore},
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
@@ -10,6 +13,7 @@ pub enum GraphNodeKind {
     Task,
     Board,
     MemoryFact,
+    Communication,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,9 +56,17 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
         let id = meta.id.0.to_string();
         let group = top_level_group(&meta.path);
         groups.insert(group.clone(), ());
+        let kind = if matches!(
+            meta.metadata.get("kind").map(|field| &field.value),
+            Some(MetadataValue::String(value)) if value == "agent_communication"
+        ) {
+            GraphNodeKind::Communication
+        } else {
+            GraphNodeKind::Document
+        };
         nodes.push(GraphNode {
             id: id.clone(),
-            kind: GraphNodeKind::Document,
+            kind,
             title: meta.title.clone(),
             group,
         });
@@ -124,7 +136,7 @@ fn top_level_group(path: &Path) -> String {
 mod tests {
     use super::{build_graph_payload, GraphEdgeKind, GraphNodeKind};
     use crate::{
-        models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, SearchResult, Task, TaskId, WikiLink},
+        models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, MetadataField, MetadataProtection, MetadataValue, SearchResult, Task, TaskId, WikiLink},
         store::{DocumentMetadataFilter, TaskFilter, VaultStore},
     };
     use anyhow::Result;
@@ -171,6 +183,20 @@ mod tests {
         let docs = vec![
             DocumentMeta { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), tags: vec![], metadata: Default::default(), updated_at: now },
             DocumentMeta { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), tags: vec![], metadata: Default::default(), updated_at: now },
+            DocumentMeta {
+                id: DocumentId::new(),
+                path: PathBuf::from("references/comms/vox/standup.md"),
+                title: "Standup Recall".into(),
+                tags: vec![],
+                metadata: std::collections::BTreeMap::from([(
+                    "kind".into(),
+                    MetadataField {
+                        value: MetadataValue::String("agent_communication".into()),
+                        protection: MetadataProtection::PlaintextIndexed,
+                    },
+                )]),
+                updated_at: now,
+            },
         ];
         let full_docs = HashMap::from([
             (a.0.to_string(), Document { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![WikiLink { target: "beta".into(), display: None, anchor: None }], created_at: now, updated_at: now }),
@@ -199,6 +225,7 @@ mod tests {
 
         let graph = build_graph_payload(&store).unwrap();
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Document));
+        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Communication));
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Board));
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Task));
         assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::Wikilink));

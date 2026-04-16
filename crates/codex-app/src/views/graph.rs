@@ -133,6 +133,7 @@ fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Task => "task",
         GraphNodeKind::Board => "board",
         GraphNodeKind::MemoryFact => "memory",
+        GraphNodeKind::Communication => "communication",
     }
 }
 

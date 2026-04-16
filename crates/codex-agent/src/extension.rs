@@ -86,6 +86,19 @@ impl Extension for CodexExtension {
                     }
                 },
                 {
+                    "name": "store_agent_communication",
+                    "description": "Store an internal Omegon or Scribe communication as a canonical markdown reference document.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "channel": { "type": "string" },
+                            "title": { "type": "string" },
+                            "content": { "type": "string" }
+                        },
+                        "required": ["channel", "title", "content"]
+                    }
+                },
+                {
                     "name": "list_tasks",
                     "description": "List kanban tasks, optionally filtered by board or column.",
                     "input_schema": {
@@ -234,6 +247,23 @@ impl Extension for CodexExtension {
                 Ok(serde_json::to_value(links).unwrap_or(json!([])))
             }
 
+            "execute_store_agent_communication" => {
+                let channel = params["channel"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'channel'"))?;
+                let title = params["title"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'title'"))?;
+                let content = params["content"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'content'"))?;
+                let path = self
+                    .vault
+                    .store_agent_communication(channel, title, content)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                Ok(json!({ "path": path }))
+            }
+
             "execute_list_tasks" => {
                 let board_id = params["board_id"]
                     .as_str()
@@ -363,6 +393,7 @@ mod tests {
             .collect();
 
         assert!(names.contains(&"find_document_by_slug".to_string()));
+        assert!(names.contains(&"store_agent_communication".to_string()));
         assert!(names.contains(&"get_task".to_string()));
         assert!(names.contains(&"create_task".to_string()));
         assert!(names.contains(&"get_board".to_string()));
@@ -372,6 +403,19 @@ mod tests {
     #[tokio::test]
     async fn create_board_and_task_are_exposed_end_to_end() {
         let (_tmp, ext) = test_extension();
+
+        let comm = ext
+            .handle_rpc(
+                "execute_store_agent_communication",
+                json!({
+                    "channel": "scribe",
+                    "title": "Standup Recall",
+                    "content": "See [[Sprint 1]]."
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(comm["path"].as_str().unwrap().contains("references/comms/scribe"));
 
         let board = ext
             .handle_rpc("execute_create_board", json!({ "name": "Sprint 1" }))
@@ -394,7 +438,7 @@ mod tests {
         assert_eq!(task["title"], "Wire extension surface");
 
         let tasks = ext
-            .handle_rpc("execute_list_tasks", json!({ "column": "Backlog" }))
+            .handle_rpc("execute_list_tasks", json!({ "column": "Backlog", "board_id": board_id }))
             .await
             .unwrap();
         assert_eq!(tasks.as_array().unwrap().len(), 1);
