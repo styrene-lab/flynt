@@ -382,10 +382,19 @@ impl Vault {
         let mut skipped_private = 0usize;
         let mut errors = Vec::new();
         let mut manifest_entries = Vec::new();
+        let mut seen_slugs = std::collections::BTreeSet::new();
 
         for document in self.store.list_documents()? {
             match self.export_published_document(&document.path, output_root) {
                 Ok(Some(published)) => {
+                    if !seen_slugs.insert(published.slug.clone()) {
+                        errors.push(format!(
+                            "{}: duplicate publication slug '{}'",
+                            document.path.display(),
+                            published.slug
+                        ));
+                        continue;
+                    }
                     exported += 1;
                     manifest_entries.push(PublicationManifestEntry {
                         title: published.title,
@@ -485,7 +494,8 @@ fn extract_h1(body: &str) -> Option<String> {
 
 fn canonical_document_source(document: &Document) -> String {
     let frontmatter = toml::to_string(&document.frontmatter).unwrap_or_default();
-    format!("+++\n{frontmatter}\n+++\n\n{}", document.content)
+    let body = document.content.trim_end();
+    format!("+++\n{frontmatter}\n+++\n\n{body}\n")
 }
 
 fn slugify_title(title: &str) -> String {
@@ -511,6 +521,7 @@ fn publication_slug(document: &Document) -> String {
         .publication
         .slug
         .clone()
+        .filter(|slug| !slug.trim().is_empty())
         .unwrap_or_else(|| slugify_title(&document.title))
 }
 
@@ -763,6 +774,50 @@ See [[roadmap]].\n",
         );
         assert_eq!(doc.outgoing_links.len(), 1);
         assert_eq!(doc.outgoing_links[0].target, "design");
+    }
+
+    #[test]
+    fn canonical_document_source_terminates_with_newline() {
+        let now = Utc::now();
+        let doc = Document {
+            id: DocumentId::new(),
+            path: PathBuf::from("notes/example.md"),
+            title: "Example".into(),
+            content: "Body".into(),
+            frontmatter: Frontmatter::default(),
+            outgoing_links: vec![],
+            created_at: now,
+            updated_at: now,
+        };
+
+        let rendered = canonical_document_source(&doc);
+        assert!(rendered.ends_with('\n'));
+        assert!(rendered.contains("\n\nBody\n"));
+    }
+
+    #[test]
+    fn publication_export_reports_duplicate_slugs() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let output_root = tmp.path().join("published");
+        let vault = Vault::open(&vault_root).unwrap();
+
+        for (name, title) in [("alpha.md", "Same"), ("beta.md", "Same")] {
+            let path = vault_root.join(name);
+            std::fs::write(
+                &path,
+                format!(
+                    "+++\ntitle = \"{title}\"\n[publication]\nenabled = true\nvisibility = \"public\"\n+++\n\n# {title}\n"
+                ),
+            )
+            .unwrap();
+            vault.index_file(&path).unwrap();
+        }
+
+        let report = vault.export_publication_tree(&output_root).unwrap();
+        assert_eq!(report.exported, 1);
+        assert_eq!(report.errors.len(), 1);
+        assert!(report.errors[0].contains("duplicate publication slug"));
     }
 
     #[test]
