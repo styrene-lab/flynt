@@ -1,12 +1,25 @@
-use dioxus::prelude::*;
 use crate::bootstrap::AppContext;
+use dioxus::prelude::*;
 
 #[component]
 pub fn AgentRail() -> Element {
     let ctx = use_context::<AppContext>();
-    let mut input = use_signal(|| String::new());
-    let mut profile = use_signal(|| String::from("codex"));
-    let mut extension = use_signal(|| String::from("vox"));
+    let operator_settings = ctx.omegon.load_operator_settings();
+    let project_profile = ctx.omegon.load_project_profile();
+
+    let mut input = use_signal(String::new);
+    let mut extension = use_signal(|| operator_settings.rail_extension.clone());
+
+    let active_persona = if operator_settings.active_persona.trim().is_empty() {
+        "off".to_string()
+    } else {
+        operator_settings.active_persona.clone()
+    };
+    let model_summary = project_profile
+        .last_used_model
+        .as_ref()
+        .map(|model| format!("{}/{}", model.provider, model.model_id))
+        .unwrap_or_else(|| "not configured".to_string());
 
     let project_profile_exists = ctx.omegon.project_profile_path.exists();
     let global_profile_exists = ctx.omegon.global_profile_path.exists();
@@ -21,6 +34,8 @@ pub fn AgentRail() -> Element {
                     strong { "Native integration" }
                     p { "Codex will use Omegon's real native extension runtime under ~/.omegon/extensions. MCP is not part of this path." }
                     ul {
+                        li { "Persona: {active_persona}" }
+                        li { "Model: {model_summary}" }
                         li { "Home: {ctx.omegon.home_dir.display()}" }
                         li {
                             "Project profile: {ctx.omegon.project_profile_path.display()}"
@@ -41,11 +56,11 @@ pub fn AgentRail() -> Element {
             div { class: "agent-input",
                 label {
                     class: "settings-field",
-                    span { "Profile" }
+                    span { "Persona" }
                     input {
-                        value: "{profile}",
-                        placeholder: "omegon profile",
-                        oninput: move |e| *profile.write() = e.value(),
+                        value: "{active_persona}",
+                        disabled: true,
+                        title: "Configured from Codex operator settings",
                     }
                 }
 
