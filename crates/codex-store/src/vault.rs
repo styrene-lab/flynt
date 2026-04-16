@@ -5,6 +5,7 @@ use codex_core::{
     store::VaultStore,
 };
 use chrono::Utc;
+use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -41,6 +42,22 @@ pub struct PublicationExportReport {
     pub exported: usize,
     pub skipped_private: usize,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PublicationManifest {
+    pub generated_at: String,
+    pub documents: Vec<PublicationManifestEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PublicationManifestEntry {
+    pub title: String,
+    pub slug: String,
+    pub source_path: PathBuf,
+    pub output_path: PathBuf,
+    pub tags: Vec<String>,
+    pub visibility: PublicationVisibility,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -315,14 +332,35 @@ impl Vault {
         let mut exported = 0usize;
         let mut skipped_private = 0usize;
         let mut errors = Vec::new();
+        let mut manifest_entries = Vec::new();
 
         for document in self.store.list_documents()? {
             match self.export_published_document(&document.path, output_root) {
-                Ok(Some(_published)) => exported += 1,
+                Ok(Some(published)) => {
+                    exported += 1;
+                    manifest_entries.push(PublicationManifestEntry {
+                        title: published.title,
+                        slug: published.slug,
+                        source_path: published.source_path,
+                        output_path: published.output_path,
+                        tags: document.tags,
+                        visibility: PublicationVisibility::Public,
+                    });
+                }
                 Ok(None) => skipped_private += 1,
                 Err(err) => errors.push(format!("{}: {err}", document.path.display())),
             }
         }
+
+        let manifest = PublicationManifest {
+            generated_at: Utc::now().to_rfc3339(),
+            documents: manifest_entries,
+        };
+        fs::create_dir_all(output_root)?;
+        fs::write(
+            output_root.join("manifest.json"),
+            serde_json::to_string_pretty(&manifest)?,
+        )?;
 
         Ok(PublicationExportReport { exported, skipped_private, errors })
     }
@@ -663,5 +701,12 @@ See [[roadmap|the roadmap]].\n",
         let published = std::fs::read_to_string(output_root.join("design.md")).unwrap();
         assert!(published.contains("[the roadmap](/roadmap)"));
         assert!(!published.contains("source_path"));
+
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(output_root.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["documents"].as_array().unwrap().len(), 2);
+        assert_eq!(manifest["documents"][0]["slug"], "design");
     }
 }
