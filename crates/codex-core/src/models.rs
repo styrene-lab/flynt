@@ -99,7 +99,7 @@ pub struct DocumentMeta {
 }
 
 /// YAML/TOML frontmatter parsed from the top of a document.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Frontmatter {
     /// Stable document identity — written on first index, survives DB wipe.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -110,6 +110,14 @@ pub struct Frontmatter {
     pub aliases: Vec<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub imported_reference: bool,
     #[serde(default, flatten)]
     pub metadata: MetadataMap,
 }

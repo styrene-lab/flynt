@@ -29,6 +29,18 @@ pub struct Vault {
     pub config: VaultConfig,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportReport {
+    pub imported: usize,
+    pub skipped: usize,
+    pub errors: Vec<String>,
+}
+
+enum ImportDisposition {
+    Imported,
+    Skipped,
+}
+
 impl Vault {
     /// Open (or create) a vault rooted at `root`.
     pub fn open(root: &Path) -> Result<Self> {
@@ -150,6 +162,86 @@ impl Vault {
         self.index_file(&abs_path)
     }
 
+    /// Import markdown documents from an external directory tree into this vault.
+    /// The imported markdown becomes Codex canonical truth while preserving source provenance.
+    pub fn import_markdown_tree(&self, source_root: &Path) -> Result<ImportReport> {
+        let mut imported = 0usize;
+        let mut skipped = 0usize;
+        let mut errors = Vec::new();
+
+        for entry in walkdir::WalkDir::new(source_root)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| !is_hidden(e))
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_file()
+                    && e.path().extension().map(|x| x == "md").unwrap_or(false)
+            })
+        {
+            match self.import_markdown_file(source_root, entry.path()) {
+                Ok(ImportDisposition::Imported) => imported += 1,
+                Ok(ImportDisposition::Skipped) => skipped += 1,
+                Err(err) => errors.push(format!("{}: {err}", entry.path().display())),
+            }
+        }
+
+        Ok(ImportReport { imported, skipped, errors })
+    }
+
+    fn import_markdown_file(&self, source_root: &Path, source_path: &Path) -> Result<ImportDisposition> {
+        let relative = source_path.strip_prefix(source_root)?;
+        let destination = import_destination_path(relative);
+        let absolute_destination = self.root.join(&destination);
+
+        if absolute_destination.exists() {
+            return Ok(ImportDisposition::Skipped);
+        }
+
+        let raw = fs::read_to_string(source_path)?;
+        let (body, mut frontmatter, links) = parse_document_source(&raw);
+        let title = extract_h1(&body).unwrap_or_else(|| {
+            source_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Untitled".to_string())
+        });
+        let now = Utc::now();
+
+        if frontmatter.id.is_none() {
+            frontmatter.id = Some(DocumentId::new().0);
+        }
+        if frontmatter.source_format.is_none() {
+            frontmatter.source_format = Some("markdown".into());
+        }
+        if frontmatter.source_path.is_none() {
+            frontmatter.source_path = Some(source_path.display().to_string());
+        }
+        if frontmatter.imported_at.is_none() {
+            frontmatter.imported_at = Some(now);
+        }
+        frontmatter.imported_reference = true;
+
+        let document = Document {
+            id: DocumentId(frontmatter.id.expect("frontmatter id set during import")),
+            path: destination.clone(),
+            title: title.clone(),
+            content: body,
+            frontmatter: frontmatter.clone(),
+            outgoing_links: links,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let canonical = canonical_document_source(&document);
+        if let Some(parent) = absolute_destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&absolute_destination, canonical)?;
+        self.index_file(&absolute_destination)?;
+        Ok(ImportDisposition::Imported)
+    }
+
     /// Write a new config to disk. Does not update `self.config` (the in-memory
     /// value is managed by callers via signals). Call this from the settings view.
     pub fn save_config(&self, config: &VaultConfig) -> Result<()> {
@@ -188,6 +280,15 @@ fn extract_h1(body: &str) -> Option<String> {
     None
 }
 
+fn canonical_document_source(document: &Document) -> String {
+    let frontmatter = toml::to_string(&document.frontmatter).unwrap_or_default();
+    format!("+++\n{frontmatter}+++\n\n{}", document.content)
+}
+
+fn import_destination_path(relative_source_path: &Path) -> PathBuf {
+    PathBuf::from("references/imported").join(relative_source_path)
+}
+
 fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
     if let Some(path) = runtime.codex_index_db_path.as_ref().filter(|path| path.is_absolute()) {
         return path.clone();
@@ -211,8 +312,8 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_index_db_path;
-    use codex_core::models::LocalRuntimeConfig;
+    use super::{import_destination_path, resolve_index_db_path, Vault};
+    use codex_core::models::{LocalRuntimeConfig, MetadataValue};
     use tempfile::TempDir;
 
     #[test]
@@ -247,5 +348,50 @@ mod tests {
         );
 
         assert_eq!(resolved, local_state_root.join("codex/codex-index.db"));
+    }
+
+    #[test]
+    fn imports_markdown_tree_into_references_with_provenance_and_links() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let source_root = tmp.path().join("obsidian");
+        std::fs::create_dir_all(source_root.join("notes")).unwrap();
+        std::fs::write(
+            source_root.join("notes/design.md"),
+            "+++
+tags = [\"design\"]
+owner = \"alpharius\"
++++
+
+# Design
+
+See [[roadmap]].\n",
+        )
+        .unwrap();
+
+        let vault = Vault::open(&vault_root).unwrap();
+        let report = vault.import_markdown_tree(&source_root).unwrap();
+        assert_eq!(report.imported, 1);
+        assert!(report.errors.is_empty());
+
+        let imported_rel = import_destination_path(std::path::Path::new("notes/design.md"));
+        let imported_doc = vault.store.get_document_by_path(&imported_rel).unwrap().unwrap();
+        assert_eq!(imported_doc.title, "Design");
+        assert_eq!(imported_doc.outgoing_links.len(), 1);
+        assert_eq!(imported_doc.outgoing_links[0].target, "roadmap");
+        assert_eq!(imported_doc.frontmatter.source_format.as_deref(), Some("markdown"));
+        assert_eq!(
+            imported_doc.frontmatter.source_path.as_deref(),
+            Some(source_root.join("notes/design.md").display().to_string().as_str())
+        );
+        assert!(imported_doc.frontmatter.imported_reference);
+        assert!(imported_doc.frontmatter.id.is_some());
+        assert_eq!(
+            imported_doc.frontmatter.metadata.get("owner"),
+            Some(&MetadataValue::String("alpharius".into()))
+        );
+
+        let imported_meta = vault.store.get_document_by_path(&imported_rel).unwrap().unwrap();
+        assert_eq!(imported_meta.path, imported_rel);
     }
 }
