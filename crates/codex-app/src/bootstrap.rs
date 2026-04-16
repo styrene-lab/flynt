@@ -142,6 +142,45 @@ impl OmegonRuntimeContext {
             })
     }
 
+    pub fn seed_demo_publication_repo(repo_root: &Path) -> anyhow::Result<()> {
+        std::fs::create_dir_all(repo_root.join("src/pages"))?;
+        std::fs::create_dir_all(repo_root.join("public/preview"))?;
+
+        std::fs::write(
+            repo_root.join("package.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "name": "codex-publication-demo",
+                "private": true,
+                "type": "module",
+                "scripts": {
+                    "dev": "astro dev",
+                    "build": "astro build",
+                    "preview": "astro preview"
+                },
+                "dependencies": {
+                    "astro": "^5.0.0"
+                }
+            }))?,
+        )?;
+
+        std::fs::write(
+            repo_root.join("astro.config.mjs"),
+            "import { defineConfig } from 'astro/config';\n\nexport default defineConfig({\n  site: 'https://black-meridian.github.io/codex-site',\n});\n",
+        )?;
+
+        std::fs::write(
+            repo_root.join("src/pages/index.astro"),
+            "---\nconst title = 'Codex Publication Demo';\n---\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <title>{title}</title>\n    <style>body{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:3rem;background:#06080e;color:#c4d8e4}a{color:#6ecad8}code{background:#0e1622;padding:.2rem .4rem;border-radius:4px}</style>\n  </head>\n  <body>\n    <h1>{title}</h1>\n    <p>This Astro site demonstrates what a published Codex vault can look like.</p>\n    <p>Copy local publication preview artifacts into <code>public/preview/</code> or evolve this into a richer adapter over the publication manifest.</p>\n    <ul>\n      <li><a href=\"/preview/home.html\">Preview exported home page</a></li>\n      <li><a href=\"https://github.com/black-meridian/codex\">Codex source</a></li>\n    </ul>\n  </body>\n</html>\n",
+        )?;
+
+        std::fs::write(
+            repo_root.join("README.md"),
+            "# Codex Publication Demo\n\nThis Astro site is the example/demo publication target for a published Codex vault.\n\n## Workflow\n\n1. Export a local publication preview from Codex.\n2. Copy the generated preview tree into `public/preview/`.\n3. Run `npm install` and `npm run dev`.\n\nThe long-term path is to replace the raw preview copy step with a richer Astro adapter over Codex publication manifests.\n",
+        )?;
+
+        Ok(())
+    }
+
     fn discover(vault_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
         let default_local_state_root = std::env::var("CODEX_LOCAL_STATE")
             .map(PathBuf::from)
@@ -339,6 +378,18 @@ mod tests {
             })
         );
         assert_eq!(publication_output_path(&vault), local_path.join("site"));
+    }
+
+    #[test]
+    fn seeds_demo_publication_repo_files() {
+        let tmp = TempDir::new().unwrap();
+        let repo_root = tmp.path().join("codex-site");
+        OmegonRuntimeContext::seed_demo_publication_repo(&repo_root).unwrap();
+
+        assert!(repo_root.join("package.json").exists());
+        assert!(repo_root.join("astro.config.mjs").exists());
+        assert!(repo_root.join("src/pages/index.astro").exists());
+        assert!(repo_root.join("README.md").exists());
     }
 
     #[test]

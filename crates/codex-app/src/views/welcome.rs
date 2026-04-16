@@ -8,6 +8,7 @@ pub fn WelcomeView(
     on_create_local: EventHandler<()>,
     on_link_github: EventHandler<()>,
     on_import_markdown: EventHandler<()>,
+    on_seed_demo_publication: EventHandler<()>,
 ) -> Element {
     let recent_count = launcher_profile.recent_vaults.len();
     let pending_label = launcher_profile.pending_setup.as_ref().map(|pending| match pending {
@@ -72,6 +73,15 @@ pub fn WelcomeView(
                         action: "Import references",
                         meta: "Uses the markdown-as-truth import pipeline",
                         on_click: move |_| on_import_markdown.call(()),
+                    }
+                    WelcomeCard {
+                        primary: false,
+                        icon: "🌐",
+                        title: "Seed demo publication",
+                        body: "Create an Astro-based example/demo site repo that shows what a published Codex vault could look like.",
+                        action: "Seed demo repo",
+                        meta: "Scaffolds an example publication target",
+                        on_click: move |_| on_seed_demo_publication.call(()),
                     }
                 }
 

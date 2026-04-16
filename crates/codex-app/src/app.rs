@@ -200,6 +200,33 @@ pub fn App() -> Element {
                                 launcher_profile.set(profile);
                                 *active_route.write() = Route::Notes;
                             };
+                            let on_seed_demo_publication = move |_| {
+                                let Some(repo_root) = FileDialog::new()
+                                    .set_directory(
+                                        dirs::document_dir()
+                                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp")),
+                                    )
+                                    .pick_folder()
+                                else {
+                                    return;
+                                };
+                                if OmegonRuntimeContext::seed_demo_publication_repo(&repo_root).is_err() {
+                                    return;
+                                }
+                                let site_name = repo_root
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("codex-publication-demo")
+                                    .to_string();
+                                let mut profile = launcher_profile();
+                                profile.pending_setup = Some(PendingVaultSetup::SeedDemoPublication {
+                                    repo_root: repo_root.clone(),
+                                    site_name,
+                                });
+                                profile.wizard_completed = true;
+                                let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                launcher_profile.set(profile);
+                            };
                             rsx! {
                                 WelcomeView {
                                     launcher_profile: launcher_profile(),
@@ -207,6 +234,7 @@ pub fn App() -> Element {
                                     on_create_local,
                                     on_link_github,
                                     on_import_markdown,
+                                    on_seed_demo_publication,
                                 }
                             }
                         },
