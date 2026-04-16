@@ -19,6 +19,9 @@ pub fn WelcomeView(
         PendingVaultSetup::PublishPreview { output_path, repo, branch } => {
             format!("Preview at {} for {repo} ({branch})", output_path.display())
         }
+        PendingVaultSetup::SeedDemoPublication { repo_root, site_name } => {
+            format!("Seeded {site_name} demo at {}", repo_root.display())
+        }
     });
 
     rsx! {

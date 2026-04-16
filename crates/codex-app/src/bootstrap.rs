@@ -27,6 +27,7 @@ pub enum PendingVaultSetup {
     CreateLocal { path: PathBuf, name: String },
     LinkGithub { local_path: PathBuf, repo: String, branch: String },
     PublishPreview { output_path: PathBuf, repo: String, branch: String },
+    SeedDemoPublication { repo_root: PathBuf, site_name: String },
 }
 
 #[derive(Clone)]
