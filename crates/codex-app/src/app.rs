@@ -5,6 +5,7 @@ use crate::{
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use dioxus::prelude::*;
+use rfd::FileDialog;
 
 #[component]
 pub fn App() -> Element {
@@ -84,32 +85,58 @@ pub fn App() -> Element {
                             let choose_existing_root = current_vault_root.clone();
                             let imported_root = current_vault_root.join("references/imported");
                             let on_choose_existing = move |_| {
+                                let Some(selected_root) = FileDialog::new().pick_folder() else {
+                                    return;
+                                };
+                                if OmegonRuntimeContext::initialize_vault(
+                                    &selected_root,
+                                    selected_root
+                                        .file_name()
+                                        .and_then(|name| name.to_str())
+                                        .unwrap_or("Codex"),
+                                    codex_core::models::SyncConfig::None,
+                                )
+                                .is_err()
+                                {
+                                    return;
+                                }
                                 let mut profile = launcher_profile();
                                 profile.pending_setup = Some(PendingVaultSetup::OpenExisting {
-                                    path: choose_existing_root.clone(),
+                                    path: selected_root.clone(),
                                 });
-                                profile.last_vault_root = Some(choose_existing_root.clone());
+                                profile.last_vault_root = Some(selected_root.clone());
                                 profile.wizard_completed = true;
-                                if !profile.recent_vaults.contains(&choose_existing_root) {
-                                    profile.recent_vaults.push(choose_existing_root.clone());
+                                if !profile.recent_vaults.contains(&selected_root) {
+                                    profile.recent_vaults.push(selected_root.clone());
                                 }
                                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                 launcher_profile.set(profile);
                                 *active_route.write() = Route::Notes;
                             };
                             let on_create_local = move |_| {
-                                let local_path = dirs::document_dir()
-                                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-                                    .join("Black Meridian");
+                                let Some(local_path) = FileDialog::new()
+                                    .set_directory(
+                                        dirs::document_dir()
+                                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp")),
+                                    )
+                                    .pick_folder()
+                                else {
+                                    return;
+                                };
+                                let name = local_path
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("Black Meridian")
+                                    .to_string();
                                 if let Ok(_vault) = OmegonRuntimeContext::initialize_vault(
                                     &local_path,
-                                    "Black Meridian",
+                                    &name,
                                     codex_core::models::SyncConfig::None,
                                 ) {
                                     let mut profile = launcher_profile();
                                     profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
                                         path: local_path.clone(),
-                                        name: "Black Meridian".into(),
+                                        name: name.clone(),
                                     });
                                     profile.last_vault_root = Some(local_path.clone());
                                     profile.wizard_completed = true;
@@ -122,12 +149,23 @@ pub fn App() -> Element {
                                 }
                             };
                             let on_link_github = move |_| {
-                                let local_path = dirs::document_dir()
-                                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-                                    .join("Black Meridian");
+                                let Some(local_path) = FileDialog::new()
+                                    .set_directory(
+                                        dirs::document_dir()
+                                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp")),
+                                    )
+                                    .pick_folder()
+                                else {
+                                    return;
+                                };
+                                let name = local_path
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("Black Meridian")
+                                    .to_string();
                                 if let Ok(_vault) = OmegonRuntimeContext::initialize_github_linked_vault(
                                     &local_path,
-                                    "Black Meridian",
+                                    &name,
                                     "https://github.com/black-meridian/codex-vault.git",
                                     "main",
                                 ) {
@@ -147,15 +185,22 @@ pub fn App() -> Element {
                                     *active_route.write() = Route::Notes;
                                 }
                             };
-                            let imported_root = current_vault_root.join("references/imported");
                             let on_import_markdown = move |_| {
+                                let Some(source_root) = FileDialog::new().pick_folder() else {
+                                    return;
+                                };
+                                if ctx.vault.import_markdown_tree(&source_root).is_err() {
+                                    return;
+                                }
                                 let mut profile = launcher_profile();
                                 profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
-                                    path: imported_root.clone(),
+                                    path: source_root,
                                     name: "Imported References".into(),
                                 });
+                                profile.wizard_completed = true;
                                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                 launcher_profile.set(profile);
+                                *active_route.write() = Route::Notes;
                             };
                             rsx! {
                                 WelcomeView {
