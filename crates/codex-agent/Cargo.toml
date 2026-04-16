@@ -21,3 +21,7 @@ omegon-extension = "0.15"
 async-trait = "0.1"
 dirs        = "5"
 clap = { version = "4", features = ["derive", "env"] }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
