@@ -77,6 +77,7 @@ enum ImportDisposition {
 impl Vault {
     /// Open (or create) a vault rooted at `root`.
     pub fn open(root: &Path) -> Result<Self> {
+        fs::create_dir_all(root)?;
         let codex_dir = root.join(".codex");
         fs::create_dir_all(&codex_dir)?;
 
@@ -837,6 +838,7 @@ See [[roadmap]].\n",
         std::fs::create_dir_all(&vault_root).unwrap();
         let output_root = tmp.path().join("published");
         let vault = Vault::open(&vault_root).unwrap();
+        assert!(vault.store.list_documents().unwrap().is_empty());
 
         for (name, title) in [("alpha.md", "Same"), ("beta.md", "Same")] {
             let path = vault_root.join(name);
@@ -851,7 +853,6 @@ See [[roadmap]].\n",
         }
 
         let report = vault.export_publication_tree(&output_root).unwrap();
-        dbg!(&report);
         assert_eq!(report.exported, 1);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("duplicate publication slug"));
@@ -863,6 +864,7 @@ See [[roadmap]].\n",
         let vault_root = tmp.path().join("vault");
         std::fs::create_dir_all(&vault_root).unwrap();
         let vault = Vault::open(&vault_root).unwrap();
+        assert!(vault.store.list_documents().unwrap().is_empty());
 
         let public_path = vault_root.join("docs/public.md");
         std::fs::create_dir_all(public_path.parent().unwrap()).unwrap();
