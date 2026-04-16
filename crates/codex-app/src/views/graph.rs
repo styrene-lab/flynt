@@ -47,7 +47,7 @@ pub fn GraphView() -> Element {
                                 onclick: move |_| *selected_kind.write() = None,
                                 "All kinds"
                             }
-                            for kind in [GraphNodeKind::Document, GraphNodeKind::Task, GraphNodeKind::Board] {
+                            for kind in [GraphNodeKind::Document, GraphNodeKind::Communication, GraphNodeKind::MemoryFact, GraphNodeKind::Task, GraphNodeKind::Board] {
                                 button {
                                     class: if selected_kind.read().as_ref() == Some(&kind) { "btn btn-primary" } else { "btn btn-ghost" },
                                     onclick: move |_| *selected_kind.write() = Some(kind.clone()),
@@ -115,12 +115,16 @@ pub fn GraphView() -> Element {
 fn GraphSummary(payload: GraphPayload, filtered_node_ids: Vec<String>) -> Element {
     let filtered = filtered_node_ids.into_iter().collect::<std::collections::HashSet<_>>();
     let document_count = payload.nodes.iter().filter(|node| filtered.contains(&node.id) && node.kind == GraphNodeKind::Document).count();
+    let communication_count = payload.nodes.iter().filter(|node| filtered.contains(&node.id) && node.kind == GraphNodeKind::Communication).count();
+    let memory_count = payload.nodes.iter().filter(|node| filtered.contains(&node.id) && node.kind == GraphNodeKind::MemoryFact).count();
     let task_count = payload.nodes.iter().filter(|node| filtered.contains(&node.id) && node.kind == GraphNodeKind::Task).count();
     let board_count = payload.nodes.iter().filter(|node| filtered.contains(&node.id) && node.kind == GraphNodeKind::Board).count();
 
     rsx! {
         div { class: "graph-list",
             div { class: "graph-node-row", strong { "Documents" } span { class: "muted", " {document_count}" } }
+            div { class: "graph-node-row", strong { "Communications" } span { class: "muted", " {communication_count}" } }
+            div { class: "graph-node-row", strong { "Memory facts" } span { class: "muted", " {memory_count}" } }
             div { class: "graph-node-row", strong { "Tasks" } span { class: "muted", " {task_count}" } }
             div { class: "graph-node-row", strong { "Boards" } span { class: "muted", " {board_count}" } }
         }

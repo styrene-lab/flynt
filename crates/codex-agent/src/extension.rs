@@ -86,6 +86,19 @@ impl Extension for CodexExtension {
                     }
                 },
                 {
+                    "name": "store_memory_fact",
+                    "description": "Store a durable Omegon memory fact as a canonical markdown knowledge artifact.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "topic": { "type": "string" },
+                            "title": { "type": "string" },
+                            "content": { "type": "string" }
+                        },
+                        "required": ["topic", "title", "content"]
+                    }
+                },
+                {
                     "name": "store_agent_communication",
                     "description": "Store an internal Omegon or Scribe communication as a canonical markdown reference document.",
                     "input_schema": {
@@ -247,6 +260,23 @@ impl Extension for CodexExtension {
                 Ok(serde_json::to_value(links).unwrap_or(json!([])))
             }
 
+            "execute_store_memory_fact" => {
+                let topic = params["topic"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'topic'"))?;
+                let title = params["title"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'title'"))?;
+                let content = params["content"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'content'"))?;
+                let path = self
+                    .vault
+                    .store_memory_fact(topic, title, content)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                Ok(json!({ "path": path }))
+            }
+
             "execute_store_agent_communication" => {
                 let channel = params["channel"]
                     .as_str()
@@ -393,6 +423,7 @@ mod tests {
             .collect();
 
         assert!(names.contains(&"find_document_by_slug".to_string()));
+        assert!(names.contains(&"store_memory_fact".to_string()));
         assert!(names.contains(&"store_agent_communication".to_string()));
         assert!(names.contains(&"get_task".to_string()));
         assert!(names.contains(&"create_task".to_string()));
@@ -403,6 +434,19 @@ mod tests {
     #[tokio::test]
     async fn create_board_and_task_are_exposed_end_to_end() {
         let (_tmp, ext) = test_extension();
+
+        let memory = ext
+            .handle_rpc(
+                "execute_store_memory_fact",
+                json!({
+                    "topic": "storage",
+                    "title": "Canonical vs Local",
+                    "content": "Supports [[Sprint 1]]."
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(memory["path"].as_str().unwrap().contains("ai/memory/storage"));
 
         let comm = ext
             .handle_rpc(

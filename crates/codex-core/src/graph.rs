@@ -61,6 +61,11 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             Some(MetadataValue::String(value)) if value == "agent_communication"
         ) {
             GraphNodeKind::Communication
+        } else if matches!(
+            meta.metadata.get("kind").map(|field| &field.value),
+            Some(MetadataValue::String(value)) if value == "memory_fact"
+        ) {
+            GraphNodeKind::MemoryFact
         } else {
             GraphNodeKind::Document
         };
@@ -197,6 +202,20 @@ mod tests {
                 )]),
                 updated_at: now,
             },
+            DocumentMeta {
+                id: DocumentId::new(),
+                path: PathBuf::from("ai/memory/storage/canonical-vs-local.md"),
+                title: "Canonical vs Local".into(),
+                tags: vec![],
+                metadata: std::collections::BTreeMap::from([(
+                    "kind".into(),
+                    MetadataField {
+                        value: MetadataValue::String("memory_fact".into()),
+                        protection: MetadataProtection::PlaintextIndexed,
+                    },
+                )]),
+                updated_at: now,
+            },
         ];
         let full_docs = HashMap::from([
             (a.0.to_string(), Document { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![WikiLink { target: "beta".into(), display: None, anchor: None }], created_at: now, updated_at: now }),
@@ -226,6 +245,7 @@ mod tests {
         let graph = build_graph_payload(&store).unwrap();
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Document));
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Communication));
+        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::MemoryFact));
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Board));
         assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Task));
         assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::Wikilink));

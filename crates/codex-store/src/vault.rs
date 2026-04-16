@@ -245,6 +245,54 @@ impl Vault {
         Ok(relative_path)
     }
 
+    /// Persist a durable memory fact as a canonical markdown knowledge artifact.
+    pub fn store_memory_fact(
+        &self,
+        topic: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<PathBuf> {
+        let now = Utc::now();
+        let slug = slugify_title(title);
+        let relative_path = PathBuf::from("ai/memory")
+            .join(slugify_title(topic))
+            .join(format!("{}-{}.md", now.format("%Y%m%d%H%M%S"), slug));
+        let absolute_path = self.root.join(&relative_path);
+
+        let mut frontmatter = Frontmatter::default();
+        frontmatter.id = Some(DocumentId::new().0);
+        frontmatter.title = Some(title.to_string());
+        frontmatter.source_format = Some("omegon_memory".into());
+        frontmatter.source_path = Some(format!("omegon://memory/{topic}"));
+        frontmatter.imported_at = Some(now);
+        frontmatter.imported_reference = true;
+        frontmatter
+            .metadata
+            .insert("topic".into(), MetadataValue::String(topic.to_string()));
+        frontmatter
+            .metadata
+            .insert("kind".into(), MetadataValue::String("memory_fact".into()));
+
+        let document = Document {
+            id: DocumentId(frontmatter.id.expect("frontmatter id set for memory fact")),
+            path: relative_path.clone(),
+            title: title.to_string(),
+            content: content.to_string(),
+            frontmatter,
+            outgoing_links: parse_document_source(content).2,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let canonical = canonical_document_source(&document);
+        if let Some(parent) = absolute_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&absolute_path, canonical)?;
+        self.index_file(&absolute_path)?;
+        Ok(relative_path)
+    }
+
     /// Import markdown documents from an external directory tree into this vault.
     /// The imported markdown becomes Codex canonical truth while preserving source provenance.
     pub fn import_markdown_tree(&self, source_root: &Path) -> Result<ImportReport> {
@@ -685,6 +733,33 @@ See [[roadmap]].\n",
         assert_eq!(
             doc.frontmatter.metadata.get("channel"),
             Some(&MetadataValue::String("vox".into()))
+        );
+        assert_eq!(doc.outgoing_links.len(), 1);
+        assert_eq!(doc.outgoing_links[0].target, "design");
+    }
+
+    #[test]
+    fn stores_memory_fact_under_ai_memory_with_metadata_and_links() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let relative_path = vault
+            .store_memory_fact("storage", "Canonical vs Local", "Supports [[design]].")
+            .unwrap();
+
+        assert!(relative_path.starts_with("ai/memory/storage"));
+        let doc = vault.store.get_document_by_path(&relative_path).unwrap().unwrap();
+        assert_eq!(doc.title, "Canonical vs Local");
+        assert_eq!(doc.frontmatter.source_format.as_deref(), Some("omegon_memory"));
+        assert_eq!(doc.frontmatter.source_path.as_deref(), Some("omegon://memory/storage"));
+        assert_eq!(
+            doc.frontmatter.metadata.get("topic"),
+            Some(&MetadataValue::String("storage".into()))
+        );
+        assert_eq!(
+            doc.frontmatter.metadata.get("kind"),
+            Some(&MetadataValue::String("memory_fact".into()))
         );
         assert_eq!(doc.outgoing_links.len(), 1);
         assert_eq!(doc.outgoing_links[0].target, "design");
