@@ -138,6 +138,7 @@ impl VaultStore for SqliteStore {
                     .unwrap_or_default()
                     .tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
+                entity_kind: entity_kind_from_frontmatter_json(&fm_json),
                 updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
@@ -163,6 +164,7 @@ impl VaultStore for SqliteStore {
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
+                entity_kind: entity_kind_from_frontmatter_json(&fm_json),
                 updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
@@ -186,6 +188,7 @@ impl VaultStore for SqliteStore {
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
+                entity_kind: entity_kind_from_frontmatter_json(&fm_json),
                 updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
@@ -326,6 +329,7 @@ impl VaultStore for SqliteStore {
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
+                entity_kind: entity_kind_from_frontmatter_json(&fm_json),
                 updated_at: updated_at.parse().unwrap(),
             })
         })?;
@@ -460,6 +464,7 @@ fn row_to_document(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let entity = entity_from_frontmatter(&frontmatter);
     Ok(Document {
         id: DocumentId(source_id.parse().unwrap()),
         path: path_str.into(),
@@ -469,6 +474,7 @@ fn row_to_document(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
         frontmatter,
         created_at: created_at.parse().unwrap(),
         updated_at: updated_at.parse().unwrap(),
+        entity,
     })
 }
 
@@ -505,6 +511,32 @@ fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
         name: row.get(1)?,
         columns: serde_json::from_str(&cols_json).unwrap_or_default(),
         created_at: created_at.parse().unwrap(),
+    })
+}
+
+fn entity_kind_from_frontmatter_json(frontmatter_json: &str) -> Option<codex_core::datum::EntityKind> {
+    serde_json::from_str::<Frontmatter>(frontmatter_json)
+        .ok()?
+        .kind
+        .map(|k| codex_core::datum::EntityKind::from_str(&k))
+}
+
+fn entity_from_frontmatter(fm: &Frontmatter) -> Option<codex_core::datum::Entity> {
+    let kind_str = fm.kind.as_deref()?;
+    let kind = codex_core::datum::EntityKind::from_str(kind_str);
+    let id = fm.id.unwrap_or_else(uuid::Uuid::new_v4);
+    let mut fields = std::collections::BTreeMap::new();
+    if let Some(toml::Value::Table(data)) = &fm.data {
+        for (k, v) in data {
+            fields.insert(k.clone(), codex_core::datum::Datum::from(v.clone()));
+        }
+    }
+    Some(codex_core::datum::Entity {
+        id,
+        kind,
+        fields,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     })
 }
 

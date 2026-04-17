@@ -162,6 +162,9 @@ impl Vault {
 
         let now = Utc::now();
         let created_at = existing.as_ref().map(|d| d.created_at).unwrap_or(now);
+        let entity = toml::Value::try_from(&frontmatter)
+            .ok()
+            .and_then(|v| codex_core::datum::Entity::from_frontmatter(&v));
         let doc = Document {
             id,
             path: rel_path,
@@ -171,6 +174,7 @@ impl Vault {
             outgoing_links: links,
             created_at,
             updated_at: now,
+            entity,
         };
         self.store.save_document(&doc)?;
         Ok(())
@@ -236,6 +240,7 @@ impl Vault {
             outgoing_links: parse_document_source(content).2,
             created_at: now,
             updated_at: now,
+            entity: None,
         };
 
         let canonical = canonical_document_source(&document);
@@ -284,6 +289,7 @@ impl Vault {
             outgoing_links: parse_document_source(content).2,
             created_at: now,
             updated_at: now,
+            entity: None,
         };
 
         let canonical = canonical_document_source(&document);
@@ -367,6 +373,7 @@ impl Vault {
             outgoing_links: links,
             created_at: now,
             updated_at: now,
+            entity: None,
         };
 
         let canonical = canonical_document_source(&document);
@@ -823,6 +830,7 @@ See [[roadmap]].\n",
             outgoing_links: vec![],
             created_at: now,
             updated_at: now,
+            entity: None,
         };
 
         let rendered = canonical_document_source(&doc);

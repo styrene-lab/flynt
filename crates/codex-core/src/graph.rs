@@ -190,8 +190,8 @@ mod tests {
         let board_id = BoardId::new();
         let task_id = TaskId::new();
         let docs = vec![
-            DocumentMeta { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), tags: vec![], metadata: Default::default(), updated_at: now },
-            DocumentMeta { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), tags: vec![], metadata: Default::default(), updated_at: now },
+            DocumentMeta { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), tags: vec![], metadata: Default::default(), entity_kind: None, updated_at: now },
+            DocumentMeta { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), tags: vec![], metadata: Default::default(), entity_kind: None, updated_at: now },
             DocumentMeta {
                 id: DocumentId::new(),
                 path: PathBuf::from("references/comms/vox/standup.md"),
@@ -204,6 +204,7 @@ mod tests {
                         protection: MetadataProtection::PlaintextIndexed,
                     },
                 )]),
+                entity_kind: None,
                 updated_at: now,
             },
             DocumentMeta {
@@ -218,12 +219,13 @@ mod tests {
                         protection: MetadataProtection::PlaintextIndexed,
                     },
                 )]),
+                entity_kind: None,
                 updated_at: now,
             },
         ];
         let full_docs = HashMap::from([
-            (a.0.to_string(), Document { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![WikiLink { target: "beta".into(), display: None, anchor: None }], created_at: now, updated_at: now }),
-            (b.0.to_string(), Document { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![], created_at: now, updated_at: now }),
+            (a.0.to_string(), Document { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![WikiLink { target: "beta".into(), display: None, anchor: None }], created_at: now, updated_at: now, entity: None }),
+            (b.0.to_string(), Document { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![], created_at: now, updated_at: now, entity: None }),
         ]);
         let store = StubStore {
             docs,

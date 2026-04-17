@@ -1,3 +1,4 @@
+use crate::datum::{Entity, EntityKind};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
@@ -84,6 +85,10 @@ pub struct Document {
     pub outgoing_links: Vec<WikiLink>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// When this document has a `kind` in its frontmatter, the parsed Entity.
+    /// Populated during indexing from the `[data]` table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<Entity>,
 }
 
 /// Lightweight index record — used for listing without loading full content.
@@ -95,6 +100,9 @@ pub struct DocumentMeta {
     pub tags: Vec<String>,
     #[serde(default)]
     pub metadata: MetadataFieldMap,
+    /// Entity kind when this document is a typed entity (project, task, etc.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_kind: Option<EntityKind>,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -154,6 +162,16 @@ pub struct Frontmatter {
     pub id: Option<uuid::Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Entity kind discriminator. When present, this document is a typed entity
+    /// (e.g. "project", "task", "contact"). When absent, it's a plain document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Typed entity fields. Populated from the `[data]` table in frontmatter.
+    /// Only meaningful when `kind` is set. Stored as a generic TOML table so
+    /// fields are schema-flexible by default and validated against Pkl schemas
+    /// when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<toml::Value>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
