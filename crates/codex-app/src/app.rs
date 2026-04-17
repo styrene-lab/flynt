@@ -72,6 +72,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/kanban.css") }
         document::Stylesheet { href: asset!("/assets/styles/tabs.css") }
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
+        document::Stylesheet { href: asset!("/assets/styles/graph.css") }
         document::Stylesheet { href: asset!("/assets/styles/welcome.css") }
 
         div {

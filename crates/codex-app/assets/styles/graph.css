@@ -1,0 +1,73 @@
+/* ── Graph view ──────────────────────────────────────────────────────────── */
+.view-graph {
+  display:        flex;
+  flex-direction: column;
+  height:         100%;
+  overflow:       hidden;
+  background:     var(--graph-bg);
+  position:       relative;
+}
+
+.graph-chrome {
+  display:        flex;
+  flex-wrap:      wrap;
+  align-items:    center;
+  gap:            var(--space-2);
+  padding:        var(--space-2) var(--space-3);
+  background:     var(--card);
+  border-bottom:  1px solid var(--border);
+  flex-shrink:    0;
+  z-index:        10;
+}
+
+.graph-stats {
+  font-size:      var(--font-size-xs);
+  color:          var(--muted-foreground);
+  margin-right:   var(--space-2);
+}
+
+.graph-filters {
+  display:     flex;
+  gap:         var(--space-1);
+  flex-wrap:   wrap;
+}
+
+.btn-xs {
+  padding:     2px var(--space-2);
+  font-size:   var(--font-size-xs);
+}
+
+.graph-canvas {
+  flex:        1;
+  min-height:  0;
+  overflow:    hidden;
+  cursor:      grab;
+}
+
+.graph-canvas:active {
+  cursor: grabbing;
+}
+
+.graph-canvas svg {
+  width:  100%;
+  height: 100%;
+}
+
+.graph-tooltip {
+  position:       absolute;
+  bottom:         var(--space-3);
+  left:           50%;
+  transform:      translateX(-50%);
+  background:     var(--card);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  padding:        var(--space-1) var(--space-3);
+  font-size:      var(--font-size-xs);
+  color:          var(--foreground);
+  pointer-events: none;
+  opacity:        0;
+  transition:     opacity var(--duration-fast) var(--ease);
+  white-space:    nowrap;
+  z-index:        20;
+  box-shadow:     var(--shadow);
+}
