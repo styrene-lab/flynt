@@ -193,21 +193,10 @@ fn KanbanColumn(
 
     let mut adding    = use_signal(|| false);
     let mut new_title = use_signal(String::new);
+    let mut drag_over = use_signal(|| false);
 
-    // Drop: move dragged card into this column.
     let ctx_drop = ctx.clone();
     let col_drop = col_name.clone();
-    let on_drop  = move |e: Event<DragData>| {
-        e.prevent_default();
-        let Some(tid) = dragging.read().clone() else { return };
-        let c = ctx_drop.clone();
-        let col = col_drop.clone();
-        spawn(async move {
-            move_task(c, tid, col).await;
-            *refresh.write() += 1;
-        });
-        *dragging.write() = None;
-    };
 
     // Add task — shared inline logic, duplicated per handler to avoid move issues.
     // (Signals are Copy; only String/Arc values need cloning.)
@@ -255,11 +244,31 @@ fn KanbanColumn(
         }
     };
 
+    let col_class = match (over_wip, *drag_over.read()) {
+        (true, true)   => "kanban-column over-wip drag-over",
+        (true, false)  => "kanban-column over-wip",
+        (false, true)  => "kanban-column drag-over",
+        (false, false) => "kanban-column",
+    };
+
     rsx! {
         div {
-            class: if over_wip { "kanban-column over-wip" } else { "kanban-column" },
+            class: col_class,
             ondragover: move |e| e.prevent_default(),
-            ondrop: on_drop,
+            ondragenter: move |_| drag_over.set(true),
+            ondragleave: move |_| drag_over.set(false),
+            ondrop: move |e: Event<DragData>| {
+                e.prevent_default();
+                drag_over.set(false);
+                let Some(tid) = dragging.read().clone() else { return };
+                let c = ctx_drop.clone();
+                let col = col_drop.clone();
+                spawn(async move {
+                    move_task(c, tid, col).await;
+                    *refresh.write() += 1;
+                });
+                *dragging.write() = None;
+            },
 
             div { class: "kanban-column-header",
                 span { class: "kanban-column-name", "{col_name}" }

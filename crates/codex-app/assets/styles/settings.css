@@ -68,10 +68,14 @@
 }
 
 .settings-path {
-  font-family: var(--font-mono);
-  font-size:   var(--font-size-sm);
-  word-break:  break-all;
-  padding-top: 6px;
+  font-family:    var(--font-mono);
+  font-size:      var(--font-size-sm);
+  padding-top:    6px;
+  overflow:       hidden;
+  text-overflow:  ellipsis;
+  white-space:    nowrap;
+  max-width:      360px;
+  color:          var(--muted-foreground);
 }
 
 .settings-hint {

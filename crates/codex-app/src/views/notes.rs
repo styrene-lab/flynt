@@ -152,7 +152,11 @@ pub fn NotesView() -> Element {
     if !has_active {
         return rsx! {
             div { class: "notes-empty",
-                p { class: "muted", "Select a note from the sidebar." }
+                div { class: "notes-empty-content",
+                    div { class: "notes-empty-icon", "📝" }
+                    p { "Select a note from the sidebar" }
+                    p { class: "notes-empty-hint", "or press + to create a new one" }
+                }
             }
         };
     }

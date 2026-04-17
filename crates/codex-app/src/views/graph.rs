@@ -124,6 +124,28 @@ pub fn GraphView() -> Element {
                             id: "graph-canvas",
                             class: "graph-canvas",
                         }
+                        div { class: "graph-legend",
+                            div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #2ab4c8" }
+                                "Document"
+                            }
+                            div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #c86418" }
+                                "Task"
+                            }
+                            div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #1ab878" }
+                                "Board"
+                            }
+                            div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #8860d0" }
+                                "Memory"
+                            }
+                            div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #1a8898" }
+                                "Communication"
+                            }
+                        }
                         div {
                             id: "graph-tooltip",
                             class: "graph-tooltip",

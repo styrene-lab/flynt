@@ -44,6 +44,25 @@
   font-size:       var(--font-size-md);
 }
 
+.notes-empty-content {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  gap:            var(--space-2);
+  text-align:     center;
+}
+
+.notes-empty-icon {
+  font-size:  2.5rem;
+  opacity:    0.2;
+  line-height: 1;
+}
+
+.notes-empty-hint {
+  font-size: var(--font-size-xs);
+  color:     var(--dim);
+}
+
 /* Notes top bar: title + actions row */
 .notes-topbar {
   display:       flex;
@@ -59,6 +78,16 @@
   gap:         var(--space-2);
   flex-shrink: 0;
   padding-top: 6px; /* align with title cap height */
+}
+
+.save-msg {
+  font-size:  var(--font-size-xs);
+  padding:    2px var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.save-msg.err {
+  color:      var(--error);
+  background: rgba(200,48,48,0.1);
 }
 
 .editor-textarea {

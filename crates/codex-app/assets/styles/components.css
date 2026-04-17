@@ -57,8 +57,9 @@
 }
 
 .sidebar-item.active {
-  background: var(--sidebar-item-active);
-  color:      var(--sidebar-item-active-fg);
+  background:  var(--sidebar-item-active);
+  color:       var(--sidebar-item-active-fg);
+  box-shadow:  inset 3px 0 0 var(--primary);
 }
 
 .sidebar-item.muted {
@@ -191,6 +192,10 @@
   background: var(--destructive);
   color:      var(--destructive-foreground);
 }
+.btn-destructive:hover {
+  background: #e03838;
+  box-shadow: 0 0 12px rgba(200,48,48,0.3);
+}
 
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 .input {
@@ -268,7 +273,13 @@
 }
 .sidebar-folder-header:hover { background: var(--sidebar-item-hover); color: var(--foreground); }
 
-.folder-chevron { font-size: 10px; flex-shrink: 0; width: 12px; }
+.folder-chevron {
+  font-size:  10px;
+  flex-shrink: 0;
+  width:      12px;
+  transition: transform var(--duration-fast) var(--ease);
+  display:    inline-block;
+}
 .folder-name    { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-count   { font-size: var(--font-size-xs); font-weight: normal; }
 
@@ -299,4 +310,19 @@
 .sidebar-new-note-err {
   font-size: var(--font-size-xs);
   color:     var(--error);
+}
+
+/* ── Vault switcher (bottom of sidebar) ──────────────────────────────────── */
+.vault-switcher {
+  border-top:     1px solid var(--sidebar-border);
+  flex-shrink:    0;
+  padding-top:    var(--space-2);
+  max-height:     180px;
+  overflow-y:     auto;
+}
+
+.vault-switcher .sidebar-item.active {
+  box-shadow: none;
+  font-weight: var(--font-weight-semibold);
+  color:       var(--primary-bright);
 }

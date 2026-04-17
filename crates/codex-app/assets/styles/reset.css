@@ -55,6 +55,20 @@ a:hover {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+  transition: outline-offset 100ms var(--ease);
+}
+
+/* Press feedback */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Smooth scroll where appropriate */
+.sidebar-section,
+.main-content,
+.kanban-column-body {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Scrollbars — thin, themed */
