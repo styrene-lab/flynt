@@ -10,6 +10,7 @@ pub fn AgentRail() -> Element {
     let omegon_pid = *use_context::<Signal<Option<u32>>>().read();
     let omegon_launch_error = use_context::<Signal<Option<String>>>().read().clone();
     let runtime_ready = omegon_pid.is_some() && omegon_launch_error.is_none();
+    let omegon = ctx.omegon();
 
     let mut input = use_signal(String::new);
 
@@ -24,9 +25,9 @@ pub fn AgentRail() -> Element {
         .map(|model| format!("{}/{}", model.provider, model.model_id))
         .unwrap_or_else(|| "not configured".to_string());
 
-    let project_profile_exists = ctx.omegon.project_profile_path.exists();
-    let global_profile_exists = ctx.omegon.global_profile_path.exists();
-    let vox_installed = ctx.omegon.vox_manifest_path.exists();
+    let project_profile_exists = omegon.project_profile_path.exists();
+    let global_profile_exists = omegon.global_profile_path.exists();
+    let vox_installed = omegon.vox_manifest_path.exists();
 
     rsx! {
         div { class: "agent-rail",
@@ -48,17 +49,17 @@ pub fn AgentRail() -> Element {
                         }
                         li { "Persona: {active_persona}" }
                         li { "Model: {model_summary}" }
-                        li { "Home: {ctx.omegon.home_dir.display()}" }
+                        li { "Home: {omegon.home_dir.display()}" }
                         li {
-                            "Project profile: {ctx.omegon.project_profile_path.display()}"
+                            "Project profile: {omegon.project_profile_path.display()}"
                             if project_profile_exists { " ✓" } else { " (missing)" }
                         }
                         li {
-                            "Global profile: {ctx.omegon.global_profile_path.display()}"
+                            "Global profile: {omegon.global_profile_path.display()}"
                             if global_profile_exists { " ✓" } else { " (missing)" }
                         }
                         li {
-                            "Vox manifest: {ctx.omegon.vox_manifest_path.display()}"
+                            "Vox manifest: {omegon.vox_manifest_path.display()}"
                             if vox_installed { " ✓" } else { " (missing)" }
                         }
                     }

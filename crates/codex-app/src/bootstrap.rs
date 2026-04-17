@@ -1,4 +1,4 @@
-use dioxus::prelude::{Signal, Writable};
+use dioxus::prelude::{ReadableExt, Signal};
 use codex_core::{
     models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, VaultConfig},
     store::VaultStore,
@@ -480,8 +480,13 @@ impl AppContext {
         self.runtime.read().vault_events.clone()
     }
 
+    pub fn omegon(&self) -> OmegonRuntimeContext {
+        self.runtime.read().omegon.clone()
+    }
+
     pub fn set_runtime(&mut self, runtime: RuntimeState) {
-        *self.runtime.write() = runtime;
+        self.runtime.manually_drop();
+        self.runtime = Signal::new(runtime);
     }
 }
 
@@ -504,18 +509,7 @@ fn publication_output_path(vault: &Vault) -> PathBuf {
     vault.root.join(target)
 }
 
-pub fn bootstrap_from_env() -> AppContext {
-    let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
-    let vault_root = launcher_profile
-        .last_vault_root
-        .clone()
-        .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
-        .unwrap_or_else(|| {
-            dirs::document_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join("Codex")
-        });
-
+pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState {
     std::fs::create_dir_all(&vault_root).expect("cannot create vault directory");
 
     let vault = Arc::new(Vault::open(&vault_root).expect("failed to open vault"));
@@ -562,12 +556,25 @@ pub fn bootstrap_from_env() -> AppContext {
     });
 
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
-    let runtime = Signal::new(RuntimeState {
+    RuntimeState {
         vault_root,
         vault,
         vault_events: tx,
         omegon,
-    });
+    }
+}
 
-    AppContext { runtime }
+pub fn bootstrap_from_env() -> RuntimeState {
+    let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
+    let vault_root = launcher_profile
+        .last_vault_root
+        .clone()
+        .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
+        .unwrap_or_else(|| {
+            dirs::document_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join("Codex")
+        });
+
+    runtime_state_for_vault_root(vault_root)
 }

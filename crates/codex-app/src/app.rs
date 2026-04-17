@@ -1,24 +1,28 @@
 use crate::{
-    bootstrap::{bootstrap_from_env, OmegonRuntimeContext, PendingVaultSetup},
+    bootstrap::{bootstrap_from_env, runtime_state_for_vault_root, AppContext, OmegonRuntimeContext, PendingVaultSetup},
     components::{initial_note_id_for_vault, AgentRail, Sidebar, TabBar, Toolbar},
     state::{Route, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use dioxus::prelude::*;
 use rfd::FileDialog;
+use std::path::PathBuf;
 
 #[component]
 pub fn App() -> Element {
-    use_context_provider(bootstrap_from_env);
+    let initial_runtime = bootstrap_from_env();
+    let runtime = use_signal(|| initial_runtime.clone());
+    let ctx = AppContext { runtime };
+    use_context_provider(|| ctx.clone());
 
-    let ctx = use_context::<crate::bootstrap::AppContext>();
+    let current_runtime = ctx.runtime.read().clone();
 
     let theme = use_context_provider(|| {
-        Signal::new(ThemeName(ctx.vault.config.appearance.theme.clone()))
+        Signal::new(ThemeName(current_runtime.vault.config.appearance.theme.clone()))
     });
-    let font_size = use_context_provider(|| Signal::new(ctx.vault.config.appearance.font_size));
-    use_context_provider(|| Signal::new(ctx.omegon.load_project_profile()));
-    use_context_provider(|| Signal::new(ctx.omegon.load_operator_settings()));
+    let font_size = use_context_provider(|| Signal::new(current_runtime.vault.config.appearance.font_size));
+    use_context_provider(|| Signal::new(current_runtime.omegon.load_project_profile()));
+    use_context_provider(|| Signal::new(current_runtime.omegon.load_operator_settings()));
     use_context_provider(|| Signal::new(None::<tokio::process::Child>));
     use_context_provider(|| Signal::new(None::<u32>));
     use_context_provider(|| Signal::new(None::<String>));
@@ -44,6 +48,12 @@ pub fn App() -> Element {
     let search_query: Signal<String> = use_signal(String::new);
 
     let mut launcher_profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
+
+    let ctx_for_switch = ctx.clone();
+    let _switch_runtime = move |selected_root: PathBuf| {
+        let mut ctx = ctx_for_switch.clone();
+        ctx.set_runtime(runtime_state_for_vault_root(selected_root));
+    };
 
     rsx! {
         document::Link {
@@ -83,6 +93,10 @@ pub fn App() -> Element {
                     }
                     match *active_route.read() {
                         Route::Welcome => {
+                            let mut choose_ctx = ctx.clone();
+                            let mut create_ctx = ctx.clone();
+                            let mut github_ctx = ctx.clone();
+                            let import_ctx = ctx.clone();
                             let on_choose_existing = move |_| {
                                 let Some(selected_root) = FileDialog::new().pick_folder() else {
                                     return;
@@ -110,6 +124,7 @@ pub fn App() -> Element {
                                 }
                                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                 launcher_profile.set(profile);
+                                choose_ctx.set_runtime(runtime_state_for_vault_root(selected_root.clone()));
                                 if let Some(note_id) = initial_note_id_for_vault(&selected_root) {
                                     if let Ok(parsed) = uuid::Uuid::parse_str(&note_id) {
                                         tab_state.write().open(
@@ -148,10 +163,11 @@ pub fn App() -> Element {
                                     profile.last_vault_root = Some(local_path.clone());
                                     profile.wizard_completed = true;
                                     if !profile.recent_vaults.contains(&local_path) {
-                                        profile.recent_vaults.push(local_path);
+                                        profile.recent_vaults.push(local_path.clone());
                                     }
                                     let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                     launcher_profile.set(profile);
+                                    create_ctx.set_runtime(runtime_state_for_vault_root(local_path.clone()));
                                     *active_route.write() = Route::Notes;
                                 }
                             };
@@ -185,10 +201,11 @@ pub fn App() -> Element {
                                     profile.last_vault_root = Some(local_path.clone());
                                     profile.wizard_completed = true;
                                     if !profile.recent_vaults.contains(&local_path) {
-                                        profile.recent_vaults.push(local_path);
+                                        profile.recent_vaults.push(local_path.clone());
                                     }
                                     let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                     launcher_profile.set(profile);
+                                    github_ctx.set_runtime(runtime_state_for_vault_root(local_path.clone()));
                                     *active_route.write() = Route::Notes;
                                 }
                             };
@@ -196,7 +213,7 @@ pub fn App() -> Element {
                                 let Some(source_root) = FileDialog::new().pick_folder() else {
                                     return;
                                 };
-                                if ctx.vault.import_markdown_tree(&source_root).is_err() {
+                                if import_ctx.vault().import_markdown_tree(&source_root).is_err() {
                                     return;
                                 }
                                 let mut profile = launcher_profile();

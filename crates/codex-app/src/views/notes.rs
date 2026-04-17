@@ -96,13 +96,13 @@ pub fn NotesView() -> Element {
     let mut edit_body = use_signal(String::new);
     let mut save_err  = use_signal(|| Option::<String>::None);
 
-    let rendered = use_resource(move || {
+    let rendered: Resource<Option<(std::path::PathBuf, String, String, String)>> = use_resource(move || {
         let selected_id = tab_state.read().active_id().cloned();
-        let c = ctx_res.clone();
+        let vault = ctx_res.vault();
         async move {
             let Some(doc_id) = selected_id else { return None; };
             tokio::task::spawn_blocking(move || {
-                c.vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
+                vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
                     let html = render_html(&doc.content);
                     (doc.path.clone(), doc.title.clone(), doc.content.clone(), html)
                 })
@@ -134,9 +134,9 @@ pub fn NotesView() -> Element {
                         .trim_start_matches("codex-note://")
                         .replace("%20", " ")
                         .to_lowercase();
-                    let c2 = c.clone();
+                    let vault = c.clone().vault();
                     if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
-                        c2.vault.store.find_document_by_slug(&slug)
+                        vault.store.find_document_by_slug(&slug)
                     }).await.unwrap_or(Ok(None)) {
                         ts_link.write().open(meta.id.clone(), meta.title.clone());
                         *ar_link.write() = Route::Notes;
@@ -202,8 +202,9 @@ pub fn NotesView() -> Element {
                                     let c       = ctx_save1.clone();
                                     let mut re  = rendered;
                                     spawn(async move {
+                                        let vault = c.vault();
                                         match tokio::task::spawn_blocking(move || {
-                                            c.vault.save_document_content(&p, &content)
+                                            vault.save_document_content(&p, &content)
                                         }).await {
                                             Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
                                             Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
@@ -287,8 +288,9 @@ pub fn NotesView() -> Element {
                                             let c       = ctx_save2.clone();
                                             let mut re  = rendered;
                                             spawn(async move {
+                                                let vault = c.vault();
                                                 match tokio::task::spawn_blocking(move || {
-                                                    c.vault.save_document_content(&p, &content)
+                                                    vault.save_document_content(&p, &content)
                                                 }).await {
                                                     Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
                                                     Ok(Err(e)) => *save_err.write() = Some(e.to_string()),

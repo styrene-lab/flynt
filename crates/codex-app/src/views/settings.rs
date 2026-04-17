@@ -46,46 +46,46 @@ pub fn SettingsView() -> Element {
     let mut font_sz = use_context::<Signal<FontSizePreset>>();
 
     // Vault + sync — local form state; persisted on explicit Save.
-    let mut vault_name = use_signal(|| ctx.vault.config.vault_name.clone());
-    let mut sync_config = use_signal(|| ctx.vault.config.sync.clone());
+    let mut vault_name = use_signal(|| ctx.vault().config.vault_name.clone());
+    let mut sync_config = use_signal(|| ctx.vault().config.sync.clone());
     let mut local_state_root = use_signal(|| {
-        ctx.vault
+        ctx.vault()
             .config
             .local_runtime
             .local_state_root
             .as_ref()
-            .map(|path| path.display().to_string())
+            .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
     let mut codex_index_db_path = use_signal(|| {
-        ctx.vault
+        ctx.vault()
             .config
             .local_runtime
             .codex_index_db_path
             .as_ref()
-            .map(|path| path.display().to_string())
+            .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
     let mut omegon_runtime_root = use_signal(|| {
-        ctx.vault
+        ctx.vault()
             .config
             .local_runtime
             .omegon_runtime_root
             .as_ref()
-            .map(|path| path.display().to_string())
+            .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
     let mut omegon_mind_db_path = use_signal(|| {
-        ctx.vault
+        ctx.vault()
             .config
             .local_runtime
             .omegon_mind_db_path
             .as_ref()
-            .map(|path| path.display().to_string())
+            .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
     let mut styrene_identity_profile = use_signal(|| {
-        ctx.vault
+        ctx.vault()
             .config
             .local_runtime
             .styrene_identity_profile
@@ -94,8 +94,8 @@ pub fn SettingsView() -> Element {
     });
 
     let publication_default_visibility =
-        use_signal(|| ctx.vault.config.publication.default_visibility);
-    let publication_rules = use_signal(|| ctx.vault.config.publication.rules.clone());
+        use_signal(|| ctx.vault().config.publication.default_visibility);
+    let publication_rules = use_signal(|| ctx.vault().config.publication.rules.clone());
 
     let mut project_profile_state = use_context::<Signal<OmegonProfile>>();
     let mut operator_settings_state = use_context::<Signal<CodexOperatorSettings>>();
@@ -134,11 +134,13 @@ pub fn SettingsView() -> Element {
     let mut vox_voice = use_signal(|| initial_operator.vox.voice.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
-    let mut publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
+    let publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
-    let vault = ctx.vault.clone();
-    let omegon = ctx.omegon.clone();
-    let publish_vault = ctx.vault.clone();
+    let vault = ctx.vault();
+    let omegon = ctx.omegon();
+    let omegon_for_save = omegon.clone();
+    let publish_vault = ctx.vault();
+    let mut publish_msg_signal = publish_msg;
     let publish_preview = move |_| {
         match OmegonRuntimeContext::export_publication_preview(&publish_vault) {
             Ok(output_path) => {
@@ -150,10 +152,10 @@ pub fn SettingsView() -> Element {
                     branch: target.as_ref().map(|target| target.branch.clone()).unwrap_or_default(),
                 });
                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                *publish_msg.write() = Some(("ok", format!("Local preview exported to {}", output_path.display())));
+                *publish_msg_signal.write() = Some(("ok", format!("Local preview exported to {}", output_path.display())));
             }
             Err(err) => {
-                *publish_msg.write() = Some(("err", format!("Publish preview failed: {err}")));
+                *publish_msg_signal.write() = Some(("err", format!("Publish preview failed: {err}")));
             }
         }
     };
@@ -242,13 +244,13 @@ pub fn SettingsView() -> Element {
             }
         }
 
-        if let Err(e) = omegon.save_project_profile(&profile) {
+        if let Err(e) = omegon_for_save.save_project_profile(&profile) {
             tracing::error!("save_project_profile: {e}");
             *save_msg.write() = Some(("err", "Profile save failed — check logs."));
             return;
         }
 
-        if let Err(e) = omegon.save_operator_settings(&operator_settings) {
+        if let Err(e) = omegon_for_save.save_operator_settings(&operator_settings) {
             tracing::error!("save_operator_settings: {e}");
             *save_msg.write() = Some(("err", "Operator settings save failed — check logs."));
             return;
@@ -309,7 +311,7 @@ pub fn SettingsView() -> Element {
                     }
                     SettingsRow { label: "Location",
                         span { class: "settings-path muted",
-                            "{ctx.vault.root.display()}"
+                            "{ctx.vault_root().display()}"
                         }
                     }
                 }
@@ -478,7 +480,7 @@ pub fn SettingsView() -> Element {
                         }
                     }
                     SettingsRow { label: "Project profile",
-                        span { class: "settings-path muted", "{ctx.omegon.project_profile_path.display()}" }
+                        span { class: "settings-path muted", "{omegon.project_profile_path.display()}" }
                     }
                 }
 
@@ -532,7 +534,7 @@ pub fn SettingsView() -> Element {
                         }
                     }
                     SettingsRow { label: "Operator settings",
-                        span { class: "settings-path muted", "{ctx.omegon.operator_settings_path.display()}" }
+                        span { class: "settings-path muted", "{omegon.operator_settings_path.display()}" }
                     }
                 }
 

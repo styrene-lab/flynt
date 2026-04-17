@@ -10,7 +10,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     let ctx     = use_context::<AppContext>();
     let mut refresh = use_signal(|| 0_u64);
 
-    let vault_events = ctx.vault_events.clone();
+    let vault_events = ctx.vault_events();
     use_effect(move || {
         let mut rx = vault_events.subscribe();
         spawn(async move {
@@ -25,9 +25,9 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
 
     let docs = use_resource(move || {
         let _ = refresh();
-        let c = ctx.clone();
+        let vault = ctx.vault();
         async move {
-            tokio::task::spawn_blocking(move || c.vault.store.list_documents().unwrap_or_default())
+            tokio::task::spawn_blocking(move || vault.store.list_documents().unwrap_or_default())
                 .await
                 .unwrap_or_default()
         }

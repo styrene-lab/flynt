@@ -12,9 +12,9 @@ pub fn GraphView() -> Element {
     let mut selected_kind = use_signal(|| Option::<GraphNodeKind>::None);
 
     let graph = use_resource(move || {
-        let ctx = ctx.clone();
+        let vault = ctx.vault();
         async move {
-            tokio::task::spawn_blocking(move || build_graph_payload(&*ctx.vault.store))
+            tokio::task::spawn_blocking(move || build_graph_payload(&*vault.store))
                 .await
                 .ok()
                 .and_then(Result::ok)

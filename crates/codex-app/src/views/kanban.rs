@@ -9,18 +9,20 @@ use crate::bootstrap::AppContext;
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
 async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String) {
+    let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
-        ctx.vault.store.save_task(&Task::new(board_id, col, title))
+        vault.store.save_task(&Task::new(board_id, col, title))
     })
     .await;
 }
 
 async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
+    let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(Some(mut t)) = ctx.vault.store.get_task(&task_id) {
+        if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.column     = col;
             t.updated_at = Utc::now();
-            ctx.vault.store.save_task(&t)
+            vault.store.save_task(&t)
         } else {
             Ok(())
         }
@@ -29,11 +31,12 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
 }
 
 async fn archive_task(ctx: AppContext, task_id: TaskId) {
+    let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(Some(mut t)) = ctx.vault.store.get_task(&task_id) {
+        if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.status     = TaskStatus::Archived;
             t.updated_at = Utc::now();
-            ctx.vault.store.save_task(&t)
+            vault.store.save_task(&t)
         } else {
             Ok(())
         }
@@ -42,8 +45,9 @@ async fn archive_task(ctx: AppContext, task_id: TaskId) {
 }
 
 async fn create_board(ctx: AppContext, name: String) {
+    let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
-        ctx.vault.store.save_board(&Board::default_sprint(name))
+        vault.store.save_board(&Board::default_sprint(name))
     })
     .await;
 }
@@ -57,9 +61,9 @@ pub fn KanbanView() -> Element {
 
     let boards = use_resource(move || {
         let _ = refresh(); // reactive dep
-        let c = ctx.clone();
+        let vault = ctx.vault();
         async move {
-            tokio::task::spawn_blocking(move || c.vault.store.list_boards().unwrap_or_default())
+            tokio::task::spawn_blocking(move || vault.store.list_boards().unwrap_or_default())
                 .await
                 .unwrap_or_default()
         }
@@ -124,11 +128,11 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
 
     let tasks = use_resource(move || {
         let _ = refresh();
-        let c   = ctx.clone();
+        let vault = ctx.vault();
         let bid = board_id.clone();
         async move {
             tokio::task::spawn_blocking(move || {
-                c.vault
+                vault
                     .store
                     .list_tasks(&TaskFilter { board_id: Some(bid), ..Default::default() })
                     .unwrap_or_default()
@@ -230,10 +234,10 @@ fn KanbanColumn(
 
     let do_add_keydown = move |e: Event<KeyboardData>| {
         match e.key() {
-            Key::Enter if !e.modifiers().shift() => {
+            Key::Enter => {
                 let title = new_title.read().trim().to_string();
                 if title.is_empty() { return; }
-                let c   = ctx_add2.clone();
+                let c = ctx_add2.clone();
                 let col = col_add2.clone();
                 let bid = bid_add2.clone();
                 spawn(async move {
@@ -244,8 +248,8 @@ fn KanbanColumn(
                 *adding.write() = false;
             }
             Key::Escape => {
-                *adding.write() = false;
                 *new_title.write() = String::new();
+                *adding.write() = false;
             }
             _ => {}
         }
@@ -253,39 +257,31 @@ fn KanbanColumn(
 
     rsx! {
         div {
-            class: "kanban-column",
-            ondragover: move |e: Event<DragData>| e.prevent_default(),
-            ondrop:     on_drop,
+            class: if over_wip { "kanban-column over-wip" } else { "kanban-column" },
+            ondragover: move |e| e.prevent_default(),
+            ondrop: on_drop,
 
-            div { class: "column-header",
-                span { class: "column-name", "{col_name}" }
-                span {
-                    class: if over_wip { "column-count over-wip" } else { "column-count" },
-                    "{wip_label}"
-                }
+            div { class: "kanban-column-header",
+                span { class: "kanban-column-name", "{col_name}" }
+                span { class: if over_wip { "kanban-wip over" } else { "kanban-wip" }, "{wip_label}" }
             }
 
-            div { class: "column-cards",
+            div { class: "kanban-column-body",
                 for task in tasks.iter().cloned() {
                     TaskCard { task, dragging, refresh }
                 }
 
                 if *adding.read() {
-                    div { class: "add-task-form",
-                        textarea {
-                            class: "input add-task-input",
-                            placeholder: "Task title…",
-                            autofocus: "true",
+                    div { class: "new-task-card",
+                        input {
+                            autofocus: true,
                             value: "{new_title}",
-                            oninput:   move |e| *new_title.write() = e.value(),
+                            placeholder: "Task title…",
+                            oninput: move |e| *new_title.write() = e.value(),
                             onkeydown: do_add_keydown,
                         }
-                        div { class: "add-task-actions",
-                            button {
-                                class: "btn btn-primary",
-                                onclick: do_add_onclick,
-                                "Add"
-                            }
+                        div { class: "row gap-2",
+                            button { class: "btn btn-primary", onclick: do_add_onclick, "Add" }
                             button {
                                 class: "btn btn-ghost",
                                 onclick: move |_| {
@@ -300,8 +296,7 @@ fn KanbanColumn(
                     button {
                         class: "add-task-btn",
                         onclick: move |_| *adding.write() = true,
-                        span { class: "add-icon", "+" }
-                        " Add task"
+                        "+ Add task"
                     }
                 }
             }
@@ -309,137 +304,129 @@ fn KanbanColumn(
     }
 }
 
-// ── Task card ─────────────────────────────────────────────────────────────────
+// ── Task card ────────────────────────────────────────────────────────────────
 
 #[component]
-fn TaskCard(
-    task:        Task,
-    dragging:    Signal<Option<TaskId>>,
-    mut refresh: Signal<u64>,
-) -> Element {
-    let ctx        = use_context::<AppContext>();
-    let tid        = task.id.clone();
-    let is_dragging = dragging.read().as_ref() == Some(&tid);
+fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
+    let ctx = use_context::<AppContext>();
+    let mut open = use_signal(|| false);
+    let mut inline_title = use_signal(|| task.title.clone());
+
+    let tid_drag = task.id.clone();
+    let tid_archive = task.id.clone();
+    let ctx_archive = ctx.clone();
 
     rsx! {
         div {
-            class: if is_dragging { "task-card dragging" } else { "task-card" },
-            draggable: "true",
-            ondragstart: move |_| *dragging.write() = Some(tid.clone()),
+            class: "task-card",
+            draggable: true,
+            ondragstart: move |_| *dragging.write() = Some(tid_drag.clone()),
             ondragend:   move |_| *dragging.write() = None,
 
-            div { class: "task-title", "{task.title}" }
-
-            div { class: "task-meta",
-                span {
-                    class: "chip {task.priority.chip_class()}",
-                    "{task.priority.chip_label()}"
-                }
-                if let Some(due) = task.due_date {
-                    span { class: "task-due muted", "⏰ {due}" }
+            div { class: "task-card-top",
+                div { class: "task-priority {priority_badge_class(task.priority)}" }
+                div { class: "task-title", "{task.title}" }
+                button {
+                    class: "task-menu-btn",
+                    title: if *open.read() { "Close details" } else { "Open details" },
+                    onclick: move |_| {
+                        let is_open = *open.read();
+                        *open.write() = !is_open;
+                    },
+                    if *open.read() { "▾" } else { "▸" }
                 }
             }
 
-            if !task.tags.is_empty() {
-                div { class: "task-tags",
-                    for tag in task.tags.iter() {
-                        span { class: "task-tag", "#{tag}" }
+            if *open.read() {
+                div { class: "task-details",
+                    label { class: "field",
+                        span { "Title" }
+                        input {
+                            value: "{inline_title}",
+                            oninput: move |e| *inline_title.write() = e.value(),
+                        }
+                    }
+
+                    div { class: "row gap-2",
+                        button {
+                            class: "btn btn-primary",
+                            onclick: move |_| {
+                                let c = ctx.clone();
+                                let task_id = task.id.clone();
+                                let new_title = inline_title.read().trim().to_string();
+                                spawn(async move {
+                                    let vault = c.vault();
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
+                                            t.title      = new_title;
+                                            t.updated_at = Utc::now();
+                                            vault.store.save_task(&t)
+                                        } else {
+                                            Ok(())
+                                        }
+                                    }).await;
+                                    *refresh.write() += 1;
+                                });
+                            },
+                            "Save"
+                        }
+
+                        button {
+                            class: "btn btn-ghost",
+                            onclick: move |_| {
+                                let c = ctx_archive.clone();
+                                let task_id = tid_archive.clone();
+                                spawn(async move {
+                                    archive_task(c, task_id).await;
+                                    *refresh.write() += 1;
+                                });
+                            },
+                            "Archive"
+                        }
                     }
                 }
             }
-
-            div { class: "task-actions",
-                button {
-                    class: "task-action-btn",
-                    title: "Archive task",
-                    onclick: move |_| {
-                        let c   = ctx.clone();
-                        let tid2 = task.id.clone();
-                        spawn(async move {
-                            archive_task(c, tid2).await;
-                            *refresh.write() += 1;
-                        });
-                    },
-                    "✕"
-                }
-            }
         }
     }
 }
 
-// ── Priority display helpers ──────────────────────────────────────────────────
-
-trait PriorityDisplay {
-    fn chip_label(self) -> &'static str;
-    fn chip_class(self) -> &'static str;
-}
-
-impl PriorityDisplay for Priority {
-    fn chip_label(self) -> &'static str {
-        match self {
-            Self::Low      => "Low",
-            Self::Medium   => "Med",
-            Self::High     => "High",
-            Self::Critical => "Crit",
-        }
-    }
-    fn chip_class(self) -> &'static str {
-        match self {
-            Self::Low      => "priority-low",
-            Self::Medium   => "priority-medium",
-            Self::High     => "priority-high",
-            Self::Critical => "priority-critical",
-        }
+fn priority_badge_class(priority: Priority) -> &'static str {
+    match priority {
+        Priority::Low => "low",
+        Priority::Medium => "medium",
+        Priority::High => "high",
+        Priority::Critical => "critical",
     }
 }
 
-// ── New-board helpers ─────────────────────────────────────────────────────────
+// ── New board prompts ────────────────────────────────────────────────────────
 
 #[component]
 fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
     let ctx = use_context::<AppContext>();
-    let mut name = use_signal(|| "My Board".to_string());
-
-    let ctx1 = ctx.clone();
-    let ctx2 = ctx.clone();
+    let mut name = use_signal(String::new);
 
     rsx! {
-        div { class: "kanban-empty",
-            div { class: "kanban-empty-card",
-                h2 { class: "kanban-empty-heading", "Create your first board" }
-                p  { class: "muted", "Give it a name — you can rename it later." }
-                div { class: "kanban-empty-form",
-                    input {
-                        class: "input",
-                        r#type: "text",
-                        value: "{name}",
-                        oninput:   move |e| *name.write() = e.value(),
-                        onkeydown: move |e| {
-                            if e.key() == Key::Enter {
-                                let n = name.read().trim().to_string();
-                                if n.is_empty() { return; }
-                                let c = ctx1.clone();
-                                spawn(async move {
-                                    create_board(c, n).await;
-                                    *refresh.write() += 1;
-                                });
-                            }
-                        },
-                    }
-                    button {
-                        class: "btn btn-primary",
-                        onclick: move |_| {
-                            let n = name.read().trim().to_string();
-                            if n.is_empty() { return; }
-                            let c = ctx2.clone();
-                            spawn(async move {
-                                create_board(c, n).await;
-                                *refresh.write() += 1;
-                            });
-                        },
-                        "Create board"
-                    }
-                }
+        div { class: "new-board-prompt",
+            h2 { class: "view-heading", "Create your first board" }
+            input {
+                value: "{name}",
+                placeholder: "Sprint / Project board name…",
+                oninput: move |e| *name.write() = e.value(),
+            }
+            button {
+                class: "btn btn-primary",
+                onclick: move |_| {
+                    let n = name.read().trim().to_string();
+                    if n.is_empty() { return; }
+                    let c = ctx.clone();
+                    spawn(async move {
+                        create_board(c, n).await;
+                        *refresh.write() += 1;
+                    });
+                    *name.write() = String::new();
+                },
+                "Create board"
             }
         }
     }
@@ -451,67 +438,47 @@ fn NewBoardInline(mut refresh: Signal<u64>) -> Element {
     let mut open = use_signal(|| false);
     let mut name = use_signal(String::new);
 
-    let ctx1 = ctx.clone();
-    let ctx2 = ctx.clone();
-
     rsx! {
         if *open.read() {
-            div { class: "new-board-inline",
+            div { class: "board-new-inline",
                 input {
-                    class: "input new-board-input",
-                    r#type: "text",
-                    placeholder: "Board name…",
-                    autofocus: "true",
+                    autofocus: true,
                     value: "{name}",
-                    oninput:   move |e| *name.write() = e.value(),
+                    placeholder: "New board…",
+                    oninput: move |e| *name.write() = e.value(),
                     onkeydown: move |e| {
                         match e.key() {
                             Key::Enter => {
                                 let n = name.read().trim().to_string();
                                 if n.is_empty() { return; }
-                                let c = ctx1.clone();
+                                let c = ctx.clone();
                                 spawn(async move {
                                     create_board(c, n).await;
                                     *refresh.write() += 1;
                                 });
-                                *open.write() = false;
                                 *name.write() = String::new();
+                                *open.write() = false;
                             }
                             Key::Escape => {
-                                *open.write() = false;
                                 *name.write() = String::new();
+                                *open.write() = false;
                             }
                             _ => {}
                         }
                     },
                 }
                 button {
-                    class: "btn btn-primary",
-                    onclick: move |_| {
-                        let n = name.read().trim().to_string();
-                        if n.is_empty() { return; }
-                        let c = ctx2.clone();
-                        spawn(async move {
-                            create_board(c, n).await;
-                            *refresh.write() += 1;
-                        });
-                        *open.write() = false;
-                        *name.write() = String::new();
-                    },
-                    "Create"
-                }
-                button {
                     class: "btn btn-ghost",
                     onclick: move |_| {
-                        *open.write() = false;
                         *name.write() = String::new();
+                        *open.write() = false;
                     },
-                    "✕"
+                    "Cancel"
                 }
             }
         } else {
             button {
-                class: "board-tab new-board-btn",
+                class: "board-tab new",
                 onclick: move |_| *open.write() = true,
                 "+ New board"
             }

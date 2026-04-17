@@ -82,10 +82,10 @@ pub fn Toolbar(
         *search_query.write() = q.clone();
         *active_index.write() = None;
         if q.trim().is_empty() { *results.write() = Vec::new(); return; }
-        let c = ctx_search.clone();
+        let vault = ctx_search.vault();
         spawn(async move {
             let hits = tokio::task::spawn_blocking(move || {
-                c.vault.store.search_documents(&q).unwrap_or_default()
+                vault.store.search_documents(&q).unwrap_or_default()
             }).await.unwrap_or_default();
             *results.write() = hits;
         });
@@ -99,10 +99,13 @@ pub fn Toolbar(
 
     let grouped_results = group_results(&results.read());
     let flat_results = flatten_grouped_results(&grouped_results);
+    let vault_name = ctx.vault().config.vault_name.clone();
+    let vault_root = ctx.vault_root();
+    let omegon = ctx.omegon();
 
     rsx! {
         div { class: "toolbar",
-            span { class: "toolbar-vault-name", "{ctx.vault.config.vault_name}" }
+            span { class: "toolbar-vault-name", "{vault_name}" }
 
             div { class: "toolbar-search-wrap",
                 input {
@@ -235,7 +238,8 @@ pub fn Toolbar(
                     title: "Toggle agent rail",
                     onclick: move |_| {
                         let opening = !*show_agent.read();
-                        let ctx = ctx.clone();
+                        let omegon = omegon.clone();
+                        let vault_root = vault_root.clone();
                         if opening {
                             let mut should_clear_child = false;
                             let mut child_check_error = None;
@@ -264,7 +268,7 @@ pub fn Toolbar(
 
                             if omegon_child.read().is_none() {
                                 spawn(async move {
-                                    match ctx.omegon.spawn_background_host(&ctx.vault.root).await {
+                                    match omegon.spawn_background_host(&vault_root).await {
                                         Ok(child) => {
                                             let pid = child.id();
                                             *omegon_child.write() = Some(child);
@@ -348,6 +352,7 @@ mod tests {
         assert_eq!(cycle_active_index(None, 3, 1), Some(0));
         assert_eq!(cycle_active_index(Some(0), 3, -1), Some(2));
         assert_eq!(cycle_active_index(Some(2), 3, 1), Some(0));
-        assert_eq!(cycle_active_index(None, 0, 1), None);
+        assert_eq!(cycle_active_index(None, 3, -1), Some(2));
+        assert_eq!(cycle_active_index(Some(1), 0, 1), None);
     }
 }
