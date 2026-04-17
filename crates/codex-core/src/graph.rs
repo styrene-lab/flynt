@@ -131,10 +131,14 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
 }
 
 fn top_level_group(path: &Path) -> String {
-    path.components()
-        .next()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .unwrap_or_else(|| "root".into())
+    let components: Vec<_> = path.components().collect();
+    if components.len() > 1 {
+        // Has a parent folder — use the top-level folder name
+        components[0].as_os_str().to_string_lossy().into_owned()
+    } else {
+        // Root-level file
+        "root".into()
+    }
 }
 
 #[cfg(test)]

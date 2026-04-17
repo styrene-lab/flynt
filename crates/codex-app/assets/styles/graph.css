@@ -10,14 +10,19 @@
 
 .graph-chrome {
   display:        flex;
-  flex-wrap:      wrap;
-  align-items:    center;
-  gap:            var(--space-2);
+  flex-direction: column;
+  gap:            var(--space-1);
   padding:        var(--space-2) var(--space-3);
   background:     var(--card);
   border-bottom:  1px solid var(--border);
   flex-shrink:    0;
   z-index:        10;
+}
+
+.graph-chrome-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
 }
 
 .graph-stats {
@@ -29,8 +34,14 @@
 .graph-filters {
   display:     flex;
   gap:         var(--space-1);
-  flex-wrap:   wrap;
+  flex-wrap:   nowrap;
+  overflow-x:  auto;
+  scrollbar-width: thin;
+  max-width:   100%;
+  flex-shrink: 0;
 }
+.graph-filters::-webkit-scrollbar { height: 3px; }
+.graph-filters::-webkit-scrollbar-thumb { background: var(--dim); border-radius: var(--radius-full); }
 
 .btn-xs {
   padding:     2px var(--space-2);

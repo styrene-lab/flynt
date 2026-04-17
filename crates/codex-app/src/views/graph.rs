@@ -83,24 +83,26 @@ pub fn GraphView() -> Element {
 
                     rsx! {
                         div { class: "graph-chrome",
-                            div { class: "graph-stats",
-                                "{filtered_nodes.len()} nodes · {filtered_edges.len()} links"
-                            }
-                            div { class: "graph-filters",
-                                button {
-                                    class: if selected_kind.read().is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
-                                    onclick: move |_| *selected_kind.write() = None,
-                                    "All"
+                            div { class: "graph-chrome-row",
+                                div { class: "graph-stats",
+                                    "{filtered_nodes.len()} nodes · {filtered_edges.len()} links"
                                 }
-                                for kind in [GraphNodeKind::Document, GraphNodeKind::Communication, GraphNodeKind::MemoryFact, GraphNodeKind::Task, GraphNodeKind::Board] {
+                                div { class: "graph-filters",
                                     button {
-                                        class: if selected_kind.read().as_ref() == Some(&kind) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
-                                        onclick: move |_| *selected_kind.write() = Some(kind.clone()),
-                                        "{format_node_kind(&kind)}"
+                                        class: if selected_kind.read().is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
+                                        onclick: move |_| *selected_kind.write() = None,
+                                        "All"
+                                    }
+                                    for kind in [GraphNodeKind::Document, GraphNodeKind::Communication, GraphNodeKind::MemoryFact, GraphNodeKind::Task, GraphNodeKind::Board] {
+                                        button {
+                                            class: if selected_kind.read().as_ref() == Some(&kind) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
+                                            onclick: move |_| *selected_kind.write() = Some(kind.clone()),
+                                            "{format_node_kind(&kind)}"
+                                        }
                                     }
                                 }
                             }
-                            if !payload.groups.is_empty() {
+                            if payload.groups.len() > 1 {
                                 div { class: "graph-filters",
                                     button {
                                         class: if selected_group.read().is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
