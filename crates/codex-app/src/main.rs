@@ -3,9 +3,19 @@ use std::{borrow::Cow, path::PathBuf};
 use wry::http::{Request as HttpRequest, Response as HttpResponse};
 
 fn vault_root() -> PathBuf {
-    std::env::var("CODEX_VAULT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
+    std::env::args()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .windows(2)
+        .find_map(|window| {
+            if window[0] == "--vault" {
+                Some(PathBuf::from(&window[1]))
+            } else {
+                None
+            }
+        })
+        .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
+        .unwrap_or_else(|| {
             std::env::var("HOME")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("/tmp"))
