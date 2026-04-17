@@ -31,9 +31,14 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
         let _ = refresh();
         let vault = ctx.vault();
         async move {
-            tokio::task::spawn_blocking(move || vault.store.list_documents().unwrap_or_default())
-                .await
-                .unwrap_or_default()
+            let mut list = tokio::task::spawn_blocking(move || {
+                vault.store.list_documents().unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+            // Sort alphabetically for a clean sidebar
+            list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+            list
         }
     });
 
@@ -45,7 +50,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
         nav { class: "sidebar",
             div { class: "sidebar-section",
                 div { class: "sidebar-section-header",
-                    span { class: "sidebar-heading", "Notes" }
+                    span { class: "sidebar-heading", "NOTES" }
                     button {
                         class: "sidebar-new-btn",
                         title: "New note",
@@ -125,18 +130,23 @@ fn tree_view(docs: &[DocumentMeta]) -> Element {
     }
 
     rsx! {
-        for doc in folders.get("").cloned().unwrap_or_default().iter().cloned() {
-            DocItem { meta: doc, indent: 0 }
-        }
+        // Folder groups first (sorted alphabetically by BTreeMap)
         for (folder, folder_docs) in folders.iter().filter(|(k, _)| !k.is_empty()) {
             FolderGroup { name: folder.clone(), docs: folder_docs.clone() }
+        }
+        // Root-level files after folders, with a separator if folders exist
+        if folders.keys().any(|k| !k.is_empty()) && folders.contains_key("") {
+            div { class: "sidebar-divider" }
+        }
+        for doc in folders.get("").cloned().unwrap_or_default().iter().cloned() {
+            DocItem { meta: doc, indent: 0 }
         }
     }
 }
 
 #[component]
 fn FolderGroup(name: String, docs: Vec<DocumentMeta>) -> Element {
-    let mut open = use_signal(|| true);
+    let mut open = use_signal(|| false);
     rsx! {
         div { class: "sidebar-folder",
             button {
@@ -144,7 +154,7 @@ fn FolderGroup(name: String, docs: Vec<DocumentMeta>) -> Element {
                 onclick: move |_| { let v = *open.read(); *open.write() = !v; },
                 span { class: "folder-chevron", if *open.read() { "▾" } else { "▸" } }
                 span { class: "folder-name", "{name}" }
-                span { class: "folder-count muted", "{docs.len()}" }
+                span { class: "folder-count", "{docs.len()}" }
             }
             if *open.read() {
                 div { class: "sidebar-folder-contents",
@@ -167,20 +177,16 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
 
     let id    = meta.id.clone();
     let title = meta.title.clone();
-    let style = if indent > 0 {
-        format!("padding-left: calc(var(--space-3) + {}px)", indent * 12)
-    } else {
-        String::new()
-    };
 
     rsx! {
         button {
-            class: if is_active { "sidebar-item active" } else { "sidebar-item" },
-            style: "{style}",
+            class: if is_active { "sidebar-doc active" } else { "sidebar-doc" },
+            class: if indent > 0 { "indent" } else { "" },
             onclick: move |_| {
                 tab_state.write().open(id.clone(), title.clone());
                 *active_route.write() = Route::Notes;
             },
+            span { class: "doc-icon", "◇" }
             span { class: "doc-title", "{meta.title}" }
         }
     }
@@ -293,24 +299,28 @@ fn VaultSwitcher() -> Element {
     rsx! {
         div { class: "sidebar-section vault-switcher",
             div { class: "sidebar-section-header",
-                span { class: "sidebar-heading", "Vaults" }
+                span { class: "sidebar-heading", "VAULTS" }
             }
-            div { class: "sidebar-item active", "{current_name}" }
-            div { class: "sidebar-item muted", "{current_root.display()}" }
+            div { class: "vault-current",
+                span { class: "vault-current-name", "{current_name}" }
+                span { class: "vault-current-path", "{current_root.display()}" }
+            }
             for vault in profile.read().known_vaults.iter().filter(|vault| vault.root != current_root).cloned() {
                 button {
-                    class: "sidebar-item",
+                    class: "sidebar-doc",
                     onclick: {
                         let vault = vault.clone();
                         move |_| open_vault(vault.clone())
                     },
-                    "{vault.name}"
+                    span { class: "doc-icon", "◈" }
+                    span { class: "doc-title", "{vault.name}" }
                 }
             }
             button {
-                class: "sidebar-item",
+                class: "sidebar-doc muted",
                 onclick: open_folder,
-                "+ Open another vault…"
+                span { class: "doc-icon", "+" }
+                span { class: "doc-title", "Open another vault…" }
             }
         }
     }
