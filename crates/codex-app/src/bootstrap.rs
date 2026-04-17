@@ -17,8 +17,16 @@ pub struct LauncherProfile {
     pub wizard_completed: bool,
     #[serde(default)]
     pub recent_vaults: Vec<PathBuf>,
+    #[serde(default)]
+    pub known_vaults: Vec<KnownVault>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_setup: Option<PendingVaultSetup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnownVault {
+    pub name: String,
+    pub root: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,6 +80,35 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
+    pub fn register_known_vault(profile: &mut LauncherProfile, root: &Path, name: &str) {
+        let root = root.to_path_buf();
+        if let Some(existing) = profile.known_vaults.iter_mut().find(|vault| vault.root == root) {
+            existing.name = name.to_string();
+        } else {
+            profile.known_vaults.push(KnownVault {
+                name: name.to_string(),
+                root: root.clone(),
+            });
+            profile.known_vaults.sort_by(|left, right| left.name.cmp(&right.name));
+        }
+        if !profile.recent_vaults.contains(&root) {
+            profile.recent_vaults.push(root.clone());
+        }
+        profile.last_vault_root = Some(root);
+    }
+
+    pub fn spawn_new_instance_for_vault(root: &Path) -> anyhow::Result<()> {
+        let exe = std::env::current_exe()?;
+        Command::new(exe)
+            .arg("--vault")
+            .arg(root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        Ok(())
+    }
+
     pub fn initialize_vault(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Vault> {
         std::fs::create_dir_all(path)?;
         let vault = Vault::open(path)?;
@@ -79,7 +116,11 @@ impl OmegonRuntimeContext {
         config.vault_name = name.to_string();
         config.sync = sync;
         vault.save_config(&config)?;
-        Ok(Vault::open(path)?)
+        let vault = Vault::open(path)?;
+        let mut profile = Self::load_launcher_profile();
+        Self::register_known_vault(&mut profile, path, name);
+        Self::save_launcher_profile(&profile)?;
+        Ok(vault)
     }
 
     pub fn initialize_github_linked_vault(
@@ -284,7 +325,7 @@ impl OmegonRuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{publication_output_path, LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
+    use super::{publication_output_path, KnownVault, LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
     use codex_core::{
         models::{CodexOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, PublicationTarget, SyncConfig},
         store::VaultStore,
@@ -320,6 +361,10 @@ mod tests {
             last_vault_root: Some(tmp.path().join("vaults/black-meridian")),
             wizard_completed: true,
             recent_vaults: vec![tmp.path().join("vaults/black-meridian")],
+            known_vaults: vec![KnownVault {
+                name: "Black Meridian".into(),
+                root: tmp.path().join("vaults/black-meridian"),
+            }],
             pending_setup: Some(PendingVaultSetup::LinkGithub {
                 local_path: tmp.path().join("vaults/black-meridian"),
                 repo: "git@github.com:black-meridian/codex-vault.git".into(),

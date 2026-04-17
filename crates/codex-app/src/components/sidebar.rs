@@ -1,7 +1,11 @@
 use codex_core::{models::DocumentMeta, store::VaultStore};
 use dioxus::prelude::*;
 use std::{collections::BTreeMap, path::PathBuf};
-use crate::{bootstrap::AppContext, state::{Route, TabState}};
+use crate::{
+    bootstrap::{AppContext, KnownVault, OmegonRuntimeContext},
+    state::{Route, TabState},
+};
+use rfd::FileDialog;
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -80,6 +84,8 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     "⚙️"
                 }
             }
+
+            VaultSwitcher {}
         }
     }
 }
@@ -156,6 +162,67 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                 *active_route.write() = Route::Notes;
             },
             span { class: "doc-title", "{meta.title}" }
+        }
+    }
+}
+
+#[component]
+fn VaultSwitcher() -> Element {
+    let ctx = use_context::<AppContext>();
+    let mut profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
+    let current_root = ctx.vault_root();
+    let current_name = ctx.vault().config.vault_name.clone();
+
+    let open_vault = move |vault: KnownVault| {
+        let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&vault.root);
+    };
+
+    let open_folder = move |_| {
+        let Some(selected_root) = FileDialog::new().pick_folder() else {
+            return;
+        };
+        let name = selected_root
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Codex")
+            .to_string();
+        if OmegonRuntimeContext::initialize_vault(
+            &selected_root,
+            &name,
+            codex_core::models::SyncConfig::None,
+        )
+        .is_ok()
+        {
+            let mut updated = OmegonRuntimeContext::load_launcher_profile();
+            OmegonRuntimeContext::register_known_vault(&mut updated, &selected_root, &name);
+            let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
+            profile.set(updated);
+            let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&selected_root);
+        }
+    };
+
+    rsx! {
+        div { class: "sidebar-section vault-switcher",
+            div { class: "sidebar-section-header",
+                span { class: "sidebar-heading", "Vaults" }
+            }
+            div { class: "sidebar-item active", "{current_name}" }
+            div { class: "sidebar-item muted", "{current_root.display()}" }
+            for vault in profile.read().known_vaults.iter().filter(|vault| vault.root != current_root).cloned() {
+                button {
+                    class: "sidebar-item",
+                    onclick: {
+                        let vault = vault.clone();
+                        move |_| open_vault(vault.clone())
+                    },
+                    "{vault.name}"
+                }
+            }
+            button {
+                class: "sidebar-item",
+                onclick: open_folder,
+                "+ Open another vault…"
+            }
         }
     }
 }
