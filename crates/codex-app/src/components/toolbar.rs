@@ -1,6 +1,7 @@
 use codex_core::{models::SearchResult, store::VaultStore};
 use dioxus::prelude::*;
-use crate::{bootstrap::AppContext, state::{Route, SyncStatus, TabState}};
+use rfd::FileDialog;
+use crate::{bootstrap::{AppContext, OmegonRuntimeContext}, state::{Route, SyncStatus, TabState}};
 
 #[derive(Clone)]
 struct SearchGroup {
@@ -230,6 +231,16 @@ pub fn Toolbar(
             }
 
             div { class: "toolbar-right",
+                button {
+                    class: "btn btn-ghost",
+                    title: "Open another vault in a new window",
+                    onclick: move |_| {
+                        let _ = FileDialog::new()
+                            .pick_folder()
+                            .and_then(|path| OmegonRuntimeContext::spawn_new_instance_for_vault(&path).ok());
+                    },
+                    "🗂"
+                }
                 if !sync_label.is_empty() {
                     span { class: "sync-badge", "{sync_label}" }
                 }
