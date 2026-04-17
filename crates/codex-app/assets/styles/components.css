@@ -273,3 +273,30 @@
 .folder-count   { font-size: var(--font-size-xs); font-weight: normal; }
 
 .sidebar-folder-contents { display: flex; flex-direction: column; gap: 1px; }
+
+/* ── New note inline input ───────────────────────────────────────────────── */
+.sidebar-new-note {
+  padding:    var(--space-1) var(--space-2);
+  display:    flex;
+  flex-direction: column;
+  gap:        var(--space-1);
+}
+
+.sidebar-new-note-input {
+  width:         100%;
+  background:    var(--surface);
+  border:        1px solid var(--ring);
+  border-radius: var(--radius-sm);
+  padding:       4px var(--space-2);
+  font-size:     var(--font-size-sm);
+  color:         var(--foreground);
+  outline:       none;
+  box-shadow:    0 0 0 2px rgba(42, 180, 200, 0.2);
+}
+
+.sidebar-new-note-input::placeholder { color: var(--muted-foreground); }
+
+.sidebar-new-note-err {
+  font-size: var(--font-size-xs);
+  color:     var(--error);
+}

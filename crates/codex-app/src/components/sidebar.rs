@@ -37,6 +37,10 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
         }
     });
 
+    let mut creating = use_signal(|| false);
+    let mut new_name = use_signal(String::new);
+    let mut create_err = use_signal(|| Option::<String>::None);
+
     rsx! {
         nav { class: "sidebar",
             div { class: "sidebar-section",
@@ -45,8 +49,24 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     button {
                         class: "sidebar-new-btn",
                         title: "New note",
-                        onclick: move |_| { /* TODO: new-note dialog */ },
-                        "+"
+                        onclick: move |_| {
+                            let was = *creating.read();
+                            creating.set(!was);
+                            if !was {
+                                new_name.set(String::new());
+                                create_err.set(None);
+                            }
+                        },
+                        if *creating.read() { "×" } else { "+" }
+                    }
+                }
+                if *creating.read() {
+                    NewNoteInput {
+                        new_name,
+                        create_err,
+                        creating,
+                        refresh,
+                        active_route,
                     }
                 }
                 match &*docs.read() {
@@ -162,6 +182,75 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                 *active_route.write() = Route::Notes;
             },
             span { class: "doc-title", "{meta.title}" }
+        }
+    }
+}
+
+#[component]
+fn NewNoteInput(
+    mut new_name: Signal<String>,
+    mut create_err: Signal<Option<String>>,
+    mut creating: Signal<bool>,
+    mut refresh: Signal<u64>,
+    mut active_route: Signal<Route>,
+) -> Element {
+    let ctx = use_context::<AppContext>();
+    let mut tab_state = use_context::<Signal<TabState>>();
+
+    rsx! {
+        div { class: "sidebar-new-note",
+            input {
+                class: "sidebar-new-note-input",
+                placeholder: "Note name or path/name",
+                value: "{new_name}",
+                oninput: move |e| new_name.set(e.value()),
+                onkeydown: move |e| {
+                    if e.key() == Key::Escape {
+                        creating.set(false);
+                        return;
+                    }
+                    if e.key() != Key::Enter {
+                        return;
+                    }
+                    let raw = new_name.read().trim().to_string();
+                    if raw.is_empty() {
+                        return;
+                    }
+                    let rel = if raw.ends_with(".md") {
+                        std::path::PathBuf::from(&raw)
+                    } else {
+                        std::path::PathBuf::from(format!("{raw}.md"))
+                    };
+                    let title = rel
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| raw.clone());
+                    let vault = ctx.vault();
+                    let ctx2 = ctx.clone();
+                    let title2 = title.clone();
+                    spawn(async move {
+                        match tokio::task::spawn_blocking(move || vault.create_document(&rel, &title)).await {
+                            Ok(Ok(())) => {
+                                *refresh.write() += 1;
+                                creating.set(false);
+                                let vault = ctx2.vault();
+                                if let Ok(Some(meta)) = tokio::task::spawn_blocking(
+                                    move || vault.store.find_document_by_slug(&title2)
+                                ).await.unwrap_or(Ok(None)) {
+                                    tab_state.write().open(meta.id, meta.title);
+                                    *active_route.write() = Route::Notes;
+                                }
+                            }
+                            Ok(Err(e)) => create_err.set(Some(e.to_string())),
+                            Err(e) => create_err.set(Some(e.to_string())),
+                        }
+                    });
+                },
+                autofocus: true,
+            }
+            if let Some(ref err) = *create_err.read() {
+                span { class: "sidebar-new-note-err", "{err}" }
+            }
         }
     }
 }
