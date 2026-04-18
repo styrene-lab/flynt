@@ -666,7 +666,9 @@ function codexGraph(data) {
       nodes[i].vy+=(H/2-nodes[i].y)*CGRAV;
     }
     for (i=0;i<nodes.length;i++) {
-      a=nodes[i]; a.vx*=DAMP;a.vy*=DAMP;
+      a=nodes[i];
+      if (a._pinned) { a.vx=0; a.vy=0; continue; }
+      a.vx*=DAMP;a.vy*=DAMP;
       a.x+=a.vx*alpha; a.y+=a.vy*alpha;
     }
     alpha*=0.997;
@@ -736,6 +738,7 @@ function codexGraph(data) {
 
     gr.addEventListener('click',function(evt){
       evt.stopPropagation();
+      if(didDrag){didDrag=false;return;}
       if(n.kind==='document') dioxus.send(n.id);
     });
 
@@ -798,13 +801,19 @@ function codexGraph(data) {
   svg.addEventListener('mousedown',function(e){
     if(e.target===svg){panning=true;psx=e.clientX-px;psy=e.clientY-py;}
   });
-  var dragging=null;
+  var dragging=null, didDrag=false;
   nEls.forEach(function(ne){
-    ne.el.addEventListener('mousedown',function(e){e.stopPropagation();dragging=ne.n;});
+    ne.el.addEventListener('mousedown',function(e){
+      e.stopPropagation();
+      dragging=ne.n;
+      dragging._pinned=true;
+      didDrag=false;
+    });
   });
   svg.addEventListener('mousemove',function(e){
     if(panning){px=e.clientX-psx;py=e.clientY-psy;upd();}
     if(dragging){
+      didDrag=true;
       var rect=svg.getBoundingClientRect();
       dragging.x=(e.clientX-rect.left-px)/zm;
       dragging.y=(e.clientY-rect.top-py)/zm;
@@ -812,8 +821,14 @@ function codexGraph(data) {
       alpha=Math.max(alpha,0.3);
     }
   });
-  svg.addEventListener('mouseup',function(){panning=false;dragging=null;});
-  svg.addEventListener('mouseleave',function(){panning=false;dragging=null;});
+  svg.addEventListener('mouseup',function(){
+    if(dragging) dragging._pinned=false;
+    panning=false;dragging=null;
+  });
+  svg.addEventListener('mouseleave',function(){
+    if(dragging) dragging._pinned=false;
+    panning=false;dragging=null;
+  });
 
   function render(){
     if(alpha>0.001)tick();
