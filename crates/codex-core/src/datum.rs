@@ -258,6 +258,10 @@ pub enum EntityKind {
     Document,
     Project,
     Task,
+    /// A git repository — local, remote, or both.
+    Repo,
+    /// An external resource reference (URL, dashboard, API, etc.)
+    Link,
     /// User-defined entity type (e.g. "contact", "sprint", "milestone").
     #[serde(untagged)]
     Custom(String),
@@ -269,6 +273,8 @@ impl EntityKind {
             "document" => Self::Document,
             "project" => Self::Project,
             "task" => Self::Task,
+            "repo" => Self::Repo,
+            "link" => Self::Link,
             other => Self::Custom(other.to_string()),
         }
     }
@@ -278,8 +284,15 @@ impl EntityKind {
             Self::Document => "document",
             Self::Project => "project",
             Self::Task => "task",
+            Self::Repo => "repo",
+            Self::Link => "link",
             Self::Custom(s) => s,
         }
+    }
+
+    /// Whether this kind represents a first-class entity with dedicated UI.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, Self::Custom(_))
     }
 }
 
@@ -413,6 +426,227 @@ impl Entity {
     }
 }
 
+// ── Typed projections ────────────────────────────────────────────────────────
+//
+// These structs are views over Entity fields for known kinds. They don't own
+// the data — they're constructed on demand from an Entity and provide typed
+// accessors. The Entity remains the canonical storage form.
+
+/// A git repository — local checkout, remote, or both.
+///
+/// On disk as a markdown file with `kind = "repo"`:
+/// ```toml
+/// +++
+/// id = "uuid"
+/// kind = "repo"
+///
+/// [data]
+/// name = "codex"
+/// url = "https://github.com/black-meridian/codex"
+/// provider = "github"
+/// org = "black-meridian"
+/// default_branch = "main"
+/// local_path = "/Users/cwilson/workspace/black-meridian/codex"
+/// +++
+/// ```
+#[derive(Debug, Clone)]
+pub struct RepoView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> RepoView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::Repo {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.entity.get_text("name").unwrap_or("unnamed")
+    }
+
+    pub fn url(&self) -> Option<&str> {
+        self.entity.get_text("url")
+    }
+
+    pub fn provider(&self) -> Option<&str> {
+        self.entity.get_text("provider")
+    }
+
+    pub fn org(&self) -> Option<&str> {
+        self.entity.get_text("org")
+    }
+
+    pub fn default_branch(&self) -> &str {
+        self.entity.get_text("default_branch").unwrap_or("main")
+    }
+
+    pub fn local_path(&self) -> Option<&str> {
+        self.entity.get_text("local_path")
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.entity.get_text("description")
+    }
+
+    /// Project IDs that reference this repo.
+    pub fn project_refs(&self) -> Vec<DatumRef> {
+        self.entity
+            .fields
+            .get("projects")
+            .and_then(|d| d.as_list())
+            .map(|list| list.iter().filter_map(|d| d.try_as_ref()).collect())
+            .unwrap_or_default()
+    }
+}
+
+/// An external resource link — URL, dashboard, API endpoint, etc.
+///
+/// On disk as a markdown file with `kind = "link"`:
+/// ```toml
+/// +++
+/// id = "uuid"
+/// kind = "link"
+///
+/// [data]
+/// title = "Grafana API Latency"
+/// url = "https://grafana.internal/d/api-latency"
+/// link_type = "dashboard"
+/// +++
+/// ```
+#[derive(Debug, Clone)]
+pub struct LinkView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> LinkView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::Link {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        self.entity.get_text("title").unwrap_or("Untitled")
+    }
+
+    pub fn url(&self) -> Option<&str> {
+        self.entity.get_text("url")
+    }
+
+    pub fn link_type(&self) -> Option<&str> {
+        self.entity.get_text("link_type")
+    }
+
+    pub fn tags(&self) -> Vec<String> {
+        self.entity.get_text_list("tags")
+    }
+}
+
+/// A project view — typed accessors over project entity fields.
+#[derive(Debug, Clone)]
+pub struct ProjectView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> ProjectView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::Project {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        self.entity.get_text("title").unwrap_or("Untitled")
+    }
+
+    pub fn status(&self) -> &str {
+        self.entity.get_text("status").unwrap_or("active")
+    }
+
+    pub fn columns(&self) -> Vec<String> {
+        let cols = self.entity.get_text_list("columns");
+        if cols.is_empty() {
+            vec!["Backlog".into(), "In Progress".into(), "Review".into(), "Done".into()]
+        } else {
+            cols
+        }
+    }
+
+    pub fn owner(&self) -> Option<&str> {
+        self.entity.get_text("owner")
+    }
+
+    /// Repo IDs associated with this project.
+    pub fn repo_refs(&self) -> Vec<DatumRef> {
+        self.entity
+            .fields
+            .get("repos")
+            .and_then(|d| d.as_list())
+            .map(|list| list.iter().filter_map(|d| d.try_as_ref()).collect())
+            .unwrap_or_default()
+    }
+}
+
+/// A task view — typed accessors over task entity fields.
+#[derive(Debug, Clone)]
+pub struct TaskView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> TaskView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::Task {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        self.entity.get_text("title").unwrap_or("Untitled")
+    }
+
+    pub fn project_ref(&self) -> Option<DatumRef> {
+        self.entity.get_ref("project")
+    }
+
+    pub fn column(&self) -> &str {
+        self.entity.get_text("column").unwrap_or("Backlog")
+    }
+
+    pub fn priority(&self) -> i64 {
+        self.entity.get_int("priority").unwrap_or(2)
+    }
+
+    pub fn status(&self) -> &str {
+        self.entity.get_text("status").unwrap_or("open")
+    }
+
+    pub fn assignee(&self) -> Option<&str> {
+        self.entity.get_text("assignee")
+    }
+
+    pub fn document_refs(&self) -> Vec<DatumRef> {
+        self.entity
+            .fields
+            .get("document_refs")
+            .and_then(|d| d.as_list())
+            .map(|list| list.iter().filter_map(|d| d.try_as_ref()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn tags(&self) -> Vec<String> {
+        self.entity.get_text_list("tags")
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -537,7 +771,96 @@ mod tests {
         assert_eq!(EntityKind::from_str("project"), EntityKind::Project);
         assert_eq!(EntityKind::from_str("task"), EntityKind::Task);
         assert_eq!(EntityKind::from_str("document"), EntityKind::Document);
+        assert_eq!(EntityKind::from_str("repo"), EntityKind::Repo);
+        assert_eq!(EntityKind::from_str("link"), EntityKind::Link);
         assert_eq!(EntityKind::from_str("contact"), EntityKind::Custom("contact".into()));
-        assert_eq!(EntityKind::from_str("sprint"), EntityKind::Custom("sprint".into()));
+        assert!(EntityKind::Project.is_known());
+        assert!(EntityKind::Repo.is_known());
+        assert!(!EntityKind::Custom("sprint".into()).is_known());
+    }
+
+    #[test]
+    fn repo_view_from_entity() {
+        let repo = Entity::new(EntityKind::Repo)
+            .with_field("name", Datum::Text("codex".into()))
+            .with_field("url", Datum::Text("https://github.com/black-meridian/codex".into()))
+            .with_field("provider", Datum::Text("github".into()))
+            .with_field("org", Datum::Text("black-meridian".into()))
+            .with_field("default_branch", Datum::Text("main".into()))
+            .with_field("local_path", Datum::Text("/workspace/codex".into()));
+
+        let view = RepoView::from_entity(&repo).unwrap();
+        assert_eq!(view.name(), "codex");
+        assert_eq!(view.url(), Some("https://github.com/black-meridian/codex"));
+        assert_eq!(view.provider(), Some("github"));
+        assert_eq!(view.org(), Some("black-meridian"));
+        assert_eq!(view.default_branch(), "main");
+        assert_eq!(view.local_path(), Some("/workspace/codex"));
+
+        // Can't create RepoView from a non-repo entity
+        let project = Entity::new(EntityKind::Project);
+        assert!(RepoView::from_entity(&project).is_none());
+    }
+
+    #[test]
+    fn link_view_from_entity() {
+        let link = Entity::new(EntityKind::Link)
+            .with_field("title", Datum::Text("Grafana Dashboard".into()))
+            .with_field("url", Datum::Text("https://grafana.internal/d/latency".into()))
+            .with_field("link_type", Datum::Text("dashboard".into()))
+            .with_field("tags", Datum::List(vec![
+                Datum::Text("monitoring".into()),
+                Datum::Text("oncall".into()),
+            ]));
+
+        let view = LinkView::from_entity(&link).unwrap();
+        assert_eq!(view.title(), "Grafana Dashboard");
+        assert_eq!(view.url(), Some("https://grafana.internal/d/latency"));
+        assert_eq!(view.link_type(), Some("dashboard"));
+        assert_eq!(view.tags(), vec!["monitoring", "oncall"]);
+    }
+
+    #[test]
+    fn project_view_with_repo_refs() {
+        let repo_id = Uuid::new_v4();
+        let project = Entity::new(EntityKind::Project)
+            .with_field("title", Datum::Text("Styrene Mesh".into()))
+            .with_field("status", Datum::Text("active".into()))
+            .with_field("columns", Datum::List(vec![
+                Datum::Text("Backlog".into()),
+                Datum::Text("Done".into()),
+            ]))
+            .with_field("repos", Datum::List(vec![
+                Datum::Text(repo_id.to_string()),
+            ]));
+
+        let view = ProjectView::from_entity(&project).unwrap();
+        assert_eq!(view.title(), "Styrene Mesh");
+        assert_eq!(view.columns(), vec!["Backlog", "Done"]);
+        assert_eq!(view.repo_refs().len(), 1);
+        assert_eq!(view.repo_refs()[0].id, repo_id);
+    }
+
+    #[test]
+    fn repo_from_frontmatter() {
+        let toml_str = r#"
+            id = "550e8400-e29b-41d4-a716-446655440000"
+            kind = "repo"
+
+            [data]
+            name = "prefon-vie"
+            url = "https://github.com/black-meridian/prefon-vie"
+            provider = "github"
+            org = "black-meridian"
+            default_branch = "main"
+        "#;
+        let val: toml::Value = toml::from_str(toml_str).unwrap();
+        let entity = Entity::from_frontmatter(&val).unwrap();
+
+        assert_eq!(entity.kind, EntityKind::Repo);
+        let view = RepoView::from_entity(&entity).unwrap();
+        assert_eq!(view.name(), "prefon-vie");
+        assert_eq!(view.provider(), Some("github"));
+        assert_eq!(view.org(), Some("black-meridian"));
     }
 }

@@ -93,7 +93,7 @@ pub fn GraphView() -> Element {
                                         onclick: move |_| *selected_kind.write() = None,
                                         "All"
                                     }
-                                    for kind in [GraphNodeKind::Document, GraphNodeKind::Communication, GraphNodeKind::MemoryFact, GraphNodeKind::Task, GraphNodeKind::Board] {
+                                    for kind in [GraphNodeKind::Document, GraphNodeKind::Repo, GraphNodeKind::Link, GraphNodeKind::Task, GraphNodeKind::Board, GraphNodeKind::Communication, GraphNodeKind::MemoryFact] {
                                         button {
                                             class: if selected_kind.read().as_ref() == Some(&kind) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
                                             onclick: move |_| *selected_kind.write() = Some(kind.clone()),
@@ -132,6 +132,14 @@ pub fn GraphView() -> Element {
                                 "Document"
                             }
                             div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #e0a030" }
+                                "Repo"
+                            }
+                            div { class: "graph-legend-item",
+                                div { class: "graph-legend-dot", style: "background: #c06090" }
+                                "Link"
+                            }
+                            div { class: "graph-legend-item",
                                 div { class: "graph-legend-dot", style: "background: #c86418" }
                                 "Task"
                             }
@@ -145,7 +153,7 @@ pub fn GraphView() -> Element {
                             }
                             div { class: "graph-legend-item",
                                 div { class: "graph-legend-dot", style: "background: #1a8898" }
-                                "Communication"
+                                "Comms"
                             }
                         }
                         div {
@@ -220,6 +228,8 @@ fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Document => "document",
         GraphNodeKind::Task => "task",
         GraphNodeKind::Board => "board",
+        GraphNodeKind::Repo => "repo",
+        GraphNodeKind::Link => "link",
         GraphNodeKind::MemoryFact => "memory",
         GraphNodeKind::Communication => "communication",
     }
@@ -248,6 +258,8 @@ function codexGraph(data) {
     document:      '#2ab4c8',
     task:          '#c86418',
     board:         '#1ab878',
+    repo:          '#e0a030',
+    link:          '#c06090',
     memory:        '#8860d0',
     communication: '#1a8898'
   };

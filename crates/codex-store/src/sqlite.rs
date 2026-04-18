@@ -307,6 +307,30 @@ impl VaultStore for SqliteStore {
         Ok(results.collect::<rusqlite::Result<_>>()?)
     }
 
+    fn list_entities_by_kind(&self, kind: &codex_core::datum::EntityKind) -> Result<Vec<DocumentMeta>> {
+        let conn = self.conn.lock().unwrap();
+        let kind_str = kind.as_str();
+        // Query frontmatter JSON for the kind field
+        let mut stmt = conn.prepare(
+            r#"SELECT id, path, title, frontmatter, updated_at FROM documents
+               WHERE json_extract(frontmatter, '$.kind') = ?1
+               ORDER BY updated_at DESC"#,
+        )?;
+        let rows = stmt.query_map(params![kind_str], |row| {
+            let fm_json: String = row.get(3)?;
+            Ok(DocumentMeta {
+                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
+                path: row.get::<_, String>(1)?.into(),
+                title: row.get(2)?,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
+                entity_kind: entity_kind_from_frontmatter_json(&fm_json),
+                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     fn get_backlinks(&self, id: &DocumentId) -> Result<Vec<DocumentMeta>> {
         let conn = self.conn.lock().unwrap();
         // title and path are stored in documents; links reference by target slug

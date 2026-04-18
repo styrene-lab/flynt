@@ -12,6 +12,8 @@ pub enum GraphNodeKind {
     Document,
     Task,
     Board,
+    Repo,
+    Link,
     MemoryFact,
     Communication,
 }
@@ -56,18 +58,19 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
         let id = meta.id.0.to_string();
         let group = top_level_group(&meta.path);
         groups.insert(group.clone(), ());
-        let kind = if matches!(
-            meta.metadata.get("kind").map(|field| &field.value),
-            Some(MetadataValue::String(value)) if value == "agent_communication"
-        ) {
-            GraphNodeKind::Communication
-        } else if matches!(
-            meta.metadata.get("kind").map(|field| &field.value),
-            Some(MetadataValue::String(value)) if value == "memory_fact"
-        ) {
-            GraphNodeKind::MemoryFact
-        } else {
-            GraphNodeKind::Document
+        let kind = match &meta.entity_kind {
+            Some(crate::datum::EntityKind::Repo) => GraphNodeKind::Repo,
+            Some(crate::datum::EntityKind::Link) => GraphNodeKind::Link,
+            Some(crate::datum::EntityKind::Task) => GraphNodeKind::Task,
+            _ if matches!(
+                meta.metadata.get("kind").map(|field| &field.value),
+                Some(MetadataValue::String(value)) if value == "agent_communication"
+            ) => GraphNodeKind::Communication,
+            _ if matches!(
+                meta.metadata.get("kind").map(|field| &field.value),
+                Some(MetadataValue::String(value)) if value == "memory_fact"
+            ) => GraphNodeKind::MemoryFact,
+            _ => GraphNodeKind::Document,
         };
         nodes.push(GraphNode {
             id: id.clone(),
@@ -173,6 +176,9 @@ mod tests {
         fn delete_document(&self, _id: &DocumentId) -> Result<()> { Ok(()) }
         fn search_documents(&self, _query: &str) -> Result<Vec<SearchResult>> { Ok(vec![]) }
         fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
+        fn list_entities_by_kind(&self, kind: &crate::datum::EntityKind) -> Result<Vec<DocumentMeta>> {
+            Ok(self.docs.iter().filter(|d| d.entity_kind.as_ref() == Some(kind)).cloned().collect())
+        }
         fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
         fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
         fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }

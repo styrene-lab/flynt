@@ -1,5 +1,8 @@
-use crate::models::{
-    Board, BoardId, Document, DocumentId, DocumentMeta, SearchResult, Task, TaskId,
+use crate::{
+    datum::EntityKind,
+    models::{
+        Board, BoardId, Document, DocumentId, DocumentMeta, SearchResult, Task, TaskId,
+    },
 };
 use anyhow::Result;
 use std::path::Path;
@@ -31,6 +34,10 @@ pub trait VaultStore: Send + Sync {
     fn delete_document(&self, id: &DocumentId) -> Result<()>;
     fn search_documents(&self, query: &str) -> Result<Vec<SearchResult>>;
     fn get_backlinks(&self, id: &DocumentId) -> Result<Vec<DocumentMeta>>;
+
+    // ── Entities ─────────────────────────────────────────────────────────────
+    /// List documents that are typed entities of a given kind.
+    fn list_entities_by_kind(&self, kind: &EntityKind) -> Result<Vec<DocumentMeta>>;
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
     fn get_task(&self, id: &TaskId) -> Result<Option<Task>>;
