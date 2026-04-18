@@ -7,13 +7,6 @@ default:
 vault := env_var_or_default("CODEX_VAULT", env_var("HOME") + "/workspace/black-meridian")
 version := "0.1.0"
 
-# Signing identity — set via env or override on CLI: just sign SIGN_ID="..."
-sign_id := env_var_or_default("CODEX_SIGN_ID", "Developer ID Application: Black Meridian, LLC")
-installer_id := env_var_or_default("CODEX_INSTALLER_ID", "3rd Party Mac Developer Installer: Black Meridian, LLC")
-team_id := env_var_or_default("CODEX_TEAM_ID", "")
-apple_id := env_var_or_default("CODEX_APPLE_ID", "")
-app_password := env_var_or_default("CODEX_APP_PASSWORD", "")
-
 # ─── Development ────────────────────────────────────────────
 
 run:
@@ -41,7 +34,7 @@ validate: fmt check clippy test
 build:
     cargo build --release
 
-# Bundle .app with URL scheme registration
+# Bundle .app with version info and URL scheme registration
 bundle:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -70,26 +63,41 @@ bundle:
 
     echo "✓ Bundled dist/Codex.app (v{{version}} build $BUILD_NUM)"
 
-# ─── Code Signing ───────────────────────────────────────────
+# ─── Code Signing (YubiKey via rcodesign) ───────────────────
 
-# Sign the .app bundle with hardened runtime + entitlements
+# Sign the .app bundle with Developer ID Application cert on YubiKey.
+# Same flow as Omegon: rcodesign + smartcard slot 9c.
 sign: bundle
     #!/usr/bin/env bash
     set -euo pipefail
-    ENTITLEMENTS="crates/codex-app/Codex.entitlements"
     APP="dist/Codex.app"
 
-    echo "Signing with: {{sign_id}}"
-    codesign --deep --force --options runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign "{{sign_id}}" \
-        "$APP"
-    codesign --verify --verbose "$APP"
-    echo "✓ Signed and verified"
+    echo "Signing Codex.app with Apple Developer ID (YubiKey)..."
+    if [ -n "${SMARTCARD_PIN:-}" ]; then
+        echo "Using SMARTCARD_PIN from environment"
+        echo "⚡ Touch YubiKey when it blinks"
+        rcodesign sign \
+            --smartcard-slot 9c \
+            --smartcard-pin-env SMARTCARD_PIN \
+            --code-signature-flags runtime \
+            "$APP"
+    else
+        echo "⚡ Enter PIN when prompted, then touch YubiKey when it blinks"
+        rcodesign sign \
+            --smartcard-slot 9c \
+            --code-signature-flags runtime \
+            "$APP"
+    fi
 
-# ─── Notarization (direct distribution) ────────────────────
+    echo ""
+    echo "Verifying signature..."
+    codesign -dvvv "$APP" 2>&1 | grep -E "Authority|Team|Signature|Identifier"
+    echo "✓ Signed"
 
-# Notarize for direct distribution (outside App Store)
+# ─── Notarization ──────────────────────────────────────────
+
+# Notarize the signed .app for direct distribution.
+# Requires a keychain profile: just setup-notarize
 notarize: sign
     #!/usr/bin/env bash
     set -euo pipefail
@@ -97,49 +105,33 @@ notarize: sign
     ZIP="dist/Codex-{{version}}.zip"
 
     ditto -c -k --keepParent "$APP" "$ZIP"
-    echo "Submitting for notarization..."
-    xcrun notarytool submit "$ZIP" \
-        --apple-id "{{apple_id}}" \
-        --password "{{app_password}}" \
-        --team-id "{{team_id}}" \
-        --wait
-    xcrun stapler staple "$APP"
-    echo "✓ Notarized and stapled"
+    echo "Submitting for Apple notarization..."
 
-# ─── TestFlight / App Store ─────────────────────────────────
+    if xcrun notarytool history --keychain-profile "codex" >/dev/null 2>&1; then
+        xcrun notarytool submit "$ZIP" --keychain-profile "codex" --wait
+        xcrun stapler staple "$APP"
+        echo "✓ Notarized and stapled"
+    else
+        echo "✗ No keychain profile 'codex'. Run: just setup-notarize"
+        exit 1
+    fi
 
-# Build a signed .pkg for TestFlight upload
-testflight: bundle
+# One-time: store notarization credentials in the keychain.
+setup-notarize:
     #!/usr/bin/env bash
     set -euo pipefail
-    APP="dist/Codex.app"
-    PKG="dist/Codex-{{version}}.pkg"
-    ENTITLEMENTS="crates/codex-app/Codex.entitlements"
-
-    # Sign with Mac App Store identity (3rd Party Mac Developer Application)
-    MAS_SIGN="${CODEX_MAS_SIGN_ID:-3rd Party Mac Developer Application: Black Meridian, LLC}"
-    echo "Signing for App Store with: $MAS_SIGN"
-    codesign --deep --force --options runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign "$MAS_SIGN" \
-        "$APP"
-    codesign --verify --verbose "$APP"
-
-    # Build installer .pkg
-    echo "Building installer package..."
-    productbuild --component "$APP" /Applications \
-        --sign "{{installer_id}}" \
-        "$PKG"
-
-    echo "✓ Built $PKG"
+    echo "Storing Apple notarization credentials..."
+    echo "You'll need your Apple ID, team ID, and an app-specific password."
+    echo "(Generate at https://appleid.apple.com/account/manage → App-Specific Passwords)"
     echo ""
-    echo "Upload to App Store Connect:"
-    echo "  xcrun altool --upload-app -f $PKG -t macos --apple-id {{apple_id}} --password {{app_password}}"
-    echo "  — or use Transporter.app"
+    xcrun notarytool store-credentials "codex" \
+        --apple-id "" \
+        --team-id "UZBY9DM42N"
+    echo "✓ Credentials stored as keychain profile 'codex'"
 
 # ─── Distribution ───────────────────────────────────────────
 
-# Create a distributable .dmg
+# Create a distributable .dmg from the signed .app
 dmg: sign
     #!/usr/bin/env bash
     set -euo pipefail
@@ -147,8 +139,13 @@ dmg: sign
     rm -f "$DMG"
     hdiutil create -volname "Codex" -srcfolder "dist/Codex.app" \
         -ov -format UDZO "$DMG"
-    codesign --sign "{{sign_id}}" "$DMG"
     echo "✓ Created $DMG"
+
+# Full release: bundle → sign → notarize → dmg
+release: notarize dmg
+    @echo "✓ Codex {{version}} ready for distribution"
+    @echo "  dist/Codex.app          (signed + notarized)"
+    @echo "  dist/Codex-{{version}}.dmg  (distributable)"
 
 open:
     CODEX_VAULT="{{vault}}" open dist/Codex.app
