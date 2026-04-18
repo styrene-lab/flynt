@@ -32,6 +32,16 @@ pub struct GraphNode {
     pub kind: GraphNodeKind,
     pub title: String,
     pub group: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    /// Task-specific: priority (1=low, 2=medium, 3=high, 4=critical)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
+    /// Task-specific: status (todo, in_progress, done, archived)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +56,7 @@ pub struct GraphPayload {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub groups: Vec<String>,
+    pub all_tags: Vec<String>,
 }
 
 pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
@@ -53,6 +64,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
     let mut nodes = Vec::with_capacity(docs.len());
     let mut edges = Vec::new();
     let mut groups = HashMap::<String, ()>::new();
+    let mut tag_set = HashMap::<String, ()>::new();
 
     for meta in docs {
         let id = meta.id.0.to_string();
@@ -72,11 +84,18 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             ) => GraphNodeKind::MemoryFact,
             _ => GraphNodeKind::Document,
         };
+        for tag in &meta.tags {
+            tag_set.insert(tag.clone(), ());
+        }
         nodes.push(GraphNode {
             id: id.clone(),
             kind,
             title: meta.title.clone(),
             group,
+            tags: meta.tags.clone(),
+            updated_at: Some(meta.updated_at.to_rfc3339()),
+            priority: None,
+            status: None,
         });
 
         if let Some(doc) = store.get_document(&meta.id)? {
@@ -100,6 +119,10 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             kind: GraphNodeKind::Board,
             title: board.name.clone(),
             group: "boards".into(),
+            tags: vec![],
+            updated_at: Some(board.created_at.to_rfc3339()),
+            priority: None,
+            status: None,
         });
     }
 
@@ -107,11 +130,30 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
     for task in tasks {
         let task_id = format!("task:{}", task.id.0);
         groups.insert(task.column.clone(), ());
+        for tag in &task.tags {
+            tag_set.insert(tag.clone(), ());
+        }
+        let priority_num = match task.priority {
+            crate::models::Priority::Low => 1,
+            crate::models::Priority::Medium => 2,
+            crate::models::Priority::High => 3,
+            crate::models::Priority::Critical => 4,
+        };
+        let status_str = match task.status {
+            crate::models::TaskStatus::Todo => "todo",
+            crate::models::TaskStatus::InProgress => "in_progress",
+            crate::models::TaskStatus::Done => "done",
+            crate::models::TaskStatus::Archived => "archived",
+        };
         nodes.push(GraphNode {
             id: task_id.clone(),
             kind: GraphNodeKind::Task,
             title: task.title.clone(),
             group: task.column.clone(),
+            tags: task.tags.clone(),
+            updated_at: Some(task.updated_at.to_rfc3339()),
+            priority: Some(priority_num),
+            status: Some(status_str.into()),
         });
         edges.push(GraphEdge {
             source: format!("board:{}", task.board_id.0),
@@ -129,8 +171,23 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
 
     let mut groups = groups.into_keys().collect::<Vec<_>>();
     groups.sort();
+    let mut all_tags = tag_set.into_keys().collect::<Vec<_>>();
+    all_tags.sort();
 
-    Ok(GraphPayload { nodes, edges, groups })
+    Ok(GraphPayload { nodes, edges, groups, all_tags })
+}
+
+/// Public helper for matching node kind strings (used by MCP filter).
+pub fn format_kind(kind: &GraphNodeKind) -> &'static str {
+    match kind {
+        GraphNodeKind::Document => "document",
+        GraphNodeKind::Task => "task",
+        GraphNodeKind::Board => "board",
+        GraphNodeKind::Repo => "repo",
+        GraphNodeKind::Link => "link",
+        GraphNodeKind::MemoryFact => "memory",
+        GraphNodeKind::Communication => "communication",
+    }
 }
 
 fn top_level_group(path: &Path) -> String {

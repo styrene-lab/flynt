@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use codex_core::{
+    graph::{build_graph_payload, format_kind},
     models::{Board, Task},
     store::{TaskFilter, VaultStore},
 };
@@ -165,6 +166,34 @@ impl Extension for CodexExtension {
                         "type": "object",
                         "properties": { "name": { "type": "string" } },
                         "required": ["name"]
+                    }
+                },
+                {
+                    "name": "get_graph",
+                    "description": "Get the full knowledge graph — all nodes (documents, tasks, boards, repos, links) and their relationships (wikilinks, task membership, semantic links). Use to understand vault structure and connections.",
+                    "input_schema": { "type": "object", "properties": {} }
+                },
+                {
+                    "name": "get_graph_filtered",
+                    "description": "Get a filtered view of the knowledge graph. Filter by node kind, group (folder), tag, title search, or minimum connection count.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "description": "Node kind: document, task, board, repo, link, memory, communication" },
+                            "group": { "type": "string", "description": "Group (top-level folder name)" },
+                            "tag": { "type": "string", "description": "Only nodes with this tag" },
+                            "search": { "type": "string", "description": "Title substring (case-insensitive)" },
+                            "min_degree": { "type": "integer", "description": "Minimum connection count" }
+                        }
+                    }
+                },
+                {
+                    "name": "get_node_neighbors",
+                    "description": "Get a node and its immediate neighbors in the knowledge graph — all directly connected nodes and the edges between them.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": { "node_id": { "type": "string" } },
+                        "required": ["node_id"]
                     }
                 }
             ])),
@@ -389,6 +418,93 @@ impl Extension for CodexExtension {
                     .save_board(&board)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(serde_json::to_value(&board).unwrap_or(json!({})))
+            }
+
+            "execute_get_graph" => {
+                let payload = build_graph_payload(&*self.vault.store)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                Ok(serde_json::to_value(&payload).unwrap_or(json!({})))
+            }
+
+            "execute_get_graph_filtered" => {
+                let payload = build_graph_payload(&*self.vault.store)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                let kind_filter = params["kind"].as_str();
+                let group_filter = params["group"].as_str();
+                let tag_filter = params["tag"].as_str();
+                let search = params["search"].as_str().unwrap_or("");
+                let min_degree = params["min_degree"].as_u64().unwrap_or(0) as u32;
+
+                let mut degree: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+                for edge in &payload.edges {
+                    *degree.entry(&edge.source).or_default() += 1;
+                    *degree.entry(&edge.target).or_default() += 1;
+                }
+
+                let search_lower = search.to_lowercase();
+                let nodes: Vec<_> = payload.nodes.iter().filter(|n| {
+                    if let Some(k) = kind_filter {
+                        if format_kind(&n.kind) != k { return false; }
+                    }
+                    if let Some(g) = group_filter {
+                        if n.group != g { return false; }
+                    }
+                    if let Some(t) = tag_filter {
+                        if !n.tags.contains(&t.to_string()) { return false; }
+                    }
+                    if !search_lower.is_empty() && !n.title.to_lowercase().contains(&search_lower) {
+                        return false;
+                    }
+                    if min_degree > 0 {
+                        if degree.get(n.id.as_str()).copied().unwrap_or(0) < min_degree { return false; }
+                    }
+                    true
+                }).collect();
+
+                let ids: std::collections::HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+                let edges: Vec<_> = payload.edges.iter()
+                    .filter(|e| ids.contains(e.source.as_str()) && ids.contains(e.target.as_str()))
+                    .collect();
+
+                Ok(json!({
+                    "nodes": nodes,
+                    "edges": edges,
+                    "groups": payload.groups,
+                    "all_tags": payload.all_tags,
+                    "total_nodes": payload.nodes.len(),
+                    "filtered_nodes": nodes.len(),
+                }))
+            }
+
+            "execute_get_node_neighbors" => {
+                let node_id = params["node_id"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'node_id'"))?;
+
+                let payload = build_graph_payload(&*self.vault.store)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                let connected_edges: Vec<_> = payload.edges.iter()
+                    .filter(|e| e.source == node_id || e.target == node_id)
+                    .collect();
+
+                let mut neighbor_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                neighbor_ids.insert(node_id);
+                for edge in &connected_edges {
+                    neighbor_ids.insert(&edge.source);
+                    neighbor_ids.insert(&edge.target);
+                }
+
+                let neighbor_nodes: Vec<_> = payload.nodes.iter()
+                    .filter(|n| neighbor_ids.contains(n.id.as_str()))
+                    .collect();
+
+                Ok(json!({
+                    "center": node_id,
+                    "nodes": neighbor_nodes,
+                    "edges": connected_edges,
+                }))
             }
 
             _ => Err(omegon_extension::Error::method_not_found(method)),
