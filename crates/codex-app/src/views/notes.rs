@@ -4,7 +4,10 @@ use dioxus::prelude::*;
 use crate::{bootstrap::AppContext, state::{Route, TabState}};
 
 #[derive(Clone, PartialEq)]
-enum EditMode { Preview, Edit }
+enum EditMode { Live, Source }
+
+#[derive(Clone, PartialEq)]
+enum SaveState { Clean, Dirty, Saved }
 
 fn render_html(content: &str) -> String {
     let mut opts = Options::default();
@@ -18,8 +21,6 @@ fn render_html(content: &str) -> String {
     postprocess_html(markdown_to_html(&preprocess(content), &opts))
 }
 
-/// Replace `href="codex-note://slug"` with a data attribute so the WebView
-/// never navigates externally — our JS click listener handles it instead.
 fn postprocess_html(html: String) -> String {
     let pattern = "href=\"codex-note://";
     let mut result = String::with_capacity(html.len());
@@ -81,7 +82,215 @@ fn preprocess(src: &str) -> String {
     out
 }
 
-// ── Notes view ────────────────────────────────────────────────────────────────
+// ── CM6 init JS ─────────────────────────────────────────────────────────────
+
+fn cm6_init_js(content: &str) -> String {
+    let escaped = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".into());
+    format!(r#"
+(function() {{
+    function _initCM() {{
+    const container = document.getElementById('codex-cm-editor');
+    if (!container) {{ setTimeout(_initCM, 16); return; }}
+
+    if (window._codexCM) {{
+        window._codexCM.destroy();
+        window._codexCM = null;
+    }}
+    container.innerHTML = '';
+
+    const {{
+        EditorView, Decoration, keymap, drawSelection, highlightActiveLine,
+        highlightSpecialChars,
+        EditorState,
+        defaultKeymap, history, historyKeymap, indentWithTab,
+        markdown, markdownLanguage,
+        languages,
+        syntaxHighlighting, defaultHighlightStyle, bracketMatching,
+        oneDark,
+        closeBrackets,
+        searchKeymap, highlightSelectionMatches,
+        HighlightStyle, tags,
+    }} = CM;
+
+    const codexTheme = EditorView.theme({{
+        '&': {{
+            backgroundColor: 'var(--background)',
+            color: 'var(--prose-body, #d7e0ea)',
+            fontSize: 'var(--font-size-md, 15px)',
+        }},
+        '.cm-content': {{
+            caretColor: 'var(--ring, #2ab4c8)',
+            padding: '0',
+            fontFamily: 'var(--font-sans)',
+            lineHeight: 'var(--line-height, 1.7)',
+        }},
+        '.cm-cursor': {{
+            borderLeftColor: 'var(--ring, #2ab4c8)',
+            borderLeftWidth: '2px',
+        }},
+        '.cm-activeLine': {{
+            backgroundColor: 'rgba(255,255,255,0.03)',
+        }},
+        '.cm-selectionBackground, ::selection': {{
+            backgroundColor: 'rgba(42, 180, 200, 0.2) !important',
+        }},
+        '.cm-gutters': {{ display: 'none' }},
+        '.cm-scroller': {{
+            overflow: 'auto',
+            padding: 'var(--space-8, 32px) var(--space-10, 40px)',
+        }},
+        '.cm-line': {{ padding: '0 4px' }},
+        '.cm-codeblock-line': {{
+            backgroundColor: 'var(--prose-pre-bg, rgba(15, 23, 42, 0.8))',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--font-size-sm, 13px)',
+            lineHeight: '1.5',
+            borderLeft: '3px solid var(--prose-pre-border, #1e293b)',
+            paddingLeft: '12px !important',
+        }},
+        '.cm-codeblock-fence': {{
+            backgroundColor: 'var(--prose-pre-bg, rgba(15, 23, 42, 0.8))',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--font-size-xs, 11px)',
+            color: 'var(--muted-foreground, #475569)',
+            borderLeft: '3px solid var(--prose-pre-border, #1e293b)',
+            paddingLeft: '12px !important',
+        }},
+        '.cm-codeblock-first': {{
+            borderTopLeftRadius: '6px', borderTopRightRadius: '6px',
+            paddingTop: '8px !important',
+        }},
+        '.cm-codeblock-last': {{
+            borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px',
+            paddingBottom: '8px !important',
+        }},
+    }}, {{ dark: true }});
+
+    const codexHighlight = HighlightStyle.define([
+        {{ tag: tags.heading1, fontSize: '1.8em', fontWeight: '700', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.heading2, fontSize: '1.5em', fontWeight: '600', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.heading3, fontSize: '1.25em', fontWeight: '600', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.heading4, fontSize: '1.1em', fontWeight: '600', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.heading5, fontSize: '1.05em', fontWeight: '600', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.heading6, fontSize: '1em', fontWeight: '600', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.processingInstruction, color: 'var(--muted-foreground, #475569)', fontSize: '0.85em' }},
+        {{ tag: tags.strong, fontWeight: '700', color: 'var(--prose-heading, #f1f5f9)' }},
+        {{ tag: tags.emphasis, fontStyle: 'italic' }},
+        {{ tag: tags.strikethrough, textDecoration: 'line-through', color: 'var(--muted-foreground, #64748b)' }},
+        {{ tag: tags.url, color: 'var(--prose-link, #4cc9f0)' }},
+        {{ tag: tags.link, color: 'var(--prose-link, #4cc9f0)', textDecoration: 'underline' }},
+        {{ tag: tags.monospace, fontFamily: 'var(--font-mono)', color: 'var(--prose-code-fg, #e2e8f0)', backgroundColor: 'var(--prose-code-bg, rgba(30,41,59,0.7))', borderRadius: '3px', padding: '1px 4px' }},
+        {{ tag: tags.list, color: 'var(--ring, #2ab4c8)' }},
+        {{ tag: tags.quote, color: 'var(--muted-foreground, #94a3b8)', fontStyle: 'italic' }},
+        {{ tag: tags.meta, color: 'var(--muted-foreground, #475569)' }},
+        {{ tag: tags.content, color: 'var(--prose-body, #d7e0ea)' }},
+    ]);
+
+    const codeBlockPlugin = EditorView.decorations.compute(['doc'], (state) => {{
+        const decorations = [];
+        const doc = state.doc;
+        let inBlock = false;
+        for (let i = 1; i <= doc.lines; i++) {{
+            const line = doc.line(i);
+            const text = line.text.trimStart();
+            if (!inBlock && text.startsWith('```')) {{
+                inBlock = true;
+                decorations.push(Decoration.line({{ class: 'cm-codeblock-fence cm-codeblock-first' }}).range(line.from));
+            }} else if (inBlock && text.startsWith('```')) {{
+                inBlock = false;
+                decorations.push(Decoration.line({{ class: 'cm-codeblock-fence cm-codeblock-last' }}).range(line.from));
+            }} else if (inBlock) {{
+                decorations.push(Decoration.line({{ class: 'cm-codeblock-line' }}).range(line.from));
+            }}
+        }}
+        return Decoration.set(decorations);
+    }});
+
+    let saveTimer = null;
+    const changeHandler = EditorView.updateListener.of((update) => {{
+        if (update.docChanged) {{
+            clearTimeout(saveTimer);
+            const doc = update.state.doc.toString();
+            // Immediately sync to Rust state
+            window._codexNotify('edit', doc);
+            // Debounced auto-save
+            saveTimer = setTimeout(() => window._codexNotify('autosave', doc), 2000);
+        }}
+    }});
+
+    const saveKeymap = keymap.of([{{
+        key: 'Mod-s',
+        run: (view) => {{
+            window._codexNotify('save', view.state.doc.toString());
+            return true;
+        }},
+    }}, {{
+        key: 'Mod-e',
+        run: () => {{
+            window._codexNotify('mode', 'source');
+            return true;
+        }},
+    }}]);
+
+    const state = EditorState.create({{
+        doc: {escaped},
+        extensions: [
+            codexTheme,
+            syntaxHighlighting(codexHighlight),
+            oneDark,
+            syntaxHighlighting(defaultHighlightStyle, {{ fallback: true }}),
+            markdown({{ base: markdownLanguage, codeLanguages: languages }}),
+            history(),
+            drawSelection(),
+            highlightActiveLine(),
+            highlightSpecialChars(),
+            highlightSelectionMatches(),
+            bracketMatching(),
+            closeBrackets(),
+            keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+            saveKeymap,
+            changeHandler,
+            codeBlockPlugin,
+            EditorView.lineWrapping,
+        ],
+    }});
+
+    window._codexCM = new EditorView({{ state, parent: container }});
+    window._codexCM.focus();
+    }} // end _initCM
+    _initCM();
+}})();
+"#)
+}
+
+// ── Notification bridge JS ──────────────────────────────────────────────────
+// Uses a global function + polling eval to decouple CM6 lifecycle from
+// the Dioxus eval channel. CM6 calls window._codexNotify(type, data),
+// which queues messages. A persistent eval loop drains the queue.
+
+const BRIDGE_JS: &str = r#"
+if (!window._codexQueue) {
+    window._codexQueue = [];
+    window._codexNotify = function(type, data) {
+        window._codexQueue.push(JSON.stringify({type: type, data: data}));
+    };
+}
+
+// Drain loop — sends queued messages to Rust via this eval's channel
+async function _codexDrain() {
+    while (true) {
+        if (window._codexQueue.length > 0) {
+            const msg = window._codexQueue.shift();
+            dioxus.send(msg);
+        } else {
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+}
+_codexDrain();
+"#;
+
+// ── Notes view ──────────────────────────────────────────────────────────────
 
 #[component]
 pub fn NotesView() -> Element {
@@ -89,12 +298,12 @@ pub fn NotesView() -> Element {
     let tab_state = use_context::<Signal<TabState>>();
 
     let ctx_res   = ctx.clone();
-    let ctx_save1 = ctx.clone();
     let ctx_save2 = ctx.clone();
 
-    let mut mode      = use_signal(|| EditMode::Preview);
-    let mut edit_body = use_signal(String::new);
-    let mut save_err  = use_signal(|| Option::<String>::None);
+    let mut mode       = use_signal(|| EditMode::Live);
+    let mut edit_body  = use_signal(String::new);
+    let mut save_err   = use_signal(|| Option::<String>::None);
+    let mut save_state = use_signal(|| SaveState::Clean);
 
     let rendered: Resource<Option<(std::path::PathBuf, String, String, String)>> = use_resource(move || {
         let selected_id = tab_state.read().active_id().cloned();
@@ -111,44 +320,82 @@ pub fn NotesView() -> Element {
         }
     });
 
+    // Sync edit_body when a new document loads
     use_effect(move || {
         if let Some(Some((_, _, body, _))) = &*rendered.read() {
             *edit_body.write() = body.clone();
-            *mode.write() = EditMode::Preview;
+            *save_state.write() = SaveState::Clean;
         }
     });
 
     let has_active = tab_state.read().active_id().is_some();
 
-    // Wire wikilink navigation: JS sends "codex-note://slug" via dioxus.send()
-    let ctx_link     = ctx.clone();
+    // Persistent message bridge — one eval that polls a global queue.
+    // CM6 pushes messages to the queue; this loop drains them to Rust.
+    let ctx_link = ctx.clone();
     let mut ts_link  = tab_state;
     let mut ar_link  = use_context::<Signal<Route>>();
     use_effect(move || {
-        let mut eval = document::eval("dioxus.recv().then(function(msg){ dioxus.send(msg); });");
-        let c  = ctx_link.clone();
+        let mut eval = document::eval(BRIDGE_JS);
+        let c = ctx_link.clone();
+
         spawn(async move {
             loop {
-                if let Ok(val) = eval.recv::<String>().await {
-                    let slug = val
-                        .trim_start_matches("codex-note://")
-                        .replace("%20", " ")
-                        .to_lowercase();
-                    let vault = c.clone().vault();
-                    if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
-                        vault.store.find_document_by_slug(&slug)
-                    }).await.unwrap_or(Ok(None)) {
-                        ts_link.write().open(meta.id.clone(), meta.title.clone());
-                        *ar_link.write() = Route::Notes;
+                let Ok(val) = eval.recv::<String>().await else { break; };
+
+                let Ok(msg) = serde_json::from_str::<serde_json::Value>(&val) else {
+                    continue;
+                };
+                let msg_type = msg["type"].as_str().unwrap_or("");
+                let data = msg["data"].as_str().unwrap_or("");
+
+                match msg_type {
+                    "edit" => {
+                        *edit_body.write() = data.to_string();
+                        *save_state.write() = SaveState::Dirty;
                     }
-                } else {
-                    break;
+                    "save" | "autosave" => {
+                        *edit_body.write() = data.to_string();
+                        let content = data.to_string();
+                        if let Some(Some((p, _, _, _))) = &*rendered.read() {
+                            let path = p.clone();
+                            let vault = c.vault();
+                            match tokio::task::spawn_blocking(move || {
+                                vault.save_document_content(&path, &content)
+                            }).await {
+                                Ok(Ok(())) => {
+                                    *save_state.write() = SaveState::Saved;
+                                    *save_err.write() = None;
+                                }
+                                Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
+                                Err(e) => *save_err.write() = Some(e.to_string()),
+                            }
+                        }
+                    }
+                    "mode" => {
+                        if data == "source" {
+                            // Sync edit_body from CM6 before switching
+                            if let Some(cm) = None::<()> { let _ = cm; } // placeholder
+                            *mode.write() = EditMode::Source;
+                        }
+                    }
+                    "nav" => {
+                        let slug = data.to_lowercase();
+                        let vault = c.vault();
+                        if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
+                            vault.store.find_document_by_slug(&slug)
+                        }).await.unwrap_or(Ok(None)) {
+                            ts_link.write().open(meta.id.clone(), meta.title.clone());
+                            *ar_link.write() = Route::Notes;
+                        }
+                    }
+                    _ => {}
                 }
             }
         });
     });
 
-    // No tab open → prompt
+    // No tab open
     if !has_active {
         return rsx! {
             div { class: "notes-empty",
@@ -161,15 +408,13 @@ pub fn NotesView() -> Element {
         };
     }
 
-    // Tab open but content not yet loaded
     let Some(data) = &*rendered.read() else {
         return rsx! {
             div { class: "notes-loading muted", "Loading…" }
         };
     };
 
-    // Tab open but document not found in store
-    let Some((rel_path, title, _body, html)) = data else {
+    let Some((rel_path, title, body, _html)) = data else {
         return rsx! {
             div { class: "notes-empty",
                 p { class: "muted", "Document not found." }
@@ -178,7 +423,7 @@ pub fn NotesView() -> Element {
     };
 
     let title = title.clone();
-    let html  = html.clone();
+    let body  = body.clone();
     let path  = rel_path.clone();
 
     rsx! {
@@ -186,43 +431,53 @@ pub fn NotesView() -> Element {
             div { class: "notes-topbar",
                 h1 { class: "doc-title", "{title}" }
                 div { class: "notes-actions",
+                    match *save_state.read() {
+                        SaveState::Dirty => rsx! { span { class: "save-status dirty", "●" } },
+                        SaveState::Saved => rsx! { span { class: "save-status saved", "saved" } },
+                        SaveState::Clean => rsx! {},
+                    }
                     if let Some(ref err) = *save_err.read() {
                         span { class: "save-msg err", "{err}" }
                     }
                     match *mode.read() {
-                        EditMode::Preview => rsx! {
+                        EditMode::Live => rsx! {
+                            span { class: "mode-hint", "⌘E source" }
                             button {
                                 class: "btn btn-ghost",
-                                onclick: move |_| *mode.write() = EditMode::Edit,
-                                "Edit"
+                                onclick: move |_| *mode.write() = EditMode::Source,
+                                "Source"
                             }
                         },
-                        EditMode::Edit => rsx! {
+                        EditMode::Source => rsx! {
                             button {
                                 class: "btn btn-primary",
                                 onclick: move |_| {
                                     let content = edit_body.read().clone();
                                     let p       = path.clone();
-                                    let c       = ctx_save1.clone();
+                                    let c       = ctx.clone();
                                     let mut re  = rendered;
                                     spawn(async move {
                                         let vault = c.vault();
                                         match tokio::task::spawn_blocking(move || {
                                             vault.save_document_content(&p, &content)
                                         }).await {
-                                            Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
+                                            Ok(Ok(())) => {
+                                                re.restart();
+                                                *save_err.write() = None;
+                                                *save_state.write() = SaveState::Saved;
+                                            }
                                             Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
                                             Err(e)     => *save_err.write() = Some(e.to_string()),
                                         }
                                     });
-                                    *mode.write() = EditMode::Preview;
+                                    *mode.write() = EditMode::Live;
                                 },
                                 "Save"
                             }
                             button {
                                 class: "btn btn-ghost",
-                                onclick: move |_| *mode.write() = EditMode::Preview,
-                                "Cancel"
+                                onclick: move |_| *mode.write() = EditMode::Live,
+                                "Live"
                             }
                         },
                     }
@@ -230,41 +485,18 @@ pub fn NotesView() -> Element {
             }
 
             match *mode.read() {
-                EditMode::Preview => rsx! {
-                    { document::eval(r#"
-                        // Syntax highlight
-                        document.querySelectorAll('.markdown-body pre code:not([data-highlighted])').forEach(b => typeof hljs !== 'undefined' && hljs.highlightElement(b));
-                        // Wire internal wikilinks (data-codex-note) — never triggers navigation
-                        document.querySelectorAll('.markdown-body [data-codex-note]').forEach(function(a) {
-                            if (a._codex_wired) return;
-                            a._codex_wired = true;
-                            a.addEventListener('click', function(e) {
-                                e.preventDefault();
-                                dioxus.send('codex-note://' + decodeURIComponent(a.dataset.codexNote));
-                            });
-                        });
-                        // Hover preview in footer
-                        const footer = document.getElementById('codex-link-preview');
-                        if (footer) {
-                            document.querySelectorAll('.markdown-body a').forEach(function(a) {
-                                if (a._preview_wired) return;
-                                a._preview_wired = true;
-                                a.addEventListener('mouseenter', function() {
-                                    const note = a.dataset.codexNote;
-                                    footer.textContent = note ? '→ ' + decodeURIComponent(note) : a.href;
-                                    footer.classList.add('visible');
-                                });
-                                a.addEventListener('mouseleave', function() {
-                                    footer.classList.remove('visible');
-                                    footer.textContent = '';
-                                });
-                            });
+                EditMode::Live => {
+                    // Use edit_body (current working content) not body (original from disk)
+                    let cm_content = edit_body.read().clone();
+                    rsx! {
+                        { document::eval(&cm6_init_js(&cm_content)); }
+                        div {
+                            id: "codex-cm-editor",
+                            class: "cm-editor-container",
                         }
-                    "#); }
-                    div { class: "markdown-body", dangerous_inner_html: "{html}" }
-                    div { id: "codex-link-preview", class: "link-preview-bar" }
+                    }
                 },
-                EditMode::Edit => {
+                EditMode::Source => {
                     let path_save = rel_path.clone();
                     rsx! {
                         { document::eval(r#"(function(){
@@ -296,12 +528,16 @@ pub fn NotesView() -> Element {
                                                 match tokio::task::spawn_blocking(move || {
                                                     vault.save_document_content(&p, &content)
                                                 }).await {
-                                                    Ok(Ok(())) => { re.restart(); *save_err.write() = None; }
+                                                    Ok(Ok(())) => {
+                                                        re.restart();
+                                                        *save_err.write() = None;
+                                                        *save_state.write() = SaveState::Saved;
+                                                    }
                                                     Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
                                                     Err(e)     => *save_err.write() = Some(e.to_string()),
                                                 }
                                             });
-                                            *mode.write() = EditMode::Preview;
+                                            *mode.write() = EditMode::Live;
                                         }
                                     },
                                 }

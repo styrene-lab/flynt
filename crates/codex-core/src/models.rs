@@ -1,7 +1,7 @@
 use crate::datum::{Entity, EntityKind};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::{Path, PathBuf}};
 use uuid::Uuid;
 
 // ── Newtype IDs ───────────────────────────────────────────────────────────────
@@ -254,6 +254,9 @@ pub struct Board {
     pub id: BoardId,
     pub name: String,
     pub columns: Vec<Column>,
+    /// When set, tasks on this board belong to a git-backed project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -274,8 +277,16 @@ impl Board {
                 Column { name: "Review".into(), wip_limit: None },
                 Column { name: "Done".into(), wip_limit: None },
             ],
+            project_id: None,
             created_at: Utc::now(),
         }
+    }
+
+    /// Create a board associated with a git-backed project.
+    pub fn for_project(name: impl Into<String>, project_id: Uuid) -> Self {
+        let mut board = Self::default_sprint(name);
+        board.project_id = Some(project_id);
+        board
     }
 }
 
@@ -401,6 +412,61 @@ pub enum SyncConfig {
         region: String,
         endpoint: Option<String>,
     },
+}
+
+// ── Git-backed project config ────────────────────────────────────────────────
+
+/// Describes how a project's data maps to a git repository.
+///
+/// Each project is backed 1:1 by a git repo. The repo can be the vault's own
+/// repo (most common) or a separate external repo. In both cases the project
+/// data lives at a configurable sub-path within the repo.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum GitBacking {
+    /// Project data lives inside the vault's own git repo.
+    VaultRepo {
+        /// Path relative to vault root where this project's data lives
+        /// (e.g. ".codex/projects/my-project").
+        sub_path: PathBuf,
+    },
+    /// Project data lives in a separate external git repo.
+    ExternalRepo {
+        /// Absolute path to the repo root on disk.
+        repo_root: PathBuf,
+        /// Sub-path within the repo where project data lives.
+        sub_path: PathBuf,
+        /// Remote name (e.g. "origin").
+        remote: String,
+        /// Branch name.
+        branch: String,
+    },
+}
+
+impl GitBacking {
+    /// The sub-path within the repo where project data lives.
+    pub fn sub_path(&self) -> &Path {
+        match self {
+            Self::VaultRepo { sub_path } => sub_path,
+            Self::ExternalRepo { sub_path, .. } => sub_path,
+        }
+    }
+
+    /// Whether this backing uses the vault's own repo.
+    pub fn is_vault_repo(&self) -> bool {
+        matches!(self, Self::VaultRepo { .. })
+    }
+}
+
+/// Configuration for project-level atomic commits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ProjectCommitConfig {
+    /// Auto-commit debounce in seconds. 0 = manual only.
+    #[serde(default)]
+    pub auto_commit_seconds: u64,
+    /// Commit message prefix (e.g. "[codex:my-project]").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_prefix: Option<String>,
 }
 
 // ── Omegon profile + Codex operator settings ────────────────────────────────

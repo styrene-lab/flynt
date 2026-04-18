@@ -469,3 +469,38 @@
   min-height: 22px;
   max-height: 22px;
 }
+
+/* ── CodeMirror editor container (Live mode) ────────────────────────────── */
+.cm-editor-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cm-editor-container .cm-editor {
+  flex: 1;
+  overflow: auto;
+}
+.cm-editor-container .cm-editor .cm-scroller {
+  font-family: var(--font-sans);
+}
+
+/* ── Save status indicator ──────────────────────────────────────────────── */
+.save-status {
+  font-size: var(--font-size-xs);
+  margin-right: var(--space-2);
+  transition: opacity var(--duration-fast);
+}
+.save-status.dirty {
+  color: var(--warning, #f59e0b);
+}
+.save-status.saved {
+  color: var(--success, #22c55e);
+  opacity: 0.7;
+}
+.mode-hint {
+  font-size: var(--font-size-xs);
+  color: var(--muted-foreground);
+  margin-right: var(--space-2);
+  opacity: 0.5;
+}

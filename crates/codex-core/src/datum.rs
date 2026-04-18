@@ -592,6 +592,37 @@ impl<'a> ProjectView<'a> {
             .map(|list| list.iter().filter_map(|d| d.try_as_ref()).collect())
             .unwrap_or_default()
     }
+
+    /// The singular backing repo entity reference (1:1 project-repo mapping).
+    pub fn repo_ref(&self) -> Option<DatumRef> {
+        self.entity.get_ref("repo")
+    }
+
+    /// Git backing configuration — how this project maps to a git repo.
+    /// Deserialized from the `data.git_backing` nested table.
+    pub fn git_backing(&self) -> Option<crate::models::GitBacking> {
+        let map = self.entity.fields.get("git_backing")?.as_map()?;
+        // Convert the Datum map back to a TOML table for deserialization
+        let toml_table: toml::map::Map<String, toml::Value> = map
+            .iter()
+            .map(|(k, v)| (k.clone(), toml::Value::from(v.clone())))
+            .collect();
+        let toml_val = toml::Value::Table(toml_table);
+        toml_val.try_into().ok()
+    }
+
+    /// Commit configuration for this project.
+    pub fn commit_config(&self) -> crate::models::ProjectCommitConfig {
+        let Some(map) = self.entity.fields.get("commit_config").and_then(|d| d.as_map()) else {
+            return crate::models::ProjectCommitConfig::default();
+        };
+        let toml_table: toml::map::Map<String, toml::Value> = map
+            .iter()
+            .map(|(k, v)| (k.clone(), toml::Value::from(v.clone())))
+            .collect();
+        let toml_val = toml::Value::Table(toml_table);
+        toml_val.try_into().unwrap_or_default()
+    }
 }
 
 /// A task view — typed accessors over task entity fields.
@@ -862,5 +893,107 @@ mod tests {
         assert_eq!(view.name(), "prefon-vie");
         assert_eq!(view.provider(), Some("github"));
         assert_eq!(view.org(), Some("black-meridian"));
+    }
+
+    #[test]
+    fn project_view_git_backing_vault_repo() {
+        let project = Entity::new(EntityKind::Project)
+            .with_field("title", Datum::Text("My Project".into()))
+            .with_field("git_backing", Datum::Map(BTreeMap::from([
+                ("type".into(), Datum::Text("vault_repo".into())),
+                ("sub_path".into(), Datum::Text(".codex/projects/my-project".into())),
+            ])));
+
+        let view = ProjectView::from_entity(&project).unwrap();
+        let backing = view.git_backing().expect("should parse git_backing");
+        assert!(backing.is_vault_repo());
+        assert_eq!(backing.sub_path(), std::path::Path::new(".codex/projects/my-project"));
+    }
+
+    #[test]
+    fn project_view_git_backing_external_repo() {
+        let project = Entity::new(EntityKind::Project)
+            .with_field("title", Datum::Text("External".into()))
+            .with_field("git_backing", Datum::Map(BTreeMap::from([
+                ("type".into(), Datum::Text("external_repo".into())),
+                ("repo_root".into(), Datum::Text("/repos/external".into())),
+                ("sub_path".into(), Datum::Text("data".into())),
+                ("remote".into(), Datum::Text("origin".into())),
+                ("branch".into(), Datum::Text("main".into())),
+            ])));
+
+        let view = ProjectView::from_entity(&project).unwrap();
+        let backing = view.git_backing().expect("should parse git_backing");
+        assert!(!backing.is_vault_repo());
+        assert_eq!(backing.sub_path(), std::path::Path::new("data"));
+    }
+
+    #[test]
+    fn project_view_commit_config_defaults() {
+        let project = Entity::new(EntityKind::Project)
+            .with_field("title", Datum::Text("No Config".into()));
+
+        let view = ProjectView::from_entity(&project).unwrap();
+        let config = view.commit_config();
+        assert_eq!(config.auto_commit_seconds, 0);
+        assert_eq!(config.message_prefix, None);
+    }
+
+    #[test]
+    fn project_view_commit_config_custom() {
+        let project = Entity::new(EntityKind::Project)
+            .with_field("title", Datum::Text("Configured".into()))
+            .with_field("commit_config", Datum::Map(BTreeMap::from([
+                ("auto_commit_seconds".into(), Datum::Int(300)),
+                ("message_prefix".into(), Datum::Text("[codex:myproj]".into())),
+            ])));
+
+        let view = ProjectView::from_entity(&project).unwrap();
+        let config = view.commit_config();
+        assert_eq!(config.auto_commit_seconds, 300);
+        assert_eq!(config.message_prefix, Some("[codex:myproj]".into()));
+    }
+
+    #[test]
+    fn project_view_repo_ref() {
+        let repo_id = Uuid::new_v4();
+        let project = Entity::new(EntityKind::Project)
+            .with_field("title", Datum::Text("With Repo".into()))
+            .with_field("repo", Datum::Text(repo_id.to_string()));
+
+        let view = ProjectView::from_entity(&project).unwrap();
+        let r = view.repo_ref().expect("should resolve repo ref");
+        assert_eq!(r.id, repo_id);
+    }
+
+    #[test]
+    fn git_backing_from_frontmatter_roundtrip() {
+        let toml_str = r#"
+            id = "550e8400-e29b-41d4-a716-446655440000"
+            kind = "project"
+
+            [data]
+            title = "Roundtrip"
+            status = "active"
+
+            [data.git_backing]
+            type = "vault_repo"
+            sub_path = ".codex/projects/roundtrip"
+
+            [data.commit_config]
+            auto_commit_seconds = 60
+            message_prefix = "[rt]"
+        "#;
+        let val: toml::Value = toml::from_str(toml_str).unwrap();
+        let entity = Entity::from_frontmatter(&val).unwrap();
+        let view = ProjectView::from_entity(&entity).unwrap();
+
+        let backing = view.git_backing().expect("git_backing should parse from frontmatter");
+        assert!(backing.is_vault_repo());
+        assert_eq!(backing.sub_path(), std::path::Path::new(".codex/projects/roundtrip"));
+
+        let config = view.commit_config();
+        assert_eq!(config.auto_commit_seconds, 60);
+        assert_eq!(config.message_prefix, Some("[rt]".into()));
     }
 }

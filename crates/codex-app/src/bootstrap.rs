@@ -65,10 +65,14 @@ impl OmegonRuntimeContext {
 
     pub fn load_launcher_profile() -> LauncherProfile {
         let path = Self::launcher_profile_path();
-        std::fs::read_to_string(path)
+        let mut profile: LauncherProfile = std::fs::read_to_string(path)
             .ok()
             .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Prune vaults whose root no longer exists on disk
+        profile.known_vaults.retain(|v| v.root.exists());
+        profile.recent_vaults.retain(|v| v.exists());
+        profile
     }
 
     pub fn save_launcher_profile(profile: &LauncherProfile) -> anyhow::Result<()> {
@@ -81,7 +85,12 @@ impl OmegonRuntimeContext {
     }
 
     pub fn register_known_vault(profile: &mut LauncherProfile, root: &Path, name: &str) {
-        let root = root.to_path_buf();
+        let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+
+        // Prune vaults whose root no longer exists on disk
+        profile.known_vaults.retain(|v| v.root.exists());
+        profile.recent_vaults.retain(|v| v.exists());
+
         if let Some(existing) = profile.known_vaults.iter_mut().find(|vault| vault.root == root) {
             existing.name = name.to_string();
         } else {
@@ -611,10 +620,12 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
 
 pub fn bootstrap_from_env() -> RuntimeState {
     let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
-    let vault_root = launcher_profile
-        .last_vault_root
-        .clone()
-        .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
+    // CODEX_VAULT env var takes priority (explicit override), then launcher
+    // profile's last vault, then default Documents/Codex.
+    let vault_root = std::env::var("CODEX_VAULT")
+        .map(PathBuf::from)
+        .ok()
+        .or(launcher_profile.last_vault_root.clone())
         .unwrap_or_else(|| {
             dirs::document_dir()
                 .unwrap_or_else(|| PathBuf::from("/tmp"))

@@ -5,7 +5,9 @@ use crate::{
     },
 };
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use std::path::Path;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
 pub struct DocumentMetadataFilter {
@@ -49,4 +51,29 @@ pub trait VaultStore: Send + Sync {
     fn get_board(&self, id: &BoardId) -> Result<Option<Board>>;
     fn list_boards(&self) -> Result<Vec<Board>>;
     fn save_board(&self, board: &Board) -> Result<()>;
+
+    // ── Project dirty tracking ───────────────────────────────────────────────
+    /// List tasks for a project that have been modified since last commit.
+    fn list_dirty_tasks(&self, project_id: &Uuid) -> Result<Vec<Task>>;
+    /// List documents under a project that have been modified since last commit.
+    fn list_dirty_documents(&self, project_id: &Uuid) -> Result<Vec<Document>>;
+    /// Mark entities as committed at the given timestamp.
+    fn mark_committed(
+        &self,
+        task_ids: &[TaskId],
+        doc_ids: &[DocumentId],
+        at: DateTime<Utc>,
+    ) -> Result<()>;
+    /// Record a soft-delete for a project entity (task/board) so the file
+    /// can be removed from disk on next flush.
+    fn record_project_deletion(
+        &self,
+        entity_id: &Uuid,
+        entity_kind: &str,
+        project_id: &Uuid,
+    ) -> Result<()>;
+    /// List pending (uncommitted) deletions for a project.
+    fn list_pending_deletions(&self, project_id: &Uuid) -> Result<Vec<(Uuid, String)>>;
+    /// Mark deletions as committed so they can be cleaned up.
+    fn mark_deletions_committed(&self, entity_ids: &[Uuid]) -> Result<()>;
 }

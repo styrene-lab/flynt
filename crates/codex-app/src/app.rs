@@ -63,6 +63,9 @@ pub fn App() -> Element {
         document::Script {
             src: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js",
         }
+        document::Script {
+            src: asset!("/assets/vendor/codemirror.bundle.js"),
+        }
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
         document::Stylesheet { href: asset!("/assets/styles/layout.css") }

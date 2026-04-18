@@ -1,7 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use codex_core::sync::{SyncBackend, SyncResult, SyncStatus};
-use git2::{IndexAddOption, Repository, Signature};
+use git2::{IndexAddOption, Repository};
 use std::path::PathBuf;
+
+use super::util;
 
 pub struct GitSync {
     pub vault_root: PathBuf,
@@ -15,12 +17,7 @@ impl GitSync {
     }
 
     fn open_repo(&self) -> Result<Repository> {
-        Repository::open(&self.vault_root)
-            .context("failed to open git repository — is this vault a git repo?")
-    }
-
-    fn sig() -> Result<Signature<'static>> {
-        Ok(Signature::now("Codex", "codex@local")?)
+        util::open_repo(&self.vault_root)
     }
 }
 
@@ -130,7 +127,7 @@ impl GitSync {
         index.write()?;
         let tree_oid = index.write_tree()?;
         let tree = repo.find_tree(tree_oid)?;
-        let sig = Self::sig()?;
+        let sig = util::codex_signature()?;
 
         // Check for empty commit (nothing staged)
         let is_empty = repo.head().is_err(); // no commits yet

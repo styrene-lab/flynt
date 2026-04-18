@@ -1,44 +1,149 @@
 # Codex Architecture
 
+## Product Identity
+
+Codex is a **single-user** knowledge management and task tracking desktop application for macOS, built in Rust with Dioxus 0.7. It combines Obsidian-style markdown note-taking with kanban project boards and a typed entity system.
+
+- **Markdown vault** as the canonical source of truth
+- **SQLite** as a hot read index (disposable — rebuilt from markdown on launch)
+- **Omegon** is an embedded AI capability that enhances Codex, not the other way around
+- **Publication** system for read-only external visibility when needed
+
+## Boundaries
+
+### What Codex Is
+
+- Single-user thick client (Dioxus macOS desktop, `aarch64-apple-darwin`)
+- Markdown-first knowledge store with TOML frontmatter
+- Kanban task tracker with per-project boards
+- Entity type system (Document, Project, Task, Repo, Link, Custom)
+- Git-backed project persistence for durability, portability, and audit trail
+- MCP tool surface so Omegon can read/write vault data
+- Publication pipeline for static read-only output (markdown + HTML)
+
+### What Codex Is Not
+
+- A collaboration platform — no shared boards, no real-time sync, no multi-user
+- A web application — no server component for end users
+- A team git-sync tool — git backing serves the single user's durability
+- An Omegon dependency — Codex is fully functional without Omegon installed
+
 ## Workspace Crates
 
 | Crate | Role |
 |---|---|
-| `codex-core` | Domain models, `VaultStore` trait, `SyncBackend` trait, markdown/wikilink parser |
-| `codex-store` | `SqliteStore` (FTS5, WAL), `Vault` (filesystem indexer), `VaultWatcher` (FSEvents) |
-| `codex-agent` | Standalone MCP stdio binary; `rmcp 1.x` tool_router; 7 tools exposed to Omegon |
-| `codex-app` | Dioxus 0.7 desktop binary; macOS only (`aarch64-apple-darwin`) |
+| `codex-core` | Domain models, `VaultStore` trait, `SyncBackend` trait, entity/datum type system, markdown/wikilink parser |
+| `codex-store` | `SqliteStore` (FTS5, WAL), `Vault` (filesystem indexer + project flush), `VaultWatcher` (FSEvents), task file serialization, `ProjectGit`, git sync |
+| `codex-agent` | Standalone MCP stdio binary; `omegon-extension` 0.15; 14 tools exposed to Omegon |
+| `codex-app` | Dioxus 0.7 desktop binary; views: notes, graph, kanban, search, settings, publication rules |
 
-## Key Decisions (resolved)
+## Data Model
 
-- **Source of truth**: markdown files on disk — not the DB. DB is a read index + task store.
-- **State DB**: SQLite (`rusqlite`, bundled, WAL) — relational queries for task filtering and backlinks beat a pure KV store.
-- **Markdown**: `comrak` — GFM + wikilink scanning via text-node walk.
-- **Frontmatter**: TOML `+++` delimiters (primary); `---` accepted for Obsidian compat.
-- **Tasks stored in DB only** (not as markdown files) — reduces sync conflict surface; tasks link to documents by `DocumentId`.
-- **iCloud**: passive — vault root placed in `~/Library/Mobile Documents/iCloud~com~blackmeridian~codex/Documents/`; no API calls needed.
-- **Git sync**: hybrid — auto-commit (debounced 30 s after last change), manual push. `git2` crate.
-- **S3 sync**: `object_store` crate (supports S3, GCS, Azure, local). Not yet implemented.
-- **MCP transport**: stdio. Omegon connects via `command` transport in `mcp.json`.
+### Type Hierarchy
+
+```
+Datum            — atomic typed value (Bool, Int, Float, Text, Date, Timestamp, Ref, List, Map)
+  |
+Entity           — identified collection of Datum fields with a kind discriminator
+  |
+Document         — Entity + markdown body + file path
+  |
+Project, Task    — Documents/entities with known field contracts (typed projections)
+```
+
+### Entity Kinds
+
+| Kind | Storage | Projection |
+|---|---|---|
+| `Document` | Markdown file in vault | — |
+| `Project` | Markdown file (kind="project") | `ProjectView` |
+| `Task` | DB-only or markdown file under project sub-path | `TaskView` |
+| `Repo` | Markdown file (kind="repo") | `RepoView` |
+| `Link` | Markdown file (kind="link") | `LinkView` |
+| `Custom(String)` | Markdown file | Generic entity accessors |
+
+### Frontmatter Schema
+
+Entity data lives in the `[data]` table within TOML frontmatter. The `kind` field discriminates entity type. Fields are schema-flexible by default.
+
+```toml
++++
+id = "uuid"
+kind = "project"
+
+[data]
+title = "My Project"
+status = "active"
+columns = ["Backlog", "In Progress", "Done"]
+
+[data.git_backing]
+type = "vault_repo"
+sub_path = "projects/my-project"
++++
+```
+
+## Project & Task Persistence
+
+### Two-tier storage
+
+- **Hot tier**: SQLite — fast reads/writes during runtime. All queries go here.
+- **Canonical tier**: Markdown files on disk — durable, portable, git-trackable.
+
+### Project git backing
+
+Each project is optionally backed 1:1 by a git repository. Two modes:
+
+- **VaultRepo**: project data lives inside the vault's own git repo at a sub-path. Vault-level auto-commit handles git operations.
+- **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/codex-projects`). `ProjectGit` handles its own commit cycle.
+
+### Task lifecycle
+
+| Scenario | Storage |
+|---|---|
+| Personal scratch board, no project | DB-only (lightweight, no files) |
+| Task under a git-backed project | DB + markdown file at `<sub_path>/tasks/<uuid>.md` |
+
+**Flush cycle**: dirty tasks (tracked via `last_committed_at`) are serialized to markdown, written to disk, and committed. On launch or pull, task files are parsed back into SQLite via `reindex_project()`.
+
+## Publication Pipeline
+
+Documents with `publication.enabled = true` export to a static output tree:
+
+- `manifest.json` — index of all published documents
+- `{slug}.md` — clean markdown (provenance stripped, wikilinks resolved)
+- `{slug}.html` — self-contained HTML with inline styles
+
+Visibility is layered: vault-wide default policy, per-tag/per-path rules, per-document overrides. Only `public` and `unlisted` documents are exported; `private` is the default.
+
+## Omegon Integration
+
+Codex is the primary product. Omegon is an embedded AI capability.
+
+- `codex-agent` exposes 14 MCP tools via stdio transport
+- Omegon can search, read, create, and link documents
+- Omegon stores durable memory facts (`ai/memory/`) and archives communications (`references/comms/`)
+- Agent rail sidebar in the UI shows Omegon status and interaction
+- Codex launches and runs fully without Omegon installed
+
+## Resolved Decisions
+
+| Decision | Resolution |
+|---|---|
+| Source of truth | Markdown files on disk; DB is a disposable index |
+| State DB | SQLite (`rusqlite`, bundled, WAL mode, FTS5) |
+| Markdown parser | `comrak` — GFM + wikilink scanning via text-node walk |
+| Frontmatter format | TOML `+++` primary; `---` accepted for Obsidian compat |
+| User scope | **Single-user only** — no collaboration server, no shared boards |
+| Git backing purpose | Durability, portability, audit trail — not team sync |
+| Entity type system | Datum primitives, schema-flexible `[data]` tables, typed projections |
+| Document identity | UUID embedded in frontmatter; stable across DB wipes |
+| iCloud sync | Passive — vault root in iCloud Drive folder; no API calls |
+| Git sync | Auto-commit (debounced 30s), manual push; `git2` crate |
+| MCP transport | stdio; Omegon connects via `command` transport |
+| Omegon relationship | Omegon serves Codex (embedded capability, not dependency) |
 
 ## Open Questions
 
-1. **Graph view rendering**: force-directed wikilink graph — HTML Canvas via Dioxus `eval()` JS bridge? SVG with Rust layout? Third option: embed a WASM force-graph library.
-2. **Editor surface**: plain `<textarea>` for MVP vs CodeMirror via JS bridge vs fully native Rust editor widget.
-3. **Drag-and-drop kanban**: Dioxus drag events are available in 0.7 but not battle-tested for reorder — need a proof of concept.
-4. **Conflict resolution (Git)**: last-write-wins acceptable for solo use; two-way diff UI needed for team use. Define scope.
-5. **codex-agent binary path**: how does Omegon discover the binary? PATH? Explicit config in `~/.config/omegon/mcp.json`?
-6. **Document ID stability**: IDs are assigned at first index time and stored in DB. If DB is wiped, IDs regenerate — this breaks `document_refs` in tasks. Need a stable identity strategy (e.g. path-based slug as primary key).
-
-## Design Node Hierarchy
-
-```
-codex-root (exploring)
-├── codex-storage     — SqliteStore, Vault, VaultWatcher
-├── codex-sync        — iCloud / Git / S3 backends
-├── codex-agent-mcp   — MCP tool surface, rmcp server
-├── codex-ui-shell    — App shell: sidebar, toolbar, routing
-├── codex-ui-editor   — Markdown editor + preview pane
-├── codex-ui-kanban   — Kanban board + drag-and-drop
-└── codex-ui-graph    — Wikilink force-graph view
-```
+1. **codex-agent discovery**: how does Omegon find the binary? PATH? Explicit config in `~/.config/omegon/mcp.json`?
+2. **Project/board publication**: extend the publication pipeline to render board state as static views (not just documents).
+3. **S3 sync**: `object_store` crate is a dependency but sync backend is not yet implemented.

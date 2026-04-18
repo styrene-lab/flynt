@@ -8,21 +8,30 @@ use crate::bootstrap::AppContext;
 
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
-async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String) {
+async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String, project_id: Option<uuid::Uuid>) {
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
-        vault.store.save_task(&Task::new(board_id, col, title))
+        let task = Task::new(board_id, col, title);
+        if let Some(pid) = project_id {
+            vault.save_project_task(&task, &pid)
+        } else {
+            vault.store.save_task(&task)
+        }
     })
     .await;
 }
 
-async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
+async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Option<uuid::Uuid>) {
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.column     = col;
             t.updated_at = Utc::now();
-            vault.store.save_task(&t)
+            if let Some(pid) = project_id {
+                vault.save_project_task(&t, &pid)
+            } else {
+                vault.store.save_task(&t)
+            }
         } else {
             Ok(())
         }
@@ -30,13 +39,17 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
     .await;
 }
 
-async fn archive_task(ctx: AppContext, task_id: TaskId) {
+async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid::Uuid>) {
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.status     = TaskStatus::Archived;
             t.updated_at = Utc::now();
-            vault.store.save_task(&t)
+            if let Some(pid) = project_id {
+                vault.save_project_task(&t, &pid)
+            } else {
+                vault.store.save_task(&t)
+            }
         } else {
             Ok(())
         }
@@ -125,6 +138,7 @@ pub fn KanbanView() -> Element {
 fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let ctx     = use_context::<AppContext>();
     let board_id = board.id.clone();
+    let project_id = board.project_id;
 
     let tasks = use_resource(move || {
         let _ = refresh();
@@ -158,6 +172,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                             rsx! {
                                 KanbanColumn {
                                     board_id: board.id.clone(),
+                                    project_id,
                                     column: col,
                                     tasks: col_tasks,
                                     dragging,
@@ -176,10 +191,11 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
 
 #[component]
 fn KanbanColumn(
-    board_id:  BoardId,
-    column:    Column,
-    tasks:     Vec<Task>,
-    dragging:  Signal<Option<TaskId>>,
+    board_id:   BoardId,
+    project_id: Option<uuid::Uuid>,
+    column:     Column,
+    tasks:      Vec<Task>,
+    dragging:   Signal<Option<TaskId>>,
     mut refresh: Signal<u64>,
 ) -> Element {
     let ctx         = use_context::<AppContext>();
@@ -214,7 +230,7 @@ fn KanbanColumn(
         let col = col_add1.clone();
         let bid = bid_add1.clone();
         spawn(async move {
-            create_task(c, bid, col, title).await;
+            create_task(c, bid, col, title, project_id).await;
             *refresh.write() += 1;
         });
         *new_title.write() = String::new();
@@ -230,7 +246,7 @@ fn KanbanColumn(
                 let col = col_add2.clone();
                 let bid = bid_add2.clone();
                 spawn(async move {
-                    create_task(c, bid, col, title).await;
+                    create_task(c, bid, col, title, project_id).await;
                     *refresh.write() += 1;
                 });
                 *new_title.write() = String::new();
@@ -264,7 +280,7 @@ fn KanbanColumn(
                 let c = ctx_drop.clone();
                 let col = col_drop.clone();
                 spawn(async move {
-                    move_task(c, tid, col).await;
+                    move_task(c, tid, col, project_id).await;
                     *refresh.write() += 1;
                 });
                 *dragging.write() = None;
@@ -277,7 +293,7 @@ fn KanbanColumn(
 
             div { class: "kanban-column-body",
                 for task in tasks.iter().cloned() {
-                    TaskCard { task, dragging, refresh }
+                    TaskCard { task, project_id, dragging, refresh }
                 }
 
                 if *adding.read() {
@@ -316,7 +332,7 @@ fn KanbanColumn(
 // ── Task card ────────────────────────────────────────────────────────────────
 
 #[component]
-fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
+fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
     let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
     let mut inline_title = use_signal(|| task.title.clone());
@@ -369,7 +385,11 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                                         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
                                             t.title      = new_title;
                                             t.updated_at = Utc::now();
-                                            vault.store.save_task(&t)
+                                            if let Some(pid) = project_id {
+                                                vault.save_project_task(&t, &pid)
+                                            } else {
+                                                vault.store.save_task(&t)
+                                            }
                                         } else {
                                             Ok(())
                                         }
@@ -386,7 +406,7 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                                 let c = ctx_archive.clone();
                                 let task_id = tid_archive.clone();
                                 spawn(async move {
-                                    archive_task(c, task_id).await;
+                                    archive_task(c, task_id, project_id).await;
                                     *refresh.write() += 1;
                                 });
                             },
