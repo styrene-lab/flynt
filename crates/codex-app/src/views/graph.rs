@@ -135,8 +135,9 @@ pub fn GraphView() -> Element {
         });
     });
 
+    let is_panel_open = *panel_open.read();
     rsx! {
-        div { class: "view-graph",
+        div { class: if is_panel_open { "view-graph panel-open" } else { "view-graph" },
             match &*graph.read() {
                 None => rsx! {
                     div { class: "graph-topbar",
@@ -177,6 +178,14 @@ pub fn GraphView() -> Element {
                         // ── Settings panel (right drawer) ────────────────
                         if is_open {
                             div { class: "graph-panel",
+                                div { class: "panel-header",
+                                    span { class: "panel-header-title", "Graph Settings" }
+                                    button {
+                                        class: "panel-close",
+                                        onclick: move |_| *panel_open.write() = false,
+                                        "✕"
+                                    }
+                                }
                                 // Filters
                                 div { class: "panel-section",
                                     div { class: "panel-heading", "Filters" }
@@ -378,7 +387,7 @@ pub fn GraphView() -> Element {
 
                         // ── Legend ────────────────────────────────────────
                         div {
-                            class: if is_open { "graph-legend panel-open" } else { "graph-legend" },
+                            class: "graph-legend",
                             div { class: "graph-legend-item",
                                 div { class: "graph-legend-dot", style: "background: #2ab4c8" } "Document"
                             }

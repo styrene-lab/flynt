@@ -1,10 +1,15 @@
 /* ── Graph view ──────────────────────────────────────────────────────────── */
 .view-graph {
-  display:   flex;
-  height:    100%;
-  overflow:  hidden;
+  display:    flex;
+  height:     100%;
+  overflow:   hidden;
   background: var(--graph-bg);
-  position:  relative;
+  position:   relative;
+}
+
+/* When panel is open, canvas shrinks to make room */
+.view-graph.panel-open .graph-canvas {
+  margin-right: 248px;
 }
 
 /* ── Canvas (full area) ─────────────────────────────────────────────────── */
@@ -70,10 +75,11 @@
 /* ── Settings panel (floating right drawer) ─────────────────────────────── */
 .graph-panel {
   position:       absolute;
-  top:            var(--space-3);
-  right:          var(--space-3);
-  bottom:         var(--space-3);
-  width:          240px;
+  top:            0;
+  right:          0;
+  bottom:         0;
+  width:          248px;
+  border-radius:  0;
   background:     var(--card);
   border:         1px solid var(--border);
   border-radius:  var(--radius);
@@ -88,6 +94,28 @@
 }
 .graph-panel::-webkit-scrollbar { width: 4px; }
 .graph-panel::-webkit-scrollbar-thumb { background: var(--dim); border-radius: var(--radius-full); }
+
+.panel-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  margin-bottom:   var(--space-1);
+}
+.panel-header-title {
+  font-size:     var(--font-size-sm);
+  font-weight:   600;
+  color:         var(--foreground);
+}
+.panel-close {
+  background:    none;
+  border:        none;
+  color:         var(--muted-foreground);
+  cursor:        pointer;
+  font-size:     16px;
+  padding:       0 4px;
+  line-height:   1;
+}
+.panel-close:hover { color: var(--foreground); }
 
 .panel-section {
   display:        flex;
@@ -195,8 +223,8 @@
   flex-shrink:   0;
 }
 
-/* When panel is open, shift legend left */
-.graph-legend.panel-open {
+/* When panel is open, shift legend left of panel */
+.view-graph.panel-open .graph-legend {
   right: 260px;
 }
 
