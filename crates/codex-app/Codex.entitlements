@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox (required for Mac App Store / TestFlight) -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- File access: user-selected files (vault directory) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- File access: downloads (for import/export) -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- Network: outbound (for CDN assets like highlight.js, future sync) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>
