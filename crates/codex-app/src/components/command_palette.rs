@@ -94,6 +94,17 @@ fn execute_command(
                 }
             }
         }
+        "new-drawing" => {
+            let vault = ctx.vault();
+            let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            let name = format!("Drawing {ts_suffix}");
+            if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                let _ = vault.reindex();
+                // Open the drawing — for now just navigate to notes
+                // The notes view will detect .excalidraw and render appropriately
+                *active_route.write() = Route::Notes;
+            }
+        }
         "daily-note" => {
             let c = ctx.clone();
             let mut ts = *tab_state;
@@ -150,6 +161,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
             Cmd { id: "new-note".into(), label: "New Note".into(), category: "Create".into() },
             Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
             Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
+        Cmd { id: "new-drawing".into(), label: "New Drawing".into(), category: "Create".into() },
             Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
         Cmd { id: "icloud-vault".into(), label: "Create Vault in iCloud".into(), category: "Create".into() },

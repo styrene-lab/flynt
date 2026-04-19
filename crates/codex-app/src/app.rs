@@ -144,6 +144,10 @@ pub fn App() -> Element {
         document::Script {
             src: asset!("/assets/vendor/codemirror.bundle.js"),
         }
+        document::Script {
+            src: asset!("/assets/vendor/excalidraw.bundle.js"),
+        }
+        document::Stylesheet { href: asset!("/assets/vendor/excalidraw.css") }
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
         document::Stylesheet { href: asset!("/assets/styles/layout.css") }

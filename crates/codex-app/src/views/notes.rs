@@ -709,8 +709,13 @@ pub fn NotesView() -> Element {
                 }
             }
 
+            // Excalidraw files get their own editor
+            if crate::views::excalidraw::is_excalidraw(rel_path) {
+                crate::views::ExcalidrawView { path: rel_path.clone() }
+            }
+
             match *mode.read() {
-                EditMode::Live => {
+                EditMode::Live if !crate::views::excalidraw::is_excalidraw(rel_path) => {
                     let cm_content = edit_body.read().clone();
                     rsx! {
                         { document::eval(&cm6_init_js(&cm_content)); }
@@ -720,6 +725,7 @@ pub fn NotesView() -> Element {
                         }
                     }
                 },
+                EditMode::Live => rsx! {},
                 EditMode::Source => {
                     let path_save = rel_path.clone();
                     rsx! {

@@ -262,6 +262,35 @@
   text-align:  center;
 }
 
+/* ── Excalidraw ──────────────────────────────────────────────────────────── */
+.excalidraw-pane {
+  display:        flex;
+  flex-direction: column;
+  height:         100%;
+  width:          100%;
+}
+.excalidraw-topbar {
+  display:        flex;
+  align-items:    center;
+  justify-content: space-between;
+  padding:        var(--space-2) var(--space-4);
+  border-bottom:  1px solid var(--border);
+  flex-shrink:    0;
+}
+.excalidraw-title {
+  font-size:      var(--font-size-lg);
+  font-weight:    600;
+  color:          var(--primary-bright);
+}
+.excalidraw-container {
+  flex:           1;
+  width:          100%;
+  position:       relative;
+}
+.excalidraw-container .excalidraw {
+  height:         100% !important;
+}
+
 /* ── Context menu ────────────────────────────────────────────────────────── */
 .ctx-menu-overlay {
   position:    fixed;
