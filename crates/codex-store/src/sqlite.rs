@@ -332,7 +332,7 @@ impl VaultStore for SqliteStore {
         )?;
         let results = stmt.query_map(params![fts_query], |row| {
             Ok(SearchResult {
-                document_id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
+                document_id: DocumentId(row.get::<_, String>(0)?.parse().unwrap_or_default()),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 excerpt: row.get(3)?,
@@ -383,13 +383,13 @@ impl VaultStore for SqliteStore {
             let fm_json: String = row.get(3)?;
             let updated_at: String = row.get(4)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
+                id: DocumentId(row.get::<_, String>(0)?.parse().unwrap_or_default()),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
-                updated_at: updated_at.parse().unwrap(),
+                updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -597,7 +597,7 @@ impl VaultStore for SqliteStore {
         let rows = stmt.query_map(params![project_id.to_string()], |row| {
             let id: String = row.get(0)?;
             let kind: String = row.get(1)?;
-            Ok((id.parse::<uuid::Uuid>().unwrap(), kind))
+            Ok((id.parse::<uuid::Uuid>().unwrap_or_default(), kind))
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -636,14 +636,14 @@ fn row_to_document(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let entity = entity_from_frontmatter(&frontmatter);
     Ok(Document {
-        id: DocumentId(source_id.parse().unwrap()),
+        id: DocumentId(source_id.parse().unwrap_or_default()),
         path: path_str.into(),
         title: row.get(2)?,
         content: row.get(3)?,
         outgoing_links,
         frontmatter,
-        created_at: created_at.parse().unwrap(),
-        updated_at: updated_at.parse().unwrap(),
+        created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
+        updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
         entity,
     })
 }
@@ -658,9 +658,15 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let updated_at: String = row.get(12)?;
     let decay: Option<String> = row.get(13)?;
     let last_touched: Option<String> = row.get(14)?;
+    let parse_uuid = |s: String| -> rusqlite::Result<uuid::Uuid> {
+        s.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+    };
+    let parse_dt = |s: String| -> chrono::DateTime<chrono::Utc> {
+        s.parse().unwrap_or_else(|_| chrono::Utc::now())
+    };
     Ok(Task {
-        id: TaskId(row.get::<_, String>(0)?.parse().unwrap()),
-        board_id: BoardId(row.get::<_, String>(1)?.parse().unwrap()),
+        id: TaskId(parse_uuid(row.get(0)?)?),
+        board_id: BoardId(parse_uuid(row.get(1)?)?),
         column: row.get(2)?,
         title: row.get(3)?,
         description: row.get(4)?,
@@ -670,8 +676,8 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         document_refs: serde_json::from_str(&refs_json).unwrap_or_default(),
         due_date: due.and_then(|s| s.parse().ok()),
         position: row.get(10)?,
-        created_at: created_at.parse().unwrap(),
-        updated_at: updated_at.parse().unwrap(),
+        created_at: parse_dt(created_at),
+        updated_at: parse_dt(updated_at),
         decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
         last_touched_at: last_touched.and_then(|s| s.parse().ok()),
     })
@@ -681,12 +687,13 @@ fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
     let cols_json: String = row.get(2)?;
     let project_id: Option<String> = row.get(3)?;
     let created_at: String = row.get(4)?;
+    let id: String = row.get(0)?;
     Ok(Board {
-        id: BoardId(row.get::<_, String>(0)?.parse().unwrap()),
+        id: BoardId(id.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?),
         name: row.get(1)?,
         columns: serde_json::from_str(&cols_json).unwrap_or_default(),
         project_id: project_id.and_then(|s| s.parse().ok()),
-        created_at: created_at.parse().unwrap(),
+        created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
 }
 
