@@ -186,6 +186,93 @@ fn cm6_init_js(content: &str) -> String {
         {{ tag: tags.content, color: 'var(--prose-body, #d7e0ea)' }},
     ]);
 
+    // ── Live preview: hide markdown punctuation on non-active lines ──
+    const hideMarkupPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{
+        const decs = [];
+        const sel = state.selection.main;
+        const activeLine = state.doc.lineAt(sel.head).number;
+        const doc = state.doc;
+
+        for (let i = 1; i <= doc.lines; i++) {{
+            if (i === activeLine) continue; // show markup on cursor line
+            const line = doc.line(i);
+            const text = line.text;
+
+            // Hide heading markers
+            const headRe = new RegExp('^(' + '#{{1,6}}' + ')\\\\s');
+            const headMatch = text.match(headRe);
+            if (headMatch) {{
+                decs.push(Decoration.replace({{}}).range(line.from, line.from + headMatch[0].length));
+                continue;
+            }}
+
+            // Hide bold markers: **text** → hide ** on both sides
+            let m;
+            const boldRe = /\\*\\*(.+?)\\*\\*/g;
+            while ((m = boldRe.exec(text)) !== null) {{
+                const start = line.from + m.index;
+                decs.push(Decoration.replace({{}}).range(start, start + 2));
+                decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
+            }}
+
+            // Hide italic markers: *text* (but not **)
+            const italRe = /(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)/g;
+            while ((m = italRe.exec(text)) !== null) {{
+                const start = line.from + m.index;
+                decs.push(Decoration.replace({{}}).range(start, start + 1));
+                decs.push(Decoration.replace({{}}).range(start + m[0].length - 1, start + m[0].length));
+            }}
+
+            // Hide wikilink brackets: [[target]] → target, [[target|display]] → display
+            const wikiRe = /\\[\\[([^\\]|]+?)(?:\\|([^\\]]+?))?\\]\\]/g;
+            while ((m = wikiRe.exec(text)) !== null) {{
+                const start = line.from + m.index;
+                if (m[2]) {{
+                    decs.push(Decoration.replace({{}}).range(start, start + 2 + m[1].length + 1));
+                    decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
+                }} else {{
+                    decs.push(Decoration.replace({{}}).range(start, start + 2));
+                    decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
+                }}
+            }}
+
+            // Hide inline code backticks: `code` → code
+            const codeRe = /`([^`]+?)`/g;
+            while ((m = codeRe.exec(text)) !== null) {{
+                const start = line.from + m.index;
+                decs.push(Decoration.replace({{}}).range(start, start + 1));
+                decs.push(Decoration.replace({{}}).range(start + m[0].length - 1, start + m[0].length));
+            }}
+
+            // Hide strikethrough: ~~text~~ → text
+            const strikeRe = /~~(.+?)~~/g;
+            while ((m = strikeRe.exec(text)) !== null) {{
+                const start = line.from + m.index;
+                decs.push(Decoration.replace({{}}).range(start, start + 2));
+                decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
+            }}
+        }}
+
+        // Hide frontmatter block (+++...+++)
+        let fmState = 0; // 0=before, 1=inside, 2=done
+        for (let i = 1; i <= doc.lines && fmState < 2; i++) {{
+            const line = doc.line(i);
+            if (line.text.trim() === '+++') {{
+                if (fmState === 0) {{ fmState = 1; }}
+                else {{ fmState = 2; }}
+                if (i !== activeLine) {{
+                    decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
+                }}
+            }} else if (fmState === 1 && i !== activeLine) {{
+                decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
+            }}
+        }}
+
+        // Sort by position (required by CM6)
+        decs.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
+        return Decoration.set(decs);
+    }});
+
     const codeBlockPlugin = EditorView.decorations.compute(['doc'], (state) => {{
         const decorations = [];
         const doc = state.doc;
@@ -250,6 +337,7 @@ fn cm6_init_js(content: &str) -> String {
             keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
             saveKeymap,
             changeHandler,
+            hideMarkupPlugin,
             codeBlockPlugin,
             EditorView.lineWrapping,
         ],
