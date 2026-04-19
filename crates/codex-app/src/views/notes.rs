@@ -199,57 +199,64 @@ fn cm6_init_js(content: &str) -> String {
             const text = line.text;
 
             // Hide heading markers
-            const headRe = new RegExp('^(' + '#{{1,6}}' + ')\\\\s');
-            const headMatch = text.match(headRe);
-            if (headMatch) {{
-                decs.push(Decoration.replace({{}}).range(line.from, line.from + headMatch[0].length));
+            if (text.match(/^#/) && text.indexOf(' ') > 0 && text.indexOf(' ') <= 7) {{
+                const spaceIdx = text.indexOf(' ');
+                decs.push(Decoration.replace({{}}).range(line.from, line.from + spaceIdx + 1));
                 continue;
             }}
 
-            // Hide bold markers: **text** → hide ** on both sides
-            let m;
-            const boldRe = /\\*\\*(.+?)\\*\\*/g;
-            while ((m = boldRe.exec(text)) !== null) {{
-                const start = line.from + m.index;
-                decs.push(Decoration.replace({{}}).range(start, start + 2));
-                decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
+            // Hide bold markers: **text**
+            let idx = 0;
+            while ((idx = text.indexOf('**', idx)) !== -1) {{
+                const end = text.indexOf('**', idx + 2);
+                if (end > idx) {{
+                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
+                    decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
+                    idx = end + 2;
+                }} else break;
             }}
 
-            // Hide italic markers: *text* (but not **)
-            const italRe = /(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)/g;
-            while ((m = italRe.exec(text)) !== null) {{
-                const start = line.from + m.index;
-                decs.push(Decoration.replace({{}}).range(start, start + 1));
-                decs.push(Decoration.replace({{}}).range(start + m[0].length - 1, start + m[0].length));
+            // Hide wikilink brackets: [[target]] or [[target|display]]
+            idx = 0;
+            while ((idx = text.indexOf('[[', idx)) !== -1) {{
+                const end = text.indexOf(']]', idx + 2);
+                if (end > idx) {{
+                    const inner = text.substring(idx + 2, end);
+                    const pipe = inner.indexOf('|');
+                    if (pipe >= 0) {{
+                        // [[target|display]] → hide [[ + target + | and ]]
+                        decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2 + pipe + 1));
+                        decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
+                    }} else {{
+                        // [[target]] → hide [[ and ]]
+                        decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
+                        decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
+                    }}
+                    idx = end + 2;
+                }} else break;
             }}
 
-            // Hide wikilink brackets: [[target]] → target, [[target|display]] → display
-            const wikiRe = /\\[\\[([^\\]|]+?)(?:\\|([^\\]]+?))?\\]\\]/g;
-            while ((m = wikiRe.exec(text)) !== null) {{
-                const start = line.from + m.index;
-                if (m[2]) {{
-                    decs.push(Decoration.replace({{}}).range(start, start + 2 + m[1].length + 1));
-                    decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
-                }} else {{
-                    decs.push(Decoration.replace({{}}).range(start, start + 2));
-                    decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
-                }}
+            // Hide inline code backticks
+            idx = 0;
+            while ((idx = text.indexOf('`', idx)) !== -1) {{
+                if (text.charAt(idx + 1) === '`') {{ idx += 2; continue; }} // skip ``
+                const end = text.indexOf('`', idx + 1);
+                if (end > idx) {{
+                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 1));
+                    decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 1));
+                    idx = end + 1;
+                }} else break;
             }}
 
-            // Hide inline code backticks: `code` → code
-            const codeRe = /`([^`]+?)`/g;
-            while ((m = codeRe.exec(text)) !== null) {{
-                const start = line.from + m.index;
-                decs.push(Decoration.replace({{}}).range(start, start + 1));
-                decs.push(Decoration.replace({{}}).range(start + m[0].length - 1, start + m[0].length));
-            }}
-
-            // Hide strikethrough: ~~text~~ → text
-            const strikeRe = /~~(.+?)~~/g;
-            while ((m = strikeRe.exec(text)) !== null) {{
-                const start = line.from + m.index;
-                decs.push(Decoration.replace({{}}).range(start, start + 2));
-                decs.push(Decoration.replace({{}}).range(start + m[0].length - 2, start + m[0].length));
+            // Hide strikethrough: ~~text~~
+            idx = 0;
+            while ((idx = text.indexOf('~~', idx)) !== -1) {{
+                const end = text.indexOf('~~', idx + 2);
+                if (end > idx) {{
+                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
+                    decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
+                    idx = end + 2;
+                }} else break;
             }}
         }}
 
