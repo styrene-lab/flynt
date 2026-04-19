@@ -518,7 +518,7 @@ pub struct RuntimeState {
     pub _sync_handle: Option<Arc<codex_store::sync::AutoSyncHandle>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct AppContext {
     pub runtime: Signal<RuntimeState>,
 }

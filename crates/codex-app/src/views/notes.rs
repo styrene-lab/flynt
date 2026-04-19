@@ -10,6 +10,10 @@ enum EditMode { Live, Source }
 enum SaveState { Clean, Dirty, Saved }
 
 fn render_html(content: &str) -> String {
+    render_html_with_store(content, None)
+}
+
+fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::VaultStore>) -> String {
     let mut opts = Options::default();
     opts.extension.table                      = true;
     opts.extension.strikethrough              = true;
@@ -18,7 +22,34 @@ fn render_html(content: &str) -> String {
     opts.extension.footnotes                  = true;
     opts.extension.wikilinks_title_after_pipe = true;
     opts.render.unsafe_                       = true;
-    postprocess_html(markdown_to_html(&preprocess(content), &opts))
+    let mut html = postprocess_html(markdown_to_html(&preprocess(content), &opts));
+
+    // Execute inline query blocks: <pre><code class="language-query">...</code></pre>
+    if let Some(store) = store {
+        while let Some(start) = html.find("<code class=\"language-query\">") {
+            let code_start = start + "<code class=\"language-query\">".len();
+            let Some(code_end) = html[code_start..].find("</code>") else { break; };
+            let code_end = code_start + code_end;
+
+            // Find the wrapping <pre>
+            let pre_start = html[..start].rfind("<pre>").unwrap_or(start);
+            let pre_end = html[code_end..].find("</pre>").map(|p| code_end + p + 6).unwrap_or(code_end + 7);
+
+            let query_source = html_unescape(&html[code_start..code_end]);
+            let result = match codex_core::query::execute_query(&query_source, store) {
+                Ok(rendered) => format!("<div class=\"query-result\">{rendered}</div>"),
+                Err(e) => format!("<div class=\"query-error\">Query error: {e}</div>"),
+            };
+
+            html = format!("{}{}{}", &html[..pre_start], result, &html[pre_end..]);
+        }
+    }
+
+    html
+}
+
+fn html_unescape(s: &str) -> String {
+    s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
 }
 
 fn postprocess_html(html: String) -> String {
@@ -440,7 +471,7 @@ pub fn NotesView() -> Element {
             let Some(doc_id) = selected_id else { return None; };
             tokio::task::spawn_blocking(move || {
                 vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
-                    let html = render_html(&doc.content);
+                    let html = render_html_with_store(&doc.content, Some(&*vault.store));
                     (doc.path.clone(), doc.title.clone(), doc.content.clone(), html)
                 })
             })

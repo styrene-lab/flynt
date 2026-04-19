@@ -1,6 +1,6 @@
 use crate::{
     bootstrap::{bootstrap_from_env, runtime_state_for_vault_root, AppContext, OmegonRuntimeContext, PendingVaultSetup},
-    components::{initial_note_id_for_vault, AgentRail, Sidebar, TabBar, Toolbar},
+    components::{initial_note_id_for_vault, AgentRail, CommandPalette, Sidebar, TabBar, Toolbar},
     state::{Route, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
@@ -44,6 +44,7 @@ pub fn App() -> Element {
     let mut tab_state = use_context::<Signal<TabState>>();
     let show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
+    let mut palette_open = use_signal(|| false);
 
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
@@ -126,6 +127,17 @@ pub fn App() -> Element {
         div {
             class: "codex-shell {font_size.read().css_class()}",
             "data-theme": "{theme.read().0}",
+            tabindex: "0",
+            onkeydown: move |e| {
+                // ⌘P — command palette
+                if (e.modifiers().meta() || e.modifiers().ctrl()) && e.key() == Key::Character("p".to_string()) {
+                    e.prevent_default();
+                    let v = *palette_open.read();
+                    *palette_open.write() = !v;
+                }
+            },
+
+            CommandPalette { open: palette_open }
 
             Toolbar {
                 sync_status,
