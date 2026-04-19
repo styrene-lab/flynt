@@ -10,10 +10,10 @@ enum EditMode { Live, Source }
 enum SaveState { Clean, Dirty, Saved }
 
 fn render_html(content: &str) -> String {
-    render_html_with_store(content, None)
+    render_html_with_store(content, None, None)
 }
 
-fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::VaultStore>) -> String {
+fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::VaultStore>, vault_root: Option<&std::path::Path>) -> String {
     let mut opts = Options::default();
     opts.extension.table                      = true;
     opts.extension.strikethrough              = true;
@@ -42,6 +42,44 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
             };
 
             html = format!("{}{}{}", &html[..pre_start], result, &html[pre_end..]);
+        }
+    }
+
+    // Embed Excalidraw drawings: ![[file.excalidraw]] → inline SVG
+    // Also handles image embeds: ![[image.png]] → <img src="vault://...">
+    if let Some(root) = vault_root {
+        // Pattern: ![[something.excalidraw]] (may appear as text or inside <p> tags)
+        while let Some(start) = html.find("![[") {
+            let Some(end) = html[start..].find("]]") else { break; };
+            let end = start + end;
+            let ref_name = &html[start + 3..end];
+
+            if ref_name.ends_with(".excalidraw") {
+                // Try to load the .excalidraw file and render as SVG
+                let excalidraw_path = root.join(ref_name);
+                let svg_path = excalidraw_path.with_extension("svg");
+
+                let replacement = if svg_path.exists() {
+                    // Use pre-exported SVG
+                    match std::fs::read_to_string(&svg_path) {
+                        Ok(svg) => format!("<div class=\"excalidraw-embed\">{svg}</div>"),
+                        Err(_) => format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {ref_name}]</div>"),
+                    }
+                } else if excalidraw_path.exists() {
+                    // No SVG export yet — show placeholder with link
+                    format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {ref_name} — export SVG to embed]</div>")
+                } else {
+                    format!("<span class=\"broken-embed\">[Missing: {ref_name}]</span>")
+                };
+
+                html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
+            } else if ref_name.ends_with(".png") || ref_name.ends_with(".jpg") || ref_name.ends_with(".jpeg") || ref_name.ends_with(".gif") || ref_name.ends_with(".svg") || ref_name.ends_with(".webp") {
+                // Image embed
+                let replacement = format!("<img class=\"embedded-image\" src=\"vault://localhost/{ref_name}\" alt=\"{ref_name}\" />");
+                html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
+            } else {
+                break; // not an embed we handle — avoid infinite loop
+            }
         }
     }
 
@@ -479,7 +517,7 @@ pub fn NotesView() -> Element {
             let Some(doc_id) = selected_id else { return None; };
             tokio::task::spawn_blocking(move || {
                 vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
-                    let html = render_html_with_store(&doc.content, Some(&*vault.store));
+                    let html = render_html_with_store(&doc.content, Some(&*vault.store), Some(&vault.root));
                     (doc.path.clone(), doc.title.clone(), doc.content.clone(), html)
                 })
             })

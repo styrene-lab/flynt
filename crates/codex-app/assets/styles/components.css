@@ -290,6 +290,46 @@
 .excalidraw-container .excalidraw {
   height:         100% !important;
 }
+.excalidraw-actions {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+}
+
+/* Embedded drawings in notes */
+.excalidraw-embed {
+  margin:         1em 0;
+  padding:        var(--space-3);
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  text-align:     center;
+  overflow:       hidden;
+}
+.excalidraw-embed svg {
+  max-width:      100%;
+  height:         auto;
+}
+.excalidraw-embed-placeholder {
+  margin:         1em 0;
+  padding:        var(--space-4);
+  background:     var(--surface);
+  border:         1px dashed var(--border);
+  border-radius:  var(--radius);
+  text-align:     center;
+  color:          var(--muted-foreground);
+  font-style:     italic;
+}
+.embedded-image {
+  max-width:      100%;
+  height:         auto;
+  border-radius:  var(--radius);
+  margin:         0.5em 0;
+}
+.broken-embed {
+  color:          #ef4444;
+  font-style:     italic;
+}
 
 /* ── Context menu ────────────────────────────────────────────────────────── */
 .ctx-menu-overlay {

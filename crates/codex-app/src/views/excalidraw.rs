@@ -105,19 +105,134 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         });
     });
 
+    let path_for_svg = path.clone();
+    let path_for_png = path.clone();
+
     rsx! {
         div { class: "excalidraw-pane",
             div { class: "excalidraw-topbar",
                 span { class: "excalidraw-title",
                     "{path.file_stem().and_then(|s| s.to_str()).unwrap_or(\"Drawing\")}"
                 }
-                if !save_state.read().is_empty() {
-                    span { class: "save-status saved", "{save_state}" }
+                div { class: "excalidraw-actions",
+                    if !save_state.read().is_empty() {
+                        span { class: "save-status saved", "{save_state}" }
+                    }
+                    button {
+                        class: "btn btn-ghost btn-xs",
+                        title: "Export as SVG",
+                        onclick: move |_| {
+                            let p = path_for_svg.clone();
+                            let c = ctx;
+                            spawn(async move {
+                                let mut eval = document::eval(r#"
+                                    (async function() {
+                                        if (window.CodexExcalidraw && window.CodexExcalidraw._api) {
+                                            const svg = await window.CodexExcalidraw.exportSvg();
+                                            dioxus.send(svg || '');
+                                        } else {
+                                            dioxus.send('');
+                                        }
+                                    })();
+                                "#);
+                                if let Ok(svg) = eval.recv::<String>().await {
+                                    if !svg.is_empty() {
+                                        let vault = c.vault();
+                                        let svg_path = p.with_extension("svg");
+                                        let abs = vault.root.join(&svg_path);
+                                        if std::fs::write(&abs, &svg).is_ok() {
+                                            *save_state.write() = "SVG exported";
+                                        }
+                                    }
+                                }
+                            });
+                        },
+                        "Export SVG"
+                    }
+                    button {
+                        class: "btn btn-ghost btn-xs",
+                        title: "Export as PNG",
+                        onclick: move |_| {
+                            let p = path_for_png.clone();
+                            let c = ctx;
+                            spawn(async move {
+                                // Export via canvas → PNG data URL
+                                let mut eval = document::eval(r#"
+                                    (async function() {
+                                        if (!window.CodexExcalidraw || !window.CodexExcalidraw._api) {
+                                            dioxus.send('');
+                                            return;
+                                        }
+                                        const api = window.CodexExcalidraw._api;
+                                        const elements = api.getSceneElements();
+                                        const appState = api.getAppState();
+                                        // Use exportToBlob from the excalidraw package
+                                        try {
+                                            const svg = await window.CodexExcalidraw.exportSvg();
+                                            // Convert SVG to PNG via canvas
+                                            const img = new Image();
+                                            const blob = new Blob([svg], {type: 'image/svg+xml'});
+                                            const url = URL.createObjectURL(blob);
+                                            img.onload = function() {
+                                                const canvas = document.createElement('canvas');
+                                                canvas.width = img.width * 2;
+                                                canvas.height = img.height * 2;
+                                                const ctx = canvas.getContext('2d');
+                                                ctx.scale(2, 2);
+                                                ctx.drawImage(img, 0, 0);
+                                                URL.revokeObjectURL(url);
+                                                const dataUrl = canvas.toDataURL('image/png');
+                                                // Send just the base64 part
+                                                dioxus.send(dataUrl.split(',')[1] || '');
+                                            };
+                                            img.onerror = function() { dioxus.send(''); };
+                                            img.src = url;
+                                        } catch(e) {
+                                            dioxus.send('');
+                                        }
+                                    })();
+                                "#);
+                                if let Ok(b64) = eval.recv::<String>().await {
+                                    if !b64.is_empty() {
+                                        if let Ok(bytes) = base64_decode(&b64) {
+                                            let vault = c.vault();
+                                            let png_path = p.with_extension("png");
+                                            let abs = vault.root.join(&png_path);
+                                            if std::fs::write(&abs, &bytes).is_ok() {
+                                                *save_state.write() = "PNG exported";
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        },
+                        "Export PNG"
+                    }
                 }
             }
             div { id: "codex-excalidraw", class: "excalidraw-container" }
         }
     }
+}
+
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    // Simple base64 decoder — no external crate needed
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for &b in input.as_bytes() {
+        if b == b'=' || b == b'\n' || b == b'\r' { continue; }
+        let val = TABLE.iter().position(|&c| c == b).ok_or("invalid base64")? as u32;
+        buf = (buf << 6) | val;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
 }
 
 /// Create a new empty .excalidraw file and return its path.
