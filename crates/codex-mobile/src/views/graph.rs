@@ -1,5 +1,4 @@
 use codex_core::graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind, GraphPayload};
-use codex_core::store::VaultStore;
 use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;
 use std::collections::HashMap;

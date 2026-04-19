@@ -1,6 +1,5 @@
 use crate::acp::{AcpEvent, AcpSession, ConfigOption, SlashCommand};
 use crate::bootstrap::AppContext;
-use codex_core::models::{CodexOperatorSettings, OmegonProfile};
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
 use std::path::PathBuf;
@@ -113,8 +112,8 @@ pub fn AgentRail() -> Element {
     let mut items: Signal<Vec<ChatItem>> = use_signal(Vec::new);
     let mut agent_status = use_signal(|| AgentStatus::Connecting);
     let mut session: Signal<Option<Rc<AcpSession>>> = use_signal(|| None);
-    let mut available_commands: Signal<Vec<SlashCommand>> = use_signal(Vec::new);
-    let mut config_options: Signal<Vec<ConfigOption>> = use_signal(Vec::new);
+    let available_commands: Signal<Vec<SlashCommand>> = use_signal(Vec::new);
+    let config_options: Signal<Vec<ConfigOption>> = use_signal(Vec::new);
 
     // Input history (up/down arrow)
     let mut history: Signal<Vec<String>> = use_signal(Vec::new);

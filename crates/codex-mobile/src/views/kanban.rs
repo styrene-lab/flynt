@@ -1,6 +1,5 @@
-use chrono::Utc;
 use codex_core::{
-    models::{Board, BoardId, Column, Priority, Task, TaskId, TaskStatus},
+    models::{BoardId, Priority, Task, TaskStatus},
     store::{TaskFilter, VaultStore},
 };
 use dioxus::prelude::*;
@@ -9,7 +8,7 @@ use crate::bootstrap::MobileRuntime;
 #[component]
 pub fn KanbanView() -> Element {
     let rt = use_context::<Signal<MobileRuntime>>();
-    let mut refresh = use_signal(|| 0u64);
+    let refresh = use_signal(|| 0u64);
 
     let boards = use_memo(move || {
         let _ = *refresh.read();

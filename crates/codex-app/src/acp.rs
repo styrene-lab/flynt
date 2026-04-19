@@ -12,7 +12,7 @@ use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, InitializeRequest,
     NewSessionRequest, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId,
-    SessionConfigKind, SessionConfigOption, SessionConfigSelect, SessionConfigSelectOptions,
+    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
     SessionConfigValueId, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, TextContent,
 };
@@ -206,6 +206,7 @@ pub struct AcpSession {
     conn: Rc<ClientSideConnection>,
     session_id: SessionId,
     tx: std::sync::mpsc::Sender<AcpEvent>,
+    #[allow(dead_code)]
     auth_method_id: Option<String>,
     _child: Child,
 }

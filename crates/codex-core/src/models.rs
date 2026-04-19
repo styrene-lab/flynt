@@ -281,13 +281,14 @@ impl Default for DecayRate {
 
 impl DecayRate {
     /// Half-life in days. Returns None for non-decaying tasks.
+    /// Custom values are clamped to a minimum of 0.1 days (~2.4 hours).
     pub fn half_life_days(&self) -> Option<f64> {
         match self {
             Self::None => Option::None,
             Self::Slow => Some(14.0),
             Self::Natural => Some(7.0),
             Self::Fast => Some(3.0),
-            Self::Custom(d) => Some(*d),
+            Self::Custom(d) => Some(d.max(0.1)),
         }
     }
 }

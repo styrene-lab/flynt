@@ -4,7 +4,6 @@
 //! Designed to keep phone and desktop vaults in sync via a shared git repo.
 
 use super::git::GitSync;
-use anyhow::Result;
 use codex_core::sync::SyncBackend;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,6 +33,7 @@ pub struct AutoSyncHandle {
 /// - Pulls from remote (fast-forward or merge)
 /// - Pushes local commits to remote
 /// - Reports status via the returned watch receiver
+/// - Exponential backoff on repeated failures (capped at 10 minutes)
 ///
 /// The loop runs until the handle is dropped.
 pub fn start_auto_sync(
@@ -49,11 +49,20 @@ pub fn start_auto_sync(
     tokio::spawn(async move {
         let git = GitSync::new(vault_root, &remote, &branch);
         let mut cancel = cancel_rx;
+        let mut consecutive_failures: u32 = 0;
+        let max_backoff = Duration::from_secs(600); // 10 minute cap
 
         loop {
-            // Wait for the interval or cancellation
+            // Backoff on repeated failures: interval * 2^failures, capped
+            let wait = if consecutive_failures > 0 {
+                let backoff = interval.mul_f64(2.0_f64.powi(consecutive_failures.min(6) as i32));
+                backoff.min(max_backoff)
+            } else {
+                interval
+            };
+
             tokio::select! {
-                _ = tokio::time::sleep(interval) => {},
+                _ = tokio::time::sleep(wait) => {},
                 _ = cancel.changed() => {
                     if *cancel.borrow() { break; }
                 }
@@ -62,7 +71,8 @@ pub fn start_auto_sync(
             // Auto-commit
             let _ = status_tx.send(AutoSyncStatus::Committing);
             if let Err(e) = git.auto_commit("[codex] auto-sync") {
-                warn!("auto-commit failed: {e}");
+                consecutive_failures += 1;
+                warn!("auto-commit failed (attempt {consecutive_failures}): {e}");
                 let _ = status_tx.send(AutoSyncStatus::Error(format!("commit: {e}")));
                 continue;
             }
@@ -73,18 +83,19 @@ pub fn start_auto_sync(
                 Ok(result) if !result.conflicts.is_empty() => {
                     warn!("sync conflicts: {:?}", result.conflicts);
                     let _ = status_tx.send(AutoSyncStatus::Conflict(result.conflicts));
+                    consecutive_failures += 1;
                     continue;
                 }
                 Ok(result) if result.files_pulled > 0 => {
                     info!("pulled {} file(s)", result.files_pulled);
-                    // Trigger reindex after pull
                     if let Some(ref cb) = reindex {
                         cb();
                     }
                 }
-                Ok(_) => {} // up to date
+                Ok(_) => {}
                 Err(e) => {
-                    warn!("pull failed: {e}");
+                    consecutive_failures += 1;
+                    warn!("pull failed (attempt {consecutive_failures}): {e}");
                     let _ = status_tx.send(AutoSyncStatus::Error(format!("pull: {e}")));
                     continue;
                 }
@@ -94,10 +105,15 @@ pub fn start_auto_sync(
             let _ = status_tx.send(AutoSyncStatus::Pushing);
             match git.push() {
                 Ok(_) => {
+                    if consecutive_failures > 0 {
+                        info!("sync recovered after {consecutive_failures} failures");
+                    }
+                    consecutive_failures = 0;
                     let _ = status_tx.send(AutoSyncStatus::Idle);
                 }
                 Err(e) => {
-                    warn!("push failed: {e}");
+                    consecutive_failures += 1;
+                    warn!("push failed (attempt {consecutive_failures}): {e}");
                     let _ = status_tx.send(AutoSyncStatus::Error(format!("push: {e}")));
                 }
             }

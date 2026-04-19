@@ -512,7 +512,8 @@ impl VaultStore for SqliteStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT id, board_id, column_name, title, description, priority, status,
-                      tags, document_refs, due_date, position, created_at, updated_at
+                      tags, document_refs, due_date, position, created_at, updated_at,
+                      decay, last_touched_at
                FROM tasks
                WHERE project_id = ?1
                  AND (last_committed_at IS NULL OR updated_at > last_committed_at)

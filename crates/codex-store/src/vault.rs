@@ -917,10 +917,12 @@ impl Vault {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             if entry.path().extension().map(|e| e == "json").unwrap_or(false) {
-                if let Ok(raw) = fs::read_to_string(entry.path()) {
-                    if let Ok(notif) = serde_json::from_str(&raw) {
-                        result.push(notif);
-                    }
+                match fs::read_to_string(entry.path()) {
+                    Ok(raw) => match serde_json::from_str(&raw) {
+                        Ok(notif) => result.push(notif),
+                        Err(e) => warn!("malformed notification {}: {e}", entry.path().display()),
+                    },
+                    Err(e) => warn!("unreadable notification {}: {e}", entry.path().display()),
                 }
             }
         }
@@ -928,36 +930,59 @@ impl Vault {
     }
 
     /// Mark a notification as delivered — moves from pending to delivered.
+    /// Safe against concurrent access: ignores missing files.
     pub fn mark_notification_delivered(&self, id: &uuid::Uuid) -> Result<()> {
         let pending = self.root.join(format!(".codex/notifications/pending/{id}.json"));
         let delivered_dir = self.root.join(".codex/notifications/delivered");
         fs::create_dir_all(&delivered_dir)?;
-        if pending.exists() {
-            // Update delivered_at before moving
-            if let Ok(raw) = fs::read_to_string(&pending) {
-                if let Ok(mut notif) = serde_json::from_str::<codex_core::models::Notification>(&raw) {
-                    notif.delivered_at = Some(chrono::Utc::now());
-                    let dest = delivered_dir.join(format!("{id}.json"));
-                    fs::write(&dest, serde_json::to_string_pretty(&notif)?)?;
-                }
-            }
-            fs::remove_file(&pending)?;
+
+        // Read + parse; if file is already gone, another device handled it
+        let raw = match fs::read_to_string(&pending) {
+            Ok(r) => r,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+
+        let mut notif: codex_core::models::Notification = serde_json::from_str(&raw)?;
+        notif.delivered_at = Some(chrono::Utc::now());
+
+        // Write delivered first, then remove pending (crash-safe order)
+        let dest = delivered_dir.join(format!("{id}.json"));
+        fs::write(&dest, serde_json::to_string_pretty(&notif)?)?;
+
+        // Remove pending — ignore NotFound (race with another device)
+        match fs::remove_file(&pending) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
         }
-        Ok(())
     }
 
-    /// Scan tasks for decay and due date notifications. Returns new notifications to push.
+    /// Scan tasks for decay and due date notifications. Returns only NEW notifications
+    /// (skips tasks that already have a pending or delivered notification).
     pub fn check_task_notifications(&self) -> Result<Vec<codex_core::models::Notification>> {
         use codex_core::models::*;
 
         let tasks = self.store.list_tasks(&codex_core::store::TaskFilter::default())?;
         let vault_name = self.config.vault_name.clone();
         let today = chrono::Local::now().date_naive();
+
+        // Collect task IDs that already have pending/delivered notifications to avoid duplicates
+        let existing_task_ids: std::collections::HashSet<String> = self
+            .pending_notifications()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|n| n.task_id.as_ref().map(|t| t.0.to_string()))
+            .collect();
+
         let mut notifications = Vec::new();
 
         for task in &tasks {
             if matches!(task.status, TaskStatus::Done | TaskStatus::Archived) {
                 continue;
+            }
+            if existing_task_ids.contains(&task.id.0.to_string()) {
+                continue; // already notified
             }
 
             // Due date notification — task due today or overdue
