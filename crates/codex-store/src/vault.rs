@@ -1466,9 +1466,20 @@ fn is_hidden(entry: &walkdir::DirEntry) -> bool {
 /// Replace the tags array in a TOML frontmatter document.
 /// Returns None if no frontmatter found.
 fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String> {
-    // Find +++...+++ frontmatter block
-    let first = content.find("+++")?;
-    let second = content[first + 3..].find("+++")? + first + 3;
+    // Find +++...+++ frontmatter block — must be at line boundaries
+    // First +++ must be at the very start of the content
+    if !content.starts_with("+++") { return None; }
+    let first = 0;
+    // Second +++ is the next line that is exactly "+++"
+    let second = content[3..]
+        .lines()
+        .scan(3usize, |pos, line| {
+            let start = *pos;
+            *pos += line.len() + 1; // +1 for newline
+            Some((start, line))
+        })
+        .find(|(_, line)| line.trim() == "+++")
+        .map(|(pos, _)| pos)?;
     let fm_text = &content[first + 3..second];
 
     // Find the tags line
@@ -1492,7 +1503,10 @@ fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String
         new_fm.push('\n');
     }
 
-    Some(format!("+++{}+++{}", new_fm, &content[second + 3..]))
+    // Skip past the closing "+++" and its newline
+    let after_fm = second + 3;
+    let body_start = if content[after_fm..].starts_with('\n') { after_fm + 1 } else { after_fm };
+    Some(format!("+++\n{}+++\n{}", new_fm, &content[body_start..]))
 }
 
 #[cfg(test)]

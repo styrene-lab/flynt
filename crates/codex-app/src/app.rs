@@ -69,16 +69,18 @@ pub fn App() -> Element {
                 }
             }
             crate::menu::NEW_NOTE => {
-                // Create untitled note and open it
-                let c = ctx_menu_handler.clone();
+                let c = ctx_menu_handler;
                 spawn(async move {
                     let vault = c.vault();
-                    let path = std::path::Path::new("Untitled.md");
-                    let content = "+++\ntitle = \"Untitled\"\ntags = []\n+++\n\n";
-                    if vault.save_document_content(path, content).is_ok() {
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let title = format!("Untitled {ts_suffix}");
+                    let filename = format!("{title}.md");
+                    let path = std::path::PathBuf::from(&filename);
+                    let content = format!("+++\ntitle = \"{title}\"\ntags = []\n+++\n\n");
+                    if vault.save_document_content(&path, &content).is_ok() {
                         let _ = vault.reindex();
-                        if let Ok(Some(doc)) = vault.store.find_document_by_slug("untitled") {
-                            tab_state.write().open(doc.id, "Untitled".into());
+                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&title.to_lowercase()) {
+                            tab_state.write().open(doc.id, title);
                             *active_route.write() = Route::Notes;
                         }
                     }

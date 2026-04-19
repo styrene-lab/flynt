@@ -40,17 +40,21 @@ fn execute_command(
         "view-graph" => *active_route.write() = Route::Graph,
         "view-settings" => *active_route.write() = Route::Settings,
         "new-note" => {
-            let c = ctx.clone();
+            let c = ctx;
             let mut ts = *tab_state;
             let mut ar = *active_route;
             spawn(async move {
                 let vault = c.vault();
-                let path = std::path::Path::new("Untitled.md");
-                let content = "+++\ntitle = \"Untitled\"\ntags = []\n+++\n\n";
-                if vault.save_document_content(path, content).is_ok() {
+                // Generate unique filename to avoid collisions
+                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                let title = format!("Untitled {ts_suffix}");
+                let filename = format!("{title}.md");
+                let path = std::path::PathBuf::from(&filename);
+                let content = format!("+++\ntitle = \"{title}\"\ntags = []\n+++\n\n");
+                if vault.save_document_content(&path, &content).is_ok() {
                     let _ = vault.reindex();
-                    if let Ok(Some(doc)) = vault.store.find_document_by_slug("untitled") {
-                        ts.write().open(doc.id, "Untitled".into());
+                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&title.to_lowercase()) {
+                        ts.write().open(doc.id, title);
                         *ar.write() = Route::Notes;
                     }
                 }
@@ -127,7 +131,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
 
     // Build the full command list once (memoized — only recomputes when open changes)
     let all_commands = use_memo(move || {
-        let _ = *open.peek(); // dependency
+        let _ = *open.read(); // reactive dependency — recompute when palette opens/closes
         let mut all: Vec<Cmd> = vec![
             Cmd { id: "view-notes".into(), label: "Notes".into(), category: "Navigate".into() },
             Cmd { id: "view-board".into(), label: "Board".into(), category: "Navigate".into() },
