@@ -4,7 +4,9 @@ default_platform = "mobile"
 
 [application.ios]
 bundle_identifier = "com.black-meridian.codex"
-deployment_target = "16.0"
+deployment_target = "17.0"
+team_id = "UZBY9DM42N"
 
 [bundle]
 identifier = "com.black-meridian.codex"
+icon = ["assets/AppIcon.appiconset/icon-1024.png"]
