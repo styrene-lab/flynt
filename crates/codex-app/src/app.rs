@@ -4,6 +4,7 @@ use crate::{
     state::{Route, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
+use codex_core::store::VaultStore;
 use dioxus::prelude::*;
 use rfd::FileDialog;
 use std::path::PathBuf;
@@ -46,6 +47,50 @@ pub fn App() -> Element {
 
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
+
+    // ── Native menu event handler ────────────────────────────────────────
+    let ctx_menu_handler = ctx.clone();
+    let mut show_agent_menu = show_agent;
+    dioxus::desktop::use_muda_event_handler(move |event| {
+        match event.id().0.as_str() {
+            crate::menu::VIEW_NOTES => *active_route.write() = Route::Notes,
+            crate::menu::VIEW_BOARD => *active_route.write() = Route::Kanban,
+            crate::menu::VIEW_GRAPH => *active_route.write() = Route::Graph,
+            crate::menu::VIEW_SETTINGS => *active_route.write() = Route::Settings,
+            crate::menu::TOGGLE_AGENT => {
+                let v = *show_agent_menu.read();
+                *show_agent_menu.write() = !v;
+            }
+            crate::menu::CLOSE_TAB => {
+                let active = tab_state.read().active;
+                if !tab_state.read().tabs.is_empty() {
+                    tab_state.write().close(active);
+                }
+            }
+            crate::menu::NEW_NOTE => {
+                // Create untitled note and open it
+                let c = ctx_menu_handler.clone();
+                spawn(async move {
+                    let vault = c.vault();
+                    let path = std::path::Path::new("Untitled.md");
+                    let content = "+++\ntitle = \"Untitled\"\ntags = []\n+++\n\n";
+                    if vault.save_document_content(path, content).is_ok() {
+                        let _ = vault.reindex();
+                        if let Ok(Some(doc)) = vault.store.find_document_by_slug("untitled") {
+                            tab_state.write().open(doc.id, "Untitled".into());
+                            *active_route.write() = Route::Notes;
+                        }
+                    }
+                });
+            }
+            crate::menu::OPEN_VAULT => {
+                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&path);
+                }
+            }
+            _ => {}
+        }
+    });
 
     let mut launcher_profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
 

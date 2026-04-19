@@ -177,6 +177,10 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
 
     let id    = meta.id.clone();
     let title = meta.title.clone();
+    let doc_path = meta.path.clone();
+    let doc_title = meta.title.clone();
+
+    let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
 
     rsx! {
         button {
@@ -186,8 +190,61 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                 tab_state.write().open(id.clone(), title.clone());
                 *active_route.write() = Route::Notes;
             },
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                let coords = e.client_coordinates();
+                *ctx_menu.write() = Some((coords.x, coords.y));
+            },
             span { class: "doc-icon", "◇" }
             span { class: "doc-title", "{meta.title}" }
+        }
+
+        if let Some((x, y)) = *ctx_menu.read() {
+            {
+                let path_for_delete = doc_path.clone();
+                let _path_for_rename = doc_path.clone();
+                let title_for_tab = doc_title.clone();
+                let id_for_tab = meta.id.clone();
+                rsx! {
+                    crate::components::ContextMenu {
+                        x, y,
+                        items: vec![
+                            crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
+                            crate::components::ContextMenuItem::new("rename", "Rename…"),
+                            crate::components::ContextMenuItem::danger("delete", "Move to Trash"),
+                        ],
+                        on_close: move |_| *ctx_menu.write() = None,
+                        on_select: move |action: String| {
+                            *ctx_menu.write() = None;
+                            match action.as_str() {
+                                "open-tab" => {
+                                    tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
+                                    *active_route.write() = Route::Notes;
+                                }
+                                "rename" => {
+                                    // Open the note and trigger rename mode
+                                    tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
+                                    *active_route.write() = Route::Notes;
+                                    // TODO: trigger rename mode in notes view
+                                }
+                                "delete" => {
+                                    let ctx = use_context::<crate::bootstrap::AppContext>();
+                                    let p = path_for_delete.clone();
+                                    spawn(async move {
+                                        let vault = ctx.vault();
+                                        let abs = vault.root.join(&p);
+                                        if abs.exists() {
+                                            let _ = std::fs::remove_file(&abs);
+                                            let _ = vault.reindex();
+                                        }
+                                    });
+                                }
+                                _ => {}
+                            }
+                        },
+                    }
+                }
+            }
         }
     }
 }

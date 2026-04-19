@@ -186,6 +186,43 @@
   height:      100%;
 }
 
+/* ── Context menu ────────────────────────────────────────────────────────── */
+.ctx-menu-overlay {
+  position:    fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index:     999;
+}
+.ctx-menu {
+  position:    fixed;
+  z-index:     1000;
+  background:  var(--card);
+  border:      1px solid var(--border);
+  border-radius: var(--radius);
+  padding:     var(--space-1) 0;
+  min-width:   160px;
+  box-shadow:  0 4px 16px rgba(0,0,0,0.4);
+}
+.ctx-menu-item {
+  display:     block;
+  width:       100%;
+  text-align:  left;
+  border:      none;
+  background:  transparent;
+  color:       var(--foreground);
+  font-size:   var(--font-size-sm);
+  padding:     var(--space-1) var(--space-4);
+  cursor:      pointer;
+}
+.ctx-menu-item:hover {
+  background:  var(--surface);
+}
+.ctx-menu-item.danger {
+  color:       #ef4444;
+}
+.ctx-menu-item.danger:hover {
+  background:  rgba(239, 68, 68, 0.1);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    Shared utilities
    ══════════════════════════════════════════════════════════════════════════════ */

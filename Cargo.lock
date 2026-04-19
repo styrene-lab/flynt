@@ -660,6 +660,7 @@ dependencies = [
  "dioxus",
  "dirs 5.0.1",
  "futures",
+ "muda",
  "once_cell",
  "rfd 0.15.4",
  "serde",
