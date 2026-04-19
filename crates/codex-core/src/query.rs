@@ -184,7 +184,7 @@ fn render_table(docs: &[DocumentMeta], fields: &[String]) -> Result<String> {
         for f in fields {
             let val = match f.as_str() {
                 "title" | "name" => format!("<a href=\"codex-note://{}\">[[{}]]</a>", doc.id.0, html_escape(&doc.title)),
-                "tags" => doc.tags.iter().map(|t| format!("<code>{t}</code>")).collect::<Vec<_>>().join(" "),
+                "tags" => doc.tags.iter().map(|t| format!("<code>{}</code>", html_escape(t))).collect::<Vec<_>>().join(" "),
                 "path" => html_escape(&doc.path.display().to_string()),
                 "updated_at" | "updated" | "date" => doc.updated_at.format("%Y-%m-%d").to_string(),
                 _ => String::new(),
@@ -214,9 +214,14 @@ fn render_list(docs: &[DocumentMeta], fields: &[String]) -> Result<String> {
 }
 
 fn extract_quoted(s: &str) -> Option<String> {
-    let start = s.find('"')?;
-    let end = s[start + 1..].find('"')?;
-    Some(s[start + 1..start + 1 + end].to_string())
+    // Find the first properly quoted value — no embedded quotes allowed
+    let start = s.find('"')? + 1;
+    let rest = &s[start..];
+    let end = rest.find('"')?;
+    let val = &rest[..end];
+    // Reject values containing control characters or additional quotes
+    if val.contains('"') || val.contains('\\') { return None; }
+    Some(val.to_string())
 }
 
 fn html_escape(s: &str) -> String {

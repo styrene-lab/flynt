@@ -49,7 +49,15 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
 }
 
 fn html_unescape(s: &str) -> String {
-    s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+    s.replace("&amp;", "&")
+     .replace("&lt;", "<")
+     .replace("&gt;", ">")
+     .replace("&quot;", "\"")
+     .replace("&#39;", "'")
+     .replace("&apos;", "'")
+     .replace("&#x27;", "'")
+     .replace("&nbsp;", " ")
+     .replace("&#34;", "\"")
 }
 
 fn postprocess_html(html: String) -> String {

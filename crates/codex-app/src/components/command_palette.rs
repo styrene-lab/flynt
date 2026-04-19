@@ -125,56 +125,58 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
 
+    // Build the full command list once (memoized — only recomputes when open changes)
+    let all_commands = use_memo(move || {
+        let _ = *open.peek(); // dependency
+        let mut all: Vec<Cmd> = vec![
+            Cmd { id: "view-notes".into(), label: "Notes".into(), category: "Navigate".into() },
+            Cmd { id: "view-board".into(), label: "Board".into(), category: "Navigate".into() },
+            Cmd { id: "view-graph".into(), label: "Graph".into(), category: "Navigate".into() },
+            Cmd { id: "view-settings".into(), label: "Settings".into(), category: "Navigate".into() },
+            Cmd { id: "new-note".into(), label: "New Note".into(), category: "Create".into() },
+            Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
+            Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
+            Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
+            Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
+        ];
+        let templates = codex_core::templates::list_templates(&ctx.vault().root);
+        for tmpl in &templates {
+            all.push(Cmd {
+                id: format!("template:{}", tmpl.name),
+                label: format!("New from: {}", tmpl.name),
+                category: "Template".into(),
+            });
+        }
+        if let Ok(tags) = ctx.vault().list_tags() {
+            for (tag, count) in &tags {
+                all.push(Cmd {
+                    id: format!("filter-tag:{}", tag),
+                    label: format!("{} ({} notes)", tag, count),
+                    category: "Tag".into(),
+                });
+            }
+        }
+        if let Ok(docs) = ctx.vault().store.list_documents() {
+            for doc in docs {
+                all.push(Cmd {
+                    id: format!("open:{}", doc.id.0),
+                    label: doc.title,
+                    category: "Open".into(),
+                });
+            }
+        }
+        all
+    });
+
     if !*open.read() {
         return rsx! {};
     }
 
-    // Build + filter
+    // Filter is cheap — just string matching on the cached list
     let q = query.read().to_lowercase();
-    let mut all: Vec<Cmd> = vec![
-        Cmd { id: "view-notes".into(), label: "Notes".into(), category: "Navigate".into() },
-        Cmd { id: "view-board".into(), label: "Board".into(), category: "Navigate".into() },
-        Cmd { id: "view-graph".into(), label: "Graph".into(), category: "Navigate".into() },
-        Cmd { id: "view-settings".into(), label: "Settings".into(), category: "Navigate".into() },
-        Cmd { id: "new-note".into(), label: "New Note".into(), category: "Create".into() },
-        Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
-        Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
-        Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
-        Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
-    ];
-
-    // Templates
-    let templates = codex_core::templates::list_templates(&ctx.vault().root);
-    for tmpl in &templates {
-        all.push(Cmd {
-            id: format!("template:{}", tmpl.name),
-            label: format!("New from: {}", tmpl.name),
-            category: "Template".into(),
-        });
-    }
-
-    // Tags
-    if let Ok(tags) = ctx.vault().list_tags() {
-        for (tag, count) in &tags {
-            all.push(Cmd {
-                id: format!("filter-tag:{}", tag),
-                label: format!("{} ({} notes)", tag, count),
-                category: "Tag".into(),
-            });
-        }
-    }
-
-    if let Ok(docs) = ctx.vault().store.list_documents() {
-        for doc in docs {
-            all.push(Cmd {
-                id: format!("open:{}", doc.id.0),
-                label: doc.title,
-                category: "Open".into(),
-            });
-        }
-    }
-    let filtered: Vec<Cmd> = all.into_iter()
+    let filtered: Vec<Cmd> = all_commands.read().iter()
         .filter(|c| fuzzy_match(&c.label.to_lowercase(), &q))
+        .cloned()
         .collect();
     let sel = (*selected.read()).min(filtered.len().saturating_sub(1));
 

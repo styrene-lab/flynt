@@ -1073,24 +1073,26 @@ impl Vault {
     }
 
     /// Rename a tag across all documents in the vault.
+    /// Parses frontmatter as structured data, modifies, re-serializes.
     /// Returns the number of files updated.
     pub fn rename_tag(&self, old_tag: &str, new_tag: &str) -> Result<usize> {
         let mut files_updated = 0;
         self.walk_markdown(&mut |path| {
             let Ok(content) = fs::read_to_string(path) else { return; };
-            if !content.contains(old_tag) { return; }
 
-            // Parse frontmatter to check tags
             let (_body, fm, _links) = codex_core::parser::parse_document_source(&content);
             if !fm.tags.iter().any(|t| t == old_tag) { return; }
 
-            // Replace the tag in the raw content
-            // Tags are in TOML frontmatter as: tags = ["tag1", "tag2"]
-            let old_quoted = format!("\"{}\"", old_tag);
-            let new_quoted = format!("\"{}\"", new_tag);
-            let new_content = content.replace(&old_quoted, &new_quoted);
+            // Replace in the tags array by rebuilding it
+            let mut new_tags = fm.tags.clone();
+            for tag in &mut new_tags {
+                if tag == old_tag { *tag = new_tag.to_string(); }
+            }
+            // Deduplicate
+            new_tags.sort();
+            new_tags.dedup();
 
-            if new_content != content {
+            if let Some(new_content) = replace_frontmatter_tags(&content, &new_tags) {
                 if fs::write(path, &new_content).is_ok() {
                     files_updated += 1;
                 }
@@ -1110,14 +1112,9 @@ impl Vault {
             let (_body, fm, _links) = codex_core::parser::parse_document_source(&content);
             if !fm.tags.iter().any(|t| t == tag) { return; }
 
-            // Remove the tag from the TOML tags array
-            let tag_quoted = format!("\"{}\"", tag);
-            let new_content = content
-                .replace(&format!(", {}", tag_quoted), "")
-                .replace(&format!("{}, ", tag_quoted), "")
-                .replace(&tag_quoted, ""); // lone tag
+            let new_tags: Vec<String> = fm.tags.into_iter().filter(|t| t != tag).collect();
 
-            if new_content != content {
+            if let Some(new_content) = replace_frontmatter_tags(&content, &new_tags) {
                 if fs::write(path, &new_content).is_ok() {
                     files_updated += 1;
                 }
@@ -1464,6 +1461,38 @@ fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
     entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false)
+}
+
+/// Replace the tags array in a TOML frontmatter document.
+/// Returns None if no frontmatter found.
+fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String> {
+    // Find +++...+++ frontmatter block
+    let first = content.find("+++")?;
+    let second = content[first + 3..].find("+++")? + first + 3;
+    let fm_text = &content[first + 3..second];
+
+    // Find the tags line
+    let tags_serialized: Vec<String> = new_tags.iter().map(|t| format!("\"{}\"", t.replace('"', ""))).collect();
+    let new_tags_line = format!("tags = [{}]", tags_serialized.join(", "));
+
+    // Replace the tags = [...] line in the frontmatter
+    let mut new_fm = String::new();
+    let mut found_tags = false;
+    for line in fm_text.lines() {
+        if line.trim_start().starts_with("tags") && line.contains('=') {
+            new_fm.push_str(&new_tags_line);
+            found_tags = true;
+        } else {
+            new_fm.push_str(line);
+        }
+        new_fm.push('\n');
+    }
+    if !found_tags {
+        new_fm.push_str(&new_tags_line);
+        new_fm.push('\n');
+    }
+
+    Some(format!("+++{}+++{}", new_fm, &content[second + 3..]))
 }
 
 #[cfg(test)]
