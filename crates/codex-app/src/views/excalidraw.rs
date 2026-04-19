@@ -25,7 +25,7 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         })
     });
 
-    // Initialize Excalidraw when component mounts
+    // Initialize Excalidraw when component mounts — lazy-loads the bundle
     let path_for_save = path.clone();
     use_effect(move || {
         let data = content.read().clone();
@@ -33,18 +33,46 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
 
         let js = format!(r#"
             (function() {{
-                function init() {{
+                function loadAndInit() {{
                     const container = document.getElementById('codex-excalidraw');
-                    if (!container || !window.CodexExcalidraw) {{
-                        setTimeout(init, 50);
+                    if (!container) {{ setTimeout(loadAndInit, 50); return; }}
+
+                    if (window.CodexExcalidraw) {{
+                        // Already loaded — mount directly
+                        window.CodexExcalidraw.mount('codex-excalidraw', {escaped}, function(data) {{
+                            window._excalidrawLatest = data;
+                        }});
                         return;
                     }}
-                    window.CodexExcalidraw.mount('codex-excalidraw', {escaped}, function(data) {{
-                        // Store latest scene data for save
-                        window._excalidrawLatest = data;
-                    }});
+
+                    // Lazy-load CSS
+                    if (!document.getElementById('excalidraw-css')) {{
+                        const link = document.createElement('link');
+                        link.id = 'excalidraw-css';
+                        link.rel = 'stylesheet';
+                        link.href = '/assets/vendor/excalidraw.css';
+                        document.head.appendChild(link);
+                    }}
+
+                    // Lazy-load JS bundle
+                    const script = document.createElement('script');
+                    script.src = '/assets/vendor/excalidraw.bundle.js';
+                    script.onload = function() {{
+                        // Wait for CodexExcalidraw to be defined
+                        function waitForAPI() {{
+                            if (window.CodexExcalidraw) {{
+                                window.CodexExcalidraw.mount('codex-excalidraw', {escaped}, function(data) {{
+                                    window._excalidrawLatest = data;
+                                }});
+                            }} else {{
+                                setTimeout(waitForAPI, 50);
+                            }}
+                        }}
+                        waitForAPI();
+                    }};
+                    document.head.appendChild(script);
                 }}
-                init();
+                loadAndInit();
             }})();
         "#);
         document::eval(&js);
@@ -101,8 +129,11 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 if std::fs::write(&abs, &data).is_ok() {
                     *save_state.write() = "saved";
 
-                    // Auto-export SVG on every save
+                    // Auto-export SVG — use the saved data directly
+                    // (no eval race — we already have the latest scene JSON)
                     let svg_path = abs.with_extension("svg");
+                    // Defer SVG export slightly to let Excalidraw update internal state
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     let mut svg_eval = document::eval(r#"
                         (async function() {
                             if (window.CodexExcalidraw && window.CodexExcalidraw._api) {
@@ -238,7 +269,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     let mut buf = 0u32;
     let mut bits = 0u32;
     for &b in input.as_bytes() {
-        if b == b'=' || b == b'\n' || b == b'\r' { continue; }
+        if b == b'=' || b == b'\n' || b == b'\r' || b == b' ' || b == b'\t' { continue; }
         let val = TABLE.iter().position(|&c| c == b).ok_or("invalid base64")? as u32;
         buf = (buf << 6) | val;
         bits += 6;

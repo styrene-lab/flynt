@@ -499,6 +499,17 @@ async function _codexDrain() {
     }
 }
 _codexDrain();
+
+// Click-to-edit for Excalidraw embeds
+document.addEventListener('click', function(e) {
+    const embed = e.target.closest('.excalidraw-embed[data-drawing]');
+    if (embed) {
+        const drawing = embed.getAttribute('data-drawing');
+        if (drawing) {
+            window._codexNotify('open-drawing', drawing);
+        }
+    }
+});
 "#;
 
 // ── Notes view ──────────────────────────────────────────────────────────────
@@ -590,6 +601,17 @@ pub fn NotesView() -> Element {
                             // Sync edit_body from CM6 before switching
                             if let Some(cm) = None::<()> { let _ = cm; } // placeholder
                             *mode.write() = EditMode::Source;
+                        }
+                    }
+                    "open-drawing" => {
+                        // Open a .excalidraw file in the editor
+                        let slug = data.replace(".excalidraw", "").to_lowercase();
+                        let vault = c.vault();
+                        if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
+                            vault.store.find_document_by_slug(&slug)
+                        }).await.unwrap_or(Ok(None)) {
+                            ts_link.write().open(meta.id.clone(), meta.title.clone());
+                            *ar_link.write() = Route::Notes;
                         }
                     }
                     "nav" => {

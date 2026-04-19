@@ -95,15 +95,17 @@ fn execute_command(
             }
         }
         "insert-drawing" => {
-            // Create drawing AND insert embed link at CM6 cursor
+            // Only works when CM6 editor is active (Notes view with a note open)
+            if *active_route.read() != Route::Notes {
+                return; // Not on notes view
+            }
             let vault = ctx.vault();
             let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
             let name = format!("Drawing {ts_suffix}");
             if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                // Insert ![[Drawing xxx.excalidraw]] at CM6 cursor position
                 let embed = format!("![[{name}.excalidraw]]");
                 let js = format!(
-                    "if(window._codexCM){{const t=window._codexCM.state.selection.main.head;window._codexCM.dispatch({{changes:{{from:t,insert:{escaped}}}}})}}",
+                    "if(window._codexCM){{const t=window._codexCM.state.selection.main.head;window._codexCM.dispatch({{changes:{{from:t,insert:{escaped}}}}});}}else{{alert('Open a note first to insert a drawing.')}}",
                     escaped = serde_json::to_string(&embed).unwrap_or_default()
                 );
                 document::eval(&js);
