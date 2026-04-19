@@ -30,8 +30,9 @@ impl Extension for CodexExtension {
             "get_tools" => Ok(json!([
                 {
                     "name": "search_documents",
+                    "label": "Search Documents",
                     "description": "Full-text search across all vault documents.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "query": { "type": "string" },
@@ -42,13 +43,15 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "list_documents",
+                    "label": "List Documents",
                     "description": "List all vault documents (metadata only: id, path, title, tags, updated_at).",
-                    "input_schema": { "type": "object", "properties": {} }
+                    "parameters": { "type": "object", "properties": {} }
                 },
                 {
                     "name": "find_document_by_slug",
+                    "label": "Find Document",
                     "description": "Find a document by title or filename slug.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "slug": { "type": "string" } },
                         "required": ["slug"]
@@ -56,8 +59,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "get_document",
+                    "label": "Get Document",
                     "description": "Retrieve full markdown content and metadata for a document by path.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "path": { "type": "string" } },
                         "required": ["path"]
@@ -65,8 +69,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "create_document",
+                    "label": "Create Document",
                     "description": "Create or overwrite a markdown document in the vault.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "path": { "type": "string" },
@@ -79,8 +84,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "get_backlinks",
+                    "label": "Get Backlinks",
                     "description": "List documents that link to the specified document path.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "path": { "type": "string" } },
                         "required": ["path"]
@@ -88,8 +94,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "store_memory_fact",
+                    "label": "Store Memory",
                     "description": "Store a durable Omegon memory fact as a canonical markdown knowledge artifact.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "topic": { "type": "string" },
@@ -101,8 +108,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "store_agent_communication",
+                    "label": "Store Communication",
                     "description": "Store an internal Omegon or Scribe communication as a canonical markdown reference document.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "channel": { "type": "string" },
@@ -114,8 +122,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "list_tasks",
+                    "label": "List Tasks",
                     "description": "List kanban tasks, optionally filtered by board or column.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "board_id": { "type": "string" },
@@ -125,8 +134,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "get_task",
+                    "label": "Get Task",
                     "description": "Get a kanban task by id.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "id": { "type": "string" } },
                         "required": ["id"]
@@ -134,8 +144,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "create_task",
+                    "label": "Create Task",
                     "description": "Create a kanban task in a board column.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "board_id": { "type": "string" },
@@ -147,13 +158,15 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "list_boards",
+                    "label": "List Boards",
                     "description": "List all kanban boards with their columns.",
-                    "input_schema": { "type": "object", "properties": {} }
+                    "parameters": { "type": "object", "properties": {} }
                 },
                 {
                     "name": "get_board",
+                    "label": "Get Board",
                     "description": "Get a kanban board by id.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "id": { "type": "string" } },
                         "required": ["id"]
@@ -161,8 +174,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "create_board",
+                    "label": "Create Board",
                     "description": "Create a default sprint board.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "name": { "type": "string" } },
                         "required": ["name"]
@@ -170,13 +184,15 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "get_graph",
+                    "label": "Get Graph",
                     "description": "Get the full knowledge graph — all nodes (documents, tasks, boards, repos, links) and their relationships (wikilinks, task membership, semantic links). Use to understand vault structure and connections.",
-                    "input_schema": { "type": "object", "properties": {} }
+                    "parameters": { "type": "object", "properties": {} }
                 },
                 {
                     "name": "get_graph_filtered",
+                    "label": "Get Filtered Graph",
                     "description": "Get a filtered view of the knowledge graph. Filter by node kind, group (folder), tag, title search, or minimum connection count.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "kind": { "type": "string", "description": "Node kind: document, task, board, repo, link, memory, communication" },
@@ -189,8 +205,9 @@ impl Extension for CodexExtension {
                 },
                 {
                     "name": "get_node_neighbors",
+                    "label": "Get Node Neighbors",
                     "description": "Get a node and its immediate neighbors in the knowledge graph — all directly connected nodes and the edges between them.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": { "node_id": { "type": "string" } },
                         "required": ["node_id"]

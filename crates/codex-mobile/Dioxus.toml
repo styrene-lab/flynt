@@ -1,0 +1,10 @@
+[application]
+name = "Codex"
+default_platform = "mobile"
+
+[application.ios]
+bundle_identifier = "com.black-meridian.codex"
+deployment_target = "16.0"
+
+[bundle]
+identifier = "com.black-meridian.codex"

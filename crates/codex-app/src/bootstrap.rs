@@ -514,6 +514,8 @@ pub struct RuntimeState {
     pub vault: Arc<Vault>,
     pub vault_events: broadcast::Sender<VaultChangeEvent>,
     pub omegon: OmegonRuntimeContext,
+    /// Background git sync handle — kept alive as long as RuntimeState exists.
+    pub _sync_handle: Option<Arc<codex_store::sync::AutoSyncHandle>>,
 }
 
 #[derive(Clone)]
@@ -610,11 +612,50 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     });
 
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
+
+    // Start background git sync if configured
+    let sync_handle = match &vault.config.sync {
+        codex_core::models::SyncConfig::Git { remote, branch, auto_commit_seconds } if *auto_commit_seconds > 0 => {
+            let interval = std::time::Duration::from_secs(*auto_commit_seconds);
+            let vault_for_reindex = Arc::clone(&vault);
+            let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                if let Err(e) = vault_for_reindex.reindex() {
+                    warn!("Post-pull reindex failed: {e}");
+                }
+            });
+            let (handle, status_rx) = codex_store::sync::start_auto_sync(
+                vault_root.clone(),
+                remote.clone(),
+                branch.clone(),
+                interval,
+                Some(reindex_cb),
+            );
+            info!("Auto-sync started: every {}s to {remote}/{branch}", auto_commit_seconds);
+
+            // Log status changes
+            tokio::spawn(async move {
+                let mut rx = status_rx;
+                while rx.changed().await.is_ok() {
+                    let status = rx.borrow().clone();
+                    match &status {
+                        codex_store::sync::AutoSyncStatus::Error(e) => warn!("sync: {e}"),
+                        codex_store::sync::AutoSyncStatus::Conflict(c) => warn!("sync conflicts: {c:?}"),
+                        _ => {}
+                    }
+                }
+            });
+
+            Some(Arc::new(handle))
+        }
+        _ => None,
+    };
+
     RuntimeState {
         vault_root,
         vault,
         vault_events: tx,
         omegon,
+        _sync_handle: sync_handle,
     }
 }
 

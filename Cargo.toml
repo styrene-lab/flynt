@@ -4,6 +4,7 @@ members = [
     "crates/codex-store",
     "crates/codex-app",
     "crates/codex-agent",
+    "crates/codex-mobile",
 ]
 resolver = "2"
 
@@ -52,7 +53,11 @@ git2 = { version = "0.20", default-features = false }
 # S3 / object storage
 object_store = { version = "0.11", features = ["aws"] }
 
-# MCP
+# ACP (Agent Client Protocol)
+agent-client-protocol = "0.10.4"
+async-trait = "0.1"
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["compat"] }
 
 # UI
 dirs = "5"

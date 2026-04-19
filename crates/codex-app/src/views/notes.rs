@@ -304,8 +304,10 @@ pub fn NotesView() -> Element {
     let mut edit_body  = use_signal(String::new);
     let mut save_err   = use_signal(|| Option::<String>::None);
     let mut save_state = use_signal(|| SaveState::Clean);
+    let mut render_ver = use_signal(|| 0u32);
 
     let rendered: Resource<Option<(std::path::PathBuf, String, String, String)>> = use_resource(move || {
+        let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
         let vault = ctx_res.vault();
         async move {
@@ -413,7 +415,6 @@ pub fn NotesView() -> Element {
             div { class: "notes-loading muted", "Loading…" }
         };
     };
-
     let Some((rel_path, title, body, _html)) = data else {
         return rsx! {
             div { class: "notes-empty",
@@ -422,8 +423,14 @@ pub fn NotesView() -> Element {
         };
     };
 
+    // Eagerly seed edit_body if it's empty and we have content —
+    // ensures CM6 has content even before use_effect fires.
+    if edit_body.read().is_empty() && !body.is_empty() {
+        *edit_body.write() = body.clone();
+    }
+
     let title = title.clone();
-    let body  = body.clone();
+    let _body  = body.clone();
     let path  = rel_path.clone();
 
     rsx! {
@@ -455,14 +462,14 @@ pub fn NotesView() -> Element {
                                     let content = edit_body.read().clone();
                                     let p       = path.clone();
                                     let c       = ctx.clone();
-                                    let mut re  = rendered;
+
                                     spawn(async move {
                                         let vault = c.vault();
                                         match tokio::task::spawn_blocking(move || {
                                             vault.save_document_content(&p, &content)
                                         }).await {
                                             Ok(Ok(())) => {
-                                                re.restart();
+                                                render_ver += 1;
                                                 *save_err.write() = None;
                                                 *save_state.write() = SaveState::Saved;
                                             }
@@ -486,7 +493,6 @@ pub fn NotesView() -> Element {
 
             match *mode.read() {
                 EditMode::Live => {
-                    // Use edit_body (current working content) not body (original from disk)
                     let cm_content = edit_body.read().clone();
                     rsx! {
                         { document::eval(&cm6_init_js(&cm_content)); }
@@ -522,14 +528,14 @@ pub fn NotesView() -> Element {
                                             let content = edit_body.read().clone();
                                             let p       = path_save.clone();
                                             let c       = ctx_save2.clone();
-                                            let mut re  = rendered;
+        
                                             spawn(async move {
                                                 let vault = c.vault();
                                                 match tokio::task::spawn_blocking(move || {
                                                     vault.save_document_content(&p, &content)
                                                 }).await {
                                                     Ok(Ok(())) => {
-                                                        re.restart();
+                                                        render_ver += 1;
                                                         *save_err.write() = None;
                                                         *save_state.write() = SaveState::Saved;
                                                     }

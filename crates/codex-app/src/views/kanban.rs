@@ -57,12 +57,14 @@ async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid:
     .await;
 }
 
-async fn create_board(ctx: AppContext, name: String) {
+async fn create_board(ctx: AppContext, name: String) -> anyhow::Result<()> {
     let vault = ctx.vault();
-    let _ = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         vault.store.save_board(&Board::default_sprint(name))
     })
-    .await;
+    .await
+    .map_err(|e| anyhow::anyhow!("{e}"))??;
+    Ok(())
 }
 
 // ── Top-level view ────────────────────────────────────────────────────────────
@@ -336,10 +338,14 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
     let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
     let mut inline_title = use_signal(|| task.title.clone());
+    let mut inline_desc = use_signal(|| task.description.clone());
+    let mut inline_priority = use_signal(|| task.priority);
+    let mut inline_due = use_signal(|| task.due_date.map(|d| d.to_string()).unwrap_or_default());
 
     let tid_drag = task.id.clone();
     let tid_archive = task.id.clone();
     let ctx_archive = ctx.clone();
+    let priority_class = priority_badge_class(task.priority);
 
     rsx! {
         div {
@@ -349,8 +355,15 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
             ondragend:   move |_| *dragging.write() = None,
 
             div { class: "task-card-top",
-                div { class: "task-priority {priority_badge_class(task.priority)}" }
+                div { class: "task-priority {priority_class}" }
                 div { class: "task-title", "{task.title}" }
+                if !task.tags.is_empty() {
+                    div { class: "task-tags-inline",
+                        for tag in task.tags.iter() {
+                            span { class: "task-tag", "{tag}" }
+                        }
+                    }
+                }
                 button {
                     class: "task-menu-btn",
                     title: if *open.read() { "Close details" } else { "Open details" },
@@ -372,6 +385,42 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                         }
                     }
 
+                    label { class: "field",
+                        span { "Description" }
+                        textarea {
+                            class: "task-desc-input",
+                            value: "{inline_desc}",
+                            rows: "3",
+                            placeholder: "Task description…",
+                            oninput: move |e| *inline_desc.write() = e.value(),
+                        }
+                    }
+
+                    div { class: "task-detail-row",
+                        label { class: "field",
+                            span { "Priority" }
+                            select {
+                                value: "{priority_to_str(*inline_priority.read())}",
+                                onchange: move |e| {
+                                    *inline_priority.write() = str_to_priority(&e.value());
+                                },
+                                option { value: "low", "Low" }
+                                option { value: "medium", "Medium" }
+                                option { value: "high", "High" }
+                                option { value: "critical", "Critical" }
+                            }
+                        }
+
+                        label { class: "field",
+                            span { "Due date" }
+                            input {
+                                r#type: "date",
+                                value: "{inline_due}",
+                                oninput: move |e| *inline_due.write() = e.value(),
+                            }
+                        }
+                    }
+
                     div { class: "row gap-2",
                         button {
                             class: "btn btn-primary",
@@ -379,11 +428,17 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                                 let c = ctx.clone();
                                 let task_id = task.id.clone();
                                 let new_title = inline_title.read().trim().to_string();
+                                let new_desc = inline_desc.read().clone();
+                                let new_priority = *inline_priority.read();
+                                let new_due = inline_due.read().clone();
                                 spawn(async move {
                                     let vault = c.vault();
                                     let _ = tokio::task::spawn_blocking(move || {
                                         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
                                             t.title      = new_title;
+                                            t.description = new_desc;
+                                            t.priority   = new_priority;
+                                            t.due_date   = chrono::NaiveDate::parse_from_str(&new_due, "%Y-%m-%d").ok();
                                             t.updated_at = Utc::now();
                                             if let Some(pid) = project_id {
                                                 vault.save_project_task(&t, &pid)
@@ -419,6 +474,24 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
     }
 }
 
+fn priority_to_str(p: Priority) -> &'static str {
+    match p {
+        Priority::Low => "low",
+        Priority::Medium => "medium",
+        Priority::High => "high",
+        Priority::Critical => "critical",
+    }
+}
+
+fn str_to_priority(s: &str) -> Priority {
+    match s {
+        "low" => Priority::Low,
+        "high" => Priority::High,
+        "critical" => Priority::Critical,
+        _ => Priority::Medium,
+    }
+}
+
 fn priority_badge_class(priority: Priority) -> &'static str {
     match priority {
         Priority::Low => "low",
@@ -433,29 +506,56 @@ fn priority_badge_class(priority: Priority) -> &'static str {
 #[component]
 fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
     let ctx = use_context::<AppContext>();
-    let mut name = use_signal(String::new);
+    let ctx2 = ctx.clone();
+    let mut name = use_signal(|| "Sprint 1".to_string());
+    let mut error_msg: Signal<Option<String>> = use_signal(|| None);
+
+    let do_create = move |_| {
+        let n = name.read().trim().to_string();
+        if n.is_empty() { return; }
+        let c = ctx.clone();
+        spawn(async move {
+            match create_board(c, n).await {
+                Ok(()) => *refresh.write() += 1,
+                Err(e) => *error_msg.write() = Some(format!("{e}")),
+            }
+        });
+        *name.write() = String::new();
+    };
 
     rsx! {
         div { class: "new-board-prompt",
             h2 { class: "view-heading", "Create your first board" }
-            input {
-                value: "{name}",
-                placeholder: "Sprint / Project board name…",
-                oninput: move |e| *name.write() = e.value(),
+            p { class: "muted", "Boards organize tasks into columns like Backlog, In Progress, Review, and Done." }
+            div { class: "row gap-2",
+                input {
+                    autofocus: true,
+                    value: "{name}",
+                    placeholder: "Board name…",
+                    oninput: move |e| *name.write() = e.value(),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            let n = name.read().trim().to_string();
+                            if n.is_empty() { return; }
+                            let c = ctx2.clone();
+                            spawn(async move {
+                                match create_board(c, n).await {
+                                    Ok(()) => *refresh.write() += 1,
+                                    Err(e) => *error_msg.write() = Some(format!("{e}")),
+                                }
+                            });
+                            *name.write() = String::new();
+                        }
+                    },
+                }
+                button {
+                    class: "btn btn-primary",
+                    onclick: do_create,
+                    "Create board"
+                }
             }
-            button {
-                class: "btn btn-primary",
-                onclick: move |_| {
-                    let n = name.read().trim().to_string();
-                    if n.is_empty() { return; }
-                    let c = ctx.clone();
-                    spawn(async move {
-                        create_board(c, n).await;
-                        *refresh.write() += 1;
-                    });
-                    *name.write() = String::new();
-                },
-                "Create board"
+            if let Some(ref err) = *error_msg.read() {
+                p { class: "text-error", "Error: {err}" }
             }
         }
     }
@@ -482,8 +582,9 @@ fn NewBoardInline(mut refresh: Signal<u64>) -> Element {
                                 if n.is_empty() { return; }
                                 let c = ctx.clone();
                                 spawn(async move {
-                                    create_board(c, n).await;
-                                    *refresh.write() += 1;
+                                    if create_board(c, n).await.is_ok() {
+                                        *refresh.write() += 1;
+                                    }
                                 });
                                 *name.write() = String::new();
                                 *open.write() = false;

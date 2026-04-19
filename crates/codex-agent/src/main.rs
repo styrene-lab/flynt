@@ -1,16 +1,7 @@
 use anyhow::Result;
-use clap::Parser;
 use codex_store::vault::Vault;
 use omegon_extension::ExtensionServe;
 use std::{path::PathBuf, sync::Arc};
-
-#[derive(Parser)]
-#[command(name = "codex-agent", about = "Codex vault tools for Omegon")]
-struct Args {
-    /// Path to the vault root directory
-    #[arg(long, env = "CODEX_VAULT")]
-    vault: Option<PathBuf>,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,13 +13,14 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let args = Args::parse();
-
-    let vault_root = args.vault.unwrap_or_else(|| {
-        dirs::document_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join("Codex")
-    });
+    let vault_root = std::env::var("CODEX_VAULT")
+        .map(PathBuf::from)
+        .ok()
+        .unwrap_or_else(|| {
+            dirs::document_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join("Codex")
+        });
 
     std::fs::create_dir_all(&vault_root)?;
     let vault = Arc::new(Vault::open(&vault_root)?);

@@ -20,6 +20,10 @@ once_cell   = { workspace = true }
 uuid        = { workspace = true }
 wry         = "0.53"
 dirs        = "5"
+agent-client-protocol = { workspace = true }
+async-trait = { workspace = true }
+futures     = { workspace = true }
+tokio-util  = { workspace = true }
 dioxus      = { workspace = true, features = ["desktop"] }
 rfd         = "0.15"
 

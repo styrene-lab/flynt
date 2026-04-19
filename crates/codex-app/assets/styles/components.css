@@ -447,6 +447,19 @@
   background:     rgba(239, 68, 68, 0.15);
   color:          #ef4444;
 }
+.agent-status-badge.connecting {
+  background:     rgba(234, 179, 8, 0.15);
+  color:          #eab308;
+}
+.agent-status-badge.active {
+  background:     rgba(59, 130, 246, 0.15);
+  color:          #3b82f6;
+  animation:      agent-pulse 1.5s ease-in-out infinite;
+}
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
 
 .agent-status-detail {
   font-size:      var(--font-size-xs);
@@ -508,12 +521,171 @@
   font-size:      var(--font-size-sm);
   color:          var(--foreground);
   line-height:    1.6;
-  white-space:    pre-wrap;
+}
+.agent-msg.assistant .agent-msg-content p {
+  margin:         0 0 0.5em 0;
+}
+.agent-msg.assistant .agent-msg-content p:last-child {
+  margin-bottom:  0;
+}
+.agent-msg.assistant .agent-msg-content h1,
+.agent-msg.assistant .agent-msg-content h2,
+.agent-msg.assistant .agent-msg-content h3 {
+  font-size:      var(--font-size-sm);
+  font-weight:    700;
+  margin:         0.8em 0 0.3em 0;
+  color:          var(--foreground);
+}
+.agent-msg.assistant .agent-msg-content h2 { font-size: 1em; }
+.agent-msg.assistant .agent-msg-content h3 { font-size: 0.95em; }
+.agent-msg.assistant .agent-msg-content code {
+  background:     var(--surface);
+  padding:        1px 4px;
+  border-radius:  3px;
+  font-size:      0.9em;
+  font-family:    var(--font-mono, monospace);
+}
+.agent-msg.assistant .agent-msg-content pre {
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  padding:        var(--space-2);
+  overflow-x:     auto;
+  margin:         0.5em 0;
+}
+.agent-msg.assistant .agent-msg-content pre code {
+  background:     transparent;
+  padding:        0;
+}
+.agent-msg.assistant .agent-msg-content table {
+  border-collapse: collapse;
+  width:          100%;
+  margin:         0.5em 0;
+  font-size:      var(--font-size-xs);
+}
+.agent-msg.assistant .agent-msg-content th,
+.agent-msg.assistant .agent-msg-content td {
+  border:         1px solid var(--border);
+  padding:        var(--space-1) var(--space-2);
+  text-align:     left;
+}
+.agent-msg.assistant .agent-msg-content th {
+  background:     var(--surface);
+  font-weight:    600;
+}
+.agent-msg.assistant .agent-msg-content ul,
+.agent-msg.assistant .agent-msg-content ol {
+  margin:         0.3em 0;
+  padding-left:   1.5em;
+}
+.agent-msg.assistant .agent-msg-content li {
+  margin:         0.15em 0;
 }
 
 .agent-msg-content.typing {
   color:          var(--muted-foreground);
   font-style:     italic;
+}
+
+/* Tool call blocks */
+.agent-tool-call {
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  padding:        var(--space-2) var(--space-3);
+  background:     var(--surface);
+  font-size:      var(--font-size-xs);
+}
+.agent-tool-header {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+}
+.agent-tool-kind {
+  background:     rgba(139, 92, 246, 0.15);
+  color:          #8b5cf6;
+  padding:        1px var(--space-2);
+  border-radius:  var(--radius-full);
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size:      10px;
+}
+.agent-tool-title {
+  flex:           1;
+  color:          var(--foreground);
+  font-weight:    500;
+  white-space:    nowrap;
+  overflow:       hidden;
+  text-overflow:  ellipsis;
+}
+.agent-tool-status {
+  font-weight:    500;
+  padding:        1px var(--space-2);
+  border-radius:  var(--radius-full);
+}
+.agent-tool-status.inprogress {
+  background:     rgba(59, 130, 246, 0.15);
+  color:          #3b82f6;
+}
+.agent-tool-status.completed {
+  background:     rgba(34, 197, 94, 0.15);
+  color:          #22c55e;
+}
+.agent-tool-status.failed {
+  background:     rgba(239, 68, 68, 0.15);
+  color:          #ef4444;
+}
+.agent-tool-status.pending {
+  background:     rgba(234, 179, 8, 0.15);
+  color:          #eab308;
+}
+
+/* System messages */
+.agent-msg.system .agent-msg-content {
+  font-size:      var(--font-size-xs);
+  color:          var(--muted-foreground);
+  line-height:    1.6;
+  white-space:    pre-wrap;
+  font-family:    var(--font-mono, monospace);
+}
+
+/* Slash command menu */
+.agent-command-menu {
+  padding:        var(--space-1) var(--space-3);
+  border-top:     1px solid var(--border);
+  background:     var(--surface);
+  max-height:     200px;
+  overflow-y:     auto;
+  flex-shrink:    0;
+}
+.agent-command-item {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+  width:          100%;
+  padding:        var(--space-1) var(--space-2);
+  border:         none;
+  background:     transparent;
+  border-radius:  var(--radius);
+  cursor:         pointer;
+  text-align:     left;
+  font-size:      var(--font-size-sm);
+}
+.agent-command-item:hover {
+  background:     var(--card);
+}
+.agent-command-name {
+  color:          #3b82f6;
+  font-weight:    600;
+  font-family:    var(--font-mono, monospace);
+  white-space:    nowrap;
+}
+.agent-command-desc {
+  color:          var(--muted-foreground);
+  font-size:      var(--font-size-xs);
+  overflow:       hidden;
+  text-overflow:  ellipsis;
+  white-space:    nowrap;
 }
 
 /* Input area */
@@ -550,4 +722,44 @@
   color:          var(--dim);
   margin-top:     var(--space-1);
   text-align:     right;
+}
+
+/* Config bar — model, thinking, posture dropdowns */
+.agent-config-bar {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-1);
+  padding:        var(--space-2) var(--space-3);
+  border-top:     1px solid var(--border);
+  flex-shrink:    0;
+  flex-wrap:      wrap;
+}
+.agent-config-item {
+  flex:           1;
+  min-width:      0;
+}
+.agent-config-select {
+  width:          100%;
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  padding:        var(--space-1) var(--space-2);
+  font-size:      var(--font-size-xs);
+  font-family:    var(--font-sans);
+  color:          var(--foreground);
+  cursor:         pointer;
+  outline:        none;
+  appearance:     none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right:  18px;
+  text-overflow:  ellipsis;
+}
+.agent-config-select:hover {
+  border-color:   var(--ring);
+}
+.agent-config-select:focus {
+  border-color:   var(--ring);
 }

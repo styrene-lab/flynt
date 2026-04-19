@@ -233,6 +233,7 @@ pub fn SettingsView() -> Element {
                 tts_enabled: *vox_tts_enabled.read(),
                 voice: vox_voice.read().trim().to_string(),
             },
+            acp_config: initial_operator.acp_config.clone(),
         };
 
         match vault.save_config(&config) {

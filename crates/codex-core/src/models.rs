@@ -509,6 +509,10 @@ pub struct CodexOperatorSettings {
     pub preferred_extensions: Vec<String>,
     pub rail_extension: String,
     pub vox: VoxSettings,
+    /// Persisted ACP config — model, thinking level, posture, etc.
+    /// Keys are config option IDs, values are the selected value IDs.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub acp_config: std::collections::HashMap<String, String>,
 }
 
 impl Default for CodexOperatorSettings {
@@ -519,6 +523,7 @@ impl Default for CodexOperatorSettings {
             preferred_extensions: vec!["vox".into()],
             rail_extension: "vox".into(),
             vox: VoxSettings::default(),
+            acp_config: std::collections::HashMap::new(),
         }
     }
 }

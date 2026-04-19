@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod app;
 pub mod bootstrap;
 pub mod components;
