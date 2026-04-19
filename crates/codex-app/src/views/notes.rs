@@ -248,6 +248,37 @@ fn cm6_init_js(content: &str) -> String {
                 }} else break;
             }}
 
+            // Hide underscore italic/bold: _text_ and __text__
+            idx = 0;
+            while ((idx = text.indexOf('__', idx)) !== -1) {{
+                const end = text.indexOf('__', idx + 2);
+                if (end > idx) {{
+                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
+                    decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
+                    idx = end + 2;
+                }} else break;
+            }}
+            idx = 0;
+            while (idx < text.length) {{
+                idx = text.indexOf('_', idx);
+                if (idx === -1) break;
+                if (text.charAt(idx - 1) === '_' || text.charAt(idx + 1) === '_') {{ idx++; continue; }} // skip __
+                if (idx > 0 && text.charAt(idx - 1).match(/[a-zA-Z0-9]/)) {{ idx++; continue; }} // mid-word
+                const end = text.indexOf('_', idx + 1);
+                if (end > idx && !(text.charAt(end - 1) === '_' || text.charAt(end + 1) === '_')) {{
+                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 1));
+                    decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 1));
+                    idx = end + 1;
+                }} else {{ idx++; }}
+            }}
+
+            // Hide unordered list markers: "- " or "* " or "+ " at line start
+            const trimmed = text.trimStart();
+            const indent = text.length - trimmed.length;
+            if ((trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('+ ')) && trimmed.length > 2) {{
+                decs.push(Decoration.replace({{}}).range(line.from + indent, line.from + indent + 2));
+            }}
+
             // Hide strikethrough: ~~text~~
             idx = 0;
             while ((idx = text.indexOf('~~', idx)) !== -1) {{
