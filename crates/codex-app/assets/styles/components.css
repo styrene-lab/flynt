@@ -310,6 +310,13 @@
   max-width:      100%;
   height:         auto;
 }
+.excalidraw-embed[data-drawing] {
+  cursor:         pointer;
+  transition:     border-color 0.15s;
+}
+.excalidraw-embed[data-drawing]:hover {
+  border-color:   var(--ring);
+}
 .excalidraw-embed-placeholder {
   margin:         1em 0;
   padding:        var(--space-4);

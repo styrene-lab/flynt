@@ -94,6 +94,21 @@ fn execute_command(
                 }
             }
         }
+        "insert-drawing" => {
+            // Create drawing AND insert embed link at CM6 cursor
+            let vault = ctx.vault();
+            let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            let name = format!("Drawing {ts_suffix}");
+            if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                // Insert ![[Drawing xxx.excalidraw]] at CM6 cursor position
+                let embed = format!("![[{name}.excalidraw]]");
+                let js = format!(
+                    "if(window._codexCM){{const t=window._codexCM.state.selection.main.head;window._codexCM.dispatch({{changes:{{from:t,insert:{escaped}}}}})}}",
+                    escaped = serde_json::to_string(&embed).unwrap_or_default()
+                );
+                document::eval(&js);
+            }
+        }
         "new-drawing" => {
             let vault = ctx.vault();
             let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
@@ -162,6 +177,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
             Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
             Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
         Cmd { id: "new-drawing".into(), label: "New Drawing".into(), category: "Create".into() },
+        Cmd { id: "insert-drawing".into(), label: "Insert Drawing Here".into(), category: "Create".into() },
             Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
         Cmd { id: "icloud-vault".into(), label: "Create Vault in iCloud".into(), category: "Create".into() },

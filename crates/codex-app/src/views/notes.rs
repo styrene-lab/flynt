@@ -54,22 +54,30 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
             let end = start + end;
             let ref_name = &html[start + 3..end];
 
-            if ref_name.ends_with(".excalidraw") {
-                // Try to load the .excalidraw file and render as SVG
-                let excalidraw_path = root.join(ref_name);
+            if ref_name.contains(".excalidraw") {
+                // Parse optional width: ![[drawing.excalidraw|400]]
+                let (file_ref, width) = if let Some(pipe) = ref_name.find('|') {
+                    (&ref_name[..pipe], Some(&ref_name[pipe + 1..]))
+                } else {
+                    (ref_name, None)
+                };
+
+                let excalidraw_path = root.join(file_ref);
                 let svg_path = excalidraw_path.with_extension("svg");
+                let style = width.map(|w| format!(" style=\"max-width:{w}px\"")).unwrap_or_default();
+                let escaped_ref = file_ref.replace('"', "&quot;");
 
                 let replacement = if svg_path.exists() {
-                    // Use pre-exported SVG
                     match std::fs::read_to_string(&svg_path) {
-                        Ok(svg) => format!("<div class=\"excalidraw-embed\">{svg}</div>"),
-                        Err(_) => format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {ref_name}]</div>"),
+                        Ok(svg) => format!(
+                            "<div class=\"excalidraw-embed\" data-drawing=\"{escaped_ref}\"{style}>{svg}</div>"
+                        ),
+                        Err(_) => format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {file_ref}]</div>"),
                     }
                 } else if excalidraw_path.exists() {
-                    // No SVG export yet — show placeholder with link
-                    format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {ref_name} — export SVG to embed]</div>")
+                    format!("<div class=\"excalidraw-embed-placeholder\" data-drawing=\"{escaped_ref}\">[Drawing: {file_ref} — save to auto-export SVG]</div>")
                 } else {
-                    format!("<span class=\"broken-embed\">[Missing: {ref_name}]</span>")
+                    format!("<span class=\"broken-embed\">[Missing: {file_ref}]</span>")
                 };
 
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
