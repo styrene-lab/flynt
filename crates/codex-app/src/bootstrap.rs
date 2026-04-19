@@ -611,6 +611,9 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
         }
     });
 
+    // Ensure default templates exist
+    let _ = codex_core::templates::ensure_default_templates(&vault_root);
+
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
 
     // Start background git sync if configured

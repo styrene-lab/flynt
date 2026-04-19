@@ -84,6 +84,36 @@ pub fn App() -> Element {
                     }
                 });
             }
+            crate::menu::DAILY_NOTE => {
+                let c = ctx_menu_handler;
+                let mut ts = tab_state;
+                let mut ar = active_route;
+                spawn(async move {
+                    let vault = c.vault();
+                    let date = codex_core::daily::today();
+                    let path = codex_core::daily::daily_note_path(date);
+                    let abs = vault.root.join(&path);
+                    if !abs.exists() {
+                        // Load daily template if it exists
+                        let templates = codex_core::templates::list_templates(&vault.root);
+                        let tmpl = templates.iter().find(|t| t.name.to_lowercase() == "daily");
+                        let content = codex_core::daily::daily_note_content(
+                            date,
+                            tmpl.map(|t| t.content.as_str()),
+                        );
+                        if let Some(parent) = abs.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let _ = vault.save_document_content(&path, &content);
+                        let _ = vault.reindex();
+                    }
+                    let title = date.format("%A, %B %-d, %Y").to_string();
+                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
+                        ts.write().open(doc.id, title);
+                        *ar.write() = Route::Notes;
+                    }
+                });
+            }
             crate::menu::OPEN_VAULT => {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
                     let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&path);

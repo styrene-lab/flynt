@@ -30,7 +30,7 @@ fn fuzzy_match(haystack: &str, needle: &str) -> bool {
 fn execute_command(
     id: &str,
     label: &str,
-    ctx: &AppContext,
+    ctx: AppContext,
     tab_state: &mut Signal<TabState>,
     active_route: &mut Signal<Route>,
 ) {
@@ -53,6 +53,54 @@ fn execute_command(
                         ts.write().open(doc.id, "Untitled".into());
                         *ar.write() = Route::Notes;
                     }
+                }
+            });
+        }
+        other if other.starts_with("template:") => {
+            if let Some(tmpl_name) = other.strip_prefix("template:") {
+                let templates = codex_core::templates::list_templates(&ctx.vault().root);
+                if let Some(tmpl) = templates.iter().find(|t| t.name == tmpl_name) {
+                    let title = "Untitled";
+                    let vault_name = &ctx.vault().config.vault_name;
+                    let content = codex_core::templates::expand(&tmpl.content, title, vault_name);
+                    let path = std::path::Path::new("Untitled.md");
+                    let c = ctx;
+                    let mut ts = *tab_state;
+                    let mut ar = *active_route;
+                    spawn(async move {
+                        let vault = c.vault();
+                        if vault.save_document_content(path, &content).is_ok() {
+                            let _ = vault.reindex();
+                            if let Ok(Some(doc)) = vault.store.find_document_by_slug("untitled") {
+                                ts.write().open(doc.id, "Untitled".into());
+                                *ar.write() = Route::Notes;
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        "daily-note" => {
+            let c = ctx.clone();
+            let mut ts = *tab_state;
+            let mut ar = *active_route;
+            spawn(async move {
+                let vault = c.vault();
+                let date = codex_core::daily::today();
+                let path = codex_core::daily::daily_note_path(date);
+                let abs = vault.root.join(&path);
+                if !abs.exists() {
+                    let templates = codex_core::templates::list_templates(&vault.root);
+                    let tmpl = templates.iter().find(|t| t.name.to_lowercase() == "daily");
+                    let content = codex_core::daily::daily_note_content(date, tmpl.map(|t| t.content.as_str()));
+                    if let Some(parent) = abs.parent() { let _ = std::fs::create_dir_all(parent); }
+                    let _ = vault.save_document_content(&path, &content);
+                    let _ = vault.reindex();
+                }
+                let title = date.format("%A, %B %-d, %Y").to_string();
+                if let Ok(Some(doc)) = vault.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
+                    ts.write().open(doc.id, title);
+                    *ar.write() = Route::Notes;
                 }
             });
         }
@@ -90,9 +138,32 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
         Cmd { id: "view-settings".into(), label: "Settings".into(), category: "Navigate".into() },
         Cmd { id: "new-note".into(), label: "New Note".into(), category: "Create".into() },
         Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
+        Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
         Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
         Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
     ];
+
+    // Templates
+    let templates = codex_core::templates::list_templates(&ctx.vault().root);
+    for tmpl in &templates {
+        all.push(Cmd {
+            id: format!("template:{}", tmpl.name),
+            label: format!("New from: {}", tmpl.name),
+            category: "Template".into(),
+        });
+    }
+
+    // Tags
+    if let Ok(tags) = ctx.vault().list_tags() {
+        for (tag, count) in &tags {
+            all.push(Cmd {
+                id: format!("filter-tag:{}", tag),
+                label: format!("{} ({} notes)", tag, count),
+                category: "Tag".into(),
+            });
+        }
+    }
+
     if let Ok(docs) = ctx.vault().store.list_documents() {
         for doc in docs {
             all.push(Cmd {
@@ -140,7 +211,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
                         }
                         Key::Enter => {
                             if let Some(cmd) = filtered.get(sel) {
-                                execute_command(&cmd.id, &cmd.label, &ctx, &mut tab_state, &mut active_route);
+                                execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route);
                                 *open.write() = false;
                                 *query.write() = String::new();
                                 *selected.write() = 0;
@@ -164,7 +235,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
                                 key: "{i}-{cmd_id}",
                                 class: if i == sel { "palette-item selected" } else { "palette-item" },
                                 onclick: move |_| {
-                                    execute_command(&cmd_id, &cmd_label, &ctx, &mut tab_state, &mut active_route);
+                                    execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route);
                                     *open.write() = false;
                                     *query.write() = String::new();
                                     *selected.write() = 0;

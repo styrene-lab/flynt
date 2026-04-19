@@ -1056,6 +1056,89 @@ impl Vault {
         Ok(files_updated)
     }
 
+    // ── Tag management ───────────────────────────────────────────────────────
+
+    /// List all unique tags across the vault with document counts.
+    pub fn list_tags(&self) -> Result<Vec<(String, usize)>> {
+        let docs = self.store.list_documents()?;
+        let mut tag_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for doc in &docs {
+            for tag in &doc.tags {
+                *tag_counts.entry(tag.clone()).or_default() += 1;
+            }
+        }
+        let mut tags: Vec<(String, usize)> = tag_counts.into_iter().collect();
+        tags.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        Ok(tags)
+    }
+
+    /// Rename a tag across all documents in the vault.
+    /// Returns the number of files updated.
+    pub fn rename_tag(&self, old_tag: &str, new_tag: &str) -> Result<usize> {
+        let mut files_updated = 0;
+        self.walk_markdown(&mut |path| {
+            let Ok(content) = fs::read_to_string(path) else { return; };
+            if !content.contains(old_tag) { return; }
+
+            // Parse frontmatter to check tags
+            let (_body, fm, _links) = codex_core::parser::parse_document_source(&content);
+            if !fm.tags.iter().any(|t| t == old_tag) { return; }
+
+            // Replace the tag in the raw content
+            // Tags are in TOML frontmatter as: tags = ["tag1", "tag2"]
+            let old_quoted = format!("\"{}\"", old_tag);
+            let new_quoted = format!("\"{}\"", new_tag);
+            let new_content = content.replace(&old_quoted, &new_quoted);
+
+            if new_content != content {
+                if fs::write(path, &new_content).is_ok() {
+                    files_updated += 1;
+                }
+            }
+        })?;
+        self.reindex()?;
+        info!("Renamed tag '{}' → '{}', updated {} file(s)", old_tag, new_tag, files_updated);
+        Ok(files_updated)
+    }
+
+    /// Delete a tag from all documents. Returns the number of files updated.
+    pub fn delete_tag(&self, tag: &str) -> Result<usize> {
+        let mut files_updated = 0;
+        self.walk_markdown(&mut |path| {
+            let Ok(content) = fs::read_to_string(path) else { return; };
+
+            let (_body, fm, _links) = codex_core::parser::parse_document_source(&content);
+            if !fm.tags.iter().any(|t| t == tag) { return; }
+
+            // Remove the tag from the TOML tags array
+            let tag_quoted = format!("\"{}\"", tag);
+            let new_content = content
+                .replace(&format!(", {}", tag_quoted), "")
+                .replace(&format!("{}, ", tag_quoted), "")
+                .replace(&tag_quoted, ""); // lone tag
+
+            if new_content != content {
+                if fs::write(path, &new_content).is_ok() {
+                    files_updated += 1;
+                }
+            }
+        })?;
+        self.reindex()?;
+        info!("Deleted tag '{}', updated {} file(s)", tag, files_updated);
+        Ok(files_updated)
+    }
+
+    /// Merge multiple tags into one. Returns the number of files updated.
+    pub fn merge_tags(&self, source_tags: &[&str], target_tag: &str) -> Result<usize> {
+        let mut total = 0;
+        for src in source_tags {
+            if *src != target_tag {
+                total += self.rename_tag(src, target_tag)?;
+            }
+        }
+        Ok(total)
+    }
+
     // ── Notifications (git-synced) ──────────────────────────────────────────
 
     /// Write a notification to the pending queue. Git sync will push it to other devices.

@@ -24,6 +24,7 @@ pub const TOGGLE_SIDEBAR: &str = "codex-toggle-sidebar";
 
 pub const SYNC_NOW: &str = "codex-sync-now";
 pub const NEW_BOARD: &str = "codex-new-board";
+pub const DAILY_NOTE: &str = "codex-daily-note";
 
 pub const RENAME_NOTE: &str = "codex-rename-note";
 pub const DELETE_NOTE: &str = "codex-delete-note";
@@ -71,6 +72,12 @@ pub fn build_menu_bar() -> Menu {
                     Some(Modifiers::META | Modifiers::SHIFT),
                     Code::KeyN,
                 )),
+            ),
+            &MenuItem::with_id(
+                DAILY_NOTE,
+                "Today's Note",
+                true,
+                Some(Accelerator::new(Some(Modifiers::META), Code::KeyD)),
             ),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(
