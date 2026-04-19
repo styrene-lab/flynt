@@ -898,6 +898,164 @@ impl Vault {
         Ok(())
     }
 
+    // ── Rename document + update links ────────────────────────────────────────
+
+    /// Rename a document: moves the file on disk, updates frontmatter title,
+    /// and rewrites all wikilinks across the vault that pointed to the old name.
+    /// Returns the number of files updated.
+    pub fn rename_document(&self, old_path: &Path, new_title: &str) -> Result<usize> {
+        use std::path::PathBuf;
+
+        let abs_old = self.root.join(old_path);
+        if !abs_old.exists() {
+            anyhow::bail!("source file does not exist: {}", old_path.display());
+        }
+
+        // Read current content
+        let raw = fs::read_to_string(&abs_old)?;
+
+        // Derive the old title for link matching
+        let (_body, old_fm, _links) = codex_core::parser::parse_document_source(&raw);
+        let old_title = old_fm.title.clone().unwrap_or_else(|| {
+            old_path.file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+
+        // Build the new filename from the new title
+        let new_filename = format!("{}.md", new_title);
+        let new_path = old_path.parent()
+            .map(|p| p.join(&new_filename))
+            .unwrap_or_else(|| PathBuf::from(&new_filename));
+
+        // Update the frontmatter title in the document content
+        let updated_content = if raw.contains("+++") {
+            // Replace title in TOML frontmatter
+            let new_raw = if let Some(title_line_start) = raw.find("title = \"") {
+                let before = &raw[..title_line_start];
+                let after_title = &raw[title_line_start..];
+                if let Some(end_quote) = after_title[9..].find('"') {
+                    format!("{}title = \"{}\"{}", before, new_title, &after_title[9 + end_quote + 1..])
+                } else {
+                    raw.clone()
+                }
+            } else {
+                raw.clone()
+            };
+            new_raw
+        } else {
+            raw.clone()
+        };
+
+        // Write updated content to new path
+        let abs_new = self.root.join(&new_path);
+        fs::write(&abs_new, &updated_content)?;
+
+        // Remove old file (if path changed)
+        if old_path != new_path {
+            fs::remove_file(&abs_old)?;
+        }
+
+        // Now scan all markdown files and update wikilinks
+        let old_title_lower = old_title.to_lowercase();
+        let old_stem = old_path.file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+
+        let mut files_updated = 0;
+        self.walk_markdown(&mut |path| {
+            // Skip the renamed file itself
+            let rel = path.strip_prefix(&self.root).unwrap_or(path);
+            if rel == new_path { return; }
+
+            let Ok(content) = fs::read_to_string(path) else { return; };
+
+            // Check if this file contains wikilinks to the old name
+            let mut new_content = content.clone();
+            let mut changed = false;
+
+            // Replace [[Old Title]] → [[New Title]]
+            let patterns = [
+                format!("[[{}]]", old_title),
+                format!("[[{}]]", old_stem),
+            ];
+            for pat in &patterns {
+                if new_content.contains(pat.as_str()) {
+                    new_content = new_content.replace(
+                        pat.as_str(),
+                        &format!("[[{}]]", new_title),
+                    );
+                    changed = true;
+                }
+            }
+
+            // Replace [[Old Title|display]] → [[New Title|display]]
+            // and [[old_stem|display]] → [[New Title|display]]
+            for old_ref in [&old_title, &old_stem.to_string()] {
+                let pipe_prefix = format!("[[{}|", old_ref);
+                while let Some(start) = new_content.find(&pipe_prefix) {
+                    if let Some(end) = new_content[start..].find("]]") {
+                        let display = &new_content[start + pipe_prefix.len()..start + end].to_string();
+                        let replacement = format!("[[{}|{}]]", new_title, display);
+                        new_content = format!(
+                            "{}{}{}",
+                            &new_content[..start],
+                            replacement,
+                            &new_content[start + end + 2..]
+                        );
+                        changed = true;
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            // Case-insensitive matching for wikilinks
+            if !changed {
+                // Try case-insensitive match
+                let content_lower = new_content.to_lowercase();
+                for old_ref in [&old_title_lower, &old_stem] {
+                    let pat_lower = format!("[[{}]]", old_ref);
+                    if content_lower.contains(&pat_lower) {
+                        // Find and replace preserving surrounding case
+                        let mut result = String::new();
+                        let mut remaining = new_content.as_str();
+                        let remaining_lower = content_lower.as_str();
+                        let mut offset = 0;
+                        while let Some(pos) = remaining_lower[offset..].find(&pat_lower) {
+                            result.push_str(&remaining[..offset + pos]);
+                            result.push_str(&format!("[[{}]]", new_title));
+                            let skip = offset + pos + pat_lower.len();
+                            remaining = &remaining[skip..];
+                            offset = 0;
+                            changed = true;
+                        }
+                        if changed {
+                            result.push_str(remaining);
+                            new_content = result;
+                        }
+                    }
+                }
+            }
+
+            if changed {
+                if fs::write(path, &new_content).is_ok() {
+                    files_updated += 1;
+                }
+            }
+        })?;
+
+        // Reindex to update SQLite
+        self.reindex()?;
+
+        info!(
+            "Renamed '{}' → '{}', updated {} file(s)",
+            old_title, new_title, files_updated
+        );
+
+        Ok(files_updated)
+    }
+
     // ── Notifications (git-synced) ──────────────────────────────────────────
 
     /// Write a notification to the pending queue. Git sync will push it to other devices.

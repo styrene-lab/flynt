@@ -461,6 +461,56 @@ fn test_multiple_boards_isolation() {
     assert_eq!(b_tasks[0].title, "Task on B");
 }
 
+// ── Document Rename + Link Update ────────────────────────────────────────
+
+#[test]
+fn test_rename_document_updates_links() {
+    let (tmp, vault) = setup_vault();
+
+    // Welcome.md links to [[Projects]] and [[Architecture]]
+    // Rename "Projects" to "Active Projects"
+    let files_updated = vault.rename_document(
+        Path::new("Projects.md"),
+        "Active Projects",
+    ).unwrap();
+
+    // The file should be renamed on disk
+    assert!(!tmp.path().join("Projects.md").exists());
+    assert!(tmp.path().join("Active Projects.md").exists());
+
+    // The new file should have updated title in frontmatter
+    let content = std::fs::read_to_string(tmp.path().join("Active Projects.md")).unwrap();
+    assert!(content.contains("title = \"Active Projects\""));
+
+    // Welcome.md should have [[Active Projects]] instead of [[Projects]]
+    let welcome = std::fs::read_to_string(tmp.path().join("Welcome.md")).unwrap();
+    assert!(welcome.contains("[[Active Projects]]"), "Welcome should link to Active Projects, got: {welcome}");
+    assert!(!welcome.contains("[[Projects]]"), "Welcome should not have old link");
+
+    // At least Welcome.md was updated
+    assert!(files_updated >= 1, "Expected at least 1 file updated, got {files_updated}");
+}
+
+#[test]
+fn test_rename_preserves_display_links() {
+    let (tmp, vault) = setup_vault();
+
+    // Create a doc with a display link
+    write_doc(
+        tmp.path(),
+        "Linker.md",
+        "Linker",
+        &[],
+        "See [[Projects|our projects]] for more.",
+    );
+    vault.reindex().unwrap();
+
+    vault.rename_document(Path::new("Projects.md"), "Active Projects").unwrap();
+
+    let linker = std::fs::read_to_string(tmp.path().join("Linker.md")).unwrap();
+    assert!(linker.contains("[[Active Projects|our projects]]"), "Display link should be preserved: {linker}");
+}
+
 // ── Task Decay ───────────────────────────────────────────────────────────────
 
 #[test]

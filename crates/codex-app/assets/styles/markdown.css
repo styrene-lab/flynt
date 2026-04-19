@@ -31,6 +31,30 @@
   color:         var(--primary-bright);
   margin-bottom: var(--space-6);
   line-height:   var(--line-height-tight);
+  cursor:        default;
+}
+.rename-inline {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-2);
+  flex:          1;
+  min-width:     0;
+}
+.rename-input {
+  flex:          1;
+  font-size:     var(--font-size-xl);
+  font-weight:   var(--font-weight-bold);
+  color:         var(--primary-bright);
+  background:    var(--surface);
+  border:        1px solid var(--ring);
+  border-radius: var(--radius);
+  padding:       var(--space-1) var(--space-3);
+  outline:       none;
+}
+.rename-msg {
+  font-size:     var(--font-size-xs);
+  color:         var(--muted-foreground);
+  white-space:   nowrap;
 }
 
 .notes-empty,

@@ -559,10 +559,63 @@ pub fn NotesView() -> Element {
     let _body  = body.clone();
     let path  = rel_path.clone();
 
+    let mut renaming = use_signal(|| false);
+    let mut rename_input = use_signal(|| title.clone());
+    let mut rename_msg: Signal<Option<String>> = use_signal(|| None);
+    let path_for_rename = path.clone();
+    let ctx_rename = ctx.clone();
+
     rsx! {
         div { class: "notes-pane",
             div { class: "notes-topbar",
-                h1 { class: "doc-title", "{title}" }
+                if *renaming.read() {
+                    div { class: "rename-inline",
+                        input {
+                            autofocus: true,
+                            class: "rename-input",
+                            value: "{rename_input}",
+                            oninput: move |e| *rename_input.write() = e.value(),
+                            onkeydown: move |e| {
+                                if e.key() == Key::Escape {
+                                    *renaming.write() = false;
+                                }
+                                if e.key() == Key::Enter {
+                                    let new_title = rename_input.read().trim().to_string();
+                                    if new_title.is_empty() || new_title == title { *renaming.write() = false; return; }
+                                    let p = path_for_rename.clone();
+                                    let c = ctx_rename.clone();
+                                    spawn(async move {
+                                        let vault = c.vault();
+                                        match tokio::task::spawn_blocking(move || {
+                                            vault.rename_document(&p, &new_title)
+                                        }).await {
+                                            Ok(Ok(n)) => {
+                                                *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
+                                                render_ver += 1;
+                                            }
+                                            Ok(Err(e)) => *rename_msg.write() = Some(format!("Error: {e}")),
+                                            Err(e) => *rename_msg.write() = Some(format!("Error: {e}")),
+                                        }
+                                        *renaming.write() = false;
+                                    });
+                                }
+                            },
+                        }
+                        button { class: "btn btn-ghost btn-xs", onclick: move |_| *renaming.write() = false, "Cancel" }
+                    }
+                } else {
+                    h1 {
+                        class: "doc-title",
+                        ondoubleclick: move |_| {
+                            *rename_input.write() = title.clone();
+                            *renaming.write() = true;
+                        },
+                        "{title}"
+                    }
+                }
+                if let Some(ref msg) = *rename_msg.read() {
+                    span { class: "rename-msg", "{msg}" }
+                }
                 div { class: "notes-actions",
                     match *save_state.read() {
                         SaveState::Dirty => rsx! { span { class: "save-status dirty", "●" } },
