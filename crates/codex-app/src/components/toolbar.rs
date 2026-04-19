@@ -304,7 +304,7 @@ pub fn Toolbar(
                         }
                         *show_agent.write() = opening;
                     },
-                    "✦"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_OMEGON }
                 }
             }
         }

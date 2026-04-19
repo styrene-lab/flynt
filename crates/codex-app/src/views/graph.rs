@@ -183,7 +183,7 @@ pub fn GraphView() -> Element {
                                     button {
                                         class: "panel-close",
                                         onclick: move |_| *panel_open.write() = false,
-                                        "✕"
+                                        "×"
                                     }
                                 }
                                 // Filters

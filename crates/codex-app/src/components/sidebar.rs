@@ -88,25 +88,25 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     class: if *active_route.read() == Route::Notes    { "nav-btn active" } else { "nav-btn" },
                     title: "Notes",
                     onclick: move |_| *active_route.write() = Route::Notes,
-                    "📝"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
                 button {
                     class: if *active_route.read() == Route::Kanban   { "nav-btn active" } else { "nav-btn" },
                     title: "Kanban",
                     onclick: move |_| *active_route.write() = Route::Kanban,
-                    "📋"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
                 }
                 button {
                     class: if *active_route.read() == Route::Graph    { "nav-btn active" } else { "nav-btn" },
                     title: "Graph",
                     onclick: move |_| *active_route.write() = Route::Graph,
-                    "🕸"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_GRAPH }
                 }
                 button {
                     class: if *active_route.read() == Route::Settings { "nav-btn active" } else { "nav-btn" },
                     title: "Settings",
                     onclick: move |_| *active_route.write() = Route::Settings,
-                    "⚙️"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
                 }
             }
 
@@ -152,7 +152,7 @@ fn FolderGroup(name: String, docs: Vec<DocumentMeta>) -> Element {
             button {
                 class: "sidebar-folder-header",
                 onclick: move |_| { let v = *open.read(); *open.write() = !v; },
-                span { class: "folder-chevron", if *open.read() { "▾" } else { "▸" } }
+                span { class: "folder-chevron", if *open.read() { "−" } else { "+" } }
                 span { class: "folder-name", "{name}" }
                 span { class: "folder-count", "{docs.len()}" }
             }

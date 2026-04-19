@@ -96,31 +96,31 @@ pub fn App() -> Element {
                 button {
                     class: if *tab.read() == Tab::Notes { "tab-btn active" } else { "tab-btn" },
                     onclick: move |_| { *tab.write() = Tab::Notes; *selected_note.write() = None; },
-                    div { class: "tab-icon", "📝" }
+                    div { class: "tab-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                     div { class: "tab-label", "Notes" }
                 }
                 button {
                     class: if *tab.read() == Tab::Board { "tab-btn active" } else { "tab-btn" },
                     onclick: move |_| *tab.write() = Tab::Board,
-                    div { class: "tab-icon", "📋" }
+                    div { class: "tab-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
                     div { class: "tab-label", "Board" }
                 }
                 button {
                     class: if *tab.read() == Tab::Graph { "tab-btn active" } else { "tab-btn" },
                     onclick: move |_| *tab.write() = Tab::Graph,
-                    div { class: "tab-icon", "🕸" }
+                    div { class: "tab-icon", dangerous_inner_html: crate::icons::ICON_GRAPH }
                     div { class: "tab-label", "Graph" }
                 }
                 button {
                     class: if *tab.read() == Tab::Agent { "tab-btn active" } else { "tab-btn" },
                     onclick: move |_| *tab.write() = Tab::Agent,
-                    div { class: "tab-icon", "✦" }
+                    div { class: "tab-icon", dangerous_inner_html: crate::icons::ICON_OMEGON }
                     div { class: "tab-label", "Omegon" }
                 }
                 button {
                     class: if *tab.read() == Tab::Settings { "tab-btn active" } else { "tab-btn" },
                     onclick: move |_| *tab.write() = Tab::Settings,
-                    div { class: "tab-icon", "⚙" }
+                    div { class: "tab-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
                     div { class: "tab-label", "Settings" }
                 }
             }

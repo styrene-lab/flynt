@@ -371,7 +371,7 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                         let is_open = *open.read();
                         *open.write() = !is_open;
                     },
-                    if *open.read() { "▾" } else { "▸" }
+                    if *open.read() { "−" } else { "+" }
                 }
             }
 

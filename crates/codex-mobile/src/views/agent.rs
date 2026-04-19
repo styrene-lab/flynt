@@ -57,10 +57,10 @@ pub fn AgentView() -> Element {
                                         }
                                         "tool_start" => {
                                             let name = event["name"].as_str().unwrap_or("tool");
-                                            messages.write().push((false, format!("▸ {name}")));
+                                            messages.write().push((false, format!("» {name}")));
                                         }
                                         "tool_end" => {
-                                            let icon = if event["is_error"].as_bool().unwrap_or(false) { "✗" } else { "✓" };
+                                            let icon = if event["is_error"].as_bool().unwrap_or(false) { "x" } else { "ok" };
                                             let result = event["result"].as_str().unwrap_or("");
                                             let short = if result.len() > 100 { &result[..100] } else { result };
                                             messages.write().push((false, format!("{icon} {short}")));
@@ -70,7 +70,7 @@ pub fn AgentView() -> Element {
                                         }
                                         "system_notification" => {
                                             if let Some(msg) = event["message"].as_str() {
-                                                messages.write().push((false, format!("ℹ {msg}")));
+                                                messages.write().push((false, format!("[sys] {msg}")));
                                             }
                                         }
                                         _ => {}

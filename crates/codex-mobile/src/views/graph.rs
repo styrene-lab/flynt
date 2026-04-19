@@ -129,16 +129,16 @@ pub fn GraphView() -> Element {
             // Floating controls
             div { class: "graph-fab-group",
                 if *controls_open.read() {
-                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphZoom&&window._codexGraphZoom(1.5)"); }, "+" }
-                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphZoom&&window._codexGraphZoom(0.67)"); }, "−" }
-                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphReset&&window._codexGraphReset()"); }, "⊙" }
-                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphReheat&&window._codexGraphReheat()"); }, "↻" }
-                    button { class: "graph-fab-btn", onclick: move |_| { let v = *panel_open.read(); *panel_open.write() = !v; }, "☰" }
+                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphZoom&&window._codexGraphZoom(1.5)"); }, span { class: "fab-icon", dangerous_inner_html: crate::icons::ICON_PLUS } }
+                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphZoom&&window._codexGraphZoom(0.67)"); }, span { class: "fab-icon", dangerous_inner_html: crate::icons::ICON_MINUS } }
+                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphReset&&window._codexGraphReset()"); }, span { class: "fab-icon", dangerous_inner_html: crate::icons::ICON_CROSSHAIR } }
+                    button { class: "graph-fab-btn", onclick: move |_| { document::eval("window._codexGraphReheat&&window._codexGraphReheat()"); }, span { class: "fab-icon", dangerous_inner_html: crate::icons::ICON_REFRESH } }
+                    button { class: "graph-fab-btn", onclick: move |_| { let v = *panel_open.read(); *panel_open.write() = !v; }, span { class: "fab-icon", dangerous_inner_html: crate::icons::ICON_MENU } }
                 }
                 button {
                     class: if *controls_open.read() { "graph-fab active" } else { "graph-fab" },
                     onclick: move |_| { let v = *controls_open.read(); *controls_open.write() = !v; },
-                    if *controls_open.read() { "✕" } else { "⚙" }
+                    span { class: "fab-icon", dangerous_inner_html: if *controls_open.read() { crate::icons::ICON_CLOSE } else { crate::icons::ICON_SETTINGS } }
                 }
             }
 

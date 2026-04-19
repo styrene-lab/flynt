@@ -402,7 +402,7 @@ pub fn NotesView() -> Element {
         return rsx! {
             div { class: "notes-empty",
                 div { class: "notes-empty-content",
-                    div { class: "notes-empty-icon", "📝" }
+                    div { class: "notes-empty-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                     p { "Select a note from the sidebar" }
                     p { class: "notes-empty-hint", "or press + to create a new one" }
                 }
