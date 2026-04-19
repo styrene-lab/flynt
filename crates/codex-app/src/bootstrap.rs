@@ -614,6 +614,13 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     // Ensure default templates exist
     let _ = codex_core::templates::ensure_default_templates(&vault_root);
 
+    // iCloud: download any placeholder files before indexing
+    if matches!(vault.config.sync, codex_core::models::SyncConfig::ICloud) {
+        if let Err(e) = codex_store::sync::icloud::ensure_downloaded(&vault_root) {
+            warn!("iCloud download check failed: {e}");
+        }
+    }
+
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
 
     // Start background git sync if configured

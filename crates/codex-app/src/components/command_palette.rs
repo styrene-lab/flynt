@@ -60,6 +60,16 @@ fn execute_command(
                 }
             });
         }
+        "icloud-vault" => {
+            match codex_store::sync::icloud::create_icloud_vault("Codex") {
+                Ok(root) => {
+                    let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_vault(&root);
+                }
+                Err(e) => {
+                    tracing::error!("iCloud vault creation failed: {e}");
+                }
+            }
+        }
         other if other.starts_with("template:") => {
             if let Some(tmpl_name) = other.strip_prefix("template:") {
                 let templates = codex_core::templates::list_templates(&ctx.vault().root);
@@ -142,6 +152,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
             Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
             Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
+        Cmd { id: "icloud-vault".into(), label: "Create Vault in iCloud".into(), category: "Create".into() },
         ];
         let templates = codex_core::templates::list_templates(&ctx.vault().root);
         for tmpl in &templates {

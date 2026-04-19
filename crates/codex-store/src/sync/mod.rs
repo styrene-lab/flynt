@@ -1,5 +1,6 @@
 pub mod auto;
 pub mod git;
+pub mod icloud;
 pub mod project_git;
 pub mod util;
 pub use auto::{start_auto_sync, AutoSyncHandle, AutoSyncStatus};
