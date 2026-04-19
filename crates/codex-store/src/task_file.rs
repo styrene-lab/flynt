@@ -126,6 +126,10 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
         position: get_int("position").unwrap_or(0) as u32,
         created_at: now,
         updated_at: now,
+        decay: get_str("decay")
+            .and_then(|s| serde_json::from_str(&format!("\"{s}\"")).ok())
+            .unwrap_or_default(),
+        last_touched_at: None,
     })
 }
 

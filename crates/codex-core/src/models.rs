@@ -225,6 +225,13 @@ pub struct Task {
     pub position: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Decay rate — controls how quickly relevance fades without interaction.
+    #[serde(default)]
+    pub decay: DecayRate,
+    /// Last time a human or agent interacted with this task (view, edit, mention).
+    /// Resets the decay clock. Defaults to updated_at if never set.
+    #[serde(default)]
+    pub last_touched_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -245,6 +252,144 @@ pub enum TaskStatus {
     InProgress,
     Done,
     Archived,
+}
+
+// ── Task Decay ───────────────────────────────────────────────────────────────
+
+/// Controls how quickly a task loses relevance without interaction.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecayRate {
+    /// No decay — task stays fully relevant until manually resolved.
+    /// Use for tracked project work, sprint items.
+    None,
+    /// Slow decay — ~14 day half-life. Longer-term personal goals.
+    Slow,
+    /// Natural decay — ~7 day half-life. Default for personal tasks.
+    Natural,
+    /// Fast decay — ~3 day half-life. Ephemeral reminders, quick errands.
+    Fast,
+    /// Custom half-life in days.
+    Custom(f64),
+}
+
+impl Default for DecayRate {
+    fn default() -> Self {
+        Self::Natural
+    }
+}
+
+impl DecayRate {
+    /// Half-life in days. Returns None for non-decaying tasks.
+    pub fn half_life_days(&self) -> Option<f64> {
+        match self {
+            Self::None => Option::None,
+            Self::Slow => Some(14.0),
+            Self::Natural => Some(7.0),
+            Self::Fast => Some(3.0),
+            Self::Custom(d) => Some(*d),
+        }
+    }
+}
+
+impl Task {
+    /// Compute the current relevance score (0.0–1.0).
+    ///
+    /// - 1.0 = just touched, fully relevant
+    /// - 0.0 = completely decayed
+    /// - Tasks with `DecayRate::None` always return 1.0
+    /// - Done/Archived tasks always return 0.0
+    pub fn relevance(&self) -> f64 {
+        if matches!(self.status, TaskStatus::Done | TaskStatus::Archived) {
+            return 0.0;
+        }
+        let half_life = match self.decay.half_life_days() {
+            Some(hl) => hl,
+            Option::None => return 1.0, // no decay
+        };
+
+        let anchor = self.last_touched_at.unwrap_or(self.updated_at);
+        let elapsed_days = (Utc::now() - anchor).num_seconds() as f64 / 86400.0;
+        if elapsed_days <= 0.0 {
+            return 1.0;
+        }
+
+        // Exponential decay: relevance = 2^(-t/half_life)
+        let lambda = (2.0_f64).ln() / half_life;
+        (-lambda * elapsed_days).exp()
+    }
+
+    /// Whether the task has decayed below the visibility threshold (0.3).
+    pub fn is_fading(&self) -> bool {
+        self.relevance() < 0.3
+    }
+
+    /// Whether the task should be auto-archived (relevance < 0.1).
+    pub fn should_auto_archive(&self) -> bool {
+        self.relevance() < 0.1
+    }
+
+    /// Touch the task — resets the decay clock.
+    pub fn touch(&mut self) {
+        self.last_touched_at = Some(Utc::now());
+    }
+}
+
+// ── Notifications (git-synced, serverless push) ──────────────────────────────
+
+/// A notification record synced via git between devices.
+/// Written to `.codex/notifications/pending/<id>.json`.
+/// After delivery, moved to `.codex/notifications/delivered/`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Notification {
+    pub id: Uuid,
+    pub kind: NotificationKind,
+    pub title: String,
+    pub body: String,
+    /// Which vault originated this notification.
+    pub source_vault: String,
+    /// Task ID if this notification relates to a task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<TaskId>,
+    pub created_at: DateTime<Utc>,
+    /// Set when delivered on a device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationKind {
+    /// Task approaching its due date.
+    DueDate,
+    /// Task is decaying — needs attention or will auto-archive.
+    Decay,
+    /// Task was auto-archived by the decay system.
+    AutoArchived,
+    /// Agent-initiated — Omegon wants the user's attention.
+    Agent,
+    /// Vox communication — inbound message from an agent or system.
+    Vox,
+}
+
+impl Notification {
+    pub fn new(kind: NotificationKind, title: impl Into<String>, body: impl Into<String>, source_vault: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            kind,
+            title: title.into(),
+            body: body.into(),
+            source_vault: source_vault.into(),
+            task_id: None,
+            created_at: Utc::now(),
+            delivered_at: None,
+        }
+    }
+
+    pub fn for_task(mut self, task_id: TaskId) -> Self {
+        self.task_id = Some(task_id);
+        self
+    }
 }
 
 // ── Kanban Board ──────────────────────────────────────────────────────────────
@@ -298,20 +443,33 @@ impl Task {
     ) -> Self {
         let now = Utc::now();
         Self {
-            id:            TaskId::new(),
+            id:              TaskId::new(),
             board_id,
-            column:        column.into(),
-            title:         title.into(),
-            description:   String::new(),
-            priority:      Priority::Medium,
-            status:        TaskStatus::Todo,
-            tags:          Vec::new(),
-            document_refs: Vec::new(),
-            due_date:      None,
-            position:      u32::MAX, // store sorts by position asc; MAX = append
-            created_at:    now,
-            updated_at:    now,
+            column:          column.into(),
+            title:           title.into(),
+            description:     String::new(),
+            priority:        Priority::Medium,
+            status:          TaskStatus::Todo,
+            tags:            Vec::new(),
+            document_refs:   Vec::new(),
+            due_date:        None,
+            position:        u32::MAX,
+            created_at:      now,
+            updated_at:      now,
+            decay:           DecayRate::default(),
+            last_touched_at: None,
         }
+    }
+
+    /// Create a non-decaying task (for tracked project work).
+    pub fn new_tracked(
+        board_id: BoardId,
+        column:   impl Into<String>,
+        title:    impl Into<String>,
+    ) -> Self {
+        let mut task = Self::new(board_id, column, title);
+        task.decay = DecayRate::None;
+        task
     }
 }
 
@@ -353,6 +511,9 @@ pub struct LocalRuntimeConfig {
     pub omegon_mind_db_path: Option<PathBuf>,
     #[serde(default)]
     pub styrene_identity_profile: Option<String>,
+    /// Omegon serve daemon host:port for mobile agent connections.
+    #[serde(default)]
+    pub omegon_serve_host: Option<String>,
 }
 
 /// Appearance settings — theme name and prose font scale.

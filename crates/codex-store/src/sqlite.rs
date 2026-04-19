@@ -130,6 +130,9 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE documents ADD COLUMN last_committed_at TEXT;",
     // v2: board-project association
     "ALTER TABLE boards ADD COLUMN project_id TEXT;",
+    // v3: task decay
+    "ALTER TABLE tasks ADD COLUMN decay TEXT NOT NULL DEFAULT '\"natural\"';",
+    "ALTER TABLE tasks ADD COLUMN last_touched_at TEXT;",
 ];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────
@@ -395,7 +398,7 @@ impl VaultStore for SqliteStore {
     fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at FROM tasks WHERE id = ?1",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -416,7 +419,7 @@ impl VaultStore for SqliteStore {
             values.push(col.clone());
         }
         let sql = format!(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at FROM tasks WHERE {} ORDER BY position ASC",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE {} ORDER BY position ASC",
             conds.join(" AND ")
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -429,15 +432,16 @@ impl VaultStore for SqliteStore {
     fn save_task(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
+            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
                ON CONFLICT(id) DO UPDATE SET
                  board_id=excluded.board_id, column_name=excluded.column_name,
                  title=excluded.title, description=excluded.description,
                  priority=excluded.priority, status=excluded.status,
                  tags=excluded.tags, document_refs=excluded.document_refs,
                  due_date=excluded.due_date, position=excluded.position,
-                 updated_at=excluded.updated_at"#,
+                 updated_at=excluded.updated_at,
+                 decay=excluded.decay, last_touched_at=excluded.last_touched_at"#,
             params![
                 task.id.0.to_string(),
                 task.board_id.0.to_string(),
@@ -452,6 +456,8 @@ impl VaultStore for SqliteStore {
                 task.position,
                 task.created_at.to_rfc3339(),
                 task.updated_at.to_rfc3339(),
+                serde_json::to_string(&task.decay)?,
+                task.last_touched_at.map(|t| t.to_rfc3339()),
             ],
         )?;
         Ok(())
@@ -649,6 +655,8 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let due: Option<String> = row.get(9)?;
     let created_at: String = row.get(11)?;
     let updated_at: String = row.get(12)?;
+    let decay: Option<String> = row.get(13)?;
+    let last_touched: Option<String> = row.get(14)?;
     Ok(Task {
         id: TaskId(row.get::<_, String>(0)?.parse().unwrap()),
         board_id: BoardId(row.get::<_, String>(1)?.parse().unwrap()),
@@ -663,6 +671,8 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         position: row.get(10)?,
         created_at: created_at.parse().unwrap(),
         updated_at: updated_at.parse().unwrap(),
+        decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+        last_touched_at: last_touched.and_then(|s| s.parse().ok()),
     })
 }
 

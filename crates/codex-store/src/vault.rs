@@ -898,6 +898,101 @@ impl Vault {
         Ok(())
     }
 
+    // ── Notifications (git-synced) ──────────────────────────────────────────
+
+    /// Write a notification to the pending queue. Git sync will push it to other devices.
+    pub fn push_notification(&self, notif: &codex_core::models::Notification) -> Result<()> {
+        let dir = self.root.join(".codex/notifications/pending");
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}.json", notif.id));
+        fs::write(&path, serde_json::to_string_pretty(notif)?)?;
+        Ok(())
+    }
+
+    /// Read all pending notifications (not yet delivered on this device).
+    pub fn pending_notifications(&self) -> Result<Vec<codex_core::models::Notification>> {
+        let dir = self.root.join(".codex/notifications/pending");
+        if !dir.exists() { return Ok(vec![]); }
+        let mut result = Vec::new();
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            if entry.path().extension().map(|e| e == "json").unwrap_or(false) {
+                if let Ok(raw) = fs::read_to_string(entry.path()) {
+                    if let Ok(notif) = serde_json::from_str(&raw) {
+                        result.push(notif);
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    /// Mark a notification as delivered — moves from pending to delivered.
+    pub fn mark_notification_delivered(&self, id: &uuid::Uuid) -> Result<()> {
+        let pending = self.root.join(format!(".codex/notifications/pending/{id}.json"));
+        let delivered_dir = self.root.join(".codex/notifications/delivered");
+        fs::create_dir_all(&delivered_dir)?;
+        if pending.exists() {
+            // Update delivered_at before moving
+            if let Ok(raw) = fs::read_to_string(&pending) {
+                if let Ok(mut notif) = serde_json::from_str::<codex_core::models::Notification>(&raw) {
+                    notif.delivered_at = Some(chrono::Utc::now());
+                    let dest = delivered_dir.join(format!("{id}.json"));
+                    fs::write(&dest, serde_json::to_string_pretty(&notif)?)?;
+                }
+            }
+            fs::remove_file(&pending)?;
+        }
+        Ok(())
+    }
+
+    /// Scan tasks for decay and due date notifications. Returns new notifications to push.
+    pub fn check_task_notifications(&self) -> Result<Vec<codex_core::models::Notification>> {
+        use codex_core::models::*;
+
+        let tasks = self.store.list_tasks(&codex_core::store::TaskFilter::default())?;
+        let vault_name = self.config.vault_name.clone();
+        let today = chrono::Local::now().date_naive();
+        let mut notifications = Vec::new();
+
+        for task in &tasks {
+            if matches!(task.status, TaskStatus::Done | TaskStatus::Archived) {
+                continue;
+            }
+
+            // Due date notification — task due today or overdue
+            if let Some(due) = task.due_date {
+                if due <= today {
+                    let days = (today - due).num_days();
+                    let body = if days == 0 {
+                        format!("\"{}\" is due today", task.title)
+                    } else {
+                        format!("\"{}\" is {} day(s) overdue", task.title, days)
+                    };
+                    notifications.push(
+                        Notification::new(NotificationKind::DueDate, &task.title, body, &vault_name)
+                            .for_task(task.id.clone()),
+                    );
+                }
+            }
+
+            // Decay notification — task is fading
+            if task.is_fading() && !task.should_auto_archive() {
+                notifications.push(
+                    Notification::new(
+                        NotificationKind::Decay,
+                        &task.title,
+                        format!("\"{}\" is losing relevance. Touch it or let it archive.", task.title),
+                        &vault_name,
+                    )
+                    .for_task(task.id.clone()),
+                );
+            }
+        }
+
+        Ok(notifications)
+    }
+
     fn walk_markdown(&self, cb: &mut impl FnMut(&Path)) -> Result<()> {
         let codex_dir = self.root.join(".codex");
         for entry in walkdir::WalkDir::new(&self.root)

@@ -34,6 +34,7 @@ body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  position: relative;
 }
 
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
@@ -298,17 +299,139 @@ body {
 .graph-mobile {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 .graph-canvas-mobile {
-  flex: 1;
   width: 100%;
-  min-height: 400px;
+  height: 100%;
   background: var(--bg);
   touch-action: none;
 }
 .graph-canvas-mobile svg { width: 100%; height: 100%; }
+
+.graph-fab-group {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+.graph-fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.graph-fab.active {
+  background: var(--primary);
+  color: var(--bg);
+}
+.graph-fab-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+/* Graph settings sheet */
+.graph-sheet-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 20;
+}
+.graph-sheet {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  max-height: 70%;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  padding: 8px 16px 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  z-index: 21;
+}
+.graph-sheet-handle {
+  width: 36px; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 0 auto 12px;
+}
+.gs-section { margin-bottom: 16px; }
+.gs-heading {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+.gs-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.gs-chip {
+  padding: 4px 12px; border-radius: 14px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font-size: 13px; font-weight: 500;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.gs-chip.active {
+  background: var(--primary-dim); color: var(--primary);
+  border-color: var(--primary);
+}
+.gs-toggle-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0;
+  font-size: 14px; color: var(--foreground);
+}
+.gs-toggle {
+  padding: 3px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font-size: 11px; font-weight: 600;
+  cursor: pointer;
+}
+.gs-toggle.on {
+  background: var(--primary-dim); color: var(--primary);
+  border-color: var(--primary);
+}
+.gs-slider-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 13px; color: var(--foreground);
+}
+.gs-slider-row span:first-child { min-width: 70px; }
+.gs-slider-row input[type="range"] {
+  flex: 1; accent-color: var(--primary);
+}
+.gs-val { font-size: 12px; color: var(--muted); min-width: 20px; text-align: right; }
+.gs-reset {
+  width: 100%; padding: 10px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: transparent;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .graph-mobile-empty {
   display: flex;
   align-items: center;

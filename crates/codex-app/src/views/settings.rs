@@ -166,6 +166,7 @@ pub fn SettingsView() -> Element {
             omegon_runtime_root: path_from_input(omegon_runtime_root.read().as_str()),
             omegon_mind_db_path: path_from_input(omegon_mind_db_path.read().as_str()),
             styrene_identity_profile: string_from_input(styrene_identity_profile.read().as_str()),
+            omegon_serve_host: None,
         };
         let config = VaultConfig {
             vault_name: vault_name.read().clone(),

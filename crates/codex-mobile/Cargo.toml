@@ -17,3 +17,6 @@ comrak      = { workspace = true }
 uuid        = { workspace = true }
 dirs        = "5"
 dioxus      = { workspace = true, features = ["mobile"] }
+tokio-tungstenite = { version = "0.26", features = ["connect"] }
+futures-util = { workspace = true }
+url = "2"
