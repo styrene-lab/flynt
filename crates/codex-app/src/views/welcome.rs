@@ -40,7 +40,7 @@ pub fn WelcomeView(
                 div { class: "welcome-grid",
                     WelcomeCard {
                         primary: true,
-                        icon: "📂",
+                        icon: ">>",
                         title: "Open existing vault",
                         body: "Adopt an existing Obsidian or Codex vault in place. Codex will index it locally and keep markdown as the source of truth.",
                         action: "Choose folder",
@@ -49,7 +49,7 @@ pub fn WelcomeView(
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "✍️",
+                        icon: "+",
                         title: "Create local vault",
                         body: "Start a fresh local markdown knowledge base with Codex defaults and local-first storage boundaries.",
                         action: "Create vault",
@@ -67,7 +67,7 @@ pub fn WelcomeView(
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "⬇",
+                        icon: "<-",
                         title: "Import markdown vault",
                         body: "Bring external markdown or Obsidian-style content into Codex as references while preserving wikilinks and provenance.",
                         action: "Import references",
@@ -76,7 +76,7 @@ pub fn WelcomeView(
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "🌐",
+                        icon: ":::",
                         title: "Seed demo publication",
                         body: "Create an Astro-based example/demo site repo that shows what a published Codex vault could look like.",
                         action: "Seed demo repo",

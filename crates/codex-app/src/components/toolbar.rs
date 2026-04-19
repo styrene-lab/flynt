@@ -239,7 +239,7 @@ pub fn Toolbar(
                             .pick_folder()
                             .and_then(|path| OmegonRuntimeContext::spawn_new_instance_for_vault(&path).ok());
                     },
-                    "🗂"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
                 if !sync_label.is_empty() {
                     span { class: "sync-badge", "{sync_label}" }
