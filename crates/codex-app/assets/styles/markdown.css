@@ -139,6 +139,12 @@
   font-size:      var(--font-size-sm, 13px);
   padding-left:   4px !important;
 }
+/* Dim the pipe characters in table rows */
+.cm-table-header .tok-meta,
+.cm-table-row .tok-meta {
+  color:          var(--border, #2d3140) !important;
+  font-weight:    normal;
+}
 
 .notes-empty,
 .notes-loading {

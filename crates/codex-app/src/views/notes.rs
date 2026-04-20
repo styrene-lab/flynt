@@ -357,6 +357,15 @@ fn cm6_init_js(content: &str) -> String {
                 }} else {{ idx++; }}
             }}
 
+            // Hide table separator rows entirely on non-active lines
+            if (text.trim().startsWith('|') && text.trim().endsWith('|')) {{
+                const stripped = text.trim();
+                if (stripped.match(/^\|[\s\-:|]+\|$/)) {{
+                    decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
+                    continue;
+                }}
+            }}
+
             // Hide unordered list markers: "- " or "* " or "+ " at line start
             const trimmed = text.trimStart();
             const indent = text.length - trimmed.length;
