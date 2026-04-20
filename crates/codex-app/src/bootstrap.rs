@@ -60,7 +60,11 @@ impl OmegonRuntimeContext {
             .ok()
             .filter(|path| path.is_absolute())
             .or_else(|| dirs::config_local_dir().map(|dir| dir.join("codex/launcher-profile.json")))
-            .unwrap_or_else(|| PathBuf::from("/tmp/codex-launcher-profile.json"))
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".codex-launcher-profile.json")
+            })
     }
 
     pub fn load_launcher_profile() -> LauncherProfile {
@@ -167,6 +171,43 @@ impl OmegonRuntimeContext {
             vault.index_file(&home_path)?;
         }
         Ok(vault)
+    }
+
+    /// Clone a remote git repo into `local_path` and open it as a Codex vault.
+    pub fn clone_remote_vault(
+        local_path: &Path,
+        repo_url: &str,
+        branch: &str,
+    ) -> anyhow::Result<Vault> {
+        use codex_store::sync::git::GitSync;
+
+        std::fs::create_dir_all(local_path)?;
+
+        let repo = GitSync::clone_repo(repo_url, branch, local_path)?;
+
+        let name = local_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Codex")
+            .to_string();
+
+        let remote_name = repo
+            .remotes()?
+            .iter()
+            .flatten()
+            .next()
+            .unwrap_or("origin")
+            .to_string();
+
+        Self::initialize_vault(
+            local_path,
+            &name,
+            SyncConfig::Git {
+                remote: remote_name,
+                branch: branch.to_string(),
+                auto_commit_seconds: 60,
+            },
+        )
     }
 
     pub fn export_publication_preview(vault: &Vault) -> anyhow::Result<PathBuf> {
@@ -566,9 +607,21 @@ fn publication_output_path(vault: &Vault) -> PathBuf {
 }
 
 pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState {
-    std::fs::create_dir_all(&vault_root).expect("cannot create vault directory");
+    if let Err(e) = std::fs::create_dir_all(&vault_root) {
+        // Fatal but non-panic: log clearly so the user can see what happened
+        tracing::error!("Cannot create vault directory at {}: {e}", vault_root.display());
+        tracing::error!("Check that the path exists and you have write permission.");
+        panic!("Cannot create vault directory at {}: {e}", vault_root.display());
+    }
 
-    let vault = Arc::new(Vault::open(&vault_root).expect("failed to open vault"));
+    let vault = match Vault::open(&vault_root) {
+        Ok(v) => Arc::new(v),
+        Err(e) => {
+            tracing::error!("Failed to open vault at {}: {e}", vault_root.display());
+            tracing::error!("The vault directory may be corrupted. Try removing .codex/ and reopening.");
+            panic!("Failed to open vault at {}: {e}", vault_root.display());
+        }
+    };
 
     match vault.reindex() {
         Ok((n, errs)) => {
@@ -671,17 +724,25 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
 
 pub fn bootstrap_from_env() -> RuntimeState {
     let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
+    let default_root = || {
+        dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Codex")
+    };
+
     // CODEX_VAULT env var takes priority (explicit override), then launcher
-    // profile's last vault, then default Documents/Codex.
+    // profile's last vault (only if parent dir is accessible), then default.
     let vault_root = std::env::var("CODEX_VAULT")
         .map(PathBuf::from)
         .ok()
-        .or(launcher_profile.last_vault_root.clone())
-        .unwrap_or_else(|| {
-            dirs::document_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join("Codex")
-        });
+        .or_else(|| {
+            launcher_profile.last_vault_root.clone().filter(|p| {
+                // Accept if vault dir exists, or its parent exists (so we can create it)
+                p.exists() || p.parent().is_some_and(|parent| parent.exists())
+            })
+        })
+        .unwrap_or_else(default_root);
 
     runtime_state_for_vault_root(vault_root)
 }

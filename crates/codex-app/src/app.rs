@@ -116,6 +116,24 @@ pub fn App() -> Element {
                     }
                 });
             }
+            crate::menu::NEW_DRAWING => {
+                let c = ctx_menu_handler;
+                let mut ts = tab_state;
+                let mut ar = active_route;
+                spawn(async move {
+                    let vault = c.vault();
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let name = format!("Drawing {ts_suffix}");
+                    if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                        let _ = vault.reindex();
+                        let slug = name.to_lowercase();
+                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                            ts.write().open(doc.id, name);
+                        }
+                        *ar.write() = Route::Notes;
+                    }
+                });
+            }
             crate::menu::OPEN_VAULT => {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
                     let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&path);
@@ -126,6 +144,16 @@ pub fn App() -> Element {
     });
 
     let mut launcher_profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
+
+    // Clone dialog state
+    let mut clone_dialog_open = use_signal(|| false);
+    let mut clone_url: Signal<String> = use_signal(|| "git@github.com:".to_string());
+    let mut clone_branch: Signal<String> = use_signal(|| "main".to_string());
+    let mut clone_error: Signal<Option<String>> = use_signal(|| None);
+    let mut clone_busy = use_signal(|| false);
+
+    // Welcome screen error banner
+    let mut welcome_error: Signal<Option<String>> = use_signal(|| None);
 
     let ctx_for_switch = ctx.clone();
     let _switch_runtime = move |selected_root: PathBuf| {
@@ -144,8 +172,8 @@ pub fn App() -> Element {
         document::Script {
             src: asset!("/assets/vendor/codemirror.bundle.js"),
         }
-        // Excalidraw loaded lazily — only when a .excalidraw file is opened
-        // See views/excalidraw.rs init() which checks for window.CodexExcalidraw
+        // Excalidraw loaded lazily — see views/excalidraw.rs
+        // Bundle copied into app by build-release.sh post-build step
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
         document::Stylesheet { href: asset!("/assets/styles/layout.css") }
@@ -190,22 +218,25 @@ pub fn App() -> Element {
                         Route::Welcome => {
                             let mut choose_ctx = ctx.clone();
                             let mut create_ctx = ctx.clone();
-                            let mut github_ctx = ctx.clone();
                             let import_ctx = ctx.clone();
                             let on_choose_existing = move |_| {
+                                *welcome_error.write() = None;
                                 let Some(selected_root) = FileDialog::new().pick_folder() else {
                                     return;
                                 };
-                                if OmegonRuntimeContext::initialize_vault(
+                                if !selected_root.is_dir() {
+                                    *welcome_error.write() = Some("Please select a folder, not a file.".into());
+                                    return;
+                                }
+                                if let Err(e) = OmegonRuntimeContext::initialize_vault(
                                     &selected_root,
                                     selected_root
                                         .file_name()
                                         .and_then(|name| name.to_str())
                                         .unwrap_or("Codex"),
                                     codex_core::models::SyncConfig::None,
-                                )
-                                .is_err()
-                                {
+                                ) {
+                                    *welcome_error.write() = Some(format!("Could not open vault: {e}"));
                                     return;
                                 }
                                 let mut profile = launcher_profile();
@@ -231,10 +262,11 @@ pub fn App() -> Element {
                                 *active_route.write() = Route::Notes;
                             };
                             let on_create_local = move |_| {
+                                *welcome_error.write() = None;
                                 let Some(local_path) = FileDialog::new()
                                     .set_directory(
                                         dirs::document_dir()
-                                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp")),
+                                            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))),
                                     )
                                     .pick_folder()
                                 else {
@@ -245,93 +277,67 @@ pub fn App() -> Element {
                                     .and_then(|name| name.to_str())
                                     .unwrap_or("Black Meridian")
                                     .to_string();
-                                if let Ok(_vault) = OmegonRuntimeContext::initialize_vault(
+                                match OmegonRuntimeContext::initialize_vault(
                                     &local_path,
                                     &name,
                                     codex_core::models::SyncConfig::None,
                                 ) {
-                                    let mut profile = launcher_profile();
-                                    profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
-                                        path: local_path.clone(),
-                                        name: name.clone(),
-                                    });
-                                    profile.last_vault_root = Some(local_path.clone());
-                                    profile.wizard_completed = true;
-                                    if !profile.recent_vaults.contains(&local_path) {
-                                        profile.recent_vaults.push(local_path.clone());
+                                    Ok(_vault) => {
+                                        let mut profile = launcher_profile();
+                                        profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
+                                            path: local_path.clone(),
+                                            name: name.clone(),
+                                        });
+                                        profile.last_vault_root = Some(local_path.clone());
+                                        profile.wizard_completed = true;
+                                        if !profile.recent_vaults.contains(&local_path) {
+                                            profile.recent_vaults.push(local_path.clone());
+                                        }
+                                        let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                        launcher_profile.set(profile);
+                                        create_ctx.set_runtime(runtime_state_for_vault_root(local_path.clone()));
+                                        *active_route.write() = Route::Notes;
                                     }
-                                    let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                                    launcher_profile.set(profile);
-                                    create_ctx.set_runtime(runtime_state_for_vault_root(local_path.clone()));
-                                    *active_route.write() = Route::Notes;
+                                    Err(e) => {
+                                        *welcome_error.write() = Some(format!("Could not create vault: {e}"));
+                                    }
                                 }
                             };
-                            let on_link_github = move |_| {
-                                let Some(local_path) = FileDialog::new()
-                                    .set_directory(
-                                        dirs::document_dir()
-                                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp")),
-                                    )
-                                    .pick_folder()
-                                else {
-                                    return;
-                                };
-                                let name = local_path
-                                    .file_name()
-                                    .and_then(|name| name.to_str())
-                                    .unwrap_or("Black Meridian")
-                                    .to_string();
-                                if let Ok(_vault) = OmegonRuntimeContext::initialize_github_pages_publication(
-                                    &local_path,
-                                    &name,
-                                    "https://github.com/black-meridian/codex-site.git",
-                                    "gh-pages",
-                                ) {
-                                    let mut profile = launcher_profile();
-                                    profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
-                                        local_path: local_path.clone(),
-                                        repo: "https://github.com/black-meridian/codex-site.git".into(),
-                                        branch: "gh-pages".into(),
-                                    });
-                                    profile.last_vault_root = Some(local_path.clone());
-                                    profile.wizard_completed = true;
-                                    if !profile.recent_vaults.contains(&local_path) {
-                                        profile.recent_vaults.push(local_path.clone());
-                                    }
-                                    let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                                    launcher_profile.set(profile);
-                                    github_ctx.set_runtime(runtime_state_for_vault_root(local_path.clone()));
-                                    *active_route.write() = Route::Notes;
-                                }
+                            let on_clone_remote = move |_| {
+                                *clone_dialog_open.write() = true;
+                                *clone_error.write() = None;
                             };
                             let on_import_markdown = move |_| {
+                                *welcome_error.write() = None;
                                 let Some(source_root) = FileDialog::new().pick_folder() else {
                                     return;
                                 };
-                                if import_ctx.vault().import_markdown_tree(&source_root).is_err() {
-                                    return;
+                                match import_ctx.vault().import_markdown_tree(&source_root) {
+                                    Ok(_count) => {
+                                        let mut profile = launcher_profile();
+                                        profile.wizard_completed = true;
+                                        let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                        launcher_profile.set(profile);
+                                        *active_route.write() = Route::Notes;
+                                    }
+                                    Err(e) => {
+                                        *welcome_error.write() = Some(format!("Import failed: {e}"));
+                                    }
                                 }
-                                let mut profile = launcher_profile();
-                                profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
-                                    path: source_root,
-                                    name: "Imported References".into(),
-                                });
-                                profile.wizard_completed = true;
-                                let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                                launcher_profile.set(profile);
-                                *active_route.write() = Route::Notes;
                             };
                             let on_seed_demo_publication = move |_| {
+                                *welcome_error.write() = None;
                                 let Some(repo_root) = FileDialog::new()
                                     .set_directory(
                                         dirs::document_dir()
-                                            .unwrap_or_else(|| std::path::PathBuf::from("/tmp")),
+                                            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))),
                                     )
                                     .pick_folder()
                                 else {
                                     return;
                                 };
-                                if OmegonRuntimeContext::seed_demo_publication_repo(&repo_root).is_err() {
+                                if let Err(e) = OmegonRuntimeContext::seed_demo_publication_repo(&repo_root) {
+                                    *welcome_error.write() = Some(format!("Could not create demo: {e}"));
                                     return;
                                 }
                                 let site_name = repo_root
@@ -349,11 +355,21 @@ pub fn App() -> Element {
                                 launcher_profile.set(profile);
                             };
                             rsx! {
+                                if let Some(err) = welcome_error.read().as_ref() {
+                                    div { class: "welcome-error-banner",
+                                        span { class: "welcome-error-text", "{err}" }
+                                        button {
+                                            class: "welcome-error-dismiss",
+                                            onclick: move |_| *welcome_error.write() = None,
+                                            "Dismiss"
+                                        }
+                                    }
+                                }
                                 WelcomeView {
                                     launcher_profile: launcher_profile(),
                                     on_choose_existing,
                                     on_create_local,
-                                    on_link_github,
+                                    on_clone_remote,
                                     on_import_markdown,
                                     on_seed_demo_publication,
                                 }
@@ -367,6 +383,105 @@ pub fn App() -> Element {
                         Route::Settings => rsx! { SettingsView {} },
                     }
                 }
+                // Clone remote vault dialog
+                if *clone_dialog_open.read() {
+                    div { class: "modal-overlay",
+                        onclick: move |_| *clone_dialog_open.write() = false,
+                        div { class: "modal-dialog",
+                            onclick: move |e| e.stop_propagation(),
+                            h2 { "Clone remote vault" }
+                            p { class: "modal-hint", "Enter the Git repository URL and branch. SSH (git@...) and HTTPS both work." }
+
+                            div { class: "modal-field",
+                                label { "Repository URL" }
+                                input {
+                                    r#type: "text",
+                                    value: "{clone_url}",
+                                    placeholder: "git@github.com:user/vault.git",
+                                    oninput: move |e| *clone_url.write() = e.value(),
+                                }
+                            }
+                            div { class: "modal-field",
+                                label { "Branch" }
+                                input {
+                                    r#type: "text",
+                                    value: "{clone_branch}",
+                                    placeholder: "main",
+                                    oninput: move |e| *clone_branch.write() = e.value(),
+                                }
+                            }
+
+                            if let Some(err) = clone_error.read().as_ref() {
+                                div { class: "modal-error", "{err}" }
+                            }
+
+                            div { class: "modal-actions",
+                                button {
+                                    class: "modal-btn secondary",
+                                    onclick: move |_| *clone_dialog_open.write() = false,
+                                    "Cancel"
+                                }
+                                button {
+                                    class: "modal-btn primary",
+                                    disabled: *clone_busy.read(),
+                                    onclick: {
+                                        let mut github_ctx = ctx.clone();
+                                        move |_| {
+                                            let url = clone_url.read().trim().to_string();
+                                            let branch = clone_branch.read().trim().to_string();
+                                            if url.is_empty() {
+                                                *clone_error.write() = Some("Repository URL is required".into());
+                                                return;
+                                            }
+                                            let branch = if branch.is_empty() { "main".to_string() } else { branch };
+
+                                            // Derive a folder name from the URL
+                                            let repo_name = url
+                                                .rsplit('/')
+                                                .next()
+                                                .unwrap_or("vault")
+                                                .trim_end_matches(".git")
+                                                .to_string();
+                                            let dest = dirs::document_dir()
+                                                .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+                                                .join(&repo_name);
+
+                                            *clone_busy.write() = true;
+                                            *clone_error.write() = None;
+
+                                            match OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch) {
+                                                Ok(_vault) => {
+                                                    let mut profile = launcher_profile();
+                                                    profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
+                                                        local_path: dest.clone(),
+                                                        repo: url,
+                                                        branch,
+                                                    });
+                                                    profile.last_vault_root = Some(dest.clone());
+                                                    profile.wizard_completed = true;
+                                                    if !profile.recent_vaults.contains(&dest) {
+                                                        profile.recent_vaults.push(dest.clone());
+                                                    }
+                                                    let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                                    launcher_profile.set(profile);
+                                                    github_ctx.set_runtime(runtime_state_for_vault_root(dest));
+                                                    *clone_dialog_open.write() = false;
+                                                    *active_route.write() = Route::Notes;
+                                                }
+                                                Err(e) => {
+                                                    *clone_error.write() = Some(format!("{e:#}"));
+                                                }
+                                            }
+                                            *clone_busy.write() = false;
+                                        }
+                                    },
+                                    if *clone_busy.read() { "Cloning..." } else { "Clone" }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if show_agent() {
                     AgentRail {}
                 }

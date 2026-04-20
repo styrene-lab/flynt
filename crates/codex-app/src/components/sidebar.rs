@@ -77,7 +77,10 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                 match &*docs.read() {
                     None => rsx! { span { class: "sidebar-item muted", "Loading…" } },
                     Some(list) if list.is_empty() => rsx! {
-                        span { class: "sidebar-item muted", "No documents" }
+                        div { class: "sidebar-empty-state",
+                            p { class: "sidebar-empty-heading", "Your vault is empty" }
+                            p { class: "sidebar-empty-hint", "Press \u{2318}N to create your first note, or \u{2318}P for the command palette." }
+                        }
                     },
                     Some(list) => rsx! { { tree_view(list) } },
                 }

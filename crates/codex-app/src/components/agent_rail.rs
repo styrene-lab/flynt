@@ -14,10 +14,14 @@ fn find_omegon_binary() -> Option<PathBuf> {
     for candidate in candidates.into_iter().flatten() {
         if candidate.exists() { return Some(candidate); }
     }
-    std::process::Command::new("which").arg("omegon").output().ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| PathBuf::from(s.trim()))
+    // Search PATH for omegon binary (cross-platform)
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join("omegon");
+            if candidate.exists() { return Some(candidate); }
+        }
+    }
+    None
 }
 
 fn render_md(content: &str) -> String {
@@ -158,6 +162,8 @@ pub fn AgentRail() -> Element {
     let slash_prefix = input_val.starts_with('/');
     let filter_text = if slash_prefix { input_val.trim_start_matches('/').to_lowercase() } else { String::new() };
 
+    let launch_error = use_context::<Signal<Option<String>>>();
+
     rsx! {
         div { class: "agent-rail",
             // ── Status bar ───────────────────────────────────────
@@ -168,9 +174,25 @@ pub fn AgentRail() -> Element {
                 }
             }
 
+            // ── Launch/connection error ──────────────────────────
+            if let Some(err) = launch_error.read().as_ref() {
+                div { class: "agent-error-banner",
+                    p { "Could not start the agent: {err}" }
+                    p { class: "agent-error-hint", "Make sure Omegon is installed. Check Settings for the runtime path." }
+                }
+            }
+            if !binary_found && launch_error.read().is_none() {
+                div { class: "agent-error-banner",
+                    p { "Omegon binary not found." }
+                    p { class: "agent-error-hint",
+                        "Install Omegon or set the runtime path in Settings > Local Runtime."
+                    }
+                }
+            }
+
             // ── Chat messages ────────────────────────────────────
             div { class: "agent-messages",
-                if items.read().is_empty() {
+                if items.read().is_empty() && binary_found {
                     div { class: "agent-empty",
                         p { "Ask Omegon about your vault, notes, or projects." }
                         div { class: "agent-suggestions",

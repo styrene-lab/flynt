@@ -517,7 +517,7 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
         spawn(async move {
             match create_board(c, n).await {
                 Ok(()) => *refresh.write() += 1,
-                Err(e) => *error_msg.write() = Some(format!("{e}")),
+                Err(e) => *error_msg.write() = Some(format!("Could not create board — {e}")),
             }
         });
         *name.write() = String::new();
@@ -541,7 +541,7 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
                             spawn(async move {
                                 match create_board(c, n).await {
                                     Ok(()) => *refresh.write() += 1,
-                                    Err(e) => *error_msg.write() = Some(format!("{e}")),
+                                    Err(e) => *error_msg.write() = Some(format!("Could not create board — {e}")),
                                 }
                             });
                             *name.write() = String::new();
@@ -555,7 +555,7 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
                 }
             }
             if let Some(ref err) = *error_msg.read() {
-                p { class: "text-error", "Error: {err}" }
+                p { class: "text-error", "{err}" }
             }
         }
     }

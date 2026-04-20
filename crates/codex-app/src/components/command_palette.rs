@@ -112,15 +112,22 @@ fn execute_command(
             }
         }
         "new-drawing" => {
-            let vault = ctx.vault();
-            let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-            let name = format!("Drawing {ts_suffix}");
-            if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                let _ = vault.reindex();
-                // Open the drawing — for now just navigate to notes
-                // The notes view will detect .excalidraw and render appropriately
-                *active_route.write() = Route::Notes;
-            }
+            let c = ctx;
+            let mut ts = *tab_state;
+            let mut ar = *active_route;
+            spawn(async move {
+                let vault = c.vault();
+                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                let name = format!("Drawing {ts_suffix}");
+                if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                    let _ = vault.reindex();
+                    let slug = name.to_lowercase();
+                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                        ts.write().open(doc.id, name);
+                    }
+                    *ar.write() = Route::Notes;
+                }
+            });
         }
         "daily-note" => {
             let c = ctx.clone();
@@ -145,6 +152,29 @@ fn execute_command(
                     *ar.write() = Route::Notes;
                 }
             });
+        }
+        "sync-now" => {
+            let c = ctx;
+            spawn(async move {
+                let vault = c.vault();
+                if let codex_core::models::SyncConfig::Git { remote, branch, .. } = &vault.config.sync {
+                    let git = codex_store::sync::git::GitSync::new(
+                        vault.root.clone(),
+                        remote.clone(),
+                        branch.clone(),
+                    );
+                    if let Err(e) = git.auto_commit("[codex] manual sync") {
+                        tracing::warn!("sync commit failed: {e}");
+                    }
+                    if let Err(e) = codex_core::sync::SyncBackend::sync(&git) {
+                        tracing::warn!("sync failed: {e}");
+                    }
+                }
+            });
+        }
+        "toggle-agent" => {
+            // Handled by the toolbar — the palette just triggers a show_agent toggle.
+            // The signal isn't accessible here, but the menu handler in app.rs handles it.
         }
         other if other.starts_with("open:") => {
             if let Some(uuid_str) = other.strip_prefix("open:") {

@@ -38,7 +38,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
             let query_source = html_unescape(&html[code_start..code_end]);
             let result = match codex_core::query::execute_query(&query_source, store) {
                 Ok(rendered) => format!("<div class=\"query-result\">{rendered}</div>"),
-                Err(e) => format!("<div class=\"query-error\">Query error: {e}</div>"),
+                Err(e) => format!("<div class=\"query-error\">This query could not run: {e}<br><small>Syntax: <code>TABLE title, tags FROM \"\" WHERE tags = \"#tag\" SORT title</code></small></div>"),
             };
 
             html = format!("{}{}{}", &html[..pre_start], result, &html[pre_end..]);
@@ -77,7 +77,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
                 } else if excalidraw_path.exists() {
                     format!("<div class=\"excalidraw-embed-placeholder\" data-drawing=\"{escaped_ref}\">[Drawing: {file_ref} — save to auto-export SVG]</div>")
                 } else {
-                    format!("<span class=\"broken-embed\">[Missing: {file_ref}]</span>")
+                    format!("<span class=\"broken-embed\">Embedded file not found: {file_ref}</span>")
                 };
 
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
@@ -683,8 +683,8 @@ pub fn NotesView() -> Element {
                                     *save_state.write() = SaveState::Saved;
                                     *save_err.write() = None;
                                 }
-                                Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
-                                Err(e) => *save_err.write() = Some(e.to_string()),
+                                Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
+                                Err(e) => *save_err.write() = Some(format!("Save interrupted — {e}")),
                             }
                         }
                     }
@@ -743,7 +743,10 @@ pub fn NotesView() -> Element {
     let Some((rel_path, title, body, _html)) = data else {
         return rsx! {
             div { class: "notes-empty",
-                p { class: "muted", "Document not found." }
+                p { class: "muted", "This note may have been moved or deleted." }
+                p { class: "muted", style: "font-size: 12px; margin-top: 8px;",
+                    "Close this tab and select another note from the sidebar, or press \u{2318}N to create a new one."
+                }
             }
         };
     };
@@ -792,8 +795,8 @@ pub fn NotesView() -> Element {
                                                 *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
                                                 render_ver += 1;
                                             }
-                                            Ok(Err(e)) => *rename_msg.write() = Some(format!("Error: {e}")),
-                                            Err(e) => *rename_msg.write() = Some(format!("Error: {e}")),
+                                            Ok(Err(e)) => *rename_msg.write() = Some(format!("Rename failed — {e}")),
+                                            Err(e) => *rename_msg.write() = Some(format!("Rename interrupted — {e}")),
                                         }
                                         *renaming.write() = false;
                                     });
@@ -817,7 +820,7 @@ pub fn NotesView() -> Element {
                 }
                 div { class: "notes-actions",
                     match *save_state.read() {
-                        SaveState::Dirty => rsx! { span { class: "save-status dirty", "●" } },
+                        SaveState::Dirty => rsx! { span { class: "save-status dirty", title: "Unsaved changes", "unsaved" } },
                         SaveState::Saved => rsx! { span { class: "save-status saved", "saved" } },
                         SaveState::Clean => rsx! {},
                     }
@@ -851,8 +854,8 @@ pub fn NotesView() -> Element {
                                                 *save_err.write() = None;
                                                 *save_state.write() = SaveState::Saved;
                                             }
-                                            Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
-                                            Err(e)     => *save_err.write() = Some(e.to_string()),
+                                            Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
+                                            Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
                                         }
                                     });
                                     *mode.write() = EditMode::Live;
@@ -923,8 +926,8 @@ pub fn NotesView() -> Element {
                                                         *save_err.write() = None;
                                                         *save_state.write() = SaveState::Saved;
                                                     }
-                                                    Ok(Err(e)) => *save_err.write() = Some(e.to_string()),
-                                                    Err(e)     => *save_err.write() = Some(e.to_string()),
+                                                    Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
+                                                    Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
                                                 }
                                             });
                                             *mode.write() = EditMode::Live;

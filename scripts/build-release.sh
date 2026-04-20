@@ -16,20 +16,40 @@ cd "$ROOT"
 
 APP="target/dx/codex-app/release/macos/CodexApp.app"
 cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+# Excalidraw bundle — lazy-loaded at runtime, not picked up by asset!() macro
+mkdir -p "$APP/Contents/Resources/assets/vendor"
+cp crates/codex-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" 2>/dev/null
 
-codesign -f -s "Developer ID Application: CHRISTOPHER RYAN WILSON (UZBY9DM42N)" \
-  --keychain "$HOME/Library/Keychains/login.keychain-db" "$APP"
+SIGN_ID="Developer ID Application: CHRISTOPHER RYAN WILSON (UZBY9DM42N)"
+KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+ENTITLEMENTS="$ROOT/crates/codex-app/Codex.entitlements"
+
+# Sign all nested binaries first (dylibs, frameworks)
+find "$APP/Contents" -type f \( -name "*.dylib" -o -perm +111 \) ! -name "Info.plist" ! -name "*.plist" | while read -r bin; do
+  codesign -f -s "$SIGN_ID" --keychain "$KEYCHAIN" --options runtime --timestamp "$bin" 2>/dev/null || true
+done
+
+# Sign the main app bundle with hardened runtime + entitlements
+codesign -f -s "$SIGN_ID" \
+  --keychain "$KEYCHAIN" \
+  --options runtime \
+  --timestamp \
+  --entitlements "$ENTITLEMENTS" \
+  "$APP"
 
 # DMG
 STAGING=$(mktemp -d)
 cp -r "$APP" "$STAGING/Codex.app"
 ln -s /Applications "$STAGING/Applications"
 hdiutil create -volname "Codex" -srcfolder "$STAGING" -ov -format UDZO "$DIST/Codex-$VERSION.dmg"
-codesign -f -s "Developer ID Application: CHRISTOPHER RYAN WILSON (UZBY9DM42N)" \
-  --keychain "$HOME/Library/Keychains/login.keychain-db" "$DIST/Codex-$VERSION.dmg"
+codesign -f -s "$SIGN_ID" \
+  --keychain "$KEYCHAIN" \
+  --timestamp \
+  "$DIST/Codex-$VERSION.dmg"
 rm -rf "$STAGING"
 echo "✓ macOS DMG: $DIST/Codex-$VERSION.dmg"
 

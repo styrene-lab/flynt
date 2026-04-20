@@ -1,0 +1,281 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release (e.g. v0.2.0). Must already exist on origin.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+
+jobs:
+  build-linux:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libxdo-dev \
+            libayatana-appindicator3-dev \
+            pkg-config \
+            cmake
+
+      - name: Install Dioxus CLI
+        run: cargo install dioxus-cli
+
+      - name: Build desktop release
+        run: |
+          cd crates/codex-app
+          dx build --platform desktop --release
+
+      - name: Prepare archive
+        run: |
+          DIST="codex-${{ env.RELEASE_TAG }}-linux-${{ matrix.arch }}"
+          mkdir -p "$DIST"
+
+          # Copy the built binary
+          APP_DIR="target/dx/codex-app/release/bundle/deb"
+          if [ -d "$APP_DIR" ]; then
+            cp -r "$APP_DIR"/* "$DIST/"
+          fi
+
+          # Fallback: copy raw binary
+          BIN="target/dx/codex-app/release/linux/codex-app"
+          if [ -f "$BIN" ]; then
+            cp "$BIN" "$DIST/codex"
+            chmod +x "$DIST/codex"
+          fi
+
+          # Copy icon + desktop entry
+          cp crates/codex-app/assets/icon.png "$DIST/codex.png"
+
+          cat > "$DIST/codex.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=Codex
+          Comment=Local-first knowledge management
+          Exec=codex
+          Icon=codex
+          Type=Application
+          Categories=Office;TextEditor;
+          MimeType=text/markdown;
+          DESKTOP
+
+          tar czf "$DIST.tar.gz" "$DIST"
+          echo "ARCHIVE=$DIST.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-linux-${{ matrix.arch }}
+          path: ${{ env.ARCHIVE }}
+
+  build-macos:
+    name: Build macOS (universal)
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install Dioxus CLI
+        run: cargo install dioxus-cli
+
+      - name: Build desktop release
+        run: |
+          cd crates/codex-app
+          dx build --platform desktop --release
+
+      - name: Prepare app bundle
+        run: |
+          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${RELEASE_TAG#v}" "$APP/Contents/Info.plist" 2>/dev/null
+
+          # Copy Excalidraw bundle
+          mkdir -p "$APP/Contents/Resources/assets/vendor"
+          cp crates/codex-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
+
+      - name: Sign app bundle
+        if: env.APPLE_SIGNING_CERT_B64 != ''
+        env:
+          APPLE_SIGNING_CERT_B64: ${{ secrets.APPLE_SIGNING_CERT_B64 }}
+          APPLE_SIGNING_CERT_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/codex-signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/codex-signing.p12"
+          KEYCHAIN_PASSWORD="${{ github.run_id }}-${{ github.run_attempt }}"
+
+          echo "$APPLE_SIGNING_CERT_B64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "${APPLE_SIGNING_CERT_PASSWORD}" -T /usr/bin/codesign -T /usr/bin/security -A
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          ENTITLEMENTS="crates/codex-app/Codex.entitlements"
+
+          find "$APP/Contents" -type f \( -name "*.dylib" -o -perm +111 \) ! -name "Info.plist" ! -name "*.plist" | while read -r bin; do
+            codesign -f -s "$APPLE_CODESIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" --options runtime --timestamp "$bin" 2>/dev/null || true
+          done
+
+          codesign -f -s "$APPLE_CODESIGN_IDENTITY" \
+            --keychain "$KEYCHAIN_PATH" \
+            --options runtime \
+            --timestamp \
+            --entitlements "$ENTITLEMENTS" \
+            "$APP"
+
+      - name: Create DMG
+        run: |
+          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          VERSION="${RELEASE_TAG#v}"
+          STAGING=$(mktemp -d)
+          cp -r "$APP" "$STAGING/Codex.app"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Codex" -srcfolder "$STAGING" -ov -format UDZO "Codex-$VERSION-macos.dmg"
+          rm -rf "$STAGING"
+
+          if [ -n "${APPLE_CODESIGN_IDENTITY:-}" ]; then
+            codesign -f -s "$APPLE_CODESIGN_IDENTITY" --timestamp "Codex-$VERSION-macos.dmg"
+          fi
+
+          echo "DMG=Codex-$VERSION-macos.dmg" >> "$GITHUB_ENV"
+
+      - name: Notarize DMG
+        if: env.APPLE_API_KEY_P8_B64 != ''
+        env:
+          APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "$KEY_PATH"
+          xcrun notarytool submit "$DMG" \
+            --key "$KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "$DMG"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-macos
+          path: ${{ env.DMG }}
+
+  build-ios:
+    name: Build iOS
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Install Dioxus CLI
+        run: cargo install dioxus-cli
+
+      - name: Build iOS release
+        run: |
+          cd crates/codex-mobile
+          IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
+
+      - name: Prepare IPA
+        run: |
+          MAPP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          VERSION="${RELEASE_TAG#v}"
+          ICONS="crates/codex-mobile/assets/AppIcon.appiconset"
+
+          # Icons
+          cp "$ICONS/icon-120.png" "$MAPP/AppIcon60x60@2x.png"
+          cp "$ICONS/icon-180.png" "$MAPP/AppIcon60x60@3x.png"
+          cp "$ICONS/icon-80.png"  "$MAPP/AppIcon40x40@2x.png"
+          cp "$ICONS/icon-120.png" "$MAPP/AppIcon40x40@3x.png"
+          cp "$ICONS/icon-58.png"  "$MAPP/AppIcon29x29@2x.png"
+          cp "$ICONS/icon-87.png"  "$MAPP/AppIcon29x29@3x.png"
+          cp "$ICONS/icon-40.png"  "$MAPP/AppIcon20x20@2x.png"
+          cp "$ICONS/icon-60.png"  "$MAPP/AppIcon20x20@3x.png"
+
+          # IPA
+          IPA_STAGING=$(mktemp -d)
+          mkdir -p "$IPA_STAGING/Payload"
+          cp -r "$MAPP" "$IPA_STAGING/Payload/CodexMobile.app"
+          cd "$IPA_STAGING" && zip -r -q "$GITHUB_WORKSPACE/Codex-$VERSION.ipa" Payload/
+          echo "IPA=Codex-$VERSION.ipa" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-ios
+          path: ${{ env.IPA }}
+
+  release:
+    name: Create GitHub Release
+    needs: [build-linux, build-macos, build-ios]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Codex $VERSION" \
+            --generate-notes \
+            artifacts/**/*

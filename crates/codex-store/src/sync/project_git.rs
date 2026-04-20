@@ -8,7 +8,7 @@
 
 use anyhow::{Context, Result};
 use codex_core::models::GitBacking;
-use git2::{IndexAddOption, Repository};
+use git2::{IndexAddOption, PushOptions, Repository};
 use std::path::{Path, PathBuf};
 
 use super::util;
@@ -161,7 +161,9 @@ impl ProjectGit {
         let repo = self.open_repo()?;
         let mut remote = repo.find_remote(remote_name)?;
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-        remote.push(&[&refspec], None)?;
+        let mut push_opts = PushOptions::new();
+        push_opts.remote_callbacks(super::git::GitSync::credential_callbacks());
+        remote.push(&[&refspec], Some(&mut push_opts))?;
         Ok(())
     }
 }

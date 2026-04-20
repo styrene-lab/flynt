@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Black Meridian"]
 
@@ -44,11 +44,11 @@ once_cell = "1"
 # Storage
 rusqlite = { version = "0.32", features = ["bundled", "chrono", "uuid"] }
 
-# File watching
-notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+# File watching — all platform backends enabled, notify selects the right one at compile time
+notify = { version = "7" }
 
-# Git sync
-git2 = { version = "0.20", default-features = false }
+# Git sync (vendored for cross-platform builds)
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 
 # S3 / object storage
 object_store = { version = "0.11", features = ["aws"] }

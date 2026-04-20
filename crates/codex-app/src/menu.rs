@@ -26,6 +26,8 @@ pub const SYNC_NOW: &str = "codex-sync-now";
 pub const NEW_BOARD: &str = "codex-new-board";
 pub const DAILY_NOTE: &str = "codex-daily-note";
 
+pub const NEW_DRAWING: &str = "codex-new-drawing";
+
 pub const RENAME_NOTE: &str = "codex-rename-note";
 pub const DELETE_NOTE: &str = "codex-delete-note";
 
@@ -78,6 +80,15 @@ pub fn build_menu_bar() -> Menu {
                 "Today's Note",
                 true,
                 Some(Accelerator::new(Some(Modifiers::META), Code::KeyD)),
+            ),
+            &MenuItem::with_id(
+                NEW_DRAWING,
+                "New Drawing",
+                true,
+                Some(Accelerator::new(
+                    Some(Modifiers::META | Modifiers::SHIFT),
+                    Code::KeyD,
+                )),
             ),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(

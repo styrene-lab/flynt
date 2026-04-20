@@ -16,10 +16,8 @@ fn vault_root() -> PathBuf {
         })
         .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
         .unwrap_or_else(|| {
-            std::env::var("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from("/tmp"))
-                .join("Documents")
+            dirs::document_dir()
+                .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
                 .join("Codex")
         })
 }

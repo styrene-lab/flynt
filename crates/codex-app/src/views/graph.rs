@@ -245,7 +245,7 @@ pub fn GraphView() -> Element {
                                         }
                                     }
                                     div { class: "panel-toggle",
-                                        span { class: "filter-label", "Orphans" }
+                                        span { class: "filter-label", title: "Show notes that have no links to other notes", "Unlinked notes" }
                                         button {
                                             class: if s.show_orphans { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
                                             onclick: move |_| { let v = settings.read().show_orphans; settings.write().show_orphans = !v; },
@@ -253,7 +253,7 @@ pub fn GraphView() -> Element {
                                         }
                                     }
                                     div { class: "panel-toggle",
-                                        span { class: "filter-label", "Local graph" }
+                                        span { class: "filter-label", title: "Show only notes near the currently selected note", "Focus on selection" }
                                         button {
                                             class: if s.local_mode { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
                                             onclick: move |_| { let v = settings.read().local_mode; settings.write().local_mode = !v; },
@@ -262,7 +262,7 @@ pub fn GraphView() -> Element {
                                     }
                                     if s.local_mode {
                                         div { class: "panel-slider",
-                                            span { class: "filter-label", "Depth" }
+                                            span { class: "filter-label", title: "How many hops away from the selected note to show", "Neighborhood" }
                                             input { r#type: "range", min: "1", max: "6", step: "1",
                                                 value: "{s.local_depth}",
                                                 oninput: move |e| { settings.write().local_depth = e.value().parse().unwrap_or(2); },
@@ -334,7 +334,7 @@ pub fn GraphView() -> Element {
                                         }
                                     }
                                     div { class: "panel-slider",
-                                        span { class: "filter-label", "Min links" }
+                                        span { class: "filter-label", title: "Hide notes with fewer than this many connections", "Min connections" }
                                         input { r#type: "range", min: "0", max: "10", step: "1",
                                             value: "{s.min_degree}",
                                             oninput: move |e| { settings.write().min_degree = e.value().parse().unwrap_or(0); },
@@ -343,32 +343,32 @@ pub fn GraphView() -> Element {
                                     }
                                 }
 
-                                // Forces
+                                // Layout
                                 div { class: "panel-section",
-                                    div { class: "panel-heading", "Forces" }
+                                    div { class: "panel-heading", "Layout" }
                                     div { class: "panel-slider",
-                                        span { class: "filter-label", "Center" }
+                                        span { class: "filter-label", title: "How strongly nodes are pulled toward the center", "Gravity" }
                                         input { r#type: "range", min: "0", max: "1.0", step: "0.05",
                                             value: "{s.center_force}",
                                             oninput: move |e| { settings.write().center_force = e.value().parse().unwrap_or(0.5); },
                                         }
                                     }
                                     div { class: "panel-slider",
-                                        span { class: "filter-label", "Repel" }
+                                        span { class: "filter-label", title: "How strongly unlinked nodes push apart", "Spacing" }
                                         input { r#type: "range", min: "0", max: "1.0", step: "0.05",
                                             value: "{s.repel_force}",
                                             oninput: move |e| { settings.write().repel_force = e.value().parse().unwrap_or(0.5); },
                                         }
                                     }
                                     div { class: "panel-slider",
-                                        span { class: "filter-label", "Link pull" }
+                                        span { class: "filter-label", title: "How strongly linked notes pull toward each other", "Link strength" }
                                         input { r#type: "range", min: "0", max: "1.0", step: "0.05",
                                             value: "{s.link_force}",
                                             oninput: move |e| { settings.write().link_force = e.value().parse().unwrap_or(0.5); },
                                         }
                                     }
                                     div { class: "panel-slider",
-                                        span { class: "filter-label", "Link dist" }
+                                        span { class: "filter-label", title: "Preferred distance between linked notes", "Link gap" }
                                         input { r#type: "range", min: "0", max: "1.0", step: "0.05",
                                             value: "{s.link_distance}",
                                             oninput: move |e| { settings.write().link_distance = e.value().parse().unwrap_or(0.5); },
@@ -589,8 +589,12 @@ const GRAPH_JS: &str = r#"
 function codexGraph(data) {
   if (window._codexGraph) cancelAnimationFrame(window._codexGraph.raf);
   var c = document.getElementById('graph-canvas');
-  if (!c || !data.nodes.length) return;
+  if (!c) return;
   c.innerHTML = '';
+  if (!data.nodes.length) {
+    c.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted-foreground);font-size:14px;gap:8px;opacity:0.7"><span style="font-size:32px">&#9675;</span><span>No notes to graph yet.</span><span style="font-size:12px">Create some notes and link them with [[wikilinks]] to see the knowledge graph.</span></div>';
+    return;
+  }
 
   var W = c.clientWidth || 800, H = c.clientHeight || 600;
   var S = data.settings || {};

@@ -2,20 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- App Sandbox (required for Mac App Store / TestFlight) -->
+    <!-- Sandbox disabled for Developer ID distribution.
+         Dioxus desktop requires local TCP for its edit socket,
+         and the vault lives at ~/Documents/Codex which sandboxed
+         apps can't access without user-granted bookmarks.
+         Re-enable when targeting Mac App Store. -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
 
-    <!-- File access: user-selected files (vault directory) -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-
-    <!-- File access: downloads (for import/export) -->
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-
-    <!-- Network: outbound (for CDN assets like highlight.js, future sync) -->
-    <key>com.apple.security.network.client</key>
+    <!-- Hardened runtime entitlements (required for notarization) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
 </dict>
 </plist>
