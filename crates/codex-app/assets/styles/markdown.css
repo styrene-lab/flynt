@@ -118,6 +118,14 @@
   padding:        var(--space-2);
 }
 
+/* ── CM6 horizontal rule ──────────────────────────────────────────────────── */
+.cm-hr-line {
+  border-bottom:  1px solid var(--border, #2d3140);
+  padding-bottom: 0.5em !important;
+  margin-bottom:  0.5em;
+  min-height:     1px;
+}
+
 /* ── CM6 table rendering ──────────────────────────────────────────────────── */
 .cm-table-header {
   background:     rgba(42, 180, 200, 0.08) !important;

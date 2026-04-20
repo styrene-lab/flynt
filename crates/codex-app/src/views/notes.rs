@@ -295,6 +295,13 @@ fn cm6_init_js(content: &str) -> String {
             const line = doc.line(i);
             const text = line.text;
 
+            // Horizontal rule: --- or *** or ___ → styled line
+            if (text.trim() === '---' || text.trim() === '***' || text.trim() === '___') {{
+                decs.push(Decoration.replace({{}}).range(line.from, line.to));
+                decs.push(Decoration.line({{ class: 'cm-hr-line' }}).range(line.from));
+                continue;
+            }}
+
             // Hide heading markers
             if (text.match(/^#/) && text.indexOf(' ') > 0 && text.indexOf(' ') <= 7) {{
                 const spaceIdx = text.indexOf(' ');
