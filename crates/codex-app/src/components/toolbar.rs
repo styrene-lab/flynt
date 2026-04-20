@@ -107,6 +107,10 @@ pub fn Toolbar(
     rsx! {
         div { class: "toolbar",
             span { class: "toolbar-vault-name", "{vault_name}" }
+            {
+                const BUILD: &str = env!("CODEX_BUILD_HASH");
+                rsx! { span { class: "toolbar-build-hash", title: "Build {BUILD}", "{BUILD}" } }
+            }
 
             div { class: "toolbar-search-wrap",
                 input {

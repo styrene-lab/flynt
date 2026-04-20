@@ -118,6 +118,28 @@
   padding:        var(--space-2);
 }
 
+/* ── CM6 table rendering ──────────────────────────────────────────────────── */
+.cm-table-header {
+  background:     rgba(42, 180, 200, 0.08) !important;
+  font-weight:    600;
+  border-bottom:  2px solid var(--border, #2d3140);
+}
+.cm-table-sep {
+  font-size:      0.5em;
+  color:          var(--muted-foreground, #475569) !important;
+  opacity:        0.4;
+  line-height:    1;
+}
+.cm-table-row {
+  border-bottom:  1px solid var(--border-dim, rgba(45,49,64,0.3));
+}
+.cm-table-header,
+.cm-table-row {
+  font-family:    var(--font-mono, monospace);
+  font-size:      var(--font-size-sm, 13px);
+  padding-left:   4px !important;
+}
+
 .notes-empty,
 .notes-loading {
   display:         flex;

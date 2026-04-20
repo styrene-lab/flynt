@@ -396,6 +396,34 @@ fn cm6_init_js(content: &str) -> String {
         return Decoration.set(decs);
     }});
 
+    // ── Table styling: add CSS classes to table lines ──
+    const tablePlugin = EditorView.decorations.compute(['doc'], (state) => {{
+        const decs = [];
+        const doc = state.doc;
+        let inTable = false;
+        let isHeader = true;
+        for (let i = 1; i <= doc.lines; i++) {{
+            const line = doc.line(i);
+            const t = line.text.trim();
+            if (t.startsWith('|') && t.endsWith('|')) {{
+                if (!inTable) {{ inTable = true; isHeader = true; }}
+                // Separator line (|---|---|)
+                if (t.match(/^\|[\s\-:|]+\|$/)) {{
+                    decs.push(Decoration.line({{ class: 'cm-table-sep' }}).range(line.from));
+                    isHeader = false;
+                }} else if (isHeader) {{
+                    decs.push(Decoration.line({{ class: 'cm-table-header' }}).range(line.from));
+                }} else {{
+                    decs.push(Decoration.line({{ class: 'cm-table-row' }}).range(line.from));
+                }}
+            }} else {{
+                inTable = false;
+                isHeader = true;
+            }}
+        }}
+        return Decoration.set(decs);
+    }});
+
     const codeBlockPlugin = EditorView.decorations.compute(['doc'], (state) => {{
         const decorations = [];
         const doc = state.doc;
@@ -461,6 +489,7 @@ fn cm6_init_js(content: &str) -> String {
             saveKeymap,
             changeHandler,
             hideMarkupPlugin,
+            tablePlugin,
             codeBlockPlugin,
             EditorView.lineWrapping,
         ],
