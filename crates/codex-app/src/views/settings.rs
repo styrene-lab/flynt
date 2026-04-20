@@ -235,6 +235,7 @@ pub fn SettingsView() -> Element {
                 voice: vox_voice.read().trim().to_string(),
             },
             acp_config: initial_operator.acp_config.clone(),
+            agent_daemon: initial_operator.agent_daemon.clone(),
         };
 
         match vault.save_config(&config) {

@@ -675,6 +675,9 @@ pub struct CodexOperatorSettings {
     /// Keys are config option IDs, values are the selected value IDs.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub acp_config: std::collections::HashMap<String, String>,
+    /// Per-vault agent daemon configuration — model, posture, vox channels.
+    #[serde(default)]
+    pub agent_daemon: crate::daemon::AgentDaemonConfig,
 }
 
 impl Default for CodexOperatorSettings {
@@ -686,6 +689,7 @@ impl Default for CodexOperatorSettings {
             rail_extension: "vox".into(),
             vox: VoxSettings::default(),
             acp_config: std::collections::HashMap::new(),
+            agent_daemon: crate::daemon::AgentDaemonConfig::default(),
         }
     }
 }

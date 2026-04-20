@@ -1,3 +1,4 @@
+pub mod daemon;
 pub mod daily;
 pub mod datum;
 pub mod graph;
