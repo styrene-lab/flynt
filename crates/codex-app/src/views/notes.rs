@@ -357,13 +357,21 @@ fn cm6_init_js(content: &str) -> String {
                 }} else {{ idx++; }}
             }}
 
-            // Hide table separator rows entirely on non-active lines
+            // Style table lines on non-active lines
             if (text.trim().startsWith('|') && text.trim().endsWith('|')) {{
                 const stripped = text.trim();
+                // Hide separator rows entirely
                 if (stripped.match(/^\|[\s\-:|]+\|$/)) {{
                     decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
                     continue;
                 }}
+                // Dim all pipe characters
+                idx = 0;
+                while ((idx = text.indexOf('|', idx)) !== -1) {{
+                    decs.push(Decoration.mark({{ class: 'cm-pipe-dim' }}).range(line.from + idx, line.from + idx + 1));
+                    idx++;
+                }}
+                continue; // skip other markup processing for table lines
             }}
 
             // Hide unordered list markers: "- " or "* " or "+ " at line start
