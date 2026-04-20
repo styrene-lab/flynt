@@ -357,7 +357,7 @@ fn cm6_init_js(content: &str) -> String {
                 }} else {{ idx++; }}
             }}
 
-            // Style table lines on non-active lines
+            // Table lines — hide pipes and separators
             if (text.indexOf('|') >= 0 && text.trim().charAt(0) === '|') {{
                 // Check if separator row (only |, -, :, spaces)
                 let isSep = true;
