@@ -272,7 +272,7 @@ fn cm6_init_js(content: &str) -> String {
     ]);
 
     // ── Live preview: hide markdown punctuation on non-active lines ──
-    const hideMarkupPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{
+    const hideMarkupPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{ try {{
         const decs = [];
         const sel = state.selection.main;
         const activeLine = state.doc.lineAt(sel.head).number;
@@ -358,18 +358,22 @@ fn cm6_init_js(content: &str) -> String {
             }}
 
             // Style table lines on non-active lines
-            if (text.trim().startsWith('|') && text.trim().endsWith('|')) {{
-                const stripped = text.trim();
-                // Hide separator rows entirely
-                if (stripped.match(/^\|[\s\-:|]+\|$/)) {{
+            if (text.indexOf('|') >= 0 && text.trim().charAt(0) === '|') {{
+                // Check if separator row (only |, -, :, spaces)
+                let isSep = true;
+                for (let c = 0; c < text.length; c++) {{
+                    const ch = text.charAt(c);
+                    if (ch !== '|' && ch !== '-' && ch !== ':' && ch !== ' ') {{ isSep = false; break; }}
+                }}
+                if (isSep) {{
                     decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
                     continue;
                 }}
-                // Replace pipes with thin dim separator characters
-                idx = 0;
-                while ((idx = text.indexOf('|', idx)) !== -1) {{
-                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 1));
-                    idx++;
+                // Hide all pipe characters
+                for (let c = 0; c < text.length; c++) {{
+                    if (text.charAt(c) === '|') {{
+                        decs.push(Decoration.replace({{}}).range(line.from + c, line.from + c + 1));
+                    }}
                 }}
                 continue;
             }}
@@ -411,6 +415,7 @@ fn cm6_init_js(content: &str) -> String {
         // Sort by position (required by CM6)
         decs.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
         return Decoration.set(decs);
+    }} catch(e) {{ console.error('hideMarkup error:', e); return Decoration.none; }}
     }});
 
     // ── Table styling: add CSS classes to table lines ──
