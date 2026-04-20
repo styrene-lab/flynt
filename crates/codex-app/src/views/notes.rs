@@ -357,84 +357,24 @@ fn cm6_init_js(content: &str) -> String {
                 }} else {{ idx++; }}
             }}
 
-            // Tables — replace entire table block with rendered HTML widget
+            // Table lines — hide pipes and separators, keep content
             if (text.indexOf('|') >= 0 && text.trim().charAt(0) === '|') {{
-                // Find the full extent of this table (consecutive pipe lines)
-                let tableStart = i;
-                let tableEnd = i;
-                // Scan backward to find table start
-                while (tableStart > 1) {{
-                    const prev = doc.line(tableStart - 1).text.trim();
-                    if (prev.startsWith('|') && prev.endsWith('|')) {{ tableStart--; }}
-                    else break;
+                // Check if separator row
+                let isSep = true;
+                for (let c = 0; c < text.length; c++) {{
+                    const ch = text.charAt(c);
+                    if (ch !== '|' && ch !== '-' && ch !== ':' && ch !== ' ') {{ isSep = false; break; }}
                 }}
-                // Scan forward to find table end
-                while (tableEnd < doc.lines) {{
-                    const next = doc.line(tableEnd + 1).text.trim();
-                    if (next.startsWith('|') && next.endsWith('|')) {{ tableEnd++; }}
-                    else break;
+                if (isSep) {{
+                    decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
+                    continue;
                 }}
-
-                // Only process once (when we hit the first line of the table)
-                if (i === tableStart) {{
-                    // Check if cursor is in the table
-                    const tFrom = doc.line(tableStart).from;
-                    const tTo = doc.line(tableEnd).to;
-                    const cursorInTable = sel.head >= tFrom && sel.head <= tTo;
-
-                    if (!cursorInTable) {{
-                        // Parse the table into HTML
-                        let rows = [];
-                        let sepIdx = -1;
-                        for (let r = tableStart; r <= tableEnd; r++) {{
-                            const rowText = doc.line(r).text.trim();
-                            // Check if separator
-                            let allSep = true;
-                            for (let c = 0; c < rowText.length; c++) {{
-                                const ch = rowText.charAt(c);
-                                if (ch !== '|' && ch !== '-' && ch !== ':' && ch !== ' ') {{ allSep = false; break; }}
-                            }}
-                            if (allSep && sepIdx < 0) {{ sepIdx = rows.length; }}
-                            else {{
-                                const cells = rowText.split('|').filter((_, ci, arr) => ci > 0 && ci < arr.length - 1).map(c => c.trim());
-                                rows.push(cells);
-                            }}
-                        }}
-
-                        if (rows.length > 0) {{
-                            let html = '<table class="cm-rendered-table">';
-                            rows.forEach((cells, ri) => {{
-                                const tag = ri === 0 ? 'th' : 'td';
-                                html += '<tr>';
-                                cells.forEach(c => {{
-                                    // Handle bold
-                                    let content = c.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-                                    html += '<' + tag + '>' + content + '</' + tag + '>';
-                                }});
-                                html += '</tr>';
-                            }});
-                            html += '</table>';
-
-                            // Replace the entire table range with a widget
-                            const from = doc.line(tableStart).from;
-                            const to = Math.min(doc.line(tableEnd).to + 1, doc.length);
-                            decs.push(Decoration.replace({{
-                                widget: new class {{
-                                    constructor() {{}}
-                                    toDOM() {{
-                                        const div = document.createElement('div');
-                                        div.innerHTML = html;
-                                        div.className = 'cm-table-widget';
-                                        return div;
-                                    }}
-                                    ignoreEvent() {{ return false; }}
-                                }}
-                            }}).range(from, to));
-                        }}
+                // Hide all pipe characters
+                for (let c = 0; c < text.length; c++) {{
+                    if (text.charAt(c) === '|') {{
+                        decs.push(Decoration.replace({{}}).range(line.from + c, line.from + c + 1));
                     }}
                 }}
-                // Skip remaining table lines
-                i = tableEnd;
                 continue;
             }}
 
