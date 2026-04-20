@@ -139,10 +139,30 @@
   font-size:      var(--font-size-sm, 13px);
   padding-left:   4px !important;
 }
-/* Dim pipe characters in table rows */
-.cm-pipe-dim {
-  color:          rgba(42, 180, 200, 0.15) !important;
-  font-weight:    normal;
+/* Rendered table widget in CM6 live mode */
+.cm-table-widget {
+  margin:         0.5em 0;
+}
+.cm-rendered-table {
+  border-collapse: collapse;
+  width:          100%;
+  font-size:      var(--font-size-sm, 14px);
+  font-family:    var(--font-sans);
+}
+.cm-rendered-table th {
+  text-align:     left;
+  font-weight:    600;
+  color:          var(--primary-bright, #67e8c8);
+  padding:        8px 12px;
+  background:     rgba(42, 180, 200, 0.08);
+  border-bottom:  2px solid var(--border, #2d3140);
+}
+.cm-rendered-table td {
+  padding:        8px 12px;
+  border-bottom:  1px solid var(--border-dim, rgba(45,49,64,0.3));
+}
+.cm-rendered-table tr:last-child td {
+  border-bottom:  none;
 }
 
 .notes-empty,
