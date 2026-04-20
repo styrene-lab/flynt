@@ -184,7 +184,7 @@ fn cm6_init_js(content: &str) -> String {
     container.innerHTML = '';
 
     const {{
-        EditorView, Decoration, keymap, drawSelection, highlightActiveLine,
+        EditorView, Decoration, WidgetType, keymap, drawSelection, highlightActiveLine,
         highlightSpecialChars,
         EditorState,
         defaultKeymap, history, historyKeymap, indentWithTab,
@@ -196,6 +196,18 @@ fn cm6_init_js(content: &str) -> String {
         searchKeymap, highlightSelectionMatches,
         HighlightStyle, tags,
     }} = CM;
+
+    class TableWidget extends WidgetType {{
+        constructor(html) {{ super(); this._html = html; }}
+        toDOM() {{
+            const d = document.createElement('div');
+            d.className = 'cm-table-widget';
+            d.innerHTML = this._html;
+            return d;
+        }}
+        ignoreEvent() {{ return false; }}
+        eq(o) {{ return this._html === o._html; }}
+    }}
 
     const codexTheme = EditorView.theme({{
         '&': {{
@@ -357,24 +369,46 @@ fn cm6_init_js(content: &str) -> String {
                 }} else {{ idx++; }}
             }}
 
-            // Table lines — hide pipes and separators, keep content
+            // Tables — find full table block and replace with rendered widget
             if (text.indexOf('|') >= 0 && text.trim().charAt(0) === '|') {{
-                // Check if separator row
-                let isSep = true;
-                for (let c = 0; c < text.length; c++) {{
-                    const ch = text.charAt(c);
-                    if (ch !== '|' && ch !== '-' && ch !== ':' && ch !== ' ') {{ isSep = false; break; }}
-                }}
-                if (isSep) {{
-                    decs.push(Decoration.replace({{}}).range(line.from, Math.min(line.to + 1, doc.length)));
-                    continue;
-                }}
-                // Hide all pipe characters
-                for (let c = 0; c < text.length; c++) {{
-                    if (text.charAt(c) === '|') {{
-                        decs.push(Decoration.replace({{}}).range(line.from + c, line.from + c + 1));
+                // Find table extent
+                let ts = i, te = i;
+                while (ts > 1 && doc.line(ts-1).text.trim().startsWith('|')) ts--;
+                while (te < doc.lines && doc.line(te+1).text.trim().startsWith('|')) te++;
+
+                if (i === ts) {{
+                    const tFrom = doc.line(ts).from;
+                    const tTo = doc.line(te).to;
+                    if (sel.head < tFrom || sel.head > tTo) {{
+                        // Parse table
+                        let rows = [], hasSep = false;
+                        for (let r = ts; r <= te; r++) {{
+                            const rt = doc.line(r).text.trim();
+                            let allSep = true;
+                            for (let c = 0; c < rt.length; c++) {{
+                                if ('|-: '.indexOf(rt.charAt(c)) < 0) {{ allSep = false; break; }}
+                            }}
+                            if (allSep) {{ hasSep = true; continue; }}
+                            rows.push(rt.split('|').slice(1,-1).map(s => s.trim()));
+                        }}
+                        if (rows.length > 0) {{
+                            let h = '<table class="cm-rendered-table">';
+                            rows.forEach((cells, ri) => {{
+                                h += '<tr>';
+                                const t = ri === 0 ? 'th' : 'td';
+                                cells.forEach(c => {{
+                                    let v = c.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                                    h += '<'+t+'>'+v+'</'+t+'>';
+                                }});
+                                h += '</tr>';
+                            }});
+                            h += '</table>';
+                            const to = Math.min(tTo + 1, doc.length);
+                            decs.push(Decoration.replace({{ widget: new TableWidget(h) }}).range(tFrom, to));
+                        }}
                     }}
                 }}
+                i = te;
                 continue;
             }}
 
