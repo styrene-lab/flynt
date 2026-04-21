@@ -496,10 +496,9 @@ fn cm6_init_js(content: &str) -> String {
             }}
         }}
 
-        // Sort by position (required by CM6)
-        decs.sort((a, b) => a.from - b.from || a.startSide - b.startSide);
-        return Decoration.set(decs);
-    }} catch(e) {{ console.error('hideMarkup error:', e); return Decoration.none; }}
+        // CM6 requires decorations sorted by from position
+        return Decoration.set(decs, true);
+    }} catch(e) {{ window._hideErr = e.message; return Decoration.none; }}
     }});
 
     // ── Table styling: add CSS classes to table lines ──
