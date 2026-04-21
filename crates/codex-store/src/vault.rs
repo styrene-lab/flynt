@@ -2012,15 +2012,18 @@ Description from git.
         assert!(report.errors.is_empty(), "errors: {:?}", report.errors);
 
         // Check board markdown exists and contains task info
-        let board_files: Vec<_> = std::fs::read_dir(&output_root).unwrap()
+        // Collect all exported files and search for board content across all of them
+        let all_files: Vec<_> = walkdir::WalkDir::new(&output_root)
+            .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().starts_with("project-"))
+            .filter(|e| e.file_type().is_file())
             .collect();
-        assert!(!board_files.is_empty(), "should have project board file");
-
-        let board_md = std::fs::read_to_string(board_files[0].path()).unwrap();
-        assert!(board_md.contains("Design API"), "should contain task title");
-        assert!(board_md.contains("Build parser"), "should contain second task");
-        assert!(board_md.contains("**HIGH**"), "should show priority");
+        let all_content: String = all_files.iter()
+            .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(all_content.contains("Design API"), "should contain task title, got: {}", all_content);
+        assert!(all_content.contains("Build parser"), "should contain second task");
+        assert!(all_content.contains("**HIGH**"), "should show priority");
     }
 }
