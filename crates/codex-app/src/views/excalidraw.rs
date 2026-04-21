@@ -191,6 +191,10 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                                         let abs = vault.root.join(&svg_path);
                                         if std::fs::write(&abs, &svg).is_ok() {
                                             *save_state.write() = "SVG exported";
+                                            #[cfg(target_os = "macos")]
+                                            { let _ = std::process::Command::new("open").arg("-R").arg(&abs).spawn(); }
+                                            #[cfg(target_os = "linux")]
+                                            { if let Some(dir) = abs.parent() { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); } }
                                         }
                                     }
                                 }
@@ -249,6 +253,10 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                                             let abs = vault.root.join(&png_path);
                                             if std::fs::write(&abs, &bytes).is_ok() {
                                                 *save_state.write() = "PNG exported";
+                                                #[cfg(target_os = "macos")]
+                                            { let _ = std::process::Command::new("open").arg("-R").arg(&abs).spawn(); }
+                                            #[cfg(target_os = "linux")]
+                                            { if let Some(dir) = abs.parent() { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); } }
                                             }
                                         }
                                     }

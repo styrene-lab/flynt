@@ -216,6 +216,7 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                         items: vec![
                             crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
                             crate::components::ContextMenuItem::new("rename", "Rename…"),
+                            crate::components::ContextMenuItem::new("reveal", "Reveal in Finder"),
                             crate::components::ContextMenuItem::danger("delete", "Move to Trash"),
                         ],
                         on_close: move |_| *ctx_menu.write() = None,
@@ -231,6 +232,13 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                                     tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
                                     *active_route.write() = Route::Notes;
                                     // TODO: trigger rename mode in notes view
+                                }
+                                "reveal" => {
+                                    let abs = ctx.vault().root.join(&path_for_delete);
+                                    #[cfg(target_os = "macos")]
+                                    { let _ = std::process::Command::new("open").arg("-R").arg(&abs).spawn(); }
+                                    #[cfg(target_os = "linux")]
+                                    { if let Some(dir) = abs.parent() { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); } }
                                 }
                                 "delete" => {
                                     let p = path_for_delete.clone();
