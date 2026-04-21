@@ -740,7 +740,6 @@ fn cm6_init_js(content: &str) -> String {
             saveKeymap,
             formatKeymap,
             changeHandler,
-            hideMarkupPlugin,
             tablePlugin,
             codeBlockPlugin,
             taskListPlugin,
