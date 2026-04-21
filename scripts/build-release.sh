@@ -41,16 +41,34 @@ codesign -f -s "$SIGN_ID" \
   --entitlements "$ENTITLEMENTS" \
   "$APP"
 
-# DMG
-STAGING=$(mktemp -d)
-cp -r "$APP" "$STAGING/Codex.app"
-ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname "Codex" -srcfolder "$STAGING" -ov -format UDZO "$DIST/Codex-$VERSION.dmg"
-codesign -f -s "$SIGN_ID" \
-  --keychain "$KEYCHAIN" \
-  --timestamp \
-  "$DIST/Codex-$VERSION.dmg"
-rm -rf "$STAGING"
+# DMG — styled installer with background + icon layout
+# Stage the app as "Codex.app" (Dioxus outputs "CodexApp.app")
+DMG_STAGING=$(mktemp -d)
+cp -R "$APP" "$DMG_STAGING/Codex.app"
+codesign -f -s "$SIGN_ID" --keychain "$KEYCHAIN" --options runtime --timestamp --entitlements "$ENTITLEMENTS" "$DMG_STAGING/Codex.app"
+
+rm -f "$DIST/Codex-$VERSION.dmg"
+if command -v create-dmg &>/dev/null; then
+  create-dmg \
+    --volname "Codex" \
+    --volicon "crates/codex-app/assets/icon.icns" \
+    --background "$ROOT/scripts/dmg-assets/background@2x.png" \
+    --window-pos 200 120 \
+    --window-size 660 400 \
+    --icon-size 80 \
+    --icon "Codex.app" 180 170 \
+    --hide-extension "Codex.app" \
+    --app-drop-link 480 170 \
+    "$DIST/Codex-$VERSION.dmg" \
+    "$DMG_STAGING/Codex.app" || true
+  codesign -f -s "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp "$DIST/Codex-$VERSION.dmg"
+else
+  echo "  (create-dmg not found, using plain hdiutil)"
+  ln -s /Applications "$DMG_STAGING/Applications"
+  hdiutil create -volname "Codex" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DIST/Codex-$VERSION.dmg"
+  codesign -f -s "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp "$DIST/Codex-$VERSION.dmg"
+fi
+rm -rf "$DMG_STAGING"
 echo "✓ macOS DMG: $DIST/Codex-$VERSION.dmg"
 
 # ── iOS ──────────────────────────────────────────────────────────────────────
