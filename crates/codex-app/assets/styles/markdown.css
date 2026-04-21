@@ -645,6 +645,16 @@
   opacity: 0.5;
 }
 
+/* ── CM6 task checkbox ────────────────────────────────────────────── */
+.cm-task-checkbox {
+  width:          16px;
+  height:         16px;
+  margin-right:   6px;
+  vertical-align: middle;
+  cursor:         pointer;
+  accent-color:   var(--primary, #2ab4c8);
+}
+
 /* ── CM6 embed widgets ────────────────────────────────────────────── */
 .cm-embed-chip {
   display:       inline-block;
