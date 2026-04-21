@@ -3,17 +3,15 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .settings-root {
-  display:    flex;
   height:     100%;
-  overflow:   hidden;
+  overflow-y: auto;
   background: var(--background);
 }
 
 .settings-scroll {
-  flex:       1;
-  overflow-y: auto;
+  max-width:  780px;
+  margin:     0 auto;
   padding:    var(--space-8) var(--space-10);
-  max-width:  640px;
 }
 
 /* ── Section ──────────────────────────────────────────────────────────────── */
