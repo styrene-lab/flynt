@@ -309,6 +309,10 @@ fn cm6_init_js(content: &str) -> String {
         const activeLine = state.doc.lineAt(sel.head).number;
         const doc = state.doc;
 
+        // Performance: only hide markup on small documents
+        // Large docs rely on CM6's built-in syntax highlighting
+        if (doc.lines > 150) return Decoration.none;
+
         // Hide TOML frontmatter (+++ ... +++)
         let fmStart = -1, fmEnd = -1;
         if (doc.lines >= 1 && doc.line(1).text.trim() === '+++') {{
