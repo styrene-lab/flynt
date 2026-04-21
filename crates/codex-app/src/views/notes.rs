@@ -763,7 +763,8 @@ pub fn NotesView() -> Element {
         let abs = vault_root.join(&excalidraw_path);
         if abs.exists() {
             return rsx! {
-                div { class: "notes-pane",
+                div {
+                    style: "display:flex;flex-direction:column;flex:1;overflow:hidden;padding:0;min-height:0;height:100%;",
                     crate::views::ExcalidrawView { path: excalidraw_path }
                 }
             };

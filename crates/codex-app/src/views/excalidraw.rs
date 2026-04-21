@@ -25,6 +25,18 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         })
     });
 
+    // Force parent layout for excalidraw — CSS :has() may not work in all WebKit versions
+    use_effect(move || {
+        document::eval(r#"
+            setTimeout(function() {
+                var mc = document.querySelector('.main-content');
+                if (mc) { mc.style.overflow = 'hidden'; mc.style.display = 'flex'; mc.style.flexDirection = 'column'; }
+                var np = document.querySelector('.notes-pane');
+                if (np) { np.style.overflow = 'hidden'; np.style.padding = '0'; np.style.display = 'flex'; np.style.flexDirection = 'column'; np.style.flex = '1'; np.style.minHeight = '0'; }
+            }, 50);
+        "#);
+    });
+
     // Initialize Excalidraw when component mounts — bundle is loaded eagerly in app.rs
     let path_for_save = path.clone();
     use_effect(move || {
@@ -122,7 +134,9 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
     let path_for_png = path.clone();
 
     rsx! {
-        div { class: "excalidraw-pane",
+        div {
+            class: "excalidraw-pane",
+            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;",
             div { class: "excalidraw-topbar",
                 span { class: "excalidraw-title",
                     "{path.file_stem().and_then(|s| s.to_str()).unwrap_or(\"Drawing\")}"
@@ -227,6 +241,7 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
             div {
                 id: "codex-excalidraw",
                 class: "excalidraw-container",
+                style: "flex:1;min-height:0;width:100%;position:relative;",
             }
         }
     }
