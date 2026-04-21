@@ -898,9 +898,13 @@ pub fn NotesView() -> Element {
         }
     });
 
-    // Sync edit_body when a new document loads
+    // Sync edit_body ONLY when switching to a new document, not on reindex
+    let mut synced_doc_id: Signal<Option<codex_core::models::DocumentId>> = use_signal(|| None);
     use_effect(move || {
+        let current_id = tab_state.read().active_id().cloned();
+        if current_id == *synced_doc_id.peek() { return; }
         if let Some(Some((_, _, body, _))) = &*rendered.read() {
+            *synced_doc_id.write() = current_id;
             *edit_body.write() = body.clone();
             *save_state.write() = SaveState::Clean;
         }
