@@ -162,6 +162,9 @@ pub fn App() -> Element {
     };
 
     rsx! {
+        // Prevent flash of unstyled content — hide body until theme loads
+        document::Style { "body {{ opacity: 0; transition: opacity 0.1s; }} body.ready {{ opacity: 1; }}" }
+
         document::Link {
             rel: "stylesheet",
             href: "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/base16/ocean.min.css",
@@ -185,6 +188,8 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
         document::Stylesheet { href: asset!("/assets/styles/graph.css") }
         document::Stylesheet { href: asset!("/assets/styles/welcome.css") }
+        // Reveal body after stylesheets are loaded
+        document::Script { "document.body.classList.add('ready');" }
 
         div {
             class: "codex-shell {font_size.read().css_class()}",

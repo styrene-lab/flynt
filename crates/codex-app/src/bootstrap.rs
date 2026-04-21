@@ -582,8 +582,8 @@ impl AppContext {
     }
 
     pub fn set_runtime(&mut self, runtime: RuntimeState) {
-        self.runtime.manually_drop();
-        self.runtime = Signal::new(runtime);
+        use dioxus::prelude::WritableExt;
+        *self.runtime.write() = runtime;
     }
 }
 
