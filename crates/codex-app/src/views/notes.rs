@@ -770,7 +770,12 @@ pub fn NotesView() -> Element {
                     "mode" => {
                         if data == "source" {
                             // Sync edit_body from CM6 before switching
-                            if let Some(cm) = None::<()> { let _ = cm; } // placeholder
+                            let mut sync_eval = document::eval("if(window._codexCM){dioxus.send(window._codexCM.state.doc.toString())}else{dioxus.send('')}");
+                            if let Ok(content) = sync_eval.recv::<String>().await {
+                                if !content.is_empty() {
+                                    *edit_body.write() = content;
+                                }
+                            }
                             *mode.write() = EditMode::Source;
                         }
                     }

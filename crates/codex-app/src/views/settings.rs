@@ -160,6 +160,23 @@ pub fn SettingsView() -> Element {
         }
     };
     let save = move |_| {
+        // Validate paths before saving
+        for (label, val) in [
+            ("Local state root", local_state_root.read().clone()),
+            ("Index DB path", codex_index_db_path.read().clone()),
+            ("Omegon runtime root", omegon_runtime_root.read().clone()),
+            ("Omegon mind DB path", omegon_mind_db_path.read().clone()),
+        ] {
+            let trimmed = val.trim().to_string();
+            if !trimmed.is_empty() {
+                let p = std::path::Path::new(&trimmed);
+                if !p.is_absolute() {
+                    *save_msg.write() = Some(("err", "Paths must be absolute (start with /)."));
+                    return;
+                }
+            }
+        }
+
         let local_runtime = LocalRuntimeConfig {
             local_state_root: path_from_input(local_state_root.read().as_str()),
             codex_index_db_path: path_from_input(codex_index_db_path.read().as_str()),
@@ -377,13 +394,15 @@ pub fn SettingsView() -> Element {
                                 min: "0",
                                 value: "{auto_commit_seconds}",
                                 oninput: move |e| {
-                                    let secs = e.value().parse().unwrap_or(0);
+                                    let secs: u64 = e.value().parse().unwrap_or(0);
+                                    // Enforce minimum 30 seconds (or 0 for manual only)
+                                    let secs = if secs > 0 && secs < 30 { 30 } else { secs };
                                     if let SyncConfig::Git { ref mut auto_commit_seconds, .. } = *sync_config.write() {
                                         *auto_commit_seconds = secs;
                                     }
                                 },
                             }
-                            span { class: "settings-hint muted", "(0 = manual only)" }
+                            span { class: "settings-hint muted", "(0 = manual only, minimum 30)" }
                         }
                     }
                 }

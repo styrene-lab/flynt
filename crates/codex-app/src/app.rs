@@ -474,6 +474,11 @@ pub fn App() -> Element {
                                                 .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
                                                 .join(&repo_name);
 
+                                            if dest.exists() && dest.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false) {
+                                                *clone_error.write() = Some(format!("Folder already exists: {}", dest.display()));
+                                                return;
+                                            }
+
                                             *clone_busy.write() = true;
                                             *clone_error.write() = None;
 

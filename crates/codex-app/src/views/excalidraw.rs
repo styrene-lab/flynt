@@ -50,6 +50,14 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
 
             // Restore tab bar when leaving drawing mode (cleanup)
             window._excalidrawCleanup = function() {
+                // Unmount React to free memory
+                if (window.CodexExcalidraw && window.CodexExcalidraw._root) {
+                    try { window.CodexExcalidraw._root.unmount(); } catch(e) {}
+                    window.CodexExcalidraw._root = null;
+                    window.CodexExcalidraw._api = null;
+                }
+                window._excalidrawLatest = null;
+                window._excSaveQueue = [];
                 var tb = document.querySelector('.tab-bar');
                 if (tb) tb.style.display = '';
                 var mc = document.querySelector('.main-content');
