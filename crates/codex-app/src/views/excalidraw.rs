@@ -224,11 +224,9 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                     }
                 }
             }
-            // Toolbar ~48px, tab bar ~36px, excalidraw topbar ~40px = ~124px overhead
             div {
                 id: "codex-excalidraw",
                 class: "excalidraw-container",
-                style: "height: calc(100vh - 130px); min-height: 400px;",
             }
         }
     }
