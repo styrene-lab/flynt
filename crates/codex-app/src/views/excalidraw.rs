@@ -34,16 +34,24 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 var np = document.querySelector('.notes-pane');
                 if (np) { np.style.overflow = 'hidden'; np.style.padding = '0'; np.style.display = 'flex'; np.style.flexDirection = 'column'; np.style.flex = '1'; np.style.minHeight = '0'; }
             }
-            // Run immediately, then on animation frames until excalidraw canvas stabilizes
             fixLayout();
+            // After Excalidraw mounts, force it to re-measure by dispatching resize
             var attempts = 0;
             function poll() {
                 fixLayout();
                 attempts++;
-                if (attempts < 30) requestAnimationFrame(poll);
+                if (attempts < 20) {
+                    requestAnimationFrame(poll);
+                } else {
+                    // Excalidraw reads container size on resize — trigger it
+                    window.dispatchEvent(new Event('resize'));
+                }
             }
             requestAnimationFrame(poll);
-            // Also fix on window resize
+            // Belt and suspenders: also fire resize after common mount delays
+            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 200);
+            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 500);
+            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 1000);
             window.addEventListener('resize', fixLayout);
         "#);
     });
