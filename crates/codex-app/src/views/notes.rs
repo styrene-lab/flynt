@@ -872,11 +872,16 @@ pub fn NotesView() -> Element {
 
                 match msg_type {
                     "edit" => {
-                        *edit_body.write() = data.to_string();
-                        *save_state.write() = SaveState::Dirty;
+                        // Do NOT write to edit_body here — it triggers Dioxus re-render
+                        // which destroys and recreates CM6. edit_body is synced from CM6
+                        // directly when switching to source mode.
+                        // Just mark dirty (only if not already dirty to avoid re-render churn)
+                        if !matches!(*save_state.peek(), SaveState::Dirty) {{
+                            *save_state.write() = SaveState::Dirty;
+                        }}
                     }
                     "save" | "autosave" => {
-                        *edit_body.write() = data.to_string();
+                        // Don't write to edit_body — avoid triggering re-render
                         let content = data.to_string();
                         if let Some(Some((p, _, _, _))) = &*rendered.read() {
                             let path = p.clone();
