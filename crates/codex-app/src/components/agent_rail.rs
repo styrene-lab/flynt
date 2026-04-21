@@ -174,14 +174,16 @@ pub fn AgentRail() -> Element {
                 }
             }
 
-            // ── Launch/connection error ──────────────────────────
-            if let Some(err) = launch_error.read().as_ref() {
-                div { class: "agent-error-banner",
-                    p { "Could not start the agent: {err}" }
-                    p { class: "agent-error-hint", "Make sure Omegon is installed. Check Settings for the runtime path." }
+            // ── Launch/connection error (only if no active session) ──
+            if session.read().is_none() {
+                if let Some(err) = launch_error.read().as_ref() {
+                    div { class: "agent-error-banner",
+                        p { "Could not start the agent: {err}" }
+                        p { class: "agent-error-hint", "Make sure Omegon is installed. Check Settings for the runtime path." }
+                }
                 }
             }
-            if !binary_found && launch_error.read().is_none() {
+            if session.read().is_none() && !binary_found && launch_error.read().is_none() {
                 div { class: "agent-error-banner",
                     p { "Omegon binary not found." }
                     p { class: "agent-error-hint",
