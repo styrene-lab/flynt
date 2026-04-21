@@ -282,12 +282,27 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Create a new empty .excalidraw file and return its path.
+/// Create a new empty .excalidraw file plus a companion .md that embeds it.
+/// Returns the path to the .md file (which can be opened as a document tab).
 pub fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<PathBuf> {
-    let filename = format!("{name}.excalidraw");
-    let path = PathBuf::from(&filename);
-    let abs = vault_root.join(&path);
-    let content = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
-    std::fs::write(&abs, content)?;
-    Ok(path)
+    // Create drawings/ directory if needed
+    let drawings_dir = vault_root.join("drawings");
+    std::fs::create_dir_all(&drawings_dir)?;
+
+    // Create the .excalidraw data file
+    let excalidraw_filename = format!("{name}.excalidraw");
+    let excalidraw_abs = drawings_dir.join(&excalidraw_filename);
+    let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
+    std::fs::write(&excalidraw_abs, scene)?;
+
+    // Create a companion .md file that embeds the drawing
+    let md_filename = format!("{name}.md");
+    let md_path = PathBuf::from("drawings").join(&md_filename);
+    let md_abs = vault_root.join(&md_path);
+    let md_content = format!(
+        "+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_filename}]]\n"
+    );
+    std::fs::write(&md_abs, md_content)?;
+
+    Ok(md_path)
 }

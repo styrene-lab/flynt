@@ -533,8 +533,10 @@ fn cm6_init_js(content: &str) -> String {
         }},
     }}]);
 
+    const docText = {escaped};
     const state = EditorState.create({{
-        doc: {escaped},
+        doc: docText,
+        selection: {{ anchor: docText.length }},
         extensions: [
             codexTheme,
             syntaxHighlighting(codexHighlight),
