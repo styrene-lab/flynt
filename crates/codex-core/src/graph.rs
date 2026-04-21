@@ -510,6 +510,8 @@ mod tests {
                 position: 0,
                 created_at: now,
                 updated_at: now,
+                decay: Default::default(),
+                last_touched_at: Some(now),
             }],
         };
 
