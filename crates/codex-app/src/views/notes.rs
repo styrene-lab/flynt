@@ -764,9 +764,6 @@ pub fn NotesView() -> Element {
         if abs.exists() {
             return rsx! {
                 div { class: "notes-pane",
-                    div { class: "notes-topbar",
-                        h1 { class: "doc-title", "{title}" }
-                    }
                     crate::views::ExcalidrawView { path: excalidraw_path }
                 }
             };
