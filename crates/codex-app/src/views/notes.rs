@@ -352,9 +352,9 @@ fn cm6_init_js(content: &str) -> String {
                 continue;
             }}
 
-            // Hide bold markers: **text**
-            let idx = 0;
-            while ((idx = text.indexOf('**', idx)) !== -1) {{
+            // Hide bold markers: **text** (max 50 iterations per line)
+            let idx = 0, safety = 0;
+            while ((idx = text.indexOf('**', idx)) !== -1 && safety++ < 50) {{
                 const end = text.indexOf('**', idx + 2);
                 if (end > idx) {{
                     decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
@@ -364,18 +364,16 @@ fn cm6_init_js(content: &str) -> String {
             }}
 
             // Hide wikilink brackets: [[target]] or [[target|display]]
-            idx = 0;
-            while ((idx = text.indexOf('[[', idx)) !== -1) {{
+            idx = 0; safety = 0;
+            while ((idx = text.indexOf('[[', idx)) !== -1 && safety++ < 50) {{
                 const end = text.indexOf(']]', idx + 2);
                 if (end > idx) {{
                     const inner = text.substring(idx + 2, end);
                     const pipe = inner.indexOf('|');
                     if (pipe >= 0) {{
-                        // [[target|display]] → hide [[ + target + | and ]]
                         decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2 + pipe + 1));
                         decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
                     }} else {{
-                        // [[target]] → hide [[ and ]]
                         decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
                         decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
                     }}
@@ -385,8 +383,9 @@ fn cm6_init_js(content: &str) -> String {
 
             // Hide inline code backticks
             idx = 0;
-            while ((idx = text.indexOf('`', idx)) !== -1) {{
-                if (text.charAt(idx + 1) === '`') {{ idx += 2; continue; }} // skip ``
+            safety = 0;
+            while ((idx = text.indexOf('`', idx)) !== -1 && safety++ < 50) {{
+                if (text.charAt(idx + 1) === '`') {{ idx += 2; continue; }}
                 const end = text.indexOf('`', idx + 1);
                 if (end > idx) {{
                     decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 1));
@@ -396,8 +395,8 @@ fn cm6_init_js(content: &str) -> String {
             }}
 
             // Hide underscore italic/bold: _text_ and __text__
-            idx = 0;
-            while ((idx = text.indexOf('__', idx)) !== -1) {{
+            idx = 0; safety = 0;
+            while ((idx = text.indexOf('__', idx)) !== -1 && safety++ < 50) {{
                 const end = text.indexOf('__', idx + 2);
                 if (end > idx) {{
                     decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
