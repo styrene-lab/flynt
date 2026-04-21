@@ -303,14 +303,11 @@ fn cm6_init_js(content: &str) -> String {
     ]);
 
     // ── Live preview: hide markdown punctuation on non-active lines ──
-    const hideMarkupPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{ try {{
+    const hideMarkupPlugin = EditorView.decorations.compute(['doc'], (state) => {{ try {{
         const decs = [];
-        const sel = state.selection.main;
-        const activeLine = state.doc.lineAt(sel.head).number;
         const doc = state.doc;
 
         // Performance: only hide markup on small documents
-        // Large docs rely on CM6's built-in syntax highlighting
         if (doc.lines > 150) return Decoration.none;
 
         // Hide TOML frontmatter (+++ ... +++)
@@ -322,22 +319,15 @@ fn cm6_init_js(content: &str) -> String {
             }}
         }}
         if (fmStart > 0 && fmEnd > 0) {{
-            const fmFromPos = doc.line(fmStart).from;
-            const fmToPos = doc.line(fmEnd).to;
-            // Only hide if cursor is NOT inside the frontmatter
-            if (sel.head < fmFromPos || sel.head > fmToPos) {{
-                // Hide each frontmatter line individually (avoids CM6 overlapping range issues)
-                for (let fl = fmStart; fl <= fmEnd; fl++) {{
-                    const fline = doc.line(fl);
-                    if (fline.length > 0) {{
-                        decs.push(Decoration.replace({{}}).range(fline.from, fline.to));
-                    }}
+            for (let fl = fmStart; fl <= fmEnd; fl++) {{
+                const fline = doc.line(fl);
+                if (fline.length > 0) {{
+                    decs.push(Decoration.replace({{}}).range(fline.from, fline.to));
                 }}
             }}
         }}
 
         for (let i = 1; i <= doc.lines; i++) {{
-            if (i === activeLine) continue; // show markup on cursor line
             if (fmStart > 0 && fmEnd > 0 && i >= fmStart && i <= fmEnd) continue; // skip frontmatter lines
             const line = doc.line(i);
             const text = line.text;
@@ -576,14 +566,12 @@ fn cm6_init_js(content: &str) -> String {
             return cb;
         }}
     }}
-    const taskListPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{
+    const taskListPlugin = EditorView.decorations.compute(['doc'], (state) => {{
         const decs = [];
-        const sel = state.selection.main;
         for (let i = 1; i <= state.doc.lines; i++) {{
             const line = state.doc.line(i);
             const text = line.text;
             // Skip if cursor is on this line
-            if (sel.from >= line.from && sel.from <= line.to) continue;
             const m = text.match(/^(\s*[-*]\s*)\[([ xX])\]\s/);
             if (m) {{
                 const prefixLen = m[1].length;
@@ -636,14 +624,12 @@ fn cm6_init_js(content: &str) -> String {
             return d;
         }}
     }}
-    const embedPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{
+    const embedPlugin = EditorView.decorations.compute(['doc'], (state) => {{
         const decs = [];
-        const sel = state.selection.main;
         for (let i = 1; i <= state.doc.lines; i++) {{
             const line = state.doc.line(i);
             const text = line.text.trim();
             // Skip if cursor is on this line (let user edit the raw text)
-            if (sel.from >= line.from && sel.from <= line.to) continue;
             const m = text.match(/^!\[\[(.+?)\]\]$/);
             if (m) {{
                 const ref = m[1];
