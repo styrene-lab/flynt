@@ -25,15 +25,26 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         })
     });
 
-    // Force parent layout for excalidraw — CSS :has() may not work in all WebKit versions
+    // Force parent layout for excalidraw — reapply until stable
     use_effect(move || {
         document::eval(r#"
-            setTimeout(function() {
+            function fixLayout() {
                 var mc = document.querySelector('.main-content');
                 if (mc) { mc.style.overflow = 'hidden'; mc.style.display = 'flex'; mc.style.flexDirection = 'column'; }
                 var np = document.querySelector('.notes-pane');
                 if (np) { np.style.overflow = 'hidden'; np.style.padding = '0'; np.style.display = 'flex'; np.style.flexDirection = 'column'; np.style.flex = '1'; np.style.minHeight = '0'; }
-            }, 50);
+            }
+            // Run immediately, then on animation frames until excalidraw canvas stabilizes
+            fixLayout();
+            var attempts = 0;
+            function poll() {
+                fixLayout();
+                attempts++;
+                if (attempts < 30) requestAnimationFrame(poll);
+            }
+            requestAnimationFrame(poll);
+            // Also fix on window resize
+            window.addEventListener('resize', fixLayout);
         "#);
     });
 

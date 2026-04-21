@@ -29,7 +29,7 @@ fn main() {
         .with_cfg(
             Config::default()
                 .with_menu(codex_app::menu::build_menu_bar())
-                .with_disable_context_menu(true)
+                .with_disable_context_menu(false)
                 .with_window(
                     WindowBuilder::new()
                         .with_title("Codex")
