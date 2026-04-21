@@ -689,14 +689,16 @@ fn cm6_init_js(content: &str) -> String {
     ]);
 
     let saveTimer = null;
+    let editTimer = null;
     const changeHandler = EditorView.updateListener.of((update) => {{
         if (update.docChanged) {{
             clearTimeout(saveTimer);
+            clearTimeout(editTimer);
             const doc = update.state.doc.toString();
-            // Immediately sync to Rust state
-            window._codexNotify('edit', doc);
+            // Debounced sync to Rust state (for mode switching)
+            editTimer = setTimeout(() => window._codexNotify('edit', doc), 300);
             // Debounced auto-save
-            saveTimer = setTimeout(() => window._codexNotify('autosave', doc), 500);
+            saveTimer = setTimeout(() => window._codexNotify('autosave', doc), 1500);
         }}
     }});
 
