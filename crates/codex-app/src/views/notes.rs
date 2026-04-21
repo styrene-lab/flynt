@@ -526,6 +526,63 @@ fn cm6_init_js(content: &str) -> String {
         return Decoration.set(decorations);
     }});
 
+    // Embed plugin: render ![[file.excalidraw]] and ![[image.png]] as widgets
+    class EmbedWidget extends WidgetType {{
+        constructor(ref, type) {{ super(); this._ref = ref; this._type = type; }}
+        eq(o) {{ return this._ref === o._ref; }}
+        toDOM() {{
+            const d = document.createElement('span');
+            if (this._type === 'drawing') {{
+                d.className = 'cm-embed-chip cm-embed-drawing';
+                d.textContent = '\u{{1f4d0}} ' + this._ref.replace('.excalidraw', '');
+                d.title = 'Click to open drawing';
+                d.onclick = () => window._codexNotify('open-drawing', this._ref);
+            }} else {{
+                // Image — try to render inline
+                const img = document.createElement('img');
+                img.className = 'cm-embed-image';
+                img.src = 'vault://localhost/' + encodeURIComponent(this._ref).replace(/%2F/g, '/');
+                img.alt = this._ref;
+                img.onerror = () => {{
+                    // Try common subdirs
+                    const dirs = ['assets/', 'images/', 'drawings/'];
+                    let tried = 0;
+                    function tryNext() {{
+                        if (tried >= dirs.length) {{ img.replaceWith(document.createTextNode('[Image: ' + img.alt + ']')); return; }}
+                        img.src = 'vault://localhost/' + dirs[tried++] + encodeURIComponent(img.alt).replace(/%2F/g, '/');
+                    }}
+                    img.onerror = tryNext;
+                    tryNext();
+                }};
+                d.appendChild(img);
+            }}
+            return d;
+        }}
+    }}
+    const embedPlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{
+        const decs = [];
+        const sel = state.selection.main;
+        for (let i = 1; i <= state.doc.lines; i++) {{
+            const line = state.doc.line(i);
+            const text = line.text.trim();
+            // Skip if cursor is on this line (let user edit the raw text)
+            if (sel.from >= line.from && sel.from <= line.to) continue;
+            const m = text.match(/^!\[\[(.+?)\]\]$/);
+            if (m) {{
+                const ref = m[1];
+                let type = 'other';
+                if (ref.endsWith('.excalidraw')) type = 'drawing';
+                else if (/\.(png|jpg|jpeg|gif|svg|webp)$/i.test(ref)) type = 'image';
+                if (type !== 'other') {{
+                    decs.push(Decoration.replace({{
+                        widget: new EmbedWidget(ref, type),
+                    }}).range(line.from, line.to));
+                }}
+            }}
+        }}
+        return Decoration.set(decs);
+    }});
+
     let saveTimer = null;
     const changeHandler = EditorView.updateListener.of((update) => {{
         if (update.docChanged) {{
@@ -575,6 +632,7 @@ fn cm6_init_js(content: &str) -> String {
             hideMarkupPlugin,
             tablePlugin,
             codeBlockPlugin,
+            embedPlugin,
             EditorView.lineWrapping,
         ],
     }});

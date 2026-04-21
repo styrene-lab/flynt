@@ -143,6 +143,24 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 let abs = vault.root.join(&p);
                 if std::fs::write(&abs, &data).is_ok() {
                     *save_state.write() = "saved";
+
+                    // Auto-export SVG for inline embeds in notes
+                    let svg_path = abs.with_extension("svg");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    let mut svg_eval = document::eval(r#"
+                        (async function() {
+                            if (window.CodexExcalidraw && window.CodexExcalidraw._api) {
+                                const svg = await window.CodexExcalidraw.exportSvg();
+                                dioxus.send(svg || '');
+                            } else { dioxus.send(''); }
+                        })();
+                    "#);
+                    if let Ok(svg) = svg_eval.recv::<String>().await {
+                        if !svg.is_empty() {
+                            let _ = std::fs::write(&svg_path, &svg);
+                        }
+                    }
+
                     // Clear "saved" after 2 seconds
                     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     if *save_state.read() == "saved" {

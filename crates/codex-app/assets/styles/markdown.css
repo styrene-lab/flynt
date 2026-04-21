@@ -645,7 +645,31 @@
   opacity: 0.5;
 }
 
-/* ── Embedded images ─────────────────────────────────────────────── */
+/* ── CM6 embed widgets ────────────────────────────────────────────── */
+.cm-embed-chip {
+  display:       inline-block;
+  padding:       4px 10px;
+  background:    var(--surface, #0c1018);
+  border:        1px solid var(--border, #1a2233);
+  border-radius: 6px;
+  font-size:     13px;
+  cursor:        pointer;
+  color:         var(--primary, #2ab4c8);
+  margin:        2px 0;
+}
+.cm-embed-chip:hover {
+  border-color:  var(--primary, #2ab4c8);
+  background:    rgba(42, 180, 200, 0.08);
+}
+.cm-embed-image {
+  max-width:     100%;
+  height:        auto;
+  border-radius: 6px;
+  display:       block;
+  margin:        4px 0;
+}
+
+/* ── Embedded images (rendered HTML) ─────────────────────────────── */
 .embedded-image {
   max-width:     100%;
   height:        auto;
