@@ -234,3 +234,66 @@ pub enum DaemonState {
         instance_id: String,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_capabilities_have_non_empty_prompts() {
+        let caps = [
+            InboundCapability::ResearchLinks,
+            InboundCapability::CaptureIdeas,
+            InboundCapability::ManageTasks,
+            InboundCapability::AnswerQuestions,
+            InboundCapability::DailyDigest,
+            InboundCapability::CreateDocuments,
+            InboundCapability::SearchVault,
+            InboundCapability::EnrichNotes,
+        ];
+        for cap in &caps {
+            let prompt = cap.system_prompt();
+            assert!(!prompt.is_empty(), "{cap:?} has empty system prompt");
+            assert!(prompt.len() > 20, "{cap:?} system prompt too short: {prompt}");
+        }
+    }
+
+    #[test]
+    fn build_prompt_empty_capabilities() {
+        let config = AgentDaemonConfig {
+            enabled: true,
+            auto_start: false,
+            model: None,
+            posture: None,
+            persona: None,
+            port: 7842,
+            capabilities: vec![],
+            vox: VoxConfig::default(),
+        };
+        let prompt = build_daemon_system_prompt(&config, "Test Vault");
+        assert!(prompt.contains("Test Vault"));
+        assert!(prompt.contains("general prompts"));
+    }
+
+    #[test]
+    fn build_prompt_with_capabilities() {
+        let config = AgentDaemonConfig {
+            enabled: true,
+            auto_start: false,
+            model: None,
+            posture: None,
+            persona: None,
+            port: 7842,
+            capabilities: vec![
+                InboundCapability::ManageTasks,
+                InboundCapability::SearchVault,
+            ],
+            vox: VoxConfig::default(),
+        };
+        let prompt = build_daemon_system_prompt(&config, "My Vault");
+        assert!(prompt.contains("My Vault"));
+        assert!(prompt.contains("Your capabilities:"));
+        assert!(prompt.contains("task"));
+        assert!(prompt.contains("search"));
+    }
+}

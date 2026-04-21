@@ -227,3 +227,226 @@ fn extract_quoted(s: &str) -> Option<String> {
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::datum::EntityKind;
+    use crate::store::{DocumentMetadataFilter, TaskFilter};
+    use std::path::PathBuf;
+    use std::collections::BTreeMap;
+    use chrono::{DateTime, Utc};
+
+    struct MockStore {
+        docs: Vec<DocumentMeta>,
+        tasks: Vec<Task>,
+    }
+
+    impl VaultStore for MockStore {
+        fn get_document(&self, _id: &DocumentId) -> Result<Option<Document>> { Ok(None) }
+        fn get_document_by_path(&self, _path: &std::path::Path) -> Result<Option<Document>> { Ok(None) }
+        fn find_document_by_slug(&self, _slug: &str) -> Result<Option<DocumentMeta>> { Ok(None) }
+        fn list_documents(&self) -> Result<Vec<DocumentMeta>> { Ok(self.docs.clone()) }
+        fn list_documents_by_metadata(&self, _filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
+        fn save_document(&self, _doc: &Document) -> Result<()> { Ok(()) }
+        fn delete_document(&self, _id: &DocumentId) -> Result<()> { Ok(()) }
+        fn search_documents(&self, _query: &str) -> Result<Vec<crate::models::SearchResult>> { Ok(vec![]) }
+        fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
+        fn list_entities_by_kind(&self, _kind: &EntityKind) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
+        fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
+        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
+        fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }
+        fn delete_task(&self, _id: &TaskId) -> Result<()> { Ok(()) }
+        fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
+        fn list_boards(&self) -> Result<Vec<Board>> { Ok(vec![]) }
+        fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
+        fn list_dirty_tasks(&self, _pid: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
+        fn list_dirty_documents(&self, _pid: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
+        fn mark_committed(&self, _t: &[TaskId], _d: &[DocumentId], _at: DateTime<Utc>) -> Result<()> { Ok(()) }
+        fn record_project_deletion(&self, _eid: &uuid::Uuid, _kind: &str, _pid: &uuid::Uuid) -> Result<()> { Ok(()) }
+        fn list_pending_deletions(&self, _pid: &uuid::Uuid) -> Result<Vec<(uuid::Uuid, String)>> { Ok(vec![]) }
+        fn mark_deletions_committed(&self, _eids: &[uuid::Uuid]) -> Result<()> { Ok(()) }
+    }
+
+    fn doc(title: &str, tags: &[&str]) -> DocumentMeta {
+        DocumentMeta {
+            id: DocumentId::new(),
+            path: PathBuf::from(format!("{title}.md")),
+            title: title.into(),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            metadata: BTreeMap::new(),
+            entity_kind: None,
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn task(title: &str, column: &str, status: TaskStatus, priority: Priority) -> Task {
+        let bid = BoardId(uuid::Uuid::new_v4());
+        let mut t = Task::new(bid, column, title);
+        t.status = status;
+        t.priority = priority;
+        t
+    }
+
+    #[test]
+    fn empty_query_returns_message() {
+        let store = MockStore { docs: vec![], tasks: vec![] };
+        let result = execute_query("", &store).unwrap();
+        assert!(result.contains("Empty query"));
+    }
+
+    #[test]
+    fn unknown_query_type() {
+        let store = MockStore { docs: vec![], tasks: vec![] };
+        let result = execute_query("FOOBAR stuff", &store).unwrap();
+        assert!(result.contains("Unknown query type"));
+    }
+
+    #[test]
+    fn table_default_fields() {
+        let store = MockStore { docs: vec![doc("Alpha", &["tag1"]), doc("Beta", &[])], tasks: vec![] };
+        let html = execute_query("TABLE", &store).unwrap();
+        assert!(html.contains("<table"));
+        assert!(html.contains("Alpha"));
+        assert!(html.contains("Beta"));
+    }
+
+    #[test]
+    fn table_with_custom_fields() {
+        let store = MockStore { docs: vec![doc("Alpha", &["x"])], tasks: vec![] };
+        let html = execute_query("TABLE title, path", &store).unwrap();
+        assert!(html.contains("Alpha"));
+        assert!(html.contains("Alpha.md"));
+    }
+
+    #[test]
+    fn table_where_tags_filter() {
+        let store = MockStore {
+            docs: vec![doc("Match", &["engineering"]), doc("Skip", &["other"])],
+            tasks: vec![],
+        };
+        let html = execute_query("TABLE title\nWHERE tags CONTAINS \"engineering\"", &store).unwrap();
+        assert!(html.contains("Match"));
+        assert!(!html.contains("Skip"));
+    }
+
+    #[test]
+    fn table_where_title_filter() {
+        let store = MockStore { docs: vec![doc("Hello World", &[]), doc("Goodbye", &[])], tasks: vec![] };
+        let html = execute_query("TABLE title\nWHERE title CONTAINS \"hello\"", &store).unwrap();
+        assert!(html.contains("Hello World"));
+        assert!(!html.contains("Goodbye"));
+    }
+
+    #[test]
+    fn table_sort_title_desc() {
+        let store = MockStore { docs: vec![doc("Alpha", &[]), doc("Zeta", &[])], tasks: vec![] };
+        let html = execute_query("TABLE title\nSORT title DESC", &store).unwrap();
+        let zeta_pos = html.find("Zeta").unwrap();
+        let alpha_pos = html.find("Alpha").unwrap();
+        assert!(zeta_pos < alpha_pos, "Zeta should come before Alpha in DESC");
+    }
+
+    #[test]
+    fn table_limit() {
+        let store = MockStore { docs: vec![doc("A", &[]), doc("B", &[]), doc("C", &[])], tasks: vec![] };
+        let html = execute_query("TABLE title\nLIMIT 2", &store).unwrap();
+        let row_count = html.matches("<tr>").count() - 1;
+        assert_eq!(row_count, 2);
+    }
+
+    #[test]
+    fn list_query() {
+        let store = MockStore { docs: vec![doc("Note One", &[])], tasks: vec![] };
+        let html = execute_query("LIST", &store).unwrap();
+        assert!(html.contains("<ul"));
+        assert!(html.contains("Note One"));
+    }
+
+    #[test]
+    fn task_query_renders_checklist() {
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![task("Buy milk", "Backlog", TaskStatus::Todo, Priority::Medium)],
+        };
+        let html = execute_query("TASK", &store).unwrap();
+        assert!(html.contains("<input type=\"checkbox\""));
+        assert!(html.contains("Buy milk"));
+    }
+
+    #[test]
+    fn task_query_done_is_checked() {
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![task("Done task", "Done", TaskStatus::Done, Priority::Medium)],
+        };
+        let html = execute_query("TASK", &store).unwrap();
+        assert!(html.contains("checked"));
+    }
+
+    #[test]
+    fn task_query_filter_status() {
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![
+                task("Todo", "Backlog", TaskStatus::Todo, Priority::Medium),
+                task("Done", "Done", TaskStatus::Done, Priority::Medium),
+            ],
+        };
+        let html = execute_query("TASK\nWHERE STATUS = TODO", &store).unwrap();
+        assert!(html.contains("Todo"));
+        assert!(!html.contains(">Done<"));
+    }
+
+    #[test]
+    fn task_query_filter_priority() {
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![
+                task("High", "Backlog", TaskStatus::Todo, Priority::High),
+                task("Low", "Backlog", TaskStatus::Todo, Priority::Low),
+            ],
+        };
+        let html = execute_query("TASK\nWHERE priority = \"high\"", &store).unwrap();
+        assert!(html.contains("High"));
+        assert!(!html.contains("Low"));
+    }
+
+    #[test]
+    fn html_escape_special_chars() {
+        assert_eq!(html_escape("<script>&"), "&lt;script&gt;&amp;");
+    }
+
+    #[test]
+    fn extract_quoted_basic() {
+        assert_eq!(extract_quoted("tags CONTAINS \"hello\""), Some("hello".into()));
+    }
+
+    #[test]
+    fn extract_quoted_no_quotes() {
+        assert_eq!(extract_quoted("no quotes here"), None);
+    }
+
+    #[test]
+    fn extract_quoted_empty_value() {
+        assert_eq!(extract_quoted("value = \"\""), Some("".into()));
+    }
+
+    #[test]
+    fn table_empty_store() {
+        let store = MockStore { docs: vec![], tasks: vec![] };
+        let html = execute_query("TABLE title", &store).unwrap();
+        assert!(html.contains("<table"));
+        assert!(html.contains("</table>"));
+        // No data rows
+        assert_eq!(html.matches("<tr>").count(), 1); // header only
+    }
+
+    #[test]
+    fn task_query_empty_store() {
+        let store = MockStore { docs: vec![], tasks: vec![] };
+        let html = execute_query("TASK", &store).unwrap();
+        assert!(html.contains("<ul"));
+        assert!(!html.contains("<li"));
+    }
+}

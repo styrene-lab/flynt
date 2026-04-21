@@ -118,4 +118,90 @@ mod tests {
         assert_eq!(fm.tags, vec!["rust", "design"]);
         assert_eq!(body, "Body here.");
     }
+
+    // ── Additional parser edge cases ────────────────────────────────
+
+    #[test]
+    fn no_frontmatter_returns_defaults() {
+        let raw = "Just body content.";
+        let (body, fm, links) = parse_document_source(raw);
+        assert_eq!(body, "Just body content.");
+        assert!(fm.tags.is_empty());
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn malformed_toml_frontmatter_returns_defaults() {
+        let raw = "+++\nthis is not valid toml {{{\n+++\n\nBody.";
+        let (body, fm, _) = parse_document_source(raw);
+        assert_eq!(body, "Body.");
+        assert!(fm.tags.is_empty()); // parse failed, got default
+    }
+
+    #[test]
+    fn frontmatter_with_title() {
+        let raw = "+++\ntitle = \"My Note\"\ntags = [\"test\"]\n+++\n\nContent.";
+        let (_, fm, _) = parse_document_source(raw);
+        assert_eq!(fm.title.as_deref(), Some("My Note"));
+        assert_eq!(fm.tags, vec!["test"]);
+    }
+
+    #[test]
+    fn body_containing_triple_plus_not_treated_as_frontmatter() {
+        let raw = "+++\ntitle = \"Real\"\n+++\n\nSome text\n\n+++\nthis is body not frontmatter\n+++\n";
+        let (body, fm, _) = parse_document_source(raw);
+        assert_eq!(fm.title.as_deref(), Some("Real"));
+        assert!(body.contains("this is body not frontmatter"));
+    }
+
+    #[test]
+    fn multiple_wikilinks_in_one_line() {
+        let (_, _, links) = parse_document_source("See [[alpha]] and [[beta]] and [[gamma]].");
+        assert_eq!(links.len(), 3);
+        assert_eq!(links[0].target, "alpha");
+        assert_eq!(links[1].target, "beta");
+        assert_eq!(links[2].target, "gamma");
+    }
+
+    #[test]
+    fn empty_wikilink_ignored() {
+        let links = scan_wikilinks("See [[]] nothing.");
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn wikilink_with_spaces() {
+        let links = scan_wikilinks("See [[My Long Note Title]].");
+        assert_eq!(links[0].target, "My Long Note Title");
+    }
+
+    #[test]
+    fn unclosed_wikilink_ignored() {
+        let links = scan_wikilinks("See [[unclosed and never closed.");
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn yaml_frontmatter_parsed() {
+        let raw = "---\ntitle = \"YAML-ish\"\ntags = [\"yaml\"]\n---\n\nBody.";
+        let (body, fm, _) = parse_document_source(raw);
+        assert_eq!(fm.title.as_deref(), Some("YAML-ish"));
+        assert_eq!(body, "Body.");
+    }
+
+    #[test]
+    fn empty_document() {
+        let (body, fm, links) = parse_document_source("");
+        assert_eq!(body, "");
+        assert!(fm.tags.is_empty());
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn frontmatter_only_no_body() {
+        let raw = "+++\ntitle = \"Just FM\"\n+++\n";
+        let (body, fm, _) = parse_document_source(raw);
+        assert_eq!(fm.title.as_deref(), Some("Just FM"));
+        assert!(body.is_empty() || body.trim().is_empty());
+    }
 }

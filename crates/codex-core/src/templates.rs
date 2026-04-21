@@ -109,3 +109,82 @@ date = "{{date}}"
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn list_templates_empty_vault() {
+        let tmp = TempDir::new().unwrap();
+        let templates = list_templates(tmp.path());
+        assert!(templates.is_empty());
+    }
+
+    #[test]
+    fn list_templates_finds_md_files() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".codex/templates");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Note.md"), "note content").unwrap();
+        fs::write(dir.join("Daily.md"), "daily content").unwrap();
+        fs::write(dir.join("ignore.txt"), "not a template").unwrap();
+
+        let templates = list_templates(tmp.path());
+        assert_eq!(templates.len(), 2);
+        assert_eq!(templates[0].name, "Daily");
+        assert_eq!(templates[1].name, "Note");
+    }
+
+    #[test]
+    fn expand_replaces_title_and_vault() {
+        let result = expand("Hello {{title}} in {{vault}}", "My Note", "My Vault");
+        assert!(result.contains("My Note"));
+        assert!(result.contains("My Vault"));
+    }
+
+    #[test]
+    fn expand_replaces_date_vars() {
+        let result = expand("{{year}}-{{month}}-{{day}}", "t", "v");
+        // Should contain current year
+        let year = chrono::Local::now().format("%Y").to_string();
+        assert!(result.contains(&year));
+    }
+
+    #[test]
+    fn ensure_default_templates_creates_three() {
+        let tmp = TempDir::new().unwrap();
+        ensure_default_templates(tmp.path()).unwrap();
+
+        let templates = list_templates(tmp.path());
+        assert_eq!(templates.len(), 3);
+        let names: Vec<&str> = templates.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"Note"));
+        assert!(names.contains(&"Daily"));
+        assert!(names.contains(&"Meeting"));
+    }
+
+    #[test]
+    fn ensure_default_templates_idempotent() {
+        let tmp = TempDir::new().unwrap();
+        ensure_default_templates(tmp.path()).unwrap();
+        // Second call should be a no-op (dir exists)
+        ensure_default_templates(tmp.path()).unwrap();
+        assert_eq!(list_templates(tmp.path()).len(), 3);
+    }
+
+    #[test]
+    fn ensure_default_templates_skips_existing() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join(".codex/templates");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Custom.md"), "custom").unwrap();
+
+        // Should NOT overwrite — dir already exists
+        ensure_default_templates(tmp.path()).unwrap();
+        let templates = list_templates(tmp.path());
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates[0].name, "Custom");
+    }
+}

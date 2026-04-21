@@ -711,3 +711,214 @@ impl Default for VoxSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Duration, Utc};
+
+    // ── DecayRate ────────────────────────────────────────────────────
+
+    #[test]
+    fn decay_rate_none_has_no_half_life() {
+        assert_eq!(DecayRate::None.half_life_days(), Option::None);
+    }
+
+    #[test]
+    fn decay_rate_variants_have_correct_half_lives() {
+        assert_eq!(DecayRate::Slow.half_life_days(), Some(14.0));
+        assert_eq!(DecayRate::Natural.half_life_days(), Some(7.0));
+        assert_eq!(DecayRate::Fast.half_life_days(), Some(3.0));
+    }
+
+    #[test]
+    fn decay_rate_custom_clamps_to_minimum() {
+        assert_eq!(DecayRate::Custom(0.05).half_life_days(), Some(0.1));
+        assert_eq!(DecayRate::Custom(0.0).half_life_days(), Some(0.1));
+        assert_eq!(DecayRate::Custom(-5.0).half_life_days(), Some(0.1));
+        assert_eq!(DecayRate::Custom(30.0).half_life_days(), Some(30.0));
+    }
+
+    #[test]
+    fn decay_rate_default_is_natural() {
+        assert_eq!(DecayRate::default(), DecayRate::Natural);
+    }
+
+    // ── Task relevance ──────────────────────────────────────────────
+
+    fn make_task(decay: DecayRate, status: TaskStatus, touched_ago: Duration) -> Task {
+        let anchor = Utc::now() - touched_ago;
+        Task {
+            id: TaskId(uuid::Uuid::new_v4()),
+            board_id: BoardId(uuid::Uuid::new_v4()),
+            column: "Backlog".into(),
+            title: "Test".into(),
+            description: String::new(),
+            priority: Priority::Medium,
+            status,
+            tags: vec![],
+            document_refs: vec![],
+            due_date: None,
+            position: 0,
+            created_at: anchor,
+            updated_at: anchor,
+            decay,
+            last_touched_at: Some(anchor),
+        }
+    }
+
+    #[test]
+    fn relevance_fresh_task_is_one() {
+        let task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::zero());
+        assert!((task.relevance() - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn relevance_no_decay_always_one() {
+        let task = make_task(DecayRate::None, TaskStatus::Todo, Duration::days(365));
+        assert_eq!(task.relevance(), 1.0);
+    }
+
+    #[test]
+    fn relevance_done_always_zero() {
+        let task = make_task(DecayRate::Natural, TaskStatus::Done, Duration::zero());
+        assert_eq!(task.relevance(), 0.0);
+    }
+
+    #[test]
+    fn relevance_archived_always_zero() {
+        let task = make_task(DecayRate::Natural, TaskStatus::Archived, Duration::zero());
+        assert_eq!(task.relevance(), 0.0);
+    }
+
+    #[test]
+    fn relevance_decays_over_time() {
+        let task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::days(7));
+        let r = task.relevance();
+        // After exactly one half-life (7 days), should be ~0.5
+        assert!(r > 0.4 && r < 0.6, "expected ~0.5, got {r}");
+    }
+
+    #[test]
+    fn relevance_fast_decay_drops_quickly() {
+        let task = make_task(DecayRate::Fast, TaskStatus::Todo, Duration::days(6));
+        let r = task.relevance();
+        // After 2 half-lives (3 days * 2 = 6), should be ~0.25
+        assert!(r > 0.2 && r < 0.3, "expected ~0.25, got {r}");
+    }
+
+    #[test]
+    fn is_fading_below_threshold() {
+        // 21 days with 7-day half-life = 3 half-lives = 0.125 relevance
+        let task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::days(21));
+        assert!(task.is_fading());
+    }
+
+    #[test]
+    fn is_fading_above_threshold() {
+        let task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::days(1));
+        assert!(!task.is_fading());
+    }
+
+    #[test]
+    fn should_auto_archive_very_old() {
+        // 28 days with 7-day half-life = 4 half-lives = 0.0625 relevance
+        let task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::days(28));
+        assert!(task.should_auto_archive());
+    }
+
+    #[test]
+    fn should_not_auto_archive_recent() {
+        let task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::days(7));
+        assert!(!task.should_auto_archive());
+    }
+
+    #[test]
+    fn touch_resets_decay_clock() {
+        let mut task = make_task(DecayRate::Natural, TaskStatus::Todo, Duration::days(30));
+        assert!(task.relevance() < 0.1);
+        task.touch();
+        assert!(task.relevance() > 0.99);
+    }
+
+    // ── Notification ────────────────────────────────────────────────
+
+    #[test]
+    fn notification_new_has_correct_fields() {
+        let n = Notification::new(NotificationKind::DueDate, "Due", "Task is due", "my-vault");
+        assert_eq!(n.kind, NotificationKind::DueDate);
+        assert_eq!(n.title, "Due");
+        assert_eq!(n.body, "Task is due");
+        assert_eq!(n.source_vault, "my-vault");
+        assert!(n.task_id.is_none());
+        assert!(n.delivered_at.is_none());
+    }
+
+    #[test]
+    fn notification_for_task_sets_task_id() {
+        let tid = TaskId(uuid::Uuid::new_v4());
+        let n = Notification::new(NotificationKind::Decay, "Fading", "...", "vault")
+            .for_task(tid.clone());
+        assert_eq!(n.task_id, Some(tid));
+    }
+
+    // ── Board ───────────────────────────────────────────────────────
+
+    #[test]
+    fn board_default_sprint_has_four_columns() {
+        let board = Board::default_sprint("Sprint 1");
+        assert_eq!(board.name, "Sprint 1");
+        assert_eq!(board.columns.len(), 4);
+        assert_eq!(board.columns[0].name, "Backlog");
+        assert_eq!(board.columns[1].name, "In Progress");
+        assert_eq!(board.columns[2].name, "Review");
+        assert_eq!(board.columns[3].name, "Done");
+        assert!(board.project_id.is_none());
+    }
+
+    #[test]
+    fn board_for_project_sets_project_id() {
+        let pid = uuid::Uuid::new_v4();
+        let board = Board::for_project("Project Board", pid);
+        assert_eq!(board.project_id, Some(pid));
+    }
+
+    // ── Task constructors ───────────────────────────────────────────
+
+    #[test]
+    fn task_new_defaults() {
+        let bid = BoardId(uuid::Uuid::new_v4());
+        let task = Task::new(bid.clone(), "Backlog", "Do the thing");
+        assert_eq!(task.board_id, bid);
+        assert_eq!(task.column, "Backlog");
+        assert_eq!(task.title, "Do the thing");
+        assert_eq!(task.status, TaskStatus::Todo);
+        assert_eq!(task.priority, Priority::Medium);
+        assert_eq!(task.decay, DecayRate::Natural);
+    }
+
+    #[test]
+    fn task_new_tracked_no_decay() {
+        let bid = BoardId(uuid::Uuid::new_v4());
+        let task = Task::new_tracked(bid, "Backlog", "Tracked");
+        assert_eq!(task.decay, DecayRate::None);
+    }
+
+    // ── FontSizePreset ──────────────────────────────────────────────
+
+    #[test]
+    fn font_size_labels() {
+        assert_eq!(FontSizePreset::Small.label(), "S");
+        assert_eq!(FontSizePreset::Medium.label(), "M");
+        assert_eq!(FontSizePreset::Large.label(), "L");
+        assert_eq!(FontSizePreset::XLarge.label(), "XL");
+    }
+
+    #[test]
+    fn font_size_css_classes() {
+        assert_eq!(FontSizePreset::Small.css_class(), "font-sm");
+        assert_eq!(FontSizePreset::Medium.css_class(), "font-md");
+        assert_eq!(FontSizePreset::Large.css_class(), "font-lg");
+        assert_eq!(FontSizePreset::XLarge.css_class(), "font-xl");
+    }
+}
