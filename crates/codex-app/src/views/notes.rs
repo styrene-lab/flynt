@@ -908,21 +908,30 @@ pub fn NotesView() -> Element {
 
     let has_active = tab_state.read().active_id().is_some();
 
-    // Initialize CM6 only when switching to a DIFFERENT document (tab change)
-    // Do NOT reinitialize on content changes from autosave/reindex
+    // Initialize CM6 when: new document loaded OR mode switched back to Live
     let is_drawing_mode = use_context::<Signal<bool>>();
-    let mut last_init_id: Signal<Option<codex_core::models::DocumentId>> = use_signal(|| None);
+    let mut last_init_key: Signal<Option<(codex_core::models::DocumentId, u8)>> = use_signal(|| None);
     use_effect(move || {
         if *is_drawing_mode.read() { return; }
+        if !matches!(&*mode.read(), EditMode::Live) { return; }
         let current_id = tab_state.read().active_id().cloned();
-        let already_init = *last_init_id.peek() == current_id;
-        if already_init { return; }
-        // New document — initialize CM6
-        if let Some(Some((_, _, body, _))) = &*rendered.read() {
-            let content = body.clone();
-            *last_init_id.write() = current_id;
-            document::eval(&cm6_init_js(&content));
-        }
+        let Some(id) = current_id else { return; };
+        let key = (id.clone(), 0u8); // mode is Live = 0
+        if *last_init_key.peek() == Some(key.clone()) { return; }
+        // Need to init — either new doc or mode just switched to Live
+        // Use edit_body if available (has latest edits), fall back to rendered content
+        let content = {
+            let eb = edit_body.peek().clone();
+            if !eb.is_empty() {
+                eb
+            } else if let Some(Some((_, _, body, _))) = &*rendered.peek() {
+                body.clone()
+            } else {
+                return; // no content yet
+            }
+        };
+        *last_init_key.write() = Some(key);
+        document::eval(&cm6_init_js(&content));
     });
 
     // Persistent message bridge — one eval that polls a global queue.
@@ -1066,11 +1075,8 @@ pub fn NotesView() -> Element {
     // Clear drawing mode flag
     is_drawing.set(false);
 
-    // Eagerly seed edit_body if it's empty and we have content —
-    // ensures CM6 has content even before use_effect fires.
-    if edit_body.read().is_empty() && !body.is_empty() {
-        *edit_body.write() = body.clone();
-    }
+    // edit_body is seeded by the use_effect that watches rendered,
+    // and synced from CM6 on mode switch. No eager write here.
 
     let title = title.clone();
     let _body  = body.clone();
