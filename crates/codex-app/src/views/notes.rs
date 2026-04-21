@@ -495,7 +495,82 @@ fn cm6_init_js(content: &str) -> String {
     }});
 
     // ── Table styling: add CSS classes to table lines ──
-    const tablePlugin = EditorView.decorations.compute(['doc'], (state) => {{
+    // Combined decoration plugin — single pass over all lines for tables, code blocks, tasks, embeds
+    const combinedPlugin = EditorView.decorations.compute(['doc'], (state) => {{
+        const decs = [];
+        const doc = state.doc;
+        let inTable = false, isHeader = true, inCodeBlock = false;
+
+        for (let i = 1; i <= doc.lines; i++) {{
+            const line = doc.line(i);
+            const text = line.text;
+            const trimmed = text.trim();
+
+            // Code blocks
+            if (!inCodeBlock && trimmed.startsWith('```')) {{
+                inCodeBlock = true;
+                decs.push(Decoration.line({{ class: 'cm-codeblock-fence cm-codeblock-first' }}).range(line.from));
+                continue;
+            }} else if (inCodeBlock && trimmed.startsWith('```')) {{
+                inCodeBlock = false;
+                decs.push(Decoration.line({{ class: 'cm-codeblock-fence cm-codeblock-last' }}).range(line.from));
+                continue;
+            }} else if (inCodeBlock) {{
+                decs.push(Decoration.line({{ class: 'cm-codeblock-line' }}).range(line.from));
+                continue;
+            }}
+
+            // Tables
+            if (trimmed.startsWith('|') && trimmed.endsWith('|')) {{
+                if (!inTable) {{ inTable = true; isHeader = true; }}
+                if (trimmed.match(/^\|[\s\-:|]+\|$/)) {{
+                    decs.push(Decoration.line({{ class: 'cm-table-separator' }}).range(line.from));
+                    isHeader = false;
+                }} else if (isHeader) {{
+                    decs.push(Decoration.line({{ class: 'cm-table-header' }}).range(line.from));
+                }} else {{
+                    decs.push(Decoration.line({{ class: 'cm-table-row' }}).range(line.from));
+                }}
+                continue;
+            }} else {{
+                inTable = false; isHeader = true;
+            }}
+
+            // Task checkboxes: - [ ] or - [x]
+            const taskMatch = text.match(/^(\s*[-*]\s*)\[([ xX])\]\s/);
+            if (taskMatch) {{
+                const prefixLen = taskMatch[1].length;
+                const checked = taskMatch[2] !== ' ';
+                const replaceFrom = line.from + prefixLen;
+                const replaceTo = line.from + prefixLen + 3;
+                decs.push(Decoration.replace({{
+                    widget: new TaskCheckWidget(checked, line.from),
+                }}).range(replaceFrom, replaceTo));
+                if (prefixLen > 0) {{
+                    decs.push(Decoration.replace({{}}).range(line.from, line.from + prefixLen));
+                }}
+                continue;
+            }}
+
+            // Embed: ![[file.excalidraw]] or ![[image.png]]
+            const embedMatch = trimmed.match(/^!\[\[(.+?)\]\]$/);
+            if (embedMatch) {{
+                const ref = embedMatch[1];
+                let type = 'other';
+                if (ref.endsWith('.excalidraw')) type = 'drawing';
+                else if (/\.(png|jpg|jpeg|gif|svg|webp)$/i.test(ref)) type = 'image';
+                if (type !== 'other') {{
+                    decs.push(Decoration.replace({{
+                        widget: new EmbedWidget(ref, type),
+                    }}).range(line.from, line.to));
+                }}
+            }}
+        }}
+        return Decoration.set(decs, true);
+    }});
+
+    // Legacy — kept for reference but NOT used (replaced by combinedPlugin)
+    const tablePlugin_unused = EditorView.decorations.compute(['doc'], (state) => {{
         const decs = [];
         const doc = state.doc;
         let inTable = false;
@@ -740,10 +815,7 @@ fn cm6_init_js(content: &str) -> String {
             saveKeymap,
             formatKeymap,
             changeHandler,
-            tablePlugin,
-            codeBlockPlugin,
-            taskListPlugin,
-            embedPlugin,
+            combinedPlugin,
             EditorView.lineWrapping,
         ],
     }});
