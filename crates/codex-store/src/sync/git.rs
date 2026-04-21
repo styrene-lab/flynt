@@ -140,9 +140,8 @@ impl SyncBackend for GitSync {
         let repo = self.open_repo()?;
         let statuses = repo.statuses(None)?;
         let dirty = statuses.iter().any(|s| {
-            !s.status().is_empty()
-                && !s.status().contains(git2::Status::IGNORED)
-                && !s.status().contains(git2::Status::CURRENT)
+            let st = s.status();
+            !st.is_empty() && !st.contains(git2::Status::IGNORED)
         });
         if dirty {
             return Ok(SyncStatus::Syncing); // uncommitted changes
