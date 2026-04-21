@@ -1,0 +1,337 @@
+---
+import "../styles/global.css";
+
+const valueCards = [
+  {
+    title: "Markdown is the source of truth",
+    body: "Every note is a plain .md file on your filesystem. No database lock-in, no proprietary format. Open them in any editor, version them with Git, sync them however you want.",
+  },
+  {
+    title: "Local-first, sync-optional",
+    body: "Your vault works offline, always. Add Git sync when you're ready — Codex auto-commits and pushes in the background. iCloud sync also supported for zero-config setups.",
+  },
+  {
+    title: "Knowledge graph",
+    body: "Every wikilink creates an edge. The interactive force-directed graph shows how your ideas connect — filter by tags, zoom into neighborhoods, drag to rearrange.",
+  },
+  {
+    title: "Integrated AI agent",
+    body: "Omegon lives in the sidebar with full read/write access to your vault. Search, summarize, draft, manage tasks — all through natural conversation.",
+  },
+  {
+    title: "Kanban task boards",
+    body: "Built-in boards with decay-based relevance scoring. Tasks that go untouched naturally fade, surfacing what actually matters. Due dates, priorities, and agent integration.",
+  },
+  {
+    title: "Cross-platform",
+    body: "macOS desktop + iOS companion app from the same Rust codebase. Linux builds for amd64 and aarch64. One vault, every device.",
+  },
+];
+
+const features = [
+  "Wikilinks & backlinks",
+  "Daily notes with templates",
+  "Excalidraw drawings",
+  "Query blocks (TABLE, LIST, TASK)",
+  "Live markdown preview",
+  "Command palette (Cmd+P)",
+  "Native macOS menus",
+  "Git-based multi-device sync",
+  "Publication system",
+  "TOML frontmatter",
+  "Obsidian vault compatible",
+  "Notarized macOS DMG",
+];
+---
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codex — Local-First Knowledge Management</title>
+  <meta name="description" content="Markdown-native knowledge management with integrated AI, kanban boards, and a knowledge graph. Built in Rust. Local-first, no account required." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/" class="topnav-logo">Codex</a>
+    <div class="topnav-links">
+      <a href="https://demo.codex.styrene.io">Demo Vault</a>
+      <a href="https://demo.codex.styrene.io/graph/">Graph</a>
+      <a href="https://github.com/styrene-lab/codex">GitHub</a>
+      <a href="https://github.com/styrene-lab/codex/releases">Releases</a>
+    </div>
+  </nav>
+
+  <main class="landing-shell">
+    <section class="hero-grid">
+      <div class="hero-copy-column">
+        <div class="hero-kicker">Knowledge kernel</div>
+        <h1>Your notes. Your filesystem. Your rules.</h1>
+        <p class="hero-lead">
+          Codex is a local-first knowledge management app built in Rust. Markdown files, wikilinks, a knowledge graph, kanban boards, and an AI agent — all without a cloud account or subscription.
+        </p>
+        <p class="hero-body">
+          Designed for people who think in text files and want their tools to stay out of the way. Obsidian-compatible, Git-synced, cross-platform.
+        </p>
+        <div class="hero-cta-row">
+          <a href="https://github.com/styrene-lab/codex/releases/latest" class="btn btn-primary">Download for macOS</a>
+          <a href="https://demo.codex.styrene.io" class="btn btn-secondary">Explore the demo vault</a>
+        </div>
+        <div class="hero-proof-row">
+          <span>Markdown source of truth</span>
+          <span>No account required</span>
+          <span>Git sync built in</span>
+        </div>
+      </div>
+
+      <div class="hero-rail">
+        <section class="brand-panel">
+          <div>
+            <div class="brand-overline">v0.3.0 Beta</div>
+            <div class="brand-copy">
+              macOS (notarized DMG) · iOS (TestFlight) · Linux amd64/aarch64 (CI builds)
+            </div>
+          </div>
+        </section>
+
+        <section class="install-panel">
+          <div class="panel-label">Quick start</div>
+          <h2>Clone the demo vault.</h2>
+          <p class="panel-copy">
+            Download Codex, open it, and choose <strong>Clone remote vault</strong>. Enter the demo vault URL and you're in — documentation, examples, and a live knowledge graph.
+          </p>
+
+          <div class="install-command-wrap">
+            <pre class="install-command"><code id="hero-clone-cmd">git@github.com:styrene-lab/codex-demo-vault.git</code></pre>
+            <button class="copy-btn" id="copy-btn" aria-label="Copy clone URL" title="Copy">
+              <svg class="copy-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
+                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+              </svg>
+              <svg class="check-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+                <path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="version-row">
+            <span><a href="https://github.com/styrene-lab/codex/releases/tag/v0.3.0">v0.3.0</a> · notarized · signed</span>
+            <a href="https://demo.codex.styrene.io/getting-started/">Getting started</a>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="stats-strip">
+      <div class="stat-card"><span class="stat-value">~15 MB</span><span class="stat-label">notarized DMG</span></div>
+      <div class="stat-card"><span class="stat-value">212</span><span class="stat-label">tests passing</span></div>
+      <div class="stat-card"><span class="stat-value">5</span><span class="stat-label">platforms</span></div>
+      <div class="stat-card"><span class="stat-value">0</span><span class="stat-label">cloud dependencies</span></div>
+    </section>
+
+    <section class="value-section">
+      <div class="section-heading">
+        <div class="section-kicker">Why Codex</div>
+        <h2>The tools should serve the thinking, not the other way around.</h2>
+      </div>
+      <div class="value-grid">
+        {valueCards.map((card) => (
+          <article class="value-card">
+            <h3>{card.title}</h3>
+            <p>{card.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="features-section">
+      <div class="section-heading">
+        <div class="section-kicker">What's included</div>
+        <h2>Everything you need, nothing you don't.</h2>
+      </div>
+      <div class="features-grid">
+        {features.map((f) => (
+          <div class="feature-chip">{f}</div>
+        ))}
+      </div>
+    </section>
+
+    <section class="ecosystem-section">
+      <div class="section-heading">
+        <div class="section-kicker">Ecosystem</div>
+        <h2>Part of the Styrene stack.</h2>
+      </div>
+      <div class="ecosystem-grid">
+        <a href="https://omegon.styrene.io" class="ecosystem-card">
+          <h3>Omegon</h3>
+          <p>Terminal-native AI agent harness. The engine behind Codex's agent sidebar.</p>
+        </a>
+        <a href="https://demo.codex.styrene.io" class="ecosystem-card">
+          <h3>Demo Vault</h3>
+          <p>Clone-and-go demo vault with documentation, examples, and a live knowledge graph.</p>
+        </a>
+        <a href="https://github.com/styrene-lab/codex" class="ecosystem-card">
+          <h3>Source</h3>
+          <p>Rust monorepo: codex-core, codex-store, codex-app, codex-mobile, codex-agent.</p>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="docs-footer">
+    <a href="https://github.com/styrene-lab/codex">GitHub</a> ·
+    <a href="https://github.com/styrene-lab/codex/releases">Releases</a> ·
+    <a href="https://demo.codex.styrene.io">Demo</a> ·
+    © 2024–2026 Black Meridian, LLC
+  </footer>
+
+  <script>
+    const btn = document.getElementById('copy-btn');
+    const cmd = document.getElementById('hero-clone-cmd');
+    if (btn && cmd) {
+      btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(cmd.textContent.trim()).then(() => {
+          btn.classList.add('copied');
+          btn.querySelector('.copy-icon').style.display = 'none';
+          btn.querySelector('.check-icon').style.display = '';
+          setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.querySelector('.copy-icon').style.display = '';
+            btn.querySelector('.check-icon').style.display = 'none';
+          }, 1800);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
+
+<style>
+  .topnav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(2, 3, 10, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-dim);
+    padding: 16px 28px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .topnav-logo { font-size: 18px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; text-decoration: none; }
+  .topnav-links { display: flex; gap: 24px; font-size: 14px; flex-wrap: wrap; justify-content: flex-end; }
+  .topnav-links a { color: var(--muted); }
+  .topnav-links a:hover { color: var(--fg); text-decoration: none; }
+
+  .landing-shell { max-width: 1280px; margin: 0 auto; padding: 40px 28px 96px; }
+
+  .hero-grid {
+    display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.95fr);
+    gap: 40px; align-items: start; padding: 24px 0 36px;
+  }
+  .hero-copy-column { padding-top: 18px; }
+  .hero-kicker, .section-kicker, .panel-label, .brand-overline {
+    text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; color: var(--accent); font-weight: 700;
+  }
+  h1 {
+    font-size: clamp(3rem, 6vw, 4.8rem); line-height: 0.95; letter-spacing: -0.05em;
+    margin: 18px 0 20px; max-width: 14ch; border: none; padding: 0;
+  }
+  .hero-lead { font-size: 1.15rem; color: var(--fg); max-width: 36rem; margin-bottom: 16px; }
+  .hero-body { color: var(--muted); max-width: 40rem; margin-bottom: 24px; font-size: 1rem; }
+
+  .hero-cta-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 12px 18px; border-radius: 2px; font-weight: 700; text-decoration: none;
+    border: 1px solid var(--border); letter-spacing: 0.02em;
+  }
+  .btn-primary { background: transparent; color: var(--accent); border-color: var(--accent); }
+  .btn-primary:hover { color: var(--fg); text-decoration: none; background: rgba(42, 180, 200, 0.08); }
+  .btn-secondary { color: var(--fg); background: transparent; border-color: var(--border-dim); }
+  .btn-secondary:hover { text-decoration: none; border-color: var(--accent-muted); background: rgba(26, 68, 88, 0.12); }
+
+  .hero-proof-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .hero-proof-row span {
+    border: 1px solid var(--border-dim); background: transparent; color: var(--muted);
+    border-radius: 0; padding: 8px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+
+  .hero-rail { display: grid; gap: 18px; }
+  .brand-panel, .install-panel, .value-card, .stat-card, .ecosystem-card {
+    background: rgba(6, 10, 20, 0.94); border: 1px solid rgba(42, 180, 200, 0.12); box-shadow: none;
+  }
+  .brand-panel { border-radius: 0; padding: 20px 22px; }
+  .brand-overline { margin-bottom: 6px; }
+  .brand-copy { color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+  .install-panel { border-radius: 0; padding: 24px 22px; }
+  .install-panel h2 { font-size: 1.4rem; margin: 10px 0 10px; border: none; padding: 0; }
+  .panel-copy { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+
+  .install-command-wrap {
+    position: relative; background: var(--surface); border: 1px solid var(--border-dim);
+    border-radius: 4px; padding: 14px 48px 14px 16px; margin-bottom: 12px;
+  }
+  .install-command { background: none; border: none; padding: 0; margin: 0; font-size: 14px; }
+  .install-command code { background: none; border: none; padding: 0; color: var(--accent); }
+  .copy-btn {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: none; border: 1px solid var(--border-dim); border-radius: 4px;
+    color: var(--muted); cursor: pointer; padding: 6px; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent-muted); }
+  .copy-btn svg { width: 16px; height: 16px; }
+  .copy-btn.copied { color: var(--success); border-color: var(--success); }
+
+  .version-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+
+  .stats-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 40px 0;
+  }
+  .stat-card {
+    border-radius: 0; padding: 20px; text-align: center;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-value { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+  .stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+
+  .value-section, .features-section, .ecosystem-section { margin-top: 64px; }
+  .section-heading { margin-bottom: 28px; }
+  .section-heading h2 {
+    font-size: clamp(1.5rem, 3vw, 2.4rem); line-height: 1.1; letter-spacing: -0.03em;
+    margin: 8px 0 0; max-width: 24ch; border: none; padding: 0;
+  }
+
+  .value-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .value-card { border-radius: 0; padding: 24px; }
+  .value-card h3 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+  .value-card p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0; }
+
+  .features-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .feature-chip {
+    border: 1px solid var(--border-dim); background: transparent; color: var(--fg);
+    padding: 10px 16px; font-size: 13px; letter-spacing: 0.02em;
+  }
+
+  .ecosystem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .ecosystem-card {
+    border-radius: 0; padding: 24px; text-decoration: none; display: block; transition: border-color 0.15s;
+  }
+  .ecosystem-card:hover { border-color: var(--accent-muted); text-decoration: none; }
+  .ecosystem-card h3 { font-size: 1rem; margin: 0 0 6px; color: var(--accent); }
+  .ecosystem-card p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0; }
+
+  .docs-footer {
+    border-top: 1px solid var(--border-dim); padding: 24px 28px; text-align: center;
+    font-size: 13px; color: var(--dim);
+  }
+  .docs-footer a { color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .value-grid, .ecosystem-grid { grid-template-columns: 1fr; }
+    .stats-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
