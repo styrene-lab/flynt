@@ -965,10 +965,8 @@ pub fn NotesView() -> Element {
                         // Do NOT write to edit_body here — it triggers Dioxus re-render
                         // which destroys and recreates CM6. edit_body is synced from CM6
                         // directly when switching to source mode.
-                        // Just mark dirty (only if not already dirty to avoid re-render churn)
-                        if !matches!(*save_state.peek(), SaveState::Dirty) {{
-                            *save_state.write() = SaveState::Dirty;
-                        }}
+                        // Update save indicator via DOM — no Dioxus signal write
+                        document::eval("document.querySelectorAll('.save-status').forEach(e => {{ e.textContent = 'unsaved'; e.className = 'save-status dirty'; }});");
                     }
                     "save" | "autosave" => {
                         let content = data.to_string();
@@ -980,13 +978,8 @@ pub fn NotesView() -> Element {
                                 vault.save_document_content(&path, &content)
                             }).await {
                                 Ok(Ok(())) => {
-                                    // Only write if state actually changed — avoid churn
-                                    if !matches!(*save_state.peek(), SaveState::Saved) {
-                                        *save_state.write() = SaveState::Saved;
-                                    }
-                                    if save_err.peek().is_some() {
-                                        *save_err.write() = None;
-                                    }
+                                    // Update save indicator via DOM — no signal write
+                                    document::eval("document.querySelectorAll('.save-status').forEach(e => {{ e.textContent = 'saved'; e.className = 'save-status saved'; }});");
                                 }
                                 Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
                                 Err(e) => *save_err.write() = Some(format!("Save interrupted — {e}")),
@@ -1153,14 +1146,8 @@ pub fn NotesView() -> Element {
                     span { class: "rename-msg", "{msg}" }
                 }
                 div { class: "notes-actions",
-                    match *save_state.read() {
-                        SaveState::Dirty => rsx! { span { class: "save-status dirty", title: "Unsaved changes", "unsaved" } },
-                        SaveState::Saved => rsx! { span { class: "save-status saved", "saved" } },
-                        SaveState::Clean => rsx! {},
-                    }
-                    if let Some(ref err) = *save_err.read() {
-                        span { class: "save-msg err", "{err}" }
-                    }
+                    // Save status updated via JS to avoid Dioxus re-render
+                    span { class: "save-status" }
                     match *mode.read() {
                         EditMode::Live => rsx! {
                             span { class: "mode-hint", "⌘E source" }
