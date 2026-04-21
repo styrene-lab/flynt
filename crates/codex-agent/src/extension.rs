@@ -183,6 +183,33 @@ impl Extension for CodexExtension {
                     }
                 },
                 {
+                    "name": "convert_to_design_node",
+                    "label": "Convert to Design Node",
+                    "description": "Convert an existing document into a design node with structured frontmatter. Preserves existing content as the Overview section and adds an Open Questions section.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "Path of the existing document to convert" },
+                            "status": { "type": "string", "default": "seed", "description": "Lifecycle status: seed, exploring, resolved, decided, implementing, implemented, blocked, deferred, archived" },
+                            "issue_type": { "type": "string", "description": "Optional issue type (e.g. epic, feature, task, bug)" },
+                            "priority": { "type": "integer", "description": "Priority (1=low, 2=medium, 3=high, 4=critical)" },
+                            "parent": { "type": "string", "description": "Optional parent design node UUID" }
+                        },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "name": "list_design_nodes",
+                    "label": "List Design Nodes",
+                    "description": "List all design nodes in the vault, optionally filtered by lifecycle status.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "status": { "type": "string", "description": "Filter by status: seed, exploring, resolved, decided, implementing, implemented, blocked, deferred, archived" }
+                        }
+                    }
+                },
+                {
                     "name": "get_graph",
                     "label": "Get Graph",
                     "description": "Get the full knowledge graph — all nodes (documents, tasks, boards, repos, links) and their relationships (wikilinks, task membership, semantic links). Use to understand vault structure and connections.",
@@ -195,7 +222,7 @@ impl Extension for CodexExtension {
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "kind": { "type": "string", "description": "Node kind: document, task, board, repo, link, memory, communication" },
+                            "kind": { "type": "string", "description": "Node kind: document, task, board, repo, link, memory, communication, design_node" },
                             "group": { "type": "string", "description": "Group (top-level folder name)" },
                             "tag": { "type": "string", "description": "Only nodes with this tag" },
                             "search": { "type": "string", "description": "Title substring (case-insensitive)" },
@@ -437,6 +464,121 @@ impl Extension for CodexExtension {
                 Ok(serde_json::to_value(&board).unwrap_or(json!({})))
             }
 
+            "execute_convert_to_design_node" => {
+                let path = params["path"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path'"))?;
+                let status = params["status"].as_str().unwrap_or("seed");
+                let issue_type = params["issue_type"].as_str();
+                let priority = params["priority"].as_i64();
+                let parent = params["parent"].as_str();
+
+                // Read the existing document
+                let doc = self
+                    .vault
+                    .store
+                    .get_document_by_path(std::path::Path::new(path))
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
+                    .ok_or_else(|| omegon_extension::Error::internal_error(format!("not found: {path}")))?;
+
+                // Guard: refuse to overwrite an existing design node
+                if let Some(ref entity) = doc.entity {
+                    if entity.kind == codex_core::datum::EntityKind::DesignNode {
+                        return Err(omegon_extension::Error::internal_error(
+                            "Document is already a design node. Use design_tree_update to modify it.".to_string(),
+                        ));
+                    }
+                }
+
+                let existing_content = doc.content.clone();
+                let title = doc.title.clone();
+                let doc_id = doc.frontmatter.id.unwrap_or_else(uuid::Uuid::new_v4);
+
+                // Build [data] table entries
+                let mut data_lines = Vec::new();
+                data_lines.push(format!("title = \"{}\"", title.replace('"', "\\\"")));
+                data_lines.push(format!("status = \"{}\"", status));
+                if let Some(it) = issue_type {
+                    data_lines.push(format!("issue_type = \"{}\"", it));
+                }
+                if let Some(p) = priority {
+                    data_lines.push(format!("priority = {}", p));
+                }
+                if let Some(par) = parent {
+                    data_lines.push(format!("parent = \"{}\"", par));
+                }
+                data_lines.push("dependencies = []".into());
+                data_lines.push("open_questions = []".into());
+
+                let full = format!(
+                    "+++\nid = \"{}\"\nkind = \"design_node\"\n\n[data]\n{}\n+++\n\n## Overview\n\n{}\n\n## Open Questions\n",
+                    doc_id,
+                    data_lines.join("\n"),
+                    existing_content.trim(),
+                );
+
+                let rel = std::path::Path::new(path);
+                self.vault
+                    .save_document_content(rel, &full)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                Ok(json!({ "converted": path, "id": doc_id.to_string(), "status": status }))
+            }
+
+            "execute_list_design_nodes" => {
+                let status_filter = params["status"].as_str();
+                let nodes = self
+                    .vault
+                    .store
+                    .list_entities_by_kind(&codex_core::datum::EntityKind::DesignNode)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                let mut results: Vec<Value> = Vec::new();
+                for meta in nodes {
+                    // Load full document for entity fields
+                    let doc = self
+                        .vault
+                        .store
+                        .get_document(&meta.id)
+                        .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                    let (node_status, node_parent, node_priority, node_issue_type, open_questions_count, deps_count) =
+                        if let Some(ref d) = doc {
+                            if let Some(ref entity) = d.entity {
+                                let s = entity.get_text("status").unwrap_or("seed").to_string();
+                                let p = entity.get_text("parent").map(String::from);
+                                let pr = entity.get_int("priority");
+                                let it = entity.get_text("issue_type").map(String::from);
+                                let oq = entity.get_text_list("open_questions").len();
+                                let dc = entity.get_text_list("dependencies").len();
+                                (s, p, pr, it, oq, dc)
+                            } else {
+                                ("seed".into(), None, None, None, 0, 0)
+                            }
+                        } else {
+                            ("seed".into(), None, None, None, 0, 0)
+                        };
+
+                    // Apply status filter if provided
+                    if let Some(sf) = status_filter {
+                        if node_status != sf {
+                            continue;
+                        }
+                    }
+
+                    results.push(json!({
+                        "id": meta.id.0.to_string(),
+                        "title": meta.title,
+                        "status": node_status,
+                        "parent": node_parent,
+                        "priority": node_priority,
+                        "issue_type": node_issue_type,
+                        "open_questions_count": open_questions_count,
+                        "dependencies_count": deps_count,
+                    }));
+                }
+                Ok(json!(results))
+            }
+
             "execute_get_graph" => {
                 let payload = build_graph_payload(&*self.vault.store)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -479,7 +621,40 @@ impl Extension for CodexExtension {
                     true
                 }).collect();
 
-                let ids: std::collections::HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+                let mut ids: std::collections::HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+
+                // Design node filter: also include direct dependency targets
+                // so the graph shows what design nodes depend on.
+                if kind_filter == Some("design_node") {
+                    let dep_targets: Vec<&str> = payload.edges.iter()
+                        .filter(|e| {
+                            ids.contains(e.source.as_str())
+                                && (e.kind == codex_core::graph::GraphEdgeKind::Dependency
+                                    || e.kind == codex_core::graph::GraphEdgeKind::ParentChild)
+                        })
+                        .map(|e| e.target.as_str())
+                        .collect();
+                    // Also include parent sources for ParentChild edges
+                    let parent_sources: Vec<&str> = payload.edges.iter()
+                        .filter(|e| {
+                            ids.contains(e.target.as_str())
+                                && e.kind == codex_core::graph::GraphEdgeKind::ParentChild
+                        })
+                        .map(|e| e.source.as_str())
+                        .collect();
+                    for t in dep_targets {
+                        ids.insert(t);
+                    }
+                    for s in parent_sources {
+                        ids.insert(s);
+                    }
+                }
+
+                // Re-collect nodes including any added dependency/parent targets
+                let nodes: Vec<_> = payload.nodes.iter()
+                    .filter(|n| ids.contains(n.id.as_str()))
+                    .collect();
+
                 let edges: Vec<_> = payload.edges.iter()
                     .filter(|e| ids.contains(e.source.as_str()) && ids.contains(e.target.as_str()))
                     .collect();

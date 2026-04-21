@@ -47,6 +47,8 @@ fn filter_and_serialize(payload: &GraphPayload, s: &GraphSettings) -> String {
             GraphEdgeKind::Wikilink => s.show_wikilinks,
             GraphEdgeKind::TaskMembership => s.show_task_links,
             GraphEdgeKind::SemanticSupport => s.show_semantic,
+            GraphEdgeKind::Dependency => true,
+            GraphEdgeKind::ParentChild => true,
         }
     }).collect();
 
@@ -66,14 +68,14 @@ fn filter_and_serialize(payload: &GraphPayload, s: &GraphSettings) -> String {
 fn esc(s: &str) -> String { s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n") }
 fn kind_str(k: &GraphNodeKind) -> &'static str {
     match k { GraphNodeKind::Document=>"document", GraphNodeKind::Task=>"task", GraphNodeKind::Board=>"board",
-              GraphNodeKind::Repo=>"repo", GraphNodeKind::Link=>"link", GraphNodeKind::MemoryFact=>"memory", GraphNodeKind::Communication=>"communication" }
+              GraphNodeKind::Repo=>"repo", GraphNodeKind::Link=>"link", GraphNodeKind::MemoryFact=>"memory", GraphNodeKind::Communication=>"communication", GraphNodeKind::DesignNode=>"design_node" }
 }
 fn edge_str(k: &GraphEdgeKind) -> &'static str {
-    match k { GraphEdgeKind::Wikilink=>"wikilink", GraphEdgeKind::TaskMembership=>"task-membership", GraphEdgeKind::SemanticSupport=>"semantic-support" }
+    match k { GraphEdgeKind::Wikilink=>"wikilink", GraphEdgeKind::TaskMembership=>"task-membership", GraphEdgeKind::SemanticSupport=>"semantic-support", GraphEdgeKind::Dependency=>"dependency", GraphEdgeKind::ParentChild=>"parent-child" }
 }
 fn kind_label(k: &GraphNodeKind) -> &'static str {
     match k { GraphNodeKind::Document=>"Doc", GraphNodeKind::Task=>"Task", GraphNodeKind::Board=>"Board",
-              GraphNodeKind::Repo=>"Repo", GraphNodeKind::Link=>"Link", GraphNodeKind::MemoryFact=>"Memory", GraphNodeKind::Communication=>"Comms" }
+              GraphNodeKind::Repo=>"Repo", GraphNodeKind::Link=>"Link", GraphNodeKind::MemoryFact=>"Memory", GraphNodeKind::Communication=>"Comms", GraphNodeKind::DesignNode=>"Design" }
 }
 
 #[component]
@@ -157,7 +159,7 @@ pub fn GraphView() -> Element {
                                 onclick: move |_| settings.write().kind = None,
                                 "All"
                             }
-                            for kind in [GraphNodeKind::Document, GraphNodeKind::Task, GraphNodeKind::Board, GraphNodeKind::Repo, GraphNodeKind::MemoryFact, GraphNodeKind::Communication] {
+                            for kind in [GraphNodeKind::Document, GraphNodeKind::Task, GraphNodeKind::Board, GraphNodeKind::Repo, GraphNodeKind::MemoryFact, GraphNodeKind::Communication, GraphNodeKind::DesignNode] {
                                 {
                                     let label = kind_label(&kind);
                                     rsx! {

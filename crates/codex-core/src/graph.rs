@@ -16,6 +16,7 @@ pub enum GraphNodeKind {
     Link,
     MemoryFact,
     Communication,
+    DesignNode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub enum GraphEdgeKind {
     Wikilink,
     TaskMembership,
     SemanticSupport,
+    Dependency,
+    ParentChild,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,6 +77,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             Some(crate::datum::EntityKind::Repo) => GraphNodeKind::Repo,
             Some(crate::datum::EntityKind::Link) => GraphNodeKind::Link,
             Some(crate::datum::EntityKind::Task) => GraphNodeKind::Task,
+            Some(crate::datum::EntityKind::DesignNode) => GraphNodeKind::DesignNode,
             _ if matches!(
                 meta.metadata.get("kind").map(|field| &field.value),
                 Some(MetadataValue::String(value)) if value == "agent_communication"
@@ -87,15 +91,33 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
         for tag in &meta.tags {
             tag_set.insert(tag.clone(), ());
         }
+        // Extract status from the entity for design nodes
+        let node_status = if kind == GraphNodeKind::DesignNode {
+            meta.metadata
+                .get("status")
+                .and_then(|f| match &f.value {
+                    MetadataValue::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .or_else(|| {
+                    // Fall back to entity fields if available
+                    store.get_document(&meta.id).ok().flatten()
+                        .and_then(|doc| doc.entity.as_ref()
+                            .and_then(|e| e.get_text("status").map(String::from)))
+                })
+        } else {
+            None
+        };
+
         nodes.push(GraphNode {
             id: id.clone(),
-            kind,
+            kind: kind.clone(),
             title: meta.title.clone(),
             group,
             tags: meta.tags.clone(),
             updated_at: Some(meta.updated_at.to_rfc3339()),
             priority: None,
-            status: None,
+            status: node_status,
         });
 
         if let Some(doc) = store.get_document(&meta.id)? {
@@ -106,6 +128,26 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
                         target: target.id.0.to_string(),
                         kind: GraphEdgeKind::Wikilink,
                     });
+                }
+            }
+
+            // Design node dependency + parent-child edges
+            if kind == GraphNodeKind::DesignNode {
+                if let Some(entity) = &doc.entity {
+                    for dep_id in entity.get_text_list("dependencies") {
+                        edges.push(GraphEdge {
+                            source: id.clone(),
+                            target: dep_id,
+                            kind: GraphEdgeKind::Dependency,
+                        });
+                    }
+                    if let Some(parent_id) = entity.get_text("parent") {
+                        edges.push(GraphEdge {
+                            source: parent_id.to_string(),
+                            target: id.clone(),
+                            kind: GraphEdgeKind::ParentChild,
+                        });
+                    }
                 }
             }
         }
@@ -187,6 +229,7 @@ pub fn format_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Link => "link",
         GraphNodeKind::MemoryFact => "memory",
         GraphNodeKind::Communication => "communication",
+        GraphNodeKind::DesignNode => "design_node",
     }
 }
 
@@ -325,6 +368,23 @@ pub fn kind_color(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Link => "rgb(113,113,122)",
         GraphNodeKind::MemoryFact => "rgb(249,115,22)",
         GraphNodeKind::Communication => "rgb(236,72,153)",
+        GraphNodeKind::DesignNode => "rgb(16,185,129)",
+    }
+}
+
+/// Status icon for design node lifecycle phases.
+pub fn design_node_status_icon(status: &str) -> &'static str {
+    match status {
+        "seed" => "\u{25CC}",           // ◌  hollow circle
+        "exploring" => "\u{25D0}",      // ◐  half-filled
+        "resolved" => "\u{25C9}",       // ◉  mostly filled
+        "decided" => "\u{25CF}",        // ●  filled
+        "implementing" => "\u{2699}",   // ⚙  gear
+        "implemented" => "\u{2713}",    // ✓  checkmark
+        "blocked" => "\u{2715}",        // ✕  X
+        "deferred" => "\u{25D1}",       // ◑  half-right
+        "archived" => "\u{25CB}",       // ○  dimmed (open circle)
+        _ => "\u{25CC}",               // ◌  default to seed
     }
 }
 
@@ -365,6 +425,8 @@ pub fn render_graph_svg(payload: &GraphPayload, config: &LayoutConfig) -> String
                 GraphEdgeKind::Wikilink => "0.4",
                 GraphEdgeKind::TaskMembership => "0.3",
                 GraphEdgeKind::SemanticSupport => "0.2",
+                GraphEdgeKind::Dependency => "0.5",
+                GraphEdgeKind::ParentChild => "0.6",
             };
             svg.push_str(&format!(
                 r#"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="rgb(45,49,64)" stroke-width="0.8" opacity="{opacity}"/>"#
@@ -376,9 +438,27 @@ pub fn render_graph_svg(payload: &GraphPayload, config: &LayoutConfig) -> String
     for (i, node) in payload.nodes.iter().enumerate() {
         let (x, y) = positions[i];
         let color = kind_color(&node.kind);
+        // Design nodes: dim fill when archived, otherwise normal
+        let fill_opacity = if node.kind == GraphNodeKind::DesignNode {
+            match node.status.as_deref() {
+                Some("archived") => "0.35",
+                _ => "1",
+            }
+        } else {
+            "1"
+        };
         svg.push_str(&format!(
-            r#"<circle cx="{x:.1}" cy="{y:.1}" r="{r}" fill="{color}" stroke="rgb(15,17,23)" stroke-width="1"/>"#
+            r#"<circle cx="{x:.1}" cy="{y:.1}" r="{r}" fill="{color}" fill-opacity="{fill_opacity}" stroke="rgb(15,17,23)" stroke-width="1"/>"#
         ));
+        // Design node status icon overlay
+        if node.kind == GraphNodeKind::DesignNode {
+            let status_str = node.status.as_deref().unwrap_or("seed");
+            let icon = design_node_status_icon(status_str);
+            svg.push_str(&format!(
+                r#"<text x="{x:.1}" y="{:.1}" font-size="7" fill="rgb(15,17,23)" text-anchor="middle" font-family="system-ui,sans-serif">{icon}</text>"#,
+                y + 2.5,
+            ));
+        }
         // Label
         let label = if node.title.len() > 20 {
             format!("{}…", &node.title[..18])

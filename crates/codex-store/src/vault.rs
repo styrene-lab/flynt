@@ -2031,4 +2031,70 @@ Description from git.
         assert!(all_content.contains("Build parser"), "should contain second task");
         assert!(all_content.contains("**HIGH**"), "should show priority");
     }
+
+    #[test]
+    fn design_node_indexing_roundtrip() {
+        use codex_core::datum::EntityKind;
+
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let node_id = uuid::Uuid::new_v4();
+        let parent_id = uuid::Uuid::new_v4();
+        let design_md = format!(
+            r#"+++
+id = "{node_id}"
+kind = "design_node"
+
+[data]
+title = "Auth Subsystem"
+status = "exploring"
+parent = "{parent_id}"
+dependencies = ["dep-a", "dep-b"]
+open_questions = ["Which OAuth flow?", "Token rotation?"]
+priority = 3
++++
+
+## Overview
+
+Design for the authentication subsystem.
+
+## Open Questions
+"#
+        );
+
+        let design_dir = vault_root.join("design");
+        std::fs::create_dir_all(&design_dir).unwrap();
+        let file_path = design_dir.join("auth-subsystem.md");
+        std::fs::write(&file_path, &design_md).unwrap();
+
+        // Reindex the vault
+        let (indexed, errors) = vault.reindex().unwrap();
+        assert!(indexed >= 1, "should index at least the design node file");
+        assert!(errors.is_empty(), "reindex errors: {errors:?}");
+
+        // Retrieve the document
+        let doc_id = codex_core::models::DocumentId(node_id);
+        let doc = vault.store.get_document(&doc_id).unwrap();
+        assert!(doc.is_some(), "design node document should exist in store");
+        let doc = doc.unwrap();
+
+        // Verify entity kind
+        assert!(doc.entity.is_some(), "document should have an entity");
+        let entity = doc.entity.as_ref().unwrap();
+        assert_eq!(entity.kind, EntityKind::DesignNode, "entity kind should be DesignNode");
+
+        // Verify entity fields
+        assert_eq!(entity.get_text("status"), Some("exploring"));
+        assert_eq!(entity.get_text("parent").unwrap(), parent_id.to_string());
+        assert_eq!(entity.get_int("priority"), Some(3));
+        assert_eq!(entity.get_text_list("dependencies"), vec!["dep-a", "dep-b"]);
+        assert_eq!(entity.get_text_list("open_questions"), vec!["Which OAuth flow?", "Token rotation?"]);
+
+        // Verify it shows up in list_entities_by_kind
+        let design_nodes = vault.store.list_entities_by_kind(&EntityKind::DesignNode).unwrap();
+        assert!(design_nodes.iter().any(|m| m.id == doc_id), "design node should appear in kind listing");
+    }
 }

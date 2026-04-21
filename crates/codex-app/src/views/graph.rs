@@ -195,7 +195,7 @@ pub fn GraphView() -> Element {
                                             onclick: move |_| settings.write().kind = None,
                                             "All"
                                         }
-                                        for kind in [GraphNodeKind::Document, GraphNodeKind::Repo, GraphNodeKind::Link, GraphNodeKind::Task, GraphNodeKind::Board, GraphNodeKind::Communication, GraphNodeKind::MemoryFact] {
+                                        for kind in [GraphNodeKind::Document, GraphNodeKind::Repo, GraphNodeKind::Link, GraphNodeKind::Task, GraphNodeKind::Board, GraphNodeKind::Communication, GraphNodeKind::MemoryFact, GraphNodeKind::DesignNode] {
                                             button {
                                                 class: if s.kind.as_ref() == Some(&kind) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
                                                 onclick: {
@@ -504,6 +504,8 @@ fn filter_graph<'a>(
             GraphEdgeKind::Wikilink => s.show_wikilinks,
             GraphEdgeKind::TaskMembership => s.show_task_links,
             GraphEdgeKind::SemanticSupport => s.show_semantic,
+            GraphEdgeKind::Dependency => true,
+            GraphEdgeKind::ParentChild => true,
         }
     }).collect();
 
@@ -572,6 +574,7 @@ fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Link => "link",
         GraphNodeKind::MemoryFact => "memory",
         GraphNodeKind::Communication => "communication",
+        GraphNodeKind::DesignNode => "design_node",
     }
 }
 
@@ -580,6 +583,8 @@ fn format_edge_kind(kind: &GraphEdgeKind) -> &'static str {
         GraphEdgeKind::Wikilink => "wikilink",
         GraphEdgeKind::TaskMembership => "task-membership",
         GraphEdgeKind::SemanticSupport => "semantic-support",
+        GraphEdgeKind::Dependency => "dependency",
+        GraphEdgeKind::ParentChild => "parent-child",
     }
 }
 

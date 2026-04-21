@@ -262,6 +262,8 @@ pub enum EntityKind {
     Repo,
     /// An external resource reference (URL, dashboard, API, etc.)
     Link,
+    /// An Omegon design tree node (epic, feature, task, etc.)
+    DesignNode,
     /// User-defined entity type (e.g. "contact", "sprint", "milestone").
     #[serde(untagged)]
     Custom(String),
@@ -275,6 +277,7 @@ impl EntityKind {
             "task" => Self::Task,
             "repo" => Self::Repo,
             "link" => Self::Link,
+            "design_node" => Self::DesignNode,
             other => Self::Custom(other.to_string()),
         }
     }
@@ -286,6 +289,7 @@ impl EntityKind {
             Self::Task => "task",
             Self::Repo => "repo",
             Self::Link => "link",
+            Self::DesignNode => "design_node",
             Self::Custom(s) => s,
         }
     }
@@ -675,6 +679,72 @@ impl<'a> TaskView<'a> {
 
     pub fn tags(&self) -> Vec<String> {
         self.entity.get_text_list("tags")
+    }
+}
+
+/// An Omegon design tree node — a structured decision/design artifact.
+///
+/// On disk as a markdown file with `kind = "design_node"`:
+/// ```toml
+/// +++
+/// id = "uuid"
+/// kind = "design_node"
+///
+/// [data]
+/// title = "Auth token rotation"
+/// status = "exploring"
+/// parent = "uuid-of-parent"
+/// issue_type = "feature"
+/// priority = 2
+/// dependencies = ["uuid-1", "uuid-2"]
+/// open_questions = ["How to handle refresh?"]
+/// related = ["uuid-3"]
+/// +++
+/// ```
+#[derive(Debug, Clone)]
+pub struct DesignNodeView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> DesignNodeView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::DesignNode {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        self.entity.get_text("title").unwrap_or("Untitled")
+    }
+
+    pub fn status(&self) -> &str {
+        self.entity.get_text("status").unwrap_or("seed")
+    }
+
+    pub fn parent(&self) -> Option<&str> {
+        self.entity.get_text("parent")
+    }
+
+    pub fn issue_type(&self) -> Option<&str> {
+        self.entity.get_text("issue_type")
+    }
+
+    pub fn priority(&self) -> Option<i64> {
+        self.entity.get_int("priority")
+    }
+
+    pub fn dependencies(&self) -> Vec<String> {
+        self.entity.get_text_list("dependencies")
+    }
+
+    pub fn open_questions(&self) -> Vec<String> {
+        self.entity.get_text_list("open_questions")
+    }
+
+    pub fn related(&self) -> Vec<String> {
+        self.entity.get_text_list("related")
     }
 }
 
