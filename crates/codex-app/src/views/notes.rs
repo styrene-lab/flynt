@@ -612,6 +612,7 @@ document.addEventListener('click', function(e) {
 pub fn NotesView() -> Element {
     let ctx       = use_context::<AppContext>();
     let tab_state = use_context::<Signal<TabState>>();
+    let mut is_drawing = use_context::<Signal<bool>>();
     let ctx_res   = ctx.clone();
     let ctx_save2 = ctx.clone();
 
@@ -762,6 +763,7 @@ pub fn NotesView() -> Element {
         let excalidraw_path = doc_dir.join(&excalidraw_file);
         let abs = vault_root.join(&excalidraw_path);
         if abs.exists() {
+            is_drawing.set(true);
             return rsx! {
                 div {
                     style: "display:flex;flex-direction:column;flex:1;overflow:hidden;padding:0;min-height:0;height:100%;",
@@ -771,8 +773,8 @@ pub fn NotesView() -> Element {
         }
     }
 
-    // Restore layout if we were previously in excalidraw mode
-    document::eval("if (window._excalidrawCleanup) { window._excalidrawCleanup(); window._excalidrawCleanup = null; }");
+    // Clear drawing mode flag
+    is_drawing.set(false);
 
     // Eagerly seed edit_body if it's empty and we have content —
     // ensures CM6 has content even before use_effect fires.

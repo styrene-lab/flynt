@@ -31,6 +31,9 @@ pub fn App() -> Element {
     // Tab state — provided via context so sidebar, tab bar, and notes share it
     use_context_provider(|| Signal::new(TabState::default()));
 
+    // Drawing mode flag — set by NotesView when showing ExcalidrawView
+    let is_drawing = use_context_provider(|| Signal::new(false));
+
 
     // Route — provided via context so search view can navigate back
     let mut active_route = use_context_provider(|| {
@@ -238,8 +241,8 @@ pub fn App() -> Element {
             div { class: "codex-body",
                 Sidebar { active_route: active_route }
                 div { class: "main-content",
-                    // Tab bar above the content area (only in Notes mode)
-                    if *active_route.read() == Route::Notes {
+                    // Tab bar above the content area (Notes mode, not in drawing)
+                    if *active_route.read() == Route::Notes && !*is_drawing.read() {
                         TabBar {}
                     }
                     match *active_route.read() {
