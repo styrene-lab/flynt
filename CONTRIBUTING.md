@@ -1,0 +1,163 @@
+# Contributing to Codex
+
+Guidelines for building, testing, branching, and collaborating.
+
+## Development Model
+
+**Trunk-based development** on `main`. Direct commits for small, self-contained changes. Feature branches for multi-file or multi-session work.
+
+### When to branch
+
+| Scenario | Approach |
+|---|---|
+| Single-file fix, typo, config tweak | Commit directly to `main` |
+| Multi-file feature or refactor | `feat/<name>` or `fix/<name>` branch + PR |
+| Multi-session work | Feature branch, push regularly |
+
+### Branch naming
+
+```
+feat/clone-vault-dialog
+fix/editor-cursor-position
+refactor/sync-credentials
+chore/bump-dependencies
+test/git-sync-coverage
+```
+
+### Merging
+
+- **Squash merge** for feature branches (clean history on main)
+- **Fast-forward** for single-commit branches
+- Delete the branch after merge
+
+## Prerequisites
+
+```sh
+# Rust toolchain
+rustup toolchain install stable
+
+# Dioxus CLI (for desktop/mobile builds)
+cargo install dioxus-cli
+
+# macOS desktop
+# Nothing extra — wry uses WKWebView
+
+# Linux desktop
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libglib2.0-dev \
+  libxdo-dev libayatana-appindicator3-dev pkg-config cmake
+
+# iOS (macOS only)
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+```
+
+## Build
+
+```sh
+# Check all crates
+cargo check --workspace
+
+# Desktop release
+cd crates/codex-app && dx build --platform desktop --release
+
+# iOS release
+cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
+
+# Full release (macOS DMG + iOS IPA)
+./scripts/build-release.sh 0.3.0
+```
+
+## Test
+
+```sh
+# All tests
+cargo test -p codex-core -p codex-store
+
+# Specific test file
+cargo test -p codex-store --test git_sync
+cargo test -p codex-store --test sandbox
+
+# Single test
+cargo test -p codex-core -- decay_rate_none
+```
+
+### Test coverage expectations
+
+Every PR should:
+- Not break existing tests
+- Add tests for new public functions
+- Add regression tests for bug fixes
+
+Current coverage: 212 tests across `codex-core` (110) and `codex-store` (102).
+
+## Commits
+
+[Conventional Commits](https://www.conventionalcommits.org/) required.
+
+```
+feat(sync): add SSH credential callbacks for git2
+fix(editor): cursor starts at end of document, not position 0
+test(git): add merge conflict and push rejection tests
+chore: bump workspace version to 0.3.0
+docs: add onboarding guide for testers
+```
+
+Commit messages explain *why*, not just *what*. Include the motivation in the body when the subject line isn't self-evident.
+
+## Architecture rules
+
+### No Node.js
+
+All JavaScript (CodeMirror 6, Excalidraw) is vendored as pre-built static bundles in `crates/codex-app/assets/vendor/`. No `npm`, no `node_modules`, no `package.json` in the app crates. The `site/` directory is the only place npm is used (for the Astro landing page).
+
+### Markdown is canonical
+
+The SQLite index is derived from the `.md` files on disk. It rebuilds from scratch on every `vault.reindex()`. Never store authoritative data only in SQLite.
+
+### No MCP
+
+The agent extension uses ACP (Agent Client Protocol) over stdio, not MCP. Don't extend via MCP tools.
+
+### Platform paths
+
+- Use `dirs` crate for home/config/document directories — never hardcode `/tmp` or `$HOME`
+- Gate macOS-specific code with `#[cfg(target_os = "macos")]`
+- Vendor `libgit2` on all platforms (no system dependency)
+
+### Error handling
+
+- Never use `.unwrap()` in non-test code paths that touch user data
+- Surface errors to the user with human-readable messages
+- Never silently swallow errors — log at minimum, show in UI when possible
+
+## Release process
+
+```sh
+# 1. Bump version in Cargo.toml
+# 2. Build + sign + notarize
+./scripts/build-release.sh X.Y.Z
+xcrun notarytool submit dist/Codex-X.Y.Z.dmg --apple-id "..." --team-id "..." --password "..." --wait
+xcrun stapler staple dist/Codex-X.Y.Z.dmg
+
+# 3. Tag + push
+git tag vX.Y.Z && git push origin vX.Y.Z
+
+# 4. CI builds Linux + creates GitHub Release
+```
+
+## Project layout
+
+```
+Cargo.toml                  Workspace root
+crates/
+  codex-core/               Models, parser, query engine, templates, graph
+  codex-store/              Vault I/O, SQLite, git/iCloud sync, file watching
+  codex-app/                Desktop UI (Dioxus desktop)
+  codex-mobile/             iOS UI (Dioxus mobile)
+  codex-agent/              MCP extension binary for Omegon
+site/                       codex.styrene.io landing page (Astro)
+scripts/
+  build-release.sh          macOS DMG + iOS IPA build pipeline
+docs/
+  onboarding.md             Tester onboarding guide
+  architecture.md           System architecture
+```
