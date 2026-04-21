@@ -54,11 +54,12 @@ if command -v create-dmg &>/dev/null; then
     --volicon "crates/codex-app/assets/icon.icns" \
     --background "$ROOT/scripts/dmg-assets/background@2x.png" \
     --window-pos 200 100 \
-    --window-size 720 434 \
-    --icon-size 100 \
-    --icon "Codex.app" 200 220 \
+    --window-size 1024 720 \
+    --icon-size 128 \
+    --icon "Codex.app" 260 340 \
     --hide-extension "Codex.app" \
-    --app-drop-link 520 220 \
+    --app-drop-link 760 340 \
+    --text-size 14 \
     "$DIST/Codex-$VERSION.dmg" \
     "$DMG_STAGING/Codex.app" || true
   codesign -f -s "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp "$DIST/Codex-$VERSION.dmg"
