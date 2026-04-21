@@ -771,6 +771,9 @@ pub fn NotesView() -> Element {
         }
     }
 
+    // Restore layout if we were previously in excalidraw mode
+    document::eval("if (window._excalidrawCleanup) { window._excalidrawCleanup(); window._excalidrawCleanup = null; }");
+
     // Eagerly seed edit_body if it's empty and we have content —
     // ensures CM6 has content even before use_effect fires.
     if edit_body.read().is_empty() && !body.is_empty() {

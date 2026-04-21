@@ -35,24 +35,28 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 if (np) { np.style.overflow = 'hidden'; np.style.padding = '0'; np.style.display = 'flex'; np.style.flexDirection = 'column'; np.style.flex = '1'; np.style.minHeight = '0'; }
             }
             fixLayout();
-            // After Excalidraw mounts, force it to re-measure by dispatching resize
-            var attempts = 0;
-            function poll() {
+            // Hide tab bar in drawing mode — it eats space and isn't useful
+            var tabBar = document.querySelector('.tab-bar');
+            if (tabBar) tabBar.style.display = 'none';
+
+            // Force Excalidraw to re-measure after layout settles
+            requestAnimationFrame(function() {
                 fixLayout();
-                attempts++;
-                if (attempts < 20) {
-                    requestAnimationFrame(poll);
-                } else {
-                    // Excalidraw reads container size on resize — trigger it
-                    window.dispatchEvent(new Event('resize'));
-                }
-            }
-            requestAnimationFrame(poll);
-            // Belt and suspenders: also fire resize after common mount delays
-            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 200);
-            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 500);
-            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 1000);
+                window.dispatchEvent(new Event('resize'));
+            });
+            setTimeout(function() { fixLayout(); window.dispatchEvent(new Event('resize')); }, 300);
+
             window.addEventListener('resize', fixLayout);
+
+            // Restore tab bar when leaving drawing mode (cleanup)
+            window._excalidrawCleanup = function() {
+                var tb = document.querySelector('.tab-bar');
+                if (tb) tb.style.display = '';
+                var mc = document.querySelector('.main-content');
+                if (mc) { mc.style.overflow = ''; mc.style.display = ''; mc.style.flexDirection = ''; }
+                var np = document.querySelector('.notes-pane');
+                if (np) { np.style.overflow = ''; np.style.padding = ''; np.style.display = ''; np.style.flexDirection = ''; np.style.flex = ''; np.style.minHeight = ''; }
+            };
         "#);
     });
 
