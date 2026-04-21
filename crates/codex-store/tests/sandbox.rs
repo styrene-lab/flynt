@@ -664,3 +664,268 @@ fn test_check_task_notifications_due_date() {
     let notifications = vault.check_task_notifications().unwrap();
     assert!(notifications.iter().any(|n| n.title == "Due today" && n.kind == NotificationKind::DueDate));
 }
+
+// ── Vault open / reindex ────────────────────────────────────────────────────
+
+#[test]
+fn test_vault_open_creates_codex_dir() {
+    let tmp = tempfile::Builder::new().prefix("codex-test-").tempdir().unwrap();
+    let root = tmp.path().join("fresh-vault");
+    let vault = Vault::open(&root).unwrap();
+    assert!(root.join(".codex").exists());
+    assert!(root.join(".codex/config.toml").exists());
+    assert_eq!(vault.config.vault_name, "fresh-vault");
+}
+
+#[test]
+fn test_vault_open_preserves_existing_config() {
+    let tmp = tempfile::Builder::new().prefix("codex-test-").tempdir().unwrap();
+    let root = tmp.path().join("vault");
+    std::fs::create_dir_all(root.join(".codex")).unwrap();
+    std::fs::write(root.join(".codex/config.toml"), "vault_name = \"Custom Name\"\n[sync]\nbackend = \"none\"\n").unwrap();
+    let vault = Vault::open(&root).unwrap();
+    assert_eq!(vault.config.vault_name, "Custom Name");
+}
+
+#[test]
+fn test_reindex_counts_files() {
+    let (_tmp, vault) = setup_vault();
+    let (count, errors) = vault.reindex().unwrap();
+    // setup_vault creates alpha.md and beta.md
+    assert!(count >= 2);
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn test_reindex_skips_codex_dir() {
+    let (_tmp, vault) = setup_vault();
+    // Create a file in .codex that should be ignored
+    std::fs::write(vault.root.join(".codex/internal.md"), "# Should be ignored").unwrap();
+    vault.reindex().unwrap();
+    // This file should NOT appear in the document list
+    let docs = vault.store.list_documents().unwrap();
+    assert!(!docs.iter().any(|d| d.title == "Should be ignored"));
+}
+
+// ── Save document ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_save_document_content() {
+    let (_tmp, vault) = setup_vault();
+    let path = std::path::PathBuf::from("new-note.md");
+    vault.save_document_content(&path, "+++\ntitle = \"New\"\ntags = []\n+++\n\nContent here.").unwrap();
+    let doc = vault.store.get_document_by_path(&path).unwrap().unwrap();
+    assert_eq!(doc.title, "New");
+    assert!(doc.content.contains("Content here."));
+}
+
+#[test]
+fn test_save_document_creates_parent_dirs() {
+    let (_tmp, vault) = setup_vault();
+    let path = std::path::PathBuf::from("nested/deep/note.md");
+    vault.save_document_content(&path, "# Deep Note").unwrap();
+    assert!(vault.root.join("nested/deep/note.md").exists());
+}
+
+// ── Tag operations ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_list_tags() {
+    let (_tmp, vault) = setup_vault();
+    vault.reindex().unwrap();
+    let tags = vault.list_tags().unwrap();
+    // setup_vault creates docs with tags
+    assert!(!tags.is_empty());
+}
+
+#[test]
+fn test_rename_tag() {
+    let (_tmp, vault) = setup_vault();
+    // Create a note with a specific tag
+    let path = std::path::PathBuf::from("tagged.md");
+    vault.save_document_content(&path, "+++\ntitle = \"Tagged\"\ntags = [\"old-tag\"]\n+++\n\nContent.").unwrap();
+
+    let count = vault.rename_tag("old-tag", "new-tag").unwrap();
+    assert!(count >= 1);
+
+    // Verify the tag was renamed in the file
+    let content = std::fs::read_to_string(vault.root.join("tagged.md")).unwrap();
+    assert!(content.contains("new-tag"));
+    assert!(!content.contains("old-tag"));
+}
+
+#[test]
+fn test_rename_tag_nonexistent() {
+    let (_tmp, vault) = setup_vault();
+    vault.reindex().unwrap();
+    let count = vault.rename_tag("nonexistent-tag-xyz", "new-tag").unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_delete_tag() {
+    let (_tmp, vault) = setup_vault();
+    let path = std::path::PathBuf::from("to-delete-tag.md");
+    vault.save_document_content(&path, "+++\ntitle = \"Del\"\ntags = [\"remove-me\", \"keep\"]\n+++\n\nBody.").unwrap();
+
+    let count = vault.delete_tag("remove-me").unwrap();
+    assert!(count >= 1);
+
+    let content = std::fs::read_to_string(vault.root.join("to-delete-tag.md")).unwrap();
+    assert!(!content.contains("remove-me"));
+    assert!(content.contains("keep"));
+}
+
+#[test]
+fn test_merge_tags() {
+    let (_tmp, vault) = setup_vault();
+    let p1 = std::path::PathBuf::from("merge1.md");
+    let p2 = std::path::PathBuf::from("merge2.md");
+    vault.save_document_content(&p1, "+++\ntitle = \"M1\"\ntags = [\"src1\"]\n+++\n\nBody.").unwrap();
+    vault.save_document_content(&p2, "+++\ntitle = \"M2\"\ntags = [\"src2\"]\n+++\n\nBody.").unwrap();
+
+    let count = vault.merge_tags(&["src1", "src2"], "target").unwrap();
+    assert!(count >= 2);
+
+    let c1 = std::fs::read_to_string(vault.root.join("merge1.md")).unwrap();
+    let c2 = std::fs::read_to_string(vault.root.join("merge2.md")).unwrap();
+    assert!(c1.contains("target"));
+    assert!(c2.contains("target"));
+}
+
+// ── Notifications ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_push_and_list_notifications() {
+    let (_tmp, vault) = setup_vault();
+    let n = Notification::new(NotificationKind::DueDate, "Test", "Body", "test-vault");
+    vault.push_notification(&n).unwrap();
+
+    let pending = vault.pending_notifications().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].title, "Test");
+}
+
+#[test]
+fn test_mark_notification_delivered_clears_pending() {
+    let (_tmp, vault) = setup_vault();
+    let n = Notification::new(NotificationKind::Decay, "Fading", "Task fading", "vault");
+    vault.push_notification(&n).unwrap();
+    assert_eq!(vault.pending_notifications().unwrap().len(), 1);
+
+    vault.mark_notification_delivered(&n.id).unwrap();
+    assert_eq!(vault.pending_notifications().unwrap().len(), 0);
+}
+
+#[test]
+fn test_check_task_notifications_decay() {
+    let (_tmp, vault) = setup_vault();
+    let board = Board::default_sprint("Sprint");
+    vault.store.save_board(&board).unwrap();
+
+    // Create a task in the fading range: relevance between 0.1 and 0.3
+    // Natural decay (7-day half-life), 14 days old → relevance ≈ 0.25 (fading but not auto-archive)
+    let mut task = Task::new(board.id.clone(), "Backlog", "Fading task");
+    task.decay = DecayRate::Natural; // 7-day half-life
+    task.last_touched_at = Some(Utc::now() - chrono::Duration::days(14));
+    task.updated_at = Utc::now() - chrono::Duration::days(14);
+    vault.store.save_task(&task).unwrap();
+
+    let notifications = vault.check_task_notifications().unwrap();
+    assert!(notifications.iter().any(|n| n.kind == NotificationKind::Decay),
+        "expected decay notification for fading task (relevance ~0.25), got: {:?}", notifications);
+}
+
+#[test]
+fn test_check_task_notifications_skips_done() {
+    let (_tmp, vault) = setup_vault();
+    let board = Board::default_sprint("Sprint");
+    vault.store.save_board(&board).unwrap();
+
+    let mut task = Task::new(board.id.clone(), "Done", "Completed");
+    task.status = TaskStatus::Done;
+    task.due_date = Some(chrono::Local::now().date_naive());
+    vault.store.save_task(&task).unwrap();
+
+    let notifications = vault.check_task_notifications().unwrap();
+    assert!(!notifications.iter().any(|n| n.title == "Completed"),
+        "should not notify for done tasks");
+}
+
+// ── SQLite store edge cases ─────────────────────────────────────────────────
+
+#[test]
+fn test_search_documents_empty_query() {
+    let (_tmp, vault) = setup_vault();
+    vault.reindex().unwrap();
+    let results = vault.store.search_documents("").unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn test_search_documents_finds_match() {
+    let (_tmp, vault) = setup_vault();
+    // Fixtures have "Welcome", "Projects", "Architecture", etc.
+    let results = vault.store.search_documents("Welcome").unwrap();
+    assert!(!results.is_empty(), "search for 'Welcome' should find the welcome doc");
+}
+
+#[test]
+fn test_delete_document_removes_from_store() {
+    let (_tmp, vault) = setup_vault();
+    vault.reindex().unwrap();
+    let docs = vault.store.list_documents().unwrap();
+    let first = docs[0].id.clone();
+    vault.store.delete_document(&first).unwrap();
+    assert!(vault.store.get_document(&first).unwrap().is_none());
+}
+
+#[test]
+fn test_get_backlinks() {
+    let (_tmp, vault) = setup_vault();
+    // Welcome links to Projects, so Projects should have Welcome as a backlink
+    let docs = vault.store.list_documents().unwrap();
+    let projects = docs.iter().find(|d| d.title == "Projects").unwrap();
+    let backlinks = vault.store.get_backlinks(&projects.id).unwrap();
+    assert!(backlinks.iter().any(|bl| bl.title == "Welcome"),
+        "expected Welcome in backlinks of Projects, got: {:?}", backlinks.iter().map(|b| &b.title).collect::<Vec<_>>());
+}
+
+// ── create_drawing ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_create_drawing() {
+    let tmp = tempfile::Builder::new().prefix("codex-test-").tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
+    std::fs::create_dir_all(&root).unwrap();
+
+    let md_path = codex_app_views_excalidraw_create_drawing(&root, "Test Drawing");
+    assert!(md_path.is_ok());
+
+    let md_path = md_path.unwrap();
+    assert!(md_path.to_string_lossy().ends_with(".md"));
+
+    // Check the .excalidraw file exists
+    assert!(root.join("drawings/Test Drawing.excalidraw").exists());
+
+    // Check the .md file exists and embeds the drawing
+    let md_content = std::fs::read_to_string(root.join(&md_path)).unwrap();
+    assert!(md_content.contains("![[Test Drawing.excalidraw]]"));
+    assert!(md_content.contains("title = \"Test Drawing\""));
+}
+
+/// Wrapper to call create_drawing without importing codex-app
+fn codex_app_views_excalidraw_create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
+    let drawings_dir = vault_root.join("drawings");
+    std::fs::create_dir_all(&drawings_dir)?;
+    let excalidraw_filename = format!("{name}.excalidraw");
+    let excalidraw_abs = drawings_dir.join(&excalidraw_filename);
+    let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
+    std::fs::write(&excalidraw_abs, scene)?;
+    let md_filename = format!("{name}.md");
+    let md_path = std::path::PathBuf::from("drawings").join(&md_filename);
+    let md_abs = vault_root.join(&md_path);
+    let md_content = format!("+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_filename}]]\n");
+    std::fs::write(&md_abs, md_content)?;
+    Ok(md_path)
+}
