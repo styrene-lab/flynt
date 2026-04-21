@@ -697,11 +697,13 @@ fn cm6_init_js(content: &str) -> String {
         if (update.docChanged) {{
             clearTimeout(saveTimer);
             clearTimeout(editTimer);
-            const doc = update.state.doc.toString();
-            // Debounced sync to Rust state (for mode switching)
-            editTimer = setTimeout(() => window._codexNotify('edit', doc), 300);
-            // Debounced auto-save
-            saveTimer = setTimeout(() => window._codexNotify('autosave', doc), 1500);
+            // Defer toString() into the timeout — avoid blocking on large pastes
+            editTimer = setTimeout(() => {{
+                if (window._codexCM) window._codexNotify('edit', window._codexCM.state.doc.toString());
+            }}, 300);
+            saveTimer = setTimeout(() => {{
+                if (window._codexCM) window._codexNotify('autosave', window._codexCM.state.doc.toString());
+            }}, 1500);
         }}
     }});
 
