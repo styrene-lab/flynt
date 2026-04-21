@@ -291,37 +291,9 @@
 .excalidraw-pane {
   display:        flex;
   flex-direction: column;
-  height:         100%;
-  width:          100%;
-}
-.excalidraw-topbar {
-  display:        flex;
-  align-items:    center;
-  justify-content: space-between;
-  padding:        var(--space-2) var(--space-4);
-  border-bottom:  1px solid var(--border);
-  flex-shrink:    0;
-}
-.excalidraw-title {
-  font-size:      var(--font-size-lg);
-  font-weight:    600;
-  color:          var(--primary-bright);
-}
-.excalidraw-pane {
-  display:        flex;
-  flex-direction: column;
   flex:           1;
   min-height:     0;
-}
-.excalidraw-container {
-  flex:           1;
   width:          100%;
-  min-height:     500px;
-  position:       relative;
-}
-.excalidraw-container .excalidraw {
-  height:         100% !important;
-  width:          100% !important;
 }
 .excalidraw-topbar {
   display:        flex;
@@ -335,12 +307,25 @@
   font-weight:    600;
   color:          var(--accent);
 }
-/* When notes-pane contains excalidraw, make it flex */
+.excalidraw-container {
+  flex:           1;
+  width:          100%;
+  min-height:     0;
+  position:       relative;
+}
+.excalidraw-container .excalidraw {
+  position:       absolute !important;
+  inset:          0 !important;
+  height:         100% !important;
+  width:          100% !important;
+}
+/* When notes-pane contains excalidraw, fill the available space */
 .notes-pane:has(.excalidraw-pane) {
   display:        flex;
   flex-direction: column;
   overflow:       hidden;
   padding:        0;
+  height:         100%;
 }
 .excalidraw-actions {
   display:        flex;
