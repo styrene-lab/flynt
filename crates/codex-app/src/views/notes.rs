@@ -318,12 +318,17 @@ fn cm6_init_js(content: &str) -> String {
             }}
         }}
         if (fmStart > 0 && fmEnd > 0) {{
-            // Only hide if cursor is NOT inside the frontmatter
             const fmFromPos = doc.line(fmStart).from;
             const fmToPos = doc.line(fmEnd).to;
+            // Only hide if cursor is NOT inside the frontmatter
             if (sel.head < fmFromPos || sel.head > fmToPos) {{
-                // Hide entire frontmatter block
-                decs.push(Decoration.replace({{}}).range(fmFromPos, fmToPos));
+                // Hide each frontmatter line individually (avoids CM6 overlapping range issues)
+                for (let fl = fmStart; fl <= fmEnd; fl++) {{
+                    const fline = doc.line(fl);
+                    if (fline.length > 0) {{
+                        decs.push(Decoration.replace({{}}).range(fline.from, fline.to));
+                    }}
+                }}
             }}
         }}
 
