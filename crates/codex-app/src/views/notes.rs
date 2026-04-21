@@ -62,7 +62,15 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
                     (ref_name, None)
                 };
 
-                let excalidraw_path = root.join(file_ref);
+                // Search for the .excalidraw file in common locations
+                let candidates = [
+                    root.join(file_ref),
+                    root.join("drawings").join(file_ref),
+                ];
+                let excalidraw_path = candidates.iter()
+                    .find(|p| p.exists())
+                    .cloned()
+                    .unwrap_or_else(|| root.join(file_ref));
                 let svg_path = excalidraw_path.with_extension("svg");
                 let style = width.map(|w| format!(" style=\"max-width:{w}px\"")).unwrap_or_default();
                 let escaped_ref = file_ref.replace('"', "&quot;");
@@ -82,8 +90,19 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
 
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
             } else if ref_name.ends_with(".png") || ref_name.ends_with(".jpg") || ref_name.ends_with(".jpeg") || ref_name.ends_with(".gif") || ref_name.ends_with(".svg") || ref_name.ends_with(".webp") {
-                // Image embed
-                let replacement = format!("<img class=\"embedded-image\" src=\"vault://localhost/{ref_name}\" alt=\"{ref_name}\" />");
+                // Image embed — resolve path, searching common locations
+                let image_candidates = [
+                    ref_name.to_string(),
+                    format!("assets/{ref_name}"),
+                    format!("images/{ref_name}"),
+                    format!("drawings/{ref_name}"),
+                ];
+                let resolved = image_candidates.iter()
+                    .find(|p| root.join(p).exists())
+                    .cloned()
+                    .unwrap_or_else(|| ref_name.to_string());
+                let encoded = resolved.replace(' ', "%20");
+                let replacement = format!("<img class=\"embedded-image\" src=\"vault://localhost/{encoded}\" alt=\"{ref_name}\" />");
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
             } else {
                 break; // not an embed we handle — avoid infinite loop

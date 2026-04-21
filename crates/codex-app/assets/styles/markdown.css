@@ -644,3 +644,16 @@
   margin-right: var(--space-2);
   opacity: 0.5;
 }
+
+/* ── Embedded images ─────────────────────────────────────────────── */
+.embedded-image {
+  max-width:     100%;
+  height:        auto;
+  border-radius: 6px;
+  margin:        8px 0;
+  display:       block;
+}
+.embedded-image:hover {
+  box-shadow:    0 0 0 2px var(--primary, #2ab4c8);
+  cursor:        zoom-in;
+}
