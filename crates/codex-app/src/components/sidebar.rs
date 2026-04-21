@@ -238,10 +238,23 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                                         let vault = ctx.vault();
                                         let abs = vault.root.join(&p);
                                         if abs.exists() {
+                                            // If this is a drawing wrapper, also delete the .excalidraw file
+                                            if let Ok(content) = std::fs::read_to_string(&abs) {
+                                                if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&content) {
+                                                    let doc_dir = p.parent().unwrap_or(std::path::Path::new(""));
+                                                    let excalidraw_abs = vault.root.join(doc_dir).join(&excalidraw_file);
+                                                    let _ = std::fs::remove_file(&excalidraw_abs);
+                                                }
+                                            }
                                             let _ = std::fs::remove_file(&abs);
-                                            let _ = vault.store.delete_document(&doc_id);
-                                            let _ = vault.reindex();
                                         }
+                                        let _ = vault.store.delete_document(&doc_id);
+                                        // Close the tab if it's open
+                                        let tabs = tab_state.read().tabs.clone();
+                                        if let Some(idx) = tabs.iter().position(|(id, _)| id == &doc_id) {
+                                            tab_state.write().close(idx);
+                                        }
+                                        let _ = vault.reindex();
                                     });
                                 }
                                 _ => {}
