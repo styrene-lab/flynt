@@ -23,6 +23,9 @@ cp crates/codex-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" 2>/dev/null
+/usr/libexec/PlistBuddy -c "Set :CFBundleName Codex" "$APP/Contents/Info.plist" 2>/dev/null
+/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Codex" "$APP/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Codex" "$APP/Contents/Info.plist"
 
 SIGN_ID="Developer ID Application: CHRISTOPHER RYAN WILSON (UZBY9DM42N)"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
