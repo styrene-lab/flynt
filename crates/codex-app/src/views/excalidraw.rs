@@ -159,16 +159,14 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
     rsx! {
         div {
             class: "excalidraw-pane",
-            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;",
-            div { class: "excalidraw-topbar",
-                span { class: "excalidraw-title",
-                    "{path.file_stem().and_then(|s| s.to_str()).unwrap_or(\"Drawing\")}"
+            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;position:relative;",
+            // Floating export buttons — top right overlay
+            div {
+                class: "excalidraw-overlay-actions",
+                span {
+                    class: if !save_state.read().is_empty() { "excalidraw-save-status visible" } else { "excalidraw-save-status" },
+                    "{save_state}"
                 }
-                div { class: "excalidraw-actions",
-                    span {
-                        class: if !save_state.read().is_empty() { "excalidraw-save-status visible" } else { "excalidraw-save-status" },
-                        "{save_state}"
-                    }
                     button {
                         class: "btn btn-ghost btn-xs",
                         title: "Export as SVG",
@@ -260,11 +258,10 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                         "Export PNG"
                     }
                 }
-            }
             div {
                 id: "codex-excalidraw",
                 class: "excalidraw-container",
-                style: "flex:1;min-height:0;width:100%;position:relative;",
+                style: "flex:1;min-height:0;width:100%;",
             }
         }
     }
