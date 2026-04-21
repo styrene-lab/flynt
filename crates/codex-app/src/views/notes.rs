@@ -7,6 +7,7 @@ use crate::{bootstrap::AppContext, state::{Route, TabState}};
 enum EditMode { Live, Source }
 
 #[derive(Clone, PartialEq)]
+#[allow(dead_code)] // Dirty is set via JS DOM manipulation, not Rust
 enum SaveState { Clean, Dirty, Saved }
 
 fn render_html(content: &str) -> String {

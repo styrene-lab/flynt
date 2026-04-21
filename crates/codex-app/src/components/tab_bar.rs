@@ -1,11 +1,11 @@
 use dioxus::prelude::*;
 use codex_core::store::VaultStore;
 use crate::bootstrap::AppContext;
-use crate::state::{Route, TabState};
+use crate::state::TabState;
 
 #[component]
 pub fn TabBar() -> Element {
-    let mut tab_state = use_context::<Signal<TabState>>();
+    let tab_state = use_context::<Signal<TabState>>();
     let tabs = tab_state.read().tabs.clone();
 
     if tabs.is_empty() { return rsx! { div { class: "tab-bar tab-bar-empty" } }; }

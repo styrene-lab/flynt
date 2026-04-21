@@ -2,7 +2,7 @@ use codex_core::{models::DocumentMeta, store::VaultStore};
 use dioxus::prelude::*;
 use std::{collections::BTreeMap, path::PathBuf};
 use crate::{
-    bootstrap::{AppContext, KnownVault, OmegonRuntimeContext},
+    bootstrap::{AppContext, OmegonRuntimeContext},
     state::{Route, TabState},
 };
 use rfd::FileDialog;

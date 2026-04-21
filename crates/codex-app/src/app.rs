@@ -1,6 +1,6 @@
 use crate::{
     bootstrap::{bootstrap_from_env, runtime_state_for_vault_root, AppContext, OmegonRuntimeContext, PendingVaultSetup},
-    components::{initial_note_id_for_vault, AgentRail, CommandPalette, Sidebar, TabBar, Toolbar},
+    components::{initial_note_id_for_vault, AgentRail, CommandPalette, Sidebar, Toolbar},
     state::{Route, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
@@ -32,7 +32,7 @@ pub fn App() -> Element {
     use_context_provider(|| Signal::new(TabState::default()));
 
     // Drawing mode flag — set by NotesView when showing ExcalidrawView
-    let is_drawing = use_context_provider(|| Signal::new(false));
+    let _is_drawing = use_context_provider(|| Signal::new(false));
 
 
     // Route — provided via context so search view can navigate back

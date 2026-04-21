@@ -173,7 +173,7 @@ pub fn SettingsView() -> Element {
         }
 
         // Validate paths before saving
-        for (label, val) in [
+        for (_label, val) in [
             ("Local state root", local_state_root.read().clone()),
             ("Index DB path", codex_index_db_path.read().clone()),
             ("Omegon runtime root", omegon_runtime_root.read().clone()),

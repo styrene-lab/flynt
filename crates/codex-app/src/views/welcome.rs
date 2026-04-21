@@ -1,4 +1,4 @@
-use crate::bootstrap::{LauncherProfile, PendingVaultSetup};
+use crate::bootstrap::LauncherProfile;
 use dioxus::prelude::*;
 
 #[component]
