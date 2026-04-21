@@ -55,6 +55,7 @@ pub fn App() -> Element {
     // ── Native menu event handler ────────────────────────────────────────
     let ctx_menu_handler = ctx.clone();
     let mut show_agent_menu = show_agent;
+    let mut drawing_signal: Signal<Option<PathBuf>> = use_context();
     dioxus::desktop::use_muda_event_handler(move |event| {
         match event.id().0.as_str() {
             crate::menu::VIEW_NOTES => *active_route.write() = Route::Notes,
@@ -122,13 +123,13 @@ pub fn App() -> Element {
             crate::menu::NEW_DRAWING => {
                 let c = ctx_menu_handler;
                 let mut ar = active_route;
-                let mut drawing_ctx: Signal<Option<PathBuf>> = use_context();
+                let mut ds = drawing_signal;
                 spawn(async move {
                     let vault = c.vault();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
                     let name = format!("Drawing {ts_suffix}");
                     if let Ok(path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                        *drawing_ctx.write() = Some(path);
+                        *ds.write() = Some(path);
                         *ar.write() = Route::Notes;
                     }
                 });
