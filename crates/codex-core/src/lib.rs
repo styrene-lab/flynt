@@ -9,3 +9,4 @@ pub mod store;
 pub mod sync;
 pub mod templates;
 pub mod parser;
+pub mod seal;

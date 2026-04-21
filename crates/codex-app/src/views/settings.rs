@@ -197,6 +197,7 @@ pub fn SettingsView() -> Element {
                 default_visibility: *publication_default_visibility.read(),
                 rules: publication_rules.read().clone(),
             },
+            security: ctx.vault().config.security.clone(),
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {

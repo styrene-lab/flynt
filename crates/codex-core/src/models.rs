@@ -498,6 +498,8 @@ pub struct VaultConfig {
     pub local_runtime: LocalRuntimeConfig,
     #[serde(default)]
     pub publication: PublicationPolicy,
+    #[serde(default)]
+    pub security: crate::seal::SealConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

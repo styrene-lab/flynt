@@ -125,6 +125,7 @@ impl Vault {
                 appearance: Default::default(),
                 local_runtime: Default::default(),
                 publication: Default::default(),
+                security: Default::default(),
             };
             fs::write(&config_path, toml::to_string(&cfg)?)?;
             cfg
