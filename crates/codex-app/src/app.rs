@@ -31,6 +31,9 @@ pub fn App() -> Element {
     // Tab state — provided via context so sidebar, tab bar, and notes share it
     use_context_provider(|| Signal::new(TabState::default()));
 
+    // Active drawing — when set, NotesView renders ExcalidrawView for this path
+    use_context_provider(|| Signal::new(None::<PathBuf>));
+
     // Route — provided via context so search view can navigate back
     let mut active_route = use_context_provider(|| {
         let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
@@ -118,18 +121,14 @@ pub fn App() -> Element {
             }
             crate::menu::NEW_DRAWING => {
                 let c = ctx_menu_handler;
-                let mut ts = tab_state;
                 let mut ar = active_route;
+                let mut drawing_ctx: Signal<Option<PathBuf>> = use_context();
                 spawn(async move {
                     let vault = c.vault();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
                     let name = format!("Drawing {ts_suffix}");
-                    if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                        let _ = vault.reindex();
-                        let slug = name.to_lowercase();
-                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
-                            ts.write().open(doc.id, name);
-                        }
+                    if let Ok(path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                        *drawing_ctx.write() = Some(path);
                         *ar.write() = Route::Notes;
                     }
                 });
@@ -138,6 +137,25 @@ pub fn App() -> Element {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
                     let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&path);
                 }
+            }
+            crate::menu::DELETE_NOTE => {
+                let c = ctx_menu_handler;
+                let mut ts = tab_state;
+                spawn(async move {
+                    let active_id = ts.read().active_id().cloned();
+                    if let Some(doc_id) = active_id {
+                        let vault = c.vault();
+                        if let Ok(Some(doc)) = vault.store.get_document(&doc_id) {
+                            let abs = vault.root.join(&doc.path);
+                            if abs.exists() {
+                                let _ = std::fs::remove_file(&abs);
+                            }
+                            let _ = vault.store.delete_document(&doc_id);
+                            let idx = ts.read().active;
+                            ts.write().close(idx);
+                        }
+                    }
+                });
             }
             _ => {}
         }
@@ -175,8 +193,11 @@ pub fn App() -> Element {
         document::Script {
             src: asset!("/assets/vendor/codemirror.bundle.js"),
         }
-        // Excalidraw loaded lazily — see views/excalidraw.rs
-        // Bundle copied into app by build-release.sh post-build step
+        // Excalidraw — loaded eagerly so it's available when drawings open
+        document::Script {
+            src: asset!("/assets/vendor/excalidraw.bundle.js"),
+        }
+        document::Stylesheet { href: asset!("/assets/vendor/excalidraw.css") }
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
         document::Stylesheet { href: asset!("/assets/styles/layout.css") }

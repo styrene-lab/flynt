@@ -25,7 +25,7 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         })
     });
 
-    // Initialize Excalidraw when component mounts — lazy-loads the bundle
+    // Initialize Excalidraw when component mounts — bundle is loaded eagerly in app.rs
     let path_for_save = path.clone();
     use_effect(move || {
         let data = content.read().clone();
@@ -33,46 +33,16 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
 
         let js = format!(r#"
             (function() {{
-                function loadAndInit() {{
+                function tryMount() {{
                     const container = document.getElementById('codex-excalidraw');
-                    if (!container) {{ setTimeout(loadAndInit, 50); return; }}
+                    if (!container) {{ setTimeout(tryMount, 50); return; }}
+                    if (!window.CodexExcalidraw) {{ setTimeout(tryMount, 100); return; }}
 
-                    if (window.CodexExcalidraw) {{
-                        // Already loaded — mount directly
-                        window.CodexExcalidraw.mount('codex-excalidraw', {escaped}, function(data) {{
-                            window._excalidrawLatest = data;
-                        }});
-                        return;
-                    }}
-
-                    // Lazy-load CSS
-                    if (!document.getElementById('excalidraw-css')) {{
-                        const link = document.createElement('link');
-                        link.id = 'excalidraw-css';
-                        link.rel = 'stylesheet';
-                        link.href = '/assets/vendor/excalidraw.css';
-                        document.head.appendChild(link);
-                    }}
-
-                    // Lazy-load JS bundle
-                    const script = document.createElement('script');
-                    script.src = '/assets/vendor/excalidraw.bundle.js';
-                    script.onload = function() {{
-                        // Wait for CodexExcalidraw to be defined
-                        function waitForAPI() {{
-                            if (window.CodexExcalidraw) {{
-                                window.CodexExcalidraw.mount('codex-excalidraw', {escaped}, function(data) {{
-                                    window._excalidrawLatest = data;
-                                }});
-                            }} else {{
-                                setTimeout(waitForAPI, 50);
-                            }}
-                        }}
-                        waitForAPI();
-                    }};
-                    document.head.appendChild(script);
+                    window.CodexExcalidraw.mount('codex-excalidraw', {escaped}, function(data) {{
+                        window._excalidrawLatest = data;
+                    }});
                 }}
-                loadAndInit();
+                tryMount();
             }})();
         "#);
         document::eval(&js);
@@ -282,27 +252,17 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Create a new empty .excalidraw file plus a companion .md that embeds it.
-/// Returns the path to the .md file (which can be opened as a document tab).
+/// Create a new empty .excalidraw file in the drawings/ directory.
+/// Returns the relative path to the .excalidraw file.
 pub fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<PathBuf> {
-    // Create drawings/ directory if needed
     let drawings_dir = vault_root.join("drawings");
     std::fs::create_dir_all(&drawings_dir)?;
 
-    // Create the .excalidraw data file
-    let excalidraw_filename = format!("{name}.excalidraw");
-    let excalidraw_abs = drawings_dir.join(&excalidraw_filename);
+    let filename = format!("{name}.excalidraw");
+    let rel_path = PathBuf::from("drawings").join(&filename);
+    let abs_path = vault_root.join(&rel_path);
     let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
-    std::fs::write(&excalidraw_abs, scene)?;
+    std::fs::write(&abs_path, scene)?;
 
-    // Create a companion .md file that embeds the drawing
-    let md_filename = format!("{name}.md");
-    let md_path = PathBuf::from("drawings").join(&md_filename);
-    let md_abs = vault_root.join(&md_path);
-    let md_content = format!(
-        "+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_filename}]]\n"
-    );
-    std::fs::write(&md_abs, md_content)?;
-
-    Ok(md_path)
+    Ok(rel_path)
 }

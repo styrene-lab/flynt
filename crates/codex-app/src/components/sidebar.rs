@@ -172,6 +172,7 @@ fn FolderGroup(name: String, docs: Vec<DocumentMeta>) -> Element {
 
 #[component]
 fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
+    let ctx              = use_context::<AppContext>();
     let mut tab_state    = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
 
@@ -231,13 +232,14 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                                     // TODO: trigger rename mode in notes view
                                 }
                                 "delete" => {
-                                    let ctx = use_context::<crate::bootstrap::AppContext>();
                                     let p = path_for_delete.clone();
+                                    let doc_id = id_for_tab.clone();
                                     spawn(async move {
                                         let vault = ctx.vault();
                                         let abs = vault.root.join(&p);
                                         if abs.exists() {
                                             let _ = std::fs::remove_file(&abs);
+                                            let _ = vault.store.delete_document(&doc_id);
                                             let _ = vault.reindex();
                                         }
                                     });
@@ -323,13 +325,22 @@ fn NewNoteInput(
 
 #[component]
 fn VaultSwitcher() -> Element {
-    let ctx = use_context::<AppContext>();
+    let mut ctx = use_context::<AppContext>();
+    let mut active_route = use_context::<Signal<Route>>();
     let mut profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
     let current_root = ctx.vault_root();
     let current_name = ctx.vault().config.vault_name.clone();
 
-    let open_vault = move |vault: KnownVault| {
-        let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&vault.root);
+    let mut do_switch = move |root: std::path::PathBuf| {
+        let new_runtime = crate::bootstrap::runtime_state_for_vault_root(root.clone());
+        ctx.set_runtime(new_runtime);
+
+        let mut updated = OmegonRuntimeContext::load_launcher_profile();
+        updated.last_vault_root = Some(root);
+        let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
+        profile.set(updated);
+
+        *active_route.write() = Route::Notes;
     };
 
     let open_folder = move |_| {
@@ -352,7 +363,7 @@ fn VaultSwitcher() -> Element {
             OmegonRuntimeContext::register_known_vault(&mut updated, &selected_root, &name);
             let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
             profile.set(updated);
-            let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&selected_root);
+            do_switch(selected_root);
         }
     };
 
@@ -369,8 +380,8 @@ fn VaultSwitcher() -> Element {
                 button {
                     class: "sidebar-doc",
                     onclick: {
-                        let vault = vault.clone();
-                        move |_| open_vault(vault.clone())
+                        let root = vault.root.clone();
+                        move |_| do_switch(root.clone())
                     },
                     span { class: "doc-icon", "◈" }
                     span { class: "doc-title", "{vault.name}" }

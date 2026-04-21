@@ -612,6 +612,26 @@ document.addEventListener('click', function(e) {
 pub fn NotesView() -> Element {
     let ctx       = use_context::<AppContext>();
     let tab_state = use_context::<Signal<TabState>>();
+    let mut active_drawing = use_context::<Signal<Option<std::path::PathBuf>>>();
+
+    // If there's an active drawing, render ExcalidrawView instead of the editor
+    if let Some(drawing_path) = active_drawing.read().clone() {
+        return rsx! {
+            div { class: "notes-pane",
+                div { class: "notes-topbar",
+                    h1 { class: "doc-title",
+                        {drawing_path.file_stem().and_then(|s| s.to_str()).unwrap_or("Drawing")}
+                    }
+                    button {
+                        class: "btn btn-ghost btn-xs",
+                        onclick: move |_| *active_drawing.write() = None,
+                        "Close drawing"
+                    }
+                }
+                crate::views::ExcalidrawView { path: drawing_path }
+            }
+        };
+    }
 
     let ctx_res   = ctx.clone();
     let ctx_save2 = ctx.clone();
@@ -698,14 +718,19 @@ pub fn NotesView() -> Element {
                         }
                     }
                     "open-drawing" => {
-                        // Open a .excalidraw file in the editor
-                        let slug = data.replace(".excalidraw", "").to_lowercase();
+                        // Open a .excalidraw file in the Excalidraw editor
+                        let drawing_file = data.to_string();
                         let vault = c.vault();
-                        if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
-                            vault.store.find_document_by_slug(&slug)
-                        }).await.unwrap_or(Ok(None)) {
-                            ts_link.write().open(meta.id.clone(), meta.title.clone());
-                            *ar_link.write() = Route::Notes;
+                        // Look for the file in common locations
+                        let candidates = [
+                            std::path::PathBuf::from(&drawing_file),
+                            std::path::PathBuf::from("drawings").join(&drawing_file),
+                        ];
+                        for candidate in &candidates {
+                            if vault.root.join(candidate).exists() {
+                                *active_drawing.write() = Some(candidate.clone());
+                                break;
+                            }
                         }
                     }
                     "nav" => {

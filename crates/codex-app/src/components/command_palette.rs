@@ -33,6 +33,7 @@ fn execute_command(
     ctx: AppContext,
     tab_state: &mut Signal<TabState>,
     active_route: &mut Signal<Route>,
+    active_drawing: &mut Signal<Option<std::path::PathBuf>>,
 ) {
     match id {
         "view-notes" => *active_route.write() = Route::Notes,
@@ -113,18 +114,14 @@ fn execute_command(
         }
         "new-drawing" => {
             let c = ctx;
-            let mut ts = *tab_state;
             let mut ar = *active_route;
+            let mut ds = *active_drawing;
             spawn(async move {
                 let vault = c.vault();
                 let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
                 let name = format!("Drawing {ts_suffix}");
-                if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                    let _ = vault.reindex();
-                    let slug = name.to_lowercase();
-                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
-                        ts.write().open(doc.id, name);
-                    }
+                if let Ok(path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                    *ds.write() = Some(path);
                     *ar.write() = Route::Notes;
                 }
             });
@@ -193,6 +190,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
     let ctx = use_context::<AppContext>();
     let mut tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
+    let mut active_drawing = use_context::<Signal<Option<std::path::PathBuf>>>();
 
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
@@ -288,7 +286,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
                         }
                         Key::Enter => {
                             if let Some(cmd) = filtered.get(sel) {
-                                execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route);
+                                execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut active_drawing);
                                 *open.write() = false;
                                 *query.write() = String::new();
                                 *selected.write() = 0;
@@ -312,7 +310,7 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
                                 key: "{i}-{cmd_id}",
                                 class: if i == sel { "palette-item selected" } else { "palette-item" },
                                 onclick: move |_| {
-                                    execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route);
+                                    execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut active_drawing);
                                     *open.write() = false;
                                     *query.write() = String::new();
                                     *selected.write() = 0;
