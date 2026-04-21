@@ -55,6 +55,19 @@
   text-overflow: ellipsis;
   white-space:   nowrap;
 }
+.tab-rename-input {
+  flex:          1;
+  min-width:     60px;
+  max-width:     200px;
+  padding:       1px 4px;
+  font-size:     12px;
+  font-family:   inherit;
+  background:    var(--surface, #0c1018);
+  color:         var(--foreground);
+  border:        1px solid var(--primary, #2ab4c8);
+  border-radius: 3px;
+  outline:       none;
+}
 
 /* Close button — hidden until tab hover */
 .tab-close {

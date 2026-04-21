@@ -31,8 +31,15 @@
 .main-content {
   flex:       1;
   min-width:  0;
+  min-height: 0;
   overflow:   auto;
   background: var(--background);
+  display:    flex;
+  flex-direction: column;
+}
+/* When excalidraw is active, don't scroll main-content — let excalidraw fill it */
+.main-content:has(.excalidraw-pane) {
+  overflow:   hidden;
 }
 
 /* ── Generic view wrapper ─────────────────────────────────────────────────── */
