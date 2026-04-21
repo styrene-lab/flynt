@@ -297,8 +297,8 @@
 }
 .excalidraw-overlay-actions {
   position:       absolute;
-  top:            8px;
-  right:          8px;
+  bottom:         12px;
+  right:          12px;
   z-index:        100;
   display:        flex;
   align-items:    center;
