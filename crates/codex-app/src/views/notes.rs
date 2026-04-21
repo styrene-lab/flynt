@@ -1153,7 +1153,18 @@ pub fn NotesView() -> Element {
                             span { class: "mode-hint", "⌘E source" }
                             button {
                                 class: "btn btn-ghost",
-                                onclick: move |_| *mode.write() = EditMode::Source,
+                                onclick: move |_| {
+                                    // Sync CM6 content to edit_body before switching
+                                    spawn(async move {
+                                        let mut eval = document::eval("if(window._codexCM){dioxus.send(window._codexCM.state.doc.toString())}else{dioxus.send('')}");
+                                        if let Ok(content) = eval.recv::<String>().await {
+                                            if !content.is_empty() {
+                                                *edit_body.write() = content;
+                                            }
+                                        }
+                                        *mode.write() = EditMode::Source;
+                                    });
+                                },
                                 "Source"
                             }
                         },
