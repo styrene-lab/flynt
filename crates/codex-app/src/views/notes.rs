@@ -908,13 +908,19 @@ pub fn NotesView() -> Element {
 
     let has_active = tab_state.read().active_id().is_some();
 
-    // Initialize CM6 when document content loads/changes — NOT on every render
+    // Initialize CM6 only when switching to a DIFFERENT document (tab change)
+    // Do NOT reinitialize on content changes from autosave/reindex
     let is_drawing_mode = use_context::<Signal<bool>>();
+    let mut last_init_id: Signal<Option<codex_core::models::DocumentId>> = use_signal(|| None);
     use_effect(move || {
         if *is_drawing_mode.read() { return; }
-        if *mode.peek() != EditMode::Live { return; }
+        let current_id = tab_state.read().active_id().cloned();
+        let already_init = *last_init_id.peek() == current_id;
+        if already_init { return; }
+        // New document — initialize CM6
         if let Some(Some((_, _, body, _))) = &*rendered.read() {
             let content = body.clone();
+            *last_init_id.write() = current_id;
             document::eval(&cm6_init_js(&content));
         }
     });
