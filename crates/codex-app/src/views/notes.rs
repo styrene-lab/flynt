@@ -836,6 +836,17 @@ pub fn NotesView() -> Element {
 
     let has_active = tab_state.read().active_id().is_some();
 
+    // Initialize CM6 when document content loads/changes — NOT on every render
+    let is_drawing_mode = use_context::<Signal<bool>>();
+    use_effect(move || {
+        if *is_drawing_mode.read() { return; }
+        if *mode.peek() != EditMode::Live { return; }
+        if let Some(Some((_, _, body, _))) = &*rendered.read() {
+            let content = body.clone();
+            document::eval(&cm6_init_js(&content));
+        }
+    });
+
     // Persistent message bridge — one eval that polls a global queue.
     // CM6 pushes messages to the queue; this loop drains them to Rust.
     let ctx_link = ctx.clone();
@@ -1106,9 +1117,7 @@ pub fn NotesView() -> Element {
 
             match *mode.read() {
                 EditMode::Live if !crate::views::excalidraw::is_excalidraw(rel_path) => {
-                    let cm_content = edit_body.read().clone();
                     rsx! {
-                        { document::eval(&cm6_init_js(&cm_content)); }
                         div {
                             id: "codex-cm-editor",
                             class: "cm-editor-container",
