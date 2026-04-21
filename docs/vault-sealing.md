@@ -227,12 +227,71 @@ impl SealedBody {
 
 ```toml
 # codex-core/Cargo.toml
-chacha20poly1305 = "0.10"
-aes-gcm = "0.10"
-rand = "0.8"    # for nonce generation
-base64 = "0.22" # for selective seal encoding
-zeroize = "1"   # for key memory cleanup
+age = "0.10"     # audited file encryption (X25519 + ChaCha20-Poly1305 internally)
+base64 = "0.22"  # for inline encoding
+zeroize = "1"    # for key memory cleanup
 ```
+
+**NOT** adding raw `chacha20poly1305` or `aes-gcm` — the `age` crate handles
+cipher selection internally and is audited. StyreneIdentity already owns the
+Argon2id + ChaCha20-Poly1305 pipeline for identity file encryption.
+
+## StyreneIdentity Integration (What We DON'T Reinvent)
+
+StyreneIdentity already provides:
+
+| Capability | StyreneIdentity API | Codex usage |
+|-----------|-------------------|-------------|
+| Key derivation | `KeyDeriver::age_secret()` → 32-byte X25519 | Vault encryption key |
+| Passphrase stretching | `FileSigner` (Argon2id, 64 MiB, 3 iterations) | Identity unlock |
+| Tiered auth | `SignerChain` A→B→C→D fallback | Vault unlock |
+| Biometric | `SecureEnclaveSigner` (Tier B, planned) | Touch ID unlock |
+| Credential manager | `CredentialManagerSigner` (Tier C, planned) | 1Password/Bitwarden |
+| Memory safety | `zeroize` on all key material | Key cleanup on lock |
+| Backup | `IdentityVault::backup()` | Before key rotation |
+
+**Codex does NOT:**
+- Implement its own HKDF hierarchy
+- Store passphrases or keys
+- Implement its own AEAD cipher
+- Manage signer tiers
+
+**Codex DOES:**
+- Call `IdentityVault::unlock()` → `KeyDeriver::age_secret()`
+- Pass the age secret to the `age` crate for file encryption
+- Manage which files are sealed vs open
+- Handle the git sync implications
+
+## Alternative: age-based file format (preferred over CDXS)
+
+Instead of the custom CDXS binary format, use `age` armored encryption:
+
+**Selective seal (per-note):**
+```markdown
++++
+title = "API Keys"
+tags = ["credentials"]
+sealed = true
++++
+
+-----BEGIN AGE ENCRYPTED FILE-----
+YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTZWFsZWQgbm90ZSBi
+b2R5IGVuY3J5cHRlZCB3aXRoIGFnZSB1c2luZyBTdHlyZW5lSWRlbnRpdHkg
+ZGVyaXZlZCBrZXk=
+-----END AGE ENCRYPTED FILE-----
+```
+
+**Sealed vault (per-file):**
+```
+notes/my-note.md.age   ← age-encrypted .md file
+```
+
+Benefits over CDXS:
+- Audited, well-known format
+- Streaming encryption (handles large files)
+- Built-in key ID / recipient management
+- Compatible with the `age` CLI tool for emergency recovery
+- No custom parser to maintain
 
 ## Security Properties
 

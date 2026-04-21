@@ -188,6 +188,9 @@ pub struct Frontmatter {
     pub imported_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub imported_reference: bool,
+    /// Whether this note's body is encrypted at rest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed: Option<bool>,
     #[serde(default, flatten)]
     pub metadata: MetadataMap,
 }

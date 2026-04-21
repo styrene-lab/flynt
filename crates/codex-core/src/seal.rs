@@ -1,11 +1,15 @@
 //! Vault sealing — encryption at rest for notes and vaults.
 //!
 //! Two modes:
-//! - **Sealed vault**: all files encrypted, decrypted in memory while unlocked
-//! - **Selective seal**: individual notes marked `sealed = true`, body encrypted
+//! - **Sealed vault**: all files encrypted as `.md.age`, decrypted in memory while unlocked
+//! - **Selective seal**: individual notes marked `sealed = true`, body encrypted inline
 //!
-//! Key derivation is handled by StyreneIdentity. This module provides the
-//! encrypt/decrypt primitives and the sealed body format.
+//! Encryption uses the `age` crate with keys derived from StyreneIdentity:
+//! `IdentityVault::unlock()` → `KeyDeriver::age_secret()` → age X25519 recipient.
+//!
+//! This module provides configuration, format detection, and the sealed body
+//! container. It does NOT implement cryptographic primitives — those come from
+//! `age` (audited) and `styrene-identity` (HKDF + Argon2id).
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -69,10 +73,17 @@ pub const SEALED_MAGIC: &[u8; 4] = b"CDXS";
 pub const SEALED_VERSION: u8 = 0x01;
 
 /// A sealed body — the encrypted payload of a note or file.
+///
+/// Note: the preferred format for new implementations is `age` armored
+/// encryption (see design doc). This struct is the legacy/fallback binary
+/// format and may be used for `.sealed` files in full vault mode.
 #[derive(Debug, Clone)]
 pub struct SealedBody {
     pub version: u8,
     pub algorithm: SealAlgorithm,
+    /// Key derivation context — first 4 bytes of SHA-256(vault_id).
+    /// Identifies which key encrypted this payload for key rotation.
+    pub key_id: [u8; 4],
     pub nonce: [u8; 12],
     pub ciphertext: Vec<u8>,
     pub tag: [u8; 16],
@@ -80,7 +91,7 @@ pub struct SealedBody {
 
 impl SealedBody {
     /// Encode as a single-line string for embedding in markdown files.
-    /// Format: `CDXS:v1:chacha20:NONCE_B64:CIPHERTEXT_B64:TAG_B64`
+    /// Format: `CDXS:v1:chacha20:KEY_ID_B64:NONCE_B64:CIPHERTEXT_B64:TAG_B64`
     pub fn encode_inline(&self) -> String {
         use base64::Engine;
         let engine = base64::engine::general_purpose::STANDARD;
@@ -89,8 +100,9 @@ impl SealedBody {
             SealAlgorithm::Aes256Gcm => "aes256gcm",
         };
         format!(
-            "CDXS:v{ver}:{algo}:{nonce}:{ct}:{tag}",
+            "CDXS:v{ver}:{algo}:{kid}:{nonce}:{ct}:{tag}",
             ver = self.version,
+            kid = engine.encode(self.key_id),
             nonce = engine.encode(self.nonce),
             ct = engine.encode(&self.ciphertext),
             tag = engine.encode(self.tag),
@@ -103,7 +115,7 @@ impl SealedBody {
         let engine = base64::engine::general_purpose::STANDARD;
 
         let parts: Vec<&str> = line.split(':').collect();
-        if parts.len() != 6 || parts[0] != "CDXS" {
+        if parts.len() != 7 || parts[0] != "CDXS" {
             anyhow::bail!("invalid sealed body format");
         }
 
@@ -118,24 +130,25 @@ impl SealedBody {
             other => anyhow::bail!("unknown algorithm: {other}"),
         };
 
-        let nonce_bytes = engine.decode(parts[3])?;
-        let ciphertext = engine.decode(parts[4])?;
-        let tag_bytes = engine.decode(parts[5])?;
+        let key_id_bytes = engine.decode(parts[3])?;
+        let nonce_bytes = engine.decode(parts[4])?;
+        let ciphertext = engine.decode(parts[5])?;
+        let tag_bytes = engine.decode(parts[6])?;
 
+        let mut key_id = [0u8; 4];
         let mut nonce = [0u8; 12];
         let mut tag = [0u8; 16];
-        if nonce_bytes.len() != 12 {
-            anyhow::bail!("nonce must be 12 bytes");
-        }
-        if tag_bytes.len() != 16 {
-            anyhow::bail!("tag must be 16 bytes");
-        }
+        if key_id_bytes.len() != 4 { anyhow::bail!("key_id must be 4 bytes"); }
+        if nonce_bytes.len() != 12 { anyhow::bail!("nonce must be 12 bytes"); }
+        if tag_bytes.len() != 16 { anyhow::bail!("tag must be 16 bytes"); }
+        key_id.copy_from_slice(&key_id_bytes);
         nonce.copy_from_slice(&nonce_bytes);
         tag.copy_from_slice(&tag_bytes);
 
         Ok(SealedBody {
             version,
             algorithm,
+            key_id,
             nonce,
             ciphertext,
             tag,
@@ -148,10 +161,11 @@ impl SealedBody {
             SealAlgorithm::ChaCha20Poly1305 => 0x01,
             SealAlgorithm::Aes256Gcm => 0x02,
         };
-        let mut out = Vec::with_capacity(4 + 1 + 1 + 12 + self.ciphertext.len() + 16);
+        let mut out = Vec::with_capacity(4 + 1 + 1 + 4 + 12 + self.ciphertext.len() + 16);
         out.extend_from_slice(SEALED_MAGIC);
         out.push(self.version);
         out.push(algo_byte);
+        out.extend_from_slice(&self.key_id);
         out.extend_from_slice(&self.nonce);
         out.extend_from_slice(&self.ciphertext);
         out.extend_from_slice(&self.tag);
@@ -160,7 +174,7 @@ impl SealedBody {
 
     /// Decode from binary `.sealed` file format.
     pub fn decode_binary(data: &[u8]) -> Result<Self> {
-        if data.len() < 34 {
+        if data.len() < 38 {
             anyhow::bail!("sealed file too short");
         }
         if &data[0..4] != SEALED_MAGIC {
@@ -173,18 +187,22 @@ impl SealedBody {
             other => anyhow::bail!("unknown algorithm byte: {other:#x}"),
         };
 
-        let mut nonce = [0u8; 12];
-        nonce.copy_from_slice(&data[6..18]);
+        let mut key_id = [0u8; 4];
+        key_id.copy_from_slice(&data[6..10]);
 
-        let ct_len = data.len() - 18 - 16;
-        let ciphertext = data[18..18 + ct_len].to_vec();
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&data[10..22]);
+
+        let ct_len = data.len() - 22 - 16;
+        let ciphertext = data[22..22 + ct_len].to_vec();
 
         let mut tag = [0u8; 16];
-        tag.copy_from_slice(&data[18 + ct_len..]);
+        tag.copy_from_slice(&data[22 + ct_len..]);
 
         Ok(SealedBody {
             version,
             algorithm,
+            key_id,
             nonce,
             ciphertext,
             tag,
@@ -217,11 +235,7 @@ pub fn is_sealed_inline(line: &str) -> bool {
 
 /// Check if a document's frontmatter indicates it's sealed.
 pub fn is_note_sealed(frontmatter: &crate::models::Frontmatter) -> bool {
-    frontmatter
-        .metadata
-        .get("sealed")
-        .map(|v| matches!(v, crate::models::MetadataValue::Bool(true)))
-        .unwrap_or(false)
+    frontmatter.sealed == Some(true)
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -234,6 +248,7 @@ mod tests {
         SealedBody {
             version: 1,
             algorithm: SealAlgorithm::ChaCha20Poly1305,
+            key_id: [0xAA, 0xBB, 0xCC, 0xDD],
             nonce: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             ciphertext: b"encrypted content here".to_vec(),
             tag: [16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
@@ -249,6 +264,7 @@ mod tests {
         let decoded = SealedBody::decode_inline(&encoded).unwrap();
         assert_eq!(decoded.version, 1);
         assert_eq!(decoded.algorithm, SealAlgorithm::ChaCha20Poly1305);
+        assert_eq!(decoded.key_id, body.key_id);
         assert_eq!(decoded.nonce, body.nonce);
         assert_eq!(decoded.ciphertext, body.ciphertext);
         assert_eq!(decoded.tag, body.tag);
@@ -263,6 +279,7 @@ mod tests {
         let decoded = SealedBody::decode_binary(&binary).unwrap();
         assert_eq!(decoded.version, 1);
         assert_eq!(decoded.algorithm, SealAlgorithm::ChaCha20Poly1305);
+        assert_eq!(decoded.key_id, body.key_id);
         assert_eq!(decoded.nonce, body.nonce);
         assert_eq!(decoded.ciphertext, body.ciphertext);
         assert_eq!(decoded.tag, body.tag);
@@ -307,6 +324,7 @@ mod tests {
         let body = SealedBody {
             version: 1,
             algorithm: SealAlgorithm::Aes256Gcm,
+            key_id: [0; 4],
             nonce: [0; 12],
             ciphertext: b"test".to_vec(),
             tag: [0; 16],
