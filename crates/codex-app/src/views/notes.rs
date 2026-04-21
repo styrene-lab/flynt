@@ -910,15 +910,11 @@ pub fn NotesView() -> Element {
 
     // Initialize CM6 when: new document loaded OR mode switched back to Live
     let is_drawing_mode = use_context::<Signal<bool>>();
-    let mut last_init_key: Signal<Option<(codex_core::models::DocumentId, u8)>> = use_signal(|| None);
+    let mut cm_init_ver = use_signal(|| 0u64);
     use_effect(move || {
+        let _ver = *cm_init_ver.read(); // reactive dep — bump to force re-init
         if *is_drawing_mode.read() { return; }
         if !matches!(&*mode.read(), EditMode::Live) { return; }
-        let current_id = tab_state.read().active_id().cloned();
-        let Some(id) = current_id else { return; };
-        let key = (id.clone(), 0u8); // mode is Live = 0
-        if *last_init_key.peek() == Some(key.clone()) { return; }
-        // Need to init — either new doc or mode just switched to Live
         // Use edit_body if available (has latest edits), fall back to rendered content
         let content = {
             let eb = edit_body.peek().clone();
@@ -927,12 +923,19 @@ pub fn NotesView() -> Element {
             } else if let Some(Some((_, _, body, _))) = &*rendered.peek() {
                 body.clone()
             } else {
-                return; // no content yet
+                return;
             }
         };
-        *last_init_key.write() = Some(key);
         document::eval(&cm6_init_js(&content));
     });
+
+    // Bump init version when active tab changes (but NOT on reindex)
+    let active_doc_id = tab_state.read().active_id().cloned();
+    let mut last_doc_id: Signal<Option<codex_core::models::DocumentId>> = use_signal(|| None);
+    if active_doc_id != *last_doc_id.peek() {
+        *last_doc_id.write() = active_doc_id;
+        *cm_init_ver.write() += 1;
+    }
 
     // Persistent message bridge — one eval that polls a global queue.
     // CM6 pushes messages to the queue; this loop drains them to Rust.
