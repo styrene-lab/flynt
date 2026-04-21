@@ -334,7 +334,9 @@
   flex-direction: column;
   overflow:       hidden;
   padding:        0;
-  height:         100%;
+  flex:           1;
+  min-height:     0;
+  height:         0; /* flex: 1 takes over, this prevents content from expanding it */
 }
 .excalidraw-actions {
   display:        flex;
