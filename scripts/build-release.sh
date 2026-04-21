@@ -54,7 +54,7 @@ if command -v create-dmg &>/dev/null; then
     --volicon "crates/codex-app/assets/icon.icns" \
     --background "$ROOT/scripts/dmg-assets/background@2x.png" \
     --window-pos 200 100 \
-    --window-size 1024 720 \
+    --window-size 1024 700 \
     --icon-size 128 \
     --icon "Codex.app" 260 340 \
     --hide-extension "Codex.app" \
