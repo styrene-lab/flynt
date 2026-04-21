@@ -329,3 +329,173 @@ pub fn excalidraw_embed_path(content: &str) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    // ── excalidraw_embed_path ───────────────────────────────────────────
+
+    #[test]
+    fn detects_excalidraw_wrapper_with_frontmatter() {
+        let content = "+++\ntitle = \"My Drawing\"\ntags = [\"drawing\"]\n+++\n\n![[diagram.excalidraw]]\n";
+        assert_eq!(excalidraw_embed_path(content), Some("diagram.excalidraw".into()));
+    }
+
+    #[test]
+    fn detects_excalidraw_wrapper_minimal() {
+        assert_eq!(excalidraw_embed_path("![[test.excalidraw]]\n"), Some("test.excalidraw".into()));
+    }
+
+    #[test]
+    fn rejects_regular_note_with_excalidraw_embed() {
+        let content = "+++\ntitle = \"Note\"\n+++\n\nSome text before.\n\n![[drawing.excalidraw]]\n\nSome text after.\n";
+        assert_eq!(excalidraw_embed_path(content), None, "should reject notes with text + embed");
+    }
+
+    #[test]
+    fn rejects_plain_text() {
+        assert_eq!(excalidraw_embed_path("Just a regular note."), None);
+    }
+
+    #[test]
+    fn rejects_non_excalidraw_embed() {
+        assert_eq!(excalidraw_embed_path("![[image.png]]"), None);
+    }
+
+    #[test]
+    fn rejects_empty_content() {
+        assert_eq!(excalidraw_embed_path(""), None);
+    }
+
+    #[test]
+    fn rejects_frontmatter_only() {
+        assert_eq!(excalidraw_embed_path("+++\ntitle = \"Empty\"\n+++\n"), None);
+    }
+
+    #[test]
+    fn handles_whitespace_around_embed() {
+        let content = "+++\ntitle = \"Drawing\"\n+++\n\n  ![[spaced.excalidraw]]  \n";
+        assert_eq!(excalidraw_embed_path(content), Some("spaced.excalidraw".into()));
+    }
+
+    // ── is_excalidraw ───────────────────────────────────────────────────
+
+    #[test]
+    fn is_excalidraw_true() {
+        assert!(is_excalidraw(std::path::Path::new("drawings/test.excalidraw")));
+        assert!(is_excalidraw(std::path::Path::new("test.excalidraw")));
+    }
+
+    #[test]
+    fn is_excalidraw_false() {
+        assert!(!is_excalidraw(std::path::Path::new("note.md")));
+        assert!(!is_excalidraw(std::path::Path::new("image.png")));
+        assert!(!is_excalidraw(std::path::Path::new("no-extension")));
+    }
+
+    // ── create_drawing ──────────────────────────────────────────────────
+
+    #[test]
+    fn create_drawing_produces_both_files() {
+        let tmp = TempDir::new().unwrap();
+        let md_path = create_drawing(tmp.path(), "Test Diagram").unwrap();
+
+        // .md wrapper exists and is indexable
+        assert!(md_path.to_string_lossy().ends_with(".md"));
+        let md_abs = tmp.path().join(&md_path);
+        assert!(md_abs.exists());
+
+        // .excalidraw data file exists
+        let excalidraw_abs = tmp.path().join("drawings/Test Diagram.excalidraw");
+        assert!(excalidraw_abs.exists());
+
+        // .md content embeds the .excalidraw file
+        let md_content = std::fs::read_to_string(&md_abs).unwrap();
+        assert!(md_content.contains("![[Test Diagram.excalidraw]]"));
+
+        // .md content is detected as an excalidraw wrapper
+        assert_eq!(
+            excalidraw_embed_path(&md_content),
+            Some("Test Diagram.excalidraw".into()),
+            "the .md wrapper must be detected by excalidraw_embed_path"
+        );
+    }
+
+    #[test]
+    fn create_drawing_valid_scene_json() {
+        let tmp = TempDir::new().unwrap();
+        create_drawing(tmp.path(), "Valid").unwrap();
+
+        let scene = std::fs::read_to_string(tmp.path().join("drawings/Valid.excalidraw")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&scene).unwrap();
+        assert_eq!(parsed["type"], "excalidraw");
+        assert_eq!(parsed["version"], 2);
+        assert_eq!(parsed["appState"]["theme"], "dark");
+    }
+
+    #[test]
+    fn create_drawing_multiple_in_same_dir() {
+        let tmp = TempDir::new().unwrap();
+        create_drawing(tmp.path(), "First").unwrap();
+        create_drawing(tmp.path(), "Second").unwrap();
+
+        assert!(tmp.path().join("drawings/First.excalidraw").exists());
+        assert!(tmp.path().join("drawings/Second.excalidraw").exists());
+        assert!(tmp.path().join("drawings/First.md").exists());
+        assert!(tmp.path().join("drawings/Second.md").exists());
+    }
+
+    // ── base64_decode ───────────────────────────────────────────────────
+
+    #[test]
+    fn base64_decode_basic() {
+        assert_eq!(base64_decode("SGVsbG8=").unwrap(), b"Hello");
+    }
+
+    #[test]
+    fn base64_decode_no_padding() {
+        assert_eq!(base64_decode("SGVsbG8").unwrap(), b"Hello");
+    }
+
+    #[test]
+    fn base64_decode_with_whitespace() {
+        assert_eq!(base64_decode("SGVs\nbG8=").unwrap(), b"Hello");
+    }
+
+    #[test]
+    fn base64_decode_empty() {
+        assert_eq!(base64_decode("").unwrap(), b"");
+    }
+
+    #[test]
+    fn base64_decode_invalid_char() {
+        assert!(base64_decode("!!!").is_err());
+    }
+
+    // ── round-trip: create → detect → delete ────────────────────────────
+
+    #[test]
+    fn full_drawing_lifecycle() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create
+        let md_path = create_drawing(tmp.path(), "Lifecycle Test").unwrap();
+        let md_abs = tmp.path().join(&md_path);
+        let excalidraw_abs = tmp.path().join("drawings/Lifecycle Test.excalidraw");
+        assert!(md_abs.exists());
+        assert!(excalidraw_abs.exists());
+
+        // Detect
+        let content = std::fs::read_to_string(&md_abs).unwrap();
+        let detected = excalidraw_embed_path(&content);
+        assert_eq!(detected, Some("Lifecycle Test.excalidraw".into()));
+
+        // Delete (simulate sidebar delete — both files)
+        std::fs::remove_file(&md_abs).unwrap();
+        std::fs::remove_file(&excalidraw_abs).unwrap();
+        assert!(!md_abs.exists());
+        assert!(!excalidraw_abs.exists());
+    }
+}

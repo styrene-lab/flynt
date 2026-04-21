@@ -394,6 +394,7 @@ mod tests {
                 omegon_runtime_root: Some(tmp.path().join("state/omegon-runtime")),
                 omegon_mind_db_path: Some(tmp.path().join("state/omegon-runtime/minds/codex-mind.db")),
                 styrene_identity_profile: Some("black-meridian".into()),
+                omegon_serve_host: None,
             },
         );
 
