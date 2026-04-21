@@ -16,10 +16,8 @@ fn vault_root() -> PathBuf {
         })
         .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
         .unwrap_or_else(|| {
-            std::env::var("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from("/tmp"))
-                .join("Documents")
+            dirs::document_dir()
+                .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
                 .join("Codex")
         })
 }
@@ -30,6 +28,8 @@ fn main() {
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
             Config::default()
+                .with_menu(codex_app::menu::build_menu_bar())
+                .with_disable_context_menu(true)
                 .with_window(
                     WindowBuilder::new()
                         .with_title("Codex")

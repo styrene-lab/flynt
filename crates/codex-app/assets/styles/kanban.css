@@ -381,9 +381,61 @@
   color:          var(--foreground);
 }
 
-.task-details .field input:focus {
+.task-details .field input:focus,
+.task-details .field textarea:focus,
+.task-details .field select:focus {
   border-color: var(--ring);
   outline:      none;
+}
+
+.task-desc-input {
+  width:          100%;
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius-sm);
+  padding:        var(--space-1) var(--space-2);
+  font-size:      var(--font-size-sm);
+  font-family:    var(--font-sans);
+  color:          var(--foreground);
+  resize:         vertical;
+  min-height:     60px;
+}
+
+.task-details .field select {
+  width:          100%;
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius-sm);
+  padding:        var(--space-1) var(--space-2);
+  font-size:      var(--font-size-sm);
+  color:          var(--foreground);
+  cursor:         pointer;
+}
+
+.task-detail-row {
+  display:        flex;
+  gap:            var(--space-3);
+}
+.task-detail-row .field {
+  flex:           1;
+}
+
+.task-tags-inline {
+  display:        flex;
+  gap:            2px;
+  flex-wrap:      wrap;
+}
+.task-tag {
+  font-size:      10px;
+  background:     rgba(139, 92, 246, 0.15);
+  color:          #8b5cf6;
+  padding:        0 4px;
+  border-radius:  3px;
+}
+
+.text-error {
+  color:          #ef4444;
+  font-size:      var(--font-size-sm);
 }
 
 /* ── Row helper ──────────────────────────────────────────────────────────── */

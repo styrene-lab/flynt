@@ -1,6 +1,11 @@
+pub mod daemon;
+pub mod daily;
 pub mod datum;
 pub mod graph;
+pub mod html_to_md;
 pub mod models;
+pub mod query;
 pub mod store;
 pub mod sync;
+pub mod templates;
 pub mod parser;

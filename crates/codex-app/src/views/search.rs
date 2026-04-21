@@ -160,7 +160,7 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
                                                             *active_route.write() = Route::Notes;
                                                         },
                                                         div { class: "src-header",
-                                                            span { class: "src-file-icon", "📄" }
+                                                            span { class: "src-file-icon nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                                                             div { class: "src-meta",
                                                                 span { class: "src-title", "{title}" }
                                                                 if !breadcrumb.is_empty() {

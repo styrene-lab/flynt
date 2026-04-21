@@ -60,15 +60,23 @@ impl OmegonRuntimeContext {
             .ok()
             .filter(|path| path.is_absolute())
             .or_else(|| dirs::config_local_dir().map(|dir| dir.join("codex/launcher-profile.json")))
-            .unwrap_or_else(|| PathBuf::from("/tmp/codex-launcher-profile.json"))
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".codex-launcher-profile.json")
+            })
     }
 
     pub fn load_launcher_profile() -> LauncherProfile {
         let path = Self::launcher_profile_path();
-        std::fs::read_to_string(path)
+        let mut profile: LauncherProfile = std::fs::read_to_string(path)
             .ok()
             .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Prune vaults whose root no longer exists on disk
+        profile.known_vaults.retain(|v| v.root.exists());
+        profile.recent_vaults.retain(|v| v.exists());
+        profile
     }
 
     pub fn save_launcher_profile(profile: &LauncherProfile) -> anyhow::Result<()> {
@@ -81,7 +89,12 @@ impl OmegonRuntimeContext {
     }
 
     pub fn register_known_vault(profile: &mut LauncherProfile, root: &Path, name: &str) {
-        let root = root.to_path_buf();
+        let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+
+        // Prune vaults whose root no longer exists on disk
+        profile.known_vaults.retain(|v| v.root.exists());
+        profile.recent_vaults.retain(|v| v.exists());
+
         if let Some(existing) = profile.known_vaults.iter_mut().find(|vault| vault.root == root) {
             existing.name = name.to_string();
         } else {
@@ -158,6 +171,43 @@ impl OmegonRuntimeContext {
             vault.index_file(&home_path)?;
         }
         Ok(vault)
+    }
+
+    /// Clone a remote git repo into `local_path` and open it as a Codex vault.
+    pub fn clone_remote_vault(
+        local_path: &Path,
+        repo_url: &str,
+        branch: &str,
+    ) -> anyhow::Result<Vault> {
+        use codex_store::sync::git::GitSync;
+
+        std::fs::create_dir_all(local_path)?;
+
+        let repo = GitSync::clone_repo(repo_url, branch, local_path)?;
+
+        let name = local_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Codex")
+            .to_string();
+
+        let remote_name = repo
+            .remotes()?
+            .iter()
+            .flatten()
+            .next()
+            .unwrap_or("origin")
+            .to_string();
+
+        Self::initialize_vault(
+            local_path,
+            &name,
+            SyncConfig::Git {
+                remote: remote_name,
+                branch: branch.to_string(),
+                auto_commit_seconds: 60,
+            },
+        )
     }
 
     pub fn export_publication_preview(vault: &Vault) -> anyhow::Result<PathBuf> {
@@ -505,9 +555,11 @@ pub struct RuntimeState {
     pub vault: Arc<Vault>,
     pub vault_events: broadcast::Sender<VaultChangeEvent>,
     pub omegon: OmegonRuntimeContext,
+    /// Background git sync handle — kept alive as long as RuntimeState exists.
+    pub _sync_handle: Option<Arc<codex_store::sync::AutoSyncHandle>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct AppContext {
     pub runtime: Signal<RuntimeState>,
 }
@@ -555,9 +607,21 @@ fn publication_output_path(vault: &Vault) -> PathBuf {
 }
 
 pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState {
-    std::fs::create_dir_all(&vault_root).expect("cannot create vault directory");
+    if let Err(e) = std::fs::create_dir_all(&vault_root) {
+        // Fatal but non-panic: log clearly so the user can see what happened
+        tracing::error!("Cannot create vault directory at {}: {e}", vault_root.display());
+        tracing::error!("Check that the path exists and you have write permission.");
+        panic!("Cannot create vault directory at {}: {e}", vault_root.display());
+    }
 
-    let vault = Arc::new(Vault::open(&vault_root).expect("failed to open vault"));
+    let vault = match Vault::open(&vault_root) {
+        Ok(v) => Arc::new(v),
+        Err(e) => {
+            tracing::error!("Failed to open vault at {}: {e}", vault_root.display());
+            tracing::error!("The vault directory may be corrupted. Try removing .codex/ and reopening.");
+            panic!("Failed to open vault at {}: {e}", vault_root.display());
+        }
+    };
 
     match vault.reindex() {
         Ok((n, errs)) => {
@@ -600,26 +664,85 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
         }
     });
 
+    // Ensure default templates exist
+    let _ = codex_core::templates::ensure_default_templates(&vault_root);
+
+    // iCloud: download any placeholder files before indexing
+    if matches!(vault.config.sync, codex_core::models::SyncConfig::ICloud) {
+        if let Err(e) = codex_store::sync::icloud::ensure_downloaded(&vault_root) {
+            warn!("iCloud download check failed: {e}");
+        }
+    }
+
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
+
+    // Start background git sync if configured
+    let sync_handle = match &vault.config.sync {
+        codex_core::models::SyncConfig::Git { remote, branch, auto_commit_seconds } if *auto_commit_seconds > 0 => {
+            let interval = std::time::Duration::from_secs(*auto_commit_seconds);
+            let vault_for_reindex = Arc::clone(&vault);
+            let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                if let Err(e) = vault_for_reindex.reindex() {
+                    warn!("Post-pull reindex failed: {e}");
+                }
+            });
+            let (handle, status_rx) = codex_store::sync::start_auto_sync(
+                vault_root.clone(),
+                remote.clone(),
+                branch.clone(),
+                interval,
+                Some(reindex_cb),
+            );
+            info!("Auto-sync started: every {}s to {remote}/{branch}", auto_commit_seconds);
+
+            // Log status changes
+            tokio::spawn(async move {
+                let mut rx = status_rx;
+                while rx.changed().await.is_ok() {
+                    let status = rx.borrow().clone();
+                    match &status {
+                        codex_store::sync::AutoSyncStatus::Error(e) => warn!("sync: {e}"),
+                        codex_store::sync::AutoSyncStatus::Conflict(c) => warn!("sync conflicts: {c:?}"),
+                        _ => {}
+                    }
+                }
+            });
+
+            Some(Arc::new(handle))
+        }
+        _ => None,
+    };
+
     RuntimeState {
         vault_root,
         vault,
         vault_events: tx,
         omegon,
+        _sync_handle: sync_handle,
     }
 }
 
 pub fn bootstrap_from_env() -> RuntimeState {
     let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
-    let vault_root = launcher_profile
-        .last_vault_root
-        .clone()
-        .or_else(|| std::env::var("CODEX_VAULT").map(PathBuf::from).ok())
-        .unwrap_or_else(|| {
-            dirs::document_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join("Codex")
-        });
+    let default_root = || {
+        dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Codex")
+    };
+
+    // CODEX_VAULT env var takes priority (explicit override), then launcher
+    // profile's last vault (only if parent dir is accessible), then default.
+    let vault_root = std::env::var("CODEX_VAULT")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            launcher_profile.last_vault_root.clone().filter(|p| {
+                // Accept if vault dir exists, or its parent exists (so we can create it)
+                p.exists() || p.parent().is_some_and(|parent| parent.exists())
+            })
+        })
+        .unwrap_or_else(default_root);
 
     runtime_state_for_vault_root(vault_root)
 }

@@ -32,6 +32,16 @@ pub struct GraphNode {
     pub kind: GraphNodeKind,
     pub title: String,
     pub group: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    /// Task-specific: priority (1=low, 2=medium, 3=high, 4=critical)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
+    /// Task-specific: status (todo, in_progress, done, archived)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +56,7 @@ pub struct GraphPayload {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub groups: Vec<String>,
+    pub all_tags: Vec<String>,
 }
 
 pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
@@ -53,6 +64,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
     let mut nodes = Vec::with_capacity(docs.len());
     let mut edges = Vec::new();
     let mut groups = HashMap::<String, ()>::new();
+    let mut tag_set = HashMap::<String, ()>::new();
 
     for meta in docs {
         let id = meta.id.0.to_string();
@@ -72,11 +84,18 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             ) => GraphNodeKind::MemoryFact,
             _ => GraphNodeKind::Document,
         };
+        for tag in &meta.tags {
+            tag_set.insert(tag.clone(), ());
+        }
         nodes.push(GraphNode {
             id: id.clone(),
             kind,
             title: meta.title.clone(),
             group,
+            tags: meta.tags.clone(),
+            updated_at: Some(meta.updated_at.to_rfc3339()),
+            priority: None,
+            status: None,
         });
 
         if let Some(doc) = store.get_document(&meta.id)? {
@@ -100,6 +119,10 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             kind: GraphNodeKind::Board,
             title: board.name.clone(),
             group: "boards".into(),
+            tags: vec![],
+            updated_at: Some(board.created_at.to_rfc3339()),
+            priority: None,
+            status: None,
         });
     }
 
@@ -107,11 +130,30 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
     for task in tasks {
         let task_id = format!("task:{}", task.id.0);
         groups.insert(task.column.clone(), ());
+        for tag in &task.tags {
+            tag_set.insert(tag.clone(), ());
+        }
+        let priority_num = match task.priority {
+            crate::models::Priority::Low => 1,
+            crate::models::Priority::Medium => 2,
+            crate::models::Priority::High => 3,
+            crate::models::Priority::Critical => 4,
+        };
+        let status_str = match task.status {
+            crate::models::TaskStatus::Todo => "todo",
+            crate::models::TaskStatus::InProgress => "in_progress",
+            crate::models::TaskStatus::Done => "done",
+            crate::models::TaskStatus::Archived => "archived",
+        };
         nodes.push(GraphNode {
             id: task_id.clone(),
             kind: GraphNodeKind::Task,
             title: task.title.clone(),
             group: task.column.clone(),
+            tags: task.tags.clone(),
+            updated_at: Some(task.updated_at.to_rfc3339()),
+            priority: Some(priority_num),
+            status: Some(status_str.into()),
         });
         edges.push(GraphEdge {
             source: format!("board:{}", task.board_id.0),
@@ -129,8 +171,23 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
 
     let mut groups = groups.into_keys().collect::<Vec<_>>();
     groups.sort();
+    let mut all_tags = tag_set.into_keys().collect::<Vec<_>>();
+    all_tags.sort();
 
-    Ok(GraphPayload { nodes, edges, groups })
+    Ok(GraphPayload { nodes, edges, groups, all_tags })
+}
+
+/// Public helper for matching node kind strings (used by MCP filter).
+pub fn format_kind(kind: &GraphNodeKind) -> &'static str {
+    match kind {
+        GraphNodeKind::Document => "document",
+        GraphNodeKind::Task => "task",
+        GraphNodeKind::Board => "board",
+        GraphNodeKind::Repo => "repo",
+        GraphNodeKind::Link => "link",
+        GraphNodeKind::MemoryFact => "memory",
+        GraphNodeKind::Communication => "communication",
+    }
 }
 
 fn top_level_group(path: &Path) -> String {
@@ -142,6 +199,202 @@ fn top_level_group(path: &Path) -> String {
         // Root-level file
         "root".into()
     }
+}
+
+// ── Force-directed layout + SVG rendering ────────────────────────────────────
+
+/// Configuration for the force-directed layout.
+pub struct LayoutConfig {
+    pub width: f64,
+    pub height: f64,
+    pub iterations: usize,
+    pub repel_strength: f64,
+    pub link_distance: f64,
+    pub link_strength: f64,
+    pub center_gravity: f64,
+    pub node_radius: f64,
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            width: 900.0,
+            height: 700.0,
+            iterations: 120,
+            repel_strength: 1200.0,
+            link_distance: 60.0,
+            link_strength: 0.03,
+            center_gravity: 0.01,
+            node_radius: 5.0,
+        }
+    }
+}
+
+/// Compute force-directed positions for graph nodes.
+pub fn force_layout(payload: &GraphPayload, config: &LayoutConfig) -> Vec<(f64, f64)> {
+    let n = payload.nodes.len();
+    if n == 0 {
+        return vec![];
+    }
+
+    let cx = config.width / 2.0;
+    let cy = config.height / 2.0;
+    let r = (config.width.min(config.height) / 2.5).min(250.0);
+
+    // Circle initialization
+    let mut pos: Vec<(f64, f64)> = (0..n)
+        .map(|i| {
+            let angle = 2.0 * std::f64::consts::PI * (i as f64) / (n as f64);
+            (cx + r * angle.cos(), cy + r * angle.sin())
+        })
+        .collect();
+
+    let id_to_idx: HashMap<&str, usize> = payload
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (node.id.as_str(), i))
+        .collect();
+
+    for iter in 0..config.iterations {
+        let mut dx = vec![0.0f64; n];
+        let mut dy = vec![0.0f64; n];
+        let alpha = 1.0 - (iter as f64 / config.iterations as f64); // cooling
+
+        // Repulsion
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let vx = pos[i].0 - pos[j].0;
+                let vy = pos[i].1 - pos[j].1;
+                let dist = (vx * vx + vy * vy).sqrt().max(1.0);
+                let force = config.repel_strength / (dist * dist) * alpha;
+                let fx = vx / dist * force;
+                let fy = vy / dist * force;
+                dx[i] += fx;
+                dy[i] += fy;
+                dx[j] -= fx;
+                dy[j] -= fy;
+            }
+        }
+
+        // Edge attraction
+        for edge in &payload.edges {
+            if let (Some(&si), Some(&ti)) = (
+                id_to_idx.get(edge.source.as_str()),
+                id_to_idx.get(edge.target.as_str()),
+            ) {
+                let vx = pos[ti].0 - pos[si].0;
+                let vy = pos[ti].1 - pos[si].1;
+                let dist = (vx * vx + vy * vy).sqrt().max(1.0);
+                let force = (dist - config.link_distance) * config.link_strength * alpha;
+                let fx = vx / dist * force;
+                let fy = vy / dist * force;
+                dx[si] += fx;
+                dy[si] += fy;
+                dx[ti] -= fx;
+                dy[ti] -= fy;
+            }
+        }
+
+        // Center gravity
+        for i in 0..n {
+            dx[i] += (cx - pos[i].0) * config.center_gravity;
+            dy[i] += (cy - pos[i].1) * config.center_gravity;
+        }
+
+        // Apply
+        let max_move = 15.0 * alpha + 1.0;
+        for i in 0..n {
+            pos[i].0 += dx[i].clamp(-max_move, max_move);
+            pos[i].1 += dy[i].clamp(-max_move, max_move);
+            pos[i].0 = pos[i].0.clamp(15.0, config.width - 15.0);
+            pos[i].1 = pos[i].1.clamp(15.0, config.height - 15.0);
+        }
+    }
+
+    pos
+}
+
+/// Node kind to CSS-friendly color string.
+pub fn kind_color(kind: &GraphNodeKind) -> &'static str {
+    match kind {
+        GraphNodeKind::Document => "rgb(103,232,200)",
+        GraphNodeKind::Task => "rgb(234,179,8)",
+        GraphNodeKind::Board => "rgb(59,130,246)",
+        GraphNodeKind::Repo => "rgb(139,92,246)",
+        GraphNodeKind::Link => "rgb(113,113,122)",
+        GraphNodeKind::MemoryFact => "rgb(249,115,22)",
+        GraphNodeKind::Communication => "rgb(236,72,153)",
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Render a graph payload as an SVG string. Pure Rust, no JS.
+pub fn render_graph_svg(payload: &GraphPayload, config: &LayoutConfig) -> String {
+    let positions = force_layout(payload, config);
+    let w = config.width;
+    let h = config.height;
+    let r = config.node_radius;
+
+    let id_to_idx: HashMap<&str, usize> = payload
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (node.id.as_str(), i))
+        .collect();
+
+    let mut svg = format!(
+        r#"<svg viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;background:transparent">"#
+    );
+
+    // Edges
+    for edge in &payload.edges {
+        if let (Some(&si), Some(&ti)) = (
+            id_to_idx.get(edge.source.as_str()),
+            id_to_idx.get(edge.target.as_str()),
+        ) {
+            let (x1, y1) = positions[si];
+            let (x2, y2) = positions[ti];
+            let opacity = match edge.kind {
+                GraphEdgeKind::Wikilink => "0.4",
+                GraphEdgeKind::TaskMembership => "0.3",
+                GraphEdgeKind::SemanticSupport => "0.2",
+            };
+            svg.push_str(&format!(
+                r#"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="rgb(45,49,64)" stroke-width="0.8" opacity="{opacity}"/>"#
+            ));
+        }
+    }
+
+    // Nodes
+    for (i, node) in payload.nodes.iter().enumerate() {
+        let (x, y) = positions[i];
+        let color = kind_color(&node.kind);
+        svg.push_str(&format!(
+            r#"<circle cx="{x:.1}" cy="{y:.1}" r="{r}" fill="{color}" stroke="rgb(15,17,23)" stroke-width="1"/>"#
+        ));
+        // Label
+        let label = if node.title.len() > 20 {
+            format!("{}…", &node.title[..18])
+        } else {
+            node.title.clone()
+        };
+        svg.push_str(&format!(
+            r#"<text x="{:.1}" y="{:.1}" font-size="9" fill="rgb(113,113,122)" font-family="system-ui,sans-serif">{}</text>"#,
+            x + r + 3.0,
+            y + 3.0,
+            html_escape(&label)
+        ));
+    }
+
+    svg.push_str("</svg>");
+    svg
 }
 
 #[cfg(test)]
@@ -186,6 +439,12 @@ mod tests {
         fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
         fn list_boards(&self) -> Result<Vec<Board>> { Ok(self.boards.clone()) }
         fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
+        fn list_dirty_tasks(&self, _project_id: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
+        fn list_dirty_documents(&self, _project_id: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
+        fn mark_committed(&self, _task_ids: &[TaskId], _doc_ids: &[DocumentId], _at: chrono::DateTime<chrono::Utc>) -> Result<()> { Ok(()) }
+        fn record_project_deletion(&self, _entity_id: &uuid::Uuid, _entity_kind: &str, _project_id: &uuid::Uuid) -> Result<()> { Ok(()) }
+        fn list_pending_deletions(&self, _project_id: &uuid::Uuid) -> Result<Vec<(uuid::Uuid, String)>> { Ok(vec![]) }
+        fn mark_deletions_committed(&self, _entity_ids: &[uuid::Uuid]) -> Result<()> { Ok(()) }
     }
 
     #[test]
@@ -251,6 +510,8 @@ mod tests {
                 position: 0,
                 created_at: now,
                 updated_at: now,
+                decay: Default::default(),
+                last_touched_at: Some(now),
             }],
         };
 

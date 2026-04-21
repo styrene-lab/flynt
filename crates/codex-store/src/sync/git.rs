@@ -1,7 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use codex_core::sync::{SyncBackend, SyncResult, SyncStatus};
-use git2::{IndexAddOption, Repository, Signature};
+use git2::{Cred, FetchOptions, IndexAddOption, PushOptions, RemoteCallbacks, Repository};
 use std::path::PathBuf;
+use tracing::debug;
+
+use super::util;
 
 pub struct GitSync {
     pub vault_root: PathBuf,
@@ -15,12 +18,118 @@ impl GitSync {
     }
 
     fn open_repo(&self) -> Result<Repository> {
-        Repository::open(&self.vault_root)
-            .context("failed to open git repository — is this vault a git repo?")
+        util::open_repo(&self.vault_root)
     }
 
-    fn sig() -> Result<Signature<'static>> {
-        Ok(Signature::now("Codex", "codex@local")?)
+    /// Build credential callbacks that handle SSH agent, SSH key files, and HTTPS.
+    pub fn credential_callbacks() -> RemoteCallbacks<'static> {
+        let mut cb = RemoteCallbacks::new();
+        let mut attempt: u32 = 0;
+        cb.credentials(move |url, username_from_url, allowed_types| {
+            attempt += 1;
+            debug!("git auth attempt {attempt} for {url}: username={username_from_url:?}, types={allowed_types:?}");
+
+            // Bail after a few attempts to avoid infinite loops
+            if attempt > 4 {
+                return Err(git2::Error::from_str(
+                    "Authentication failed. Make sure your SSH key is loaded in ssh-agent \
+                     (run: ssh-add), or configure a Git credential helper for HTTPS."
+                ));
+            }
+
+            // SSH agent first (most common for GitHub users)
+            if allowed_types.contains(git2::CredentialType::SSH_KEY) {
+                let user = username_from_url.unwrap_or("git");
+
+                // Attempt 1: SSH agent
+                if attempt == 1 {
+                    if let Ok(cred) = Cred::ssh_key_from_agent(user) {
+                        return Ok(cred);
+                    }
+                }
+
+                // Attempt 2+: try key files (without passphrase — works for unencrypted keys
+                // and keys whose passphrase is cached by the agent)
+                if let Some(home) = dirs::home_dir() {
+                    let ssh_dir = home.join(".ssh");
+                    let key_idx = (attempt as usize).saturating_sub(1);
+                    let key_names = ["id_ed25519", "id_rsa", "id_ecdsa"];
+                    if let Some(key_name) = key_names.get(key_idx) {
+                        let key_path = ssh_dir.join(key_name);
+                        let pub_path = ssh_dir.join(format!("{key_name}.pub"));
+                        if key_path.exists() {
+                            let pub_file = if pub_path.exists() { Some(pub_path.as_path()) } else { None };
+                            if let Ok(cred) = Cred::ssh_key(user, pub_file, &key_path, None) {
+                                return Ok(cred);
+                            }
+                        }
+                    }
+                }
+
+                return Err(git2::Error::from_str(
+                    "SSH authentication failed. If your key has a passphrase, \
+                     load it first with: ssh-add ~/.ssh/id_ed25519"
+                ));
+            }
+
+            // HTTPS: try git credential helper
+            if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+                return Cred::credential_helper(
+                    &git2::Config::open_default().unwrap_or_else(|_| git2::Config::new().unwrap()),
+                    url,
+                    username_from_url,
+                );
+            }
+
+            // Username query (often precedes SSH_KEY)
+            if allowed_types.contains(git2::CredentialType::USERNAME) {
+                return Cred::username(username_from_url.unwrap_or("git"));
+            }
+
+            Err(git2::Error::from_str("unsupported credential type"))
+        });
+        cb
+    }
+
+    fn fetch_options() -> FetchOptions<'static> {
+        let mut opts = FetchOptions::new();
+        opts.remote_callbacks(Self::credential_callbacks());
+        opts
+    }
+
+    fn push_options() -> PushOptions<'static> {
+        let mut opts = PushOptions::new();
+        opts.remote_callbacks(Self::credential_callbacks());
+        opts
+    }
+}
+
+impl GitSync {
+    /// Clone a remote repository into `dest`. Returns the cloned repo.
+    /// On failure, cleans up the destination directory if it was created by the clone.
+    pub fn clone_repo(url: &str, branch: &str, dest: &std::path::Path) -> Result<Repository> {
+        use git2::build::RepoBuilder;
+
+        let dest_existed = dest.exists();
+
+        let mut fetch_opts = FetchOptions::new();
+        fetch_opts.remote_callbacks(Self::credential_callbacks());
+
+        let result = RepoBuilder::new()
+            .branch(branch)
+            .fetch_options(fetch_opts)
+            .clone(url, dest);
+
+        match result {
+            Ok(repo) => Ok(repo),
+            Err(e) => {
+                // Clean up partially-cloned directory if we created it
+                if !dest_existed && dest.exists() {
+                    let _ = std::fs::remove_dir_all(dest);
+                }
+                Err(e.into())
+            }
+        }
     }
 }
 
@@ -59,7 +168,7 @@ impl SyncBackend for GitSync {
     fn pull(&self) -> Result<SyncResult> {
         let repo = self.open_repo()?;
         let mut remote = repo.find_remote(&self.remote)?;
-        remote.fetch(&[&self.branch], None, None)?;
+        remote.fetch(&[&self.branch], Some(&mut Self::fetch_options()), None)?;
 
         let remote_ref = format!("refs/remotes/{}/{}", self.remote, self.branch);
         let fetch_commit = repo
@@ -103,7 +212,7 @@ impl SyncBackend for GitSync {
         let repo = self.open_repo()?;
         let mut remote = repo.find_remote(&self.remote)?;
         let refspec = format!("refs/heads/{}:refs/heads/{}", self.branch, self.branch);
-        remote.push(&[&refspec], None)?;
+        remote.push(&[&refspec], Some(&mut Self::push_options()))?;
         Ok(SyncResult { files_pulled: 0, files_pushed: 1, conflicts: vec![] })
     }
 
@@ -130,7 +239,7 @@ impl GitSync {
         index.write()?;
         let tree_oid = index.write_tree()?;
         let tree = repo.find_tree(tree_oid)?;
-        let sig = Self::sig()?;
+        let sig = util::codex_signature()?;
 
         // Check for empty commit (nothing staged)
         let is_empty = repo.head().is_err(); // no commits yet

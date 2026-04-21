@@ -6,7 +6,7 @@ pub fn WelcomeView(
     launcher_profile: LauncherProfile,
     on_choose_existing: EventHandler<()>,
     on_create_local: EventHandler<()>,
-    on_link_github: EventHandler<()>,
+    on_clone_remote: EventHandler<()>,
     on_import_markdown: EventHandler<()>,
     on_seed_demo_publication: EventHandler<()>,
 ) -> Element {
@@ -15,7 +15,7 @@ pub fn WelcomeView(
         PendingVaultSetup::OpenExisting { path } => format!("Open {}", path.display()),
         PendingVaultSetup::CreateLocal { path, name } => format!("Create {name} at {}", path.display()),
         PendingVaultSetup::LinkGithub { local_path, repo, branch } => {
-            format!("Link {repo} ({branch}) at {}", local_path.display())
+            format!("Clone {repo} ({branch}) -> {}", local_path.display())
         }
         PendingVaultSetup::PublishPreview { output_path, repo, branch } => {
             format!("Preview at {} for {repo} ({branch})", output_path.display())
@@ -33,54 +33,54 @@ pub fn WelcomeView(
                     h1 { class: "welcome-title", "Welcome to Codex" }
                     p {
                         class: "welcome-subtitle",
-                        "Start from an existing Black Meridian or Obsidian vault, create a clean local vault, link a GitHub-backed remote, or import markdown references into Codex. Markdown remains the canonical reasoning layer."
+                        "Start from an existing vault, create a new one, clone a remote, or import markdown. Your notes stay as plain markdown — always."
                     }
                 }
 
                 div { class: "welcome-grid",
                     WelcomeCard {
                         primary: true,
-                        icon: "📂",
+                        icon: ">>",
                         title: "Open existing vault",
-                        body: "Adopt an existing Obsidian or Codex vault in place. Codex will index it locally and keep markdown as the source of truth.",
+                        body: "Adopt an existing Obsidian or Codex vault in place. Codex indexes it locally and keeps markdown as the source of truth.",
                         action: "Choose folder",
-                        meta: "Best for Black Meridian or any existing knowledge base",
+                        meta: "Best for migrating from Obsidian or another markdown editor",
                         on_click: move |_| on_choose_existing.call(()),
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "✍️",
+                        icon: "+",
                         title: "Create local vault",
-                        body: "Start a fresh local markdown knowledge base with Codex defaults and local-first storage boundaries.",
+                        body: "Start a fresh local markdown knowledge base. You can add Git sync later from Settings.",
                         action: "Create vault",
-                        meta: "Creates a clean local vault root",
+                        meta: "Local-first, no account required",
                         on_click: move |_| on_create_local.call(()),
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "",
-                        title: "Link GitHub remote",
-                        body: "Create a local vault configured for Git sync so publication and collaboration can ride on a browser-auth GitHub workflow later.",
-                        action: "Link remote",
-                        meta: "Simple Git-backed remote setup",
-                        on_click: move |_| on_link_github.call(()),
+                        icon: "",
+                        title: "Clone remote vault",
+                        body: "Clone an existing Git repository as your vault. Keeps devices in sync automatically via background commits.",
+                        action: "Clone repo",
+                        meta: "Requires SSH key or Git credentials configured on this machine",
+                        on_click: move |_| on_clone_remote.call(()),
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "⬇",
-                        title: "Import markdown vault",
-                        body: "Bring external markdown or Obsidian-style content into Codex as references while preserving wikilinks and provenance.",
-                        action: "Import references",
-                        meta: "Uses the markdown-as-truth import pipeline",
+                        icon: "<-",
+                        title: "Import markdown folder",
+                        body: "Copy markdown files from another location into your vault while preserving wikilinks and structure.",
+                        action: "Import",
+                        meta: "Non-destructive copy into current vault",
                         on_click: move |_| on_import_markdown.call(()),
                     }
                     WelcomeCard {
                         primary: false,
-                        icon: "🌐",
+                        icon: ":::",
                         title: "Seed demo publication",
-                        body: "Create an Astro-based example/demo site repo that shows what a published Codex vault could look like.",
-                        action: "Seed demo repo",
-                        meta: "Scaffolds an example publication target",
+                        body: "Scaffold an Astro-based site that publishes from a Codex vault. Good for seeing what publication looks like.",
+                        action: "Seed demo",
+                        meta: "Creates a publication target repo",
                         on_click: move |_| on_seed_demo_publication.call(()),
                     }
                 }

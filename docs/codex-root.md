@@ -1,20 +1,20 @@
 ---
 id: codex-root
-title: "Codex — Notes & Task Tracker"
-status: exploring
-tags: [dioxus, macos, mcp, notes, kanban]
+title: "Codex — Knowledge & Task Tracker"
+status: active
+tags: [dioxus, macos, mcp, notes, kanban, single-user]
 open_questions: []
 dependencies: []
 related: []
 ---
 
-# Codex — Notes & Task Tracker
+# Codex — Knowledge & Task Tracker
 
 ## Overview
 
-Pure-Rust Dioxus 0.7 macOS desktop application combining Obsidian-style markdown note-taking with kanban task management, plus an MCP agent surface for Omegon integration. Vault root is a plain directory of markdown files; SQLite provides an indexed cache. Sync backends (iCloud Drive folder, Git, S3) are pluggable behind a trait. The codex-agent binary exposes vault tools to Omegon via stdio MCP transport.
+Single-user Rust/Dioxus 0.7 macOS desktop application. Obsidian-style markdown knowledge management with kanban task tracking, a typed entity system, and an MCP agent surface for Omegon AI integration. Vault root is a plain directory of markdown files; SQLite provides an indexed cache. Git backing provides durability and portability for project data. Publication pipeline renders read-only static output for external visibility.
 
-Workspace: codex-core (models + traits) · codex-store (SQLite + filesystem) · codex-agent (MCP server binary) · codex-app (Dioxus UI binary)
+Workspace: codex-core (models + entities + traits) · codex-store (SQLite + filesystem + git) · codex-agent (MCP server binary) · codex-app (Dioxus UI binary)
 
 ## Decisions
 
@@ -22,34 +22,40 @@ Workspace: codex-core (models + traits) · codex-store (SQLite + filesystem) · 
 
 **Status:** accepted
 
-**Rationale:** 
+**Rationale:** UUIDs in frontmatter survive DB wipes and file moves. Path-based slugs provide human-readable secondary lookup for wikilinks.
 
 ### Editor: Obsidian-style split pane — CodeMirror 6 via JS bridge + comrak preview
 
 **Status:** accepted
 
-**Rationale:** 
+**Rationale:** Native Rust editor widgets are immature. CodeMirror via Dioxus `eval()` JS bridge gives us syntax highlighting, vim mode, and markdown-aware editing with minimal custom code.
 
 ### Graph view: D3-force via JS bridge, all layout knobs surfaced and persisted
 
 **Status:** accepted
 
-**Rationale:** 
+**Rationale:** Force-directed layout via JS bridge leverages mature D3 ecosystem. Graph renders documents, entities (repos, links), tasks, and boards with typed node colors.
 
-### Kanban DnD: Dioxus drag events first; pointer-event fallback if needed; click-to-move rejected
-
-**Status:** accepted
-
-**Rationale:** 
-
-### Git sync: multi-user with auto-commit, background pull, conflict resolution panel
+### Kanban DnD: Dioxus drag events first; pointer-event fallback if needed
 
 **Status:** accepted
 
-**Rationale:** 
+**Rationale:** Dioxus 0.7 drag events work for column reordering. Task cards use drag-and-drop for column transitions.
 
-### Agent integration: Codex writes mcp.json on launch; embedded Omegon sidebar (Cmd+Shift+A)
+### Git sync: single-user auto-commit for durability
 
 **Status:** accepted
 
-**Rationale:**
+**Rationale:** Git backing serves durability, portability, and audit trail for the single user. Multi-user git sync was evaluated and rejected — it breaks down beyond a handful of developers, and a coordination server is premature. Projects can back to the vault repo (VaultRepo) or an external repo (ExternalRepo).
+
+### Agent integration: Codex exposes MCP tools; Omegon is an embedded capability
+
+**Status:** accepted
+
+**Rationale:** Codex is the primary product. Omegon enhances it via 14 MCP tools (stdio transport). Codex functions fully without Omegon. The codex-agent binary runs as a standalone MCP server that Omegon connects to.
+
+### Scope: single-user, no collaboration
+
+**Status:** accepted
+
+**Rationale:** Collaboration requires either git merge semantics that break with concurrent edits, or a coordination server that is premature to build. Codex stays single-user. External visibility is served by the publication pipeline (static markdown + HTML output).

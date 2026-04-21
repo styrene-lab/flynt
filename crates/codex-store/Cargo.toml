@@ -3,6 +3,10 @@ name = "codex-store"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["file-watcher"]
+file-watcher = ["dep:notify"]
+
 [dependencies]
 codex-core = { workspace = true }
 serde = { workspace = true }
@@ -13,9 +17,10 @@ chrono = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 rusqlite = { workspace = true }
-notify = { workspace = true }
+notify = { workspace = true, optional = true }
 tracing = { workspace = true }
-git2 = { version = "0.20", default-features = false }
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+tokio = { workspace = true }
 walkdir = "2"
 dirs = { workspace = true }
 comrak = { workspace = true }

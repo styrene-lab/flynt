@@ -17,7 +17,21 @@ impl SqliteStore {
     pub fn open(db_path: &Path) -> Result<Self> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(SCHEMA)?;
+        // Apply idempotent migrations (ALTER TABLE ADD COLUMN is a no-op if column exists)
+        for migration in MIGRATIONS {
+            let _ = conn.execute_batch(migration); // ignore "duplicate column" errors
+        }
         Ok(Self { conn: Mutex::new(conn) })
+    }
+
+    /// Associate a task with a git-backed project.
+    pub fn set_task_project(&self, task_id: &TaskId, project_id: &uuid::Uuid) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tasks SET project_id = ?1 WHERE id = ?2",
+            params![project_id.to_string(), task_id.0.to_string()],
+        )?;
+        Ok(())
     }
 }
 
@@ -98,7 +112,28 @@ CREATE TABLE IF NOT EXISTS conflicts (
     theirs      TEXT NOT NULL DEFAULT '',
     detected_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS project_deletions (
+    entity_id   TEXT PRIMARY KEY,
+    entity_kind TEXT NOT NULL,
+    project_id  TEXT NOT NULL,
+    deleted_at  TEXT NOT NULL,
+    committed   INTEGER NOT NULL DEFAULT 0
+);
 "#;
+
+/// Idempotent migrations applied after the base schema.
+const MIGRATIONS: &[&str] = &[
+    // v1: project git backing — dirty tracking columns
+    "ALTER TABLE tasks ADD COLUMN project_id TEXT;",
+    "ALTER TABLE tasks ADD COLUMN last_committed_at TEXT;",
+    "ALTER TABLE documents ADD COLUMN last_committed_at TEXT;",
+    // v2: board-project association
+    "ALTER TABLE boards ADD COLUMN project_id TEXT;",
+    // v3: task decay
+    "ALTER TABLE tasks ADD COLUMN decay TEXT NOT NULL DEFAULT '\"natural\"';",
+    "ALTER TABLE tasks ADD COLUMN last_touched_at TEXT;",
+];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────
 
@@ -297,7 +332,7 @@ impl VaultStore for SqliteStore {
         )?;
         let results = stmt.query_map(params![fts_query], |row| {
             Ok(SearchResult {
-                document_id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
+                document_id: DocumentId(row.get::<_, String>(0)?.parse().unwrap_or_default()),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 excerpt: row.get(3)?,
@@ -348,13 +383,13 @@ impl VaultStore for SqliteStore {
             let fm_json: String = row.get(3)?;
             let updated_at: String = row.get(4)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().unwrap()),
+                id: DocumentId(row.get::<_, String>(0)?.parse().unwrap_or_default()),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
-                updated_at: updated_at.parse().unwrap(),
+                updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -363,7 +398,7 @@ impl VaultStore for SqliteStore {
     fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at FROM tasks WHERE id = ?1",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -384,7 +419,7 @@ impl VaultStore for SqliteStore {
             values.push(col.clone());
         }
         let sql = format!(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at FROM tasks WHERE {} ORDER BY position ASC",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE {} ORDER BY position ASC",
             conds.join(" AND ")
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -397,15 +432,16 @@ impl VaultStore for SqliteStore {
     fn save_task(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
+            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
                ON CONFLICT(id) DO UPDATE SET
                  board_id=excluded.board_id, column_name=excluded.column_name,
                  title=excluded.title, description=excluded.description,
                  priority=excluded.priority, status=excluded.status,
                  tags=excluded.tags, document_refs=excluded.document_refs,
                  due_date=excluded.due_date, position=excluded.position,
-                 updated_at=excluded.updated_at"#,
+                 updated_at=excluded.updated_at,
+                 decay=excluded.decay, last_touched_at=excluded.last_touched_at"#,
             params![
                 task.id.0.to_string(),
                 task.board_id.0.to_string(),
@@ -420,6 +456,8 @@ impl VaultStore for SqliteStore {
                 task.position,
                 task.created_at.to_rfc3339(),
                 task.updated_at.to_rfc3339(),
+                serde_json::to_string(&task.decay)?,
+                task.last_touched_at.map(|t| t.to_rfc3339()),
             ],
         )?;
         Ok(())
@@ -436,7 +474,7 @@ impl VaultStore for SqliteStore {
     fn get_board(&self, id: &BoardId) -> Result<Option<Board>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, columns, created_at FROM boards WHERE id = ?1",
+            "SELECT id, name, columns, project_id, created_at FROM boards WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -446,7 +484,7 @@ impl VaultStore for SqliteStore {
     fn list_boards(&self) -> Result<Vec<Board>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt =
-            conn.prepare("SELECT id, name, columns, created_at FROM boards ORDER BY name ASC")?;
+            conn.prepare("SELECT id, name, columns, project_id, created_at FROM boards ORDER BY name ASC")?;
         let rows = stmt.query_map([], row_to_board)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -454,16 +492,124 @@ impl VaultStore for SqliteStore {
     fn save_board(&self, board: &Board) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            r#"INSERT INTO boards (id, name, columns, created_at)
-               VALUES (?1, ?2, ?3, ?4)
-               ON CONFLICT(id) DO UPDATE SET name=excluded.name, columns=excluded.columns"#,
+            r#"INSERT INTO boards (id, name, columns, project_id, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5)
+               ON CONFLICT(id) DO UPDATE SET name=excluded.name, columns=excluded.columns, project_id=excluded.project_id"#,
             params![
                 board.id.0.to_string(),
                 board.name,
                 serde_json::to_string(&board.columns)?,
+                board.project_id.map(|p| p.to_string()),
                 board.created_at.to_rfc3339(),
             ],
         )?;
+        Ok(())
+    }
+
+    // ── Project dirty tracking ───────────────────────────────────────────────
+
+    fn list_dirty_tasks(&self, project_id: &uuid::Uuid) -> Result<Vec<Task>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT id, board_id, column_name, title, description, priority, status,
+                      tags, document_refs, due_date, position, created_at, updated_at,
+                      decay, last_touched_at
+               FROM tasks
+               WHERE project_id = ?1
+                 AND (last_committed_at IS NULL OR updated_at > last_committed_at)
+               ORDER BY position ASC"#,
+        )?;
+        let rows = stmt.query_map(params![project_id.to_string()], row_to_task)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn list_dirty_documents(&self, project_id: &uuid::Uuid) -> Result<Vec<Document>> {
+        // Documents belonging to a project are identified by having a path that
+        // starts with the project's sub_path. We look up the project entity to
+        // find its sub_path, but for now we use a simpler approach: the caller
+        // knows the sub_path and passes the project_id. We match documents whose
+        // frontmatter data.project field matches.
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT id, path, title, content, frontmatter, created_at, updated_at
+               FROM documents
+               WHERE json_extract(frontmatter, '$.data.project') = ?1
+                 AND (last_committed_at IS NULL OR updated_at > last_committed_at)
+               ORDER BY updated_at DESC"#,
+        )?;
+        let pid = project_id.to_string();
+        let mut results = Vec::new();
+        let mut rows = stmt.query(params![pid])?;
+        while let Some(row) = rows.next()? {
+            results.push(row_to_document(&conn, row)?);
+        }
+        Ok(results)
+    }
+
+    fn mark_committed(
+        &self,
+        task_ids: &[TaskId],
+        doc_ids: &[DocumentId],
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let ts = at.to_rfc3339();
+        for tid in task_ids {
+            conn.execute(
+                "UPDATE tasks SET last_committed_at = ?1 WHERE id = ?2",
+                params![ts, tid.0.to_string()],
+            )?;
+        }
+        for did in doc_ids {
+            conn.execute(
+                "UPDATE documents SET last_committed_at = ?1 WHERE id = ?2",
+                params![ts, did.0.to_string()],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn record_project_deletion(
+        &self,
+        entity_id: &uuid::Uuid,
+        entity_kind: &str,
+        project_id: &uuid::Uuid,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT OR REPLACE INTO project_deletions (entity_id, entity_kind, project_id, deleted_at, committed)
+               VALUES (?1, ?2, ?3, ?4, 0)"#,
+            params![
+                entity_id.to_string(),
+                entity_kind,
+                project_id.to_string(),
+                chrono::Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn list_pending_deletions(&self, project_id: &uuid::Uuid) -> Result<Vec<(uuid::Uuid, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT entity_id, entity_kind FROM project_deletions WHERE project_id = ?1 AND committed = 0",
+        )?;
+        let rows = stmt.query_map(params![project_id.to_string()], |row| {
+            let id: String = row.get(0)?;
+            let kind: String = row.get(1)?;
+            Ok((id.parse::<uuid::Uuid>().unwrap_or_default(), kind))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn mark_deletions_committed(&self, entity_ids: &[uuid::Uuid]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        for eid in entity_ids {
+            conn.execute(
+                "UPDATE project_deletions SET committed = 1 WHERE entity_id = ?1",
+                params![eid.to_string()],
+            )?;
+        }
         Ok(())
     }
 }
@@ -490,14 +636,14 @@ fn row_to_document(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let entity = entity_from_frontmatter(&frontmatter);
     Ok(Document {
-        id: DocumentId(source_id.parse().unwrap()),
+        id: DocumentId(source_id.parse().unwrap_or_default()),
         path: path_str.into(),
         title: row.get(2)?,
         content: row.get(3)?,
         outgoing_links,
         frontmatter,
-        created_at: created_at.parse().unwrap(),
-        updated_at: updated_at.parse().unwrap(),
+        created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
+        updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
         entity,
     })
 }
@@ -510,9 +656,17 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let due: Option<String> = row.get(9)?;
     let created_at: String = row.get(11)?;
     let updated_at: String = row.get(12)?;
+    let decay: Option<String> = row.get(13)?;
+    let last_touched: Option<String> = row.get(14)?;
+    let parse_uuid = |s: String| -> rusqlite::Result<uuid::Uuid> {
+        s.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+    };
+    let parse_dt = |s: String| -> chrono::DateTime<chrono::Utc> {
+        s.parse().unwrap_or_else(|_| chrono::Utc::now())
+    };
     Ok(Task {
-        id: TaskId(row.get::<_, String>(0)?.parse().unwrap()),
-        board_id: BoardId(row.get::<_, String>(1)?.parse().unwrap()),
+        id: TaskId(parse_uuid(row.get(0)?)?),
+        board_id: BoardId(parse_uuid(row.get(1)?)?),
         column: row.get(2)?,
         title: row.get(3)?,
         description: row.get(4)?,
@@ -522,19 +676,24 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         document_refs: serde_json::from_str(&refs_json).unwrap_or_default(),
         due_date: due.and_then(|s| s.parse().ok()),
         position: row.get(10)?,
-        created_at: created_at.parse().unwrap(),
-        updated_at: updated_at.parse().unwrap(),
+        created_at: parse_dt(created_at),
+        updated_at: parse_dt(updated_at),
+        decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+        last_touched_at: last_touched.and_then(|s| s.parse().ok()),
     })
 }
 
 fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
     let cols_json: String = row.get(2)?;
-    let created_at: String = row.get(3)?;
+    let project_id: Option<String> = row.get(3)?;
+    let created_at: String = row.get(4)?;
+    let id: String = row.get(0)?;
     Ok(Board {
-        id: BoardId(row.get::<_, String>(0)?.parse().unwrap()),
+        id: BoardId(id.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?),
         name: row.get(1)?,
         columns: serde_json::from_str(&cols_json).unwrap_or_default(),
-        created_at: created_at.parse().unwrap(),
+        project_id: project_id.and_then(|s| s.parse().ok()),
+        created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
 }
 

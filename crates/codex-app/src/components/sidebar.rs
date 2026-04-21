@@ -77,7 +77,10 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                 match &*docs.read() {
                     None => rsx! { span { class: "sidebar-item muted", "Loading…" } },
                     Some(list) if list.is_empty() => rsx! {
-                        span { class: "sidebar-item muted", "No documents" }
+                        div { class: "sidebar-empty-state",
+                            p { class: "sidebar-empty-heading", "Your vault is empty" }
+                            p { class: "sidebar-empty-hint", "Press \u{2318}N to create your first note, or \u{2318}P for the command palette." }
+                        }
                     },
                     Some(list) => rsx! { { tree_view(list) } },
                 }
@@ -88,25 +91,25 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     class: if *active_route.read() == Route::Notes    { "nav-btn active" } else { "nav-btn" },
                     title: "Notes",
                     onclick: move |_| *active_route.write() = Route::Notes,
-                    "📝"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
                 button {
                     class: if *active_route.read() == Route::Kanban   { "nav-btn active" } else { "nav-btn" },
                     title: "Kanban",
                     onclick: move |_| *active_route.write() = Route::Kanban,
-                    "📋"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
                 }
                 button {
                     class: if *active_route.read() == Route::Graph    { "nav-btn active" } else { "nav-btn" },
                     title: "Graph",
                     onclick: move |_| *active_route.write() = Route::Graph,
-                    "🕸"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_GRAPH }
                 }
                 button {
                     class: if *active_route.read() == Route::Settings { "nav-btn active" } else { "nav-btn" },
                     title: "Settings",
                     onclick: move |_| *active_route.write() = Route::Settings,
-                    "⚙️"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
                 }
             }
 
@@ -152,7 +155,7 @@ fn FolderGroup(name: String, docs: Vec<DocumentMeta>) -> Element {
             button {
                 class: "sidebar-folder-header",
                 onclick: move |_| { let v = *open.read(); *open.write() = !v; },
-                span { class: "folder-chevron", if *open.read() { "▾" } else { "▸" } }
+                span { class: "folder-chevron", if *open.read() { "−" } else { "+" } }
                 span { class: "folder-name", "{name}" }
                 span { class: "folder-count", "{docs.len()}" }
             }
@@ -177,6 +180,10 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
 
     let id    = meta.id.clone();
     let title = meta.title.clone();
+    let doc_path = meta.path.clone();
+    let doc_title = meta.title.clone();
+
+    let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
 
     rsx! {
         button {
@@ -186,8 +193,61 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                 tab_state.write().open(id.clone(), title.clone());
                 *active_route.write() = Route::Notes;
             },
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                let coords = e.client_coordinates();
+                *ctx_menu.write() = Some((coords.x, coords.y));
+            },
             span { class: "doc-icon", "◇" }
             span { class: "doc-title", "{meta.title}" }
+        }
+
+        if let Some((x, y)) = *ctx_menu.read() {
+            {
+                let path_for_delete = doc_path.clone();
+                let _path_for_rename = doc_path.clone();
+                let title_for_tab = doc_title.clone();
+                let id_for_tab = meta.id.clone();
+                rsx! {
+                    crate::components::ContextMenu {
+                        x, y,
+                        items: vec![
+                            crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
+                            crate::components::ContextMenuItem::new("rename", "Rename…"),
+                            crate::components::ContextMenuItem::danger("delete", "Move to Trash"),
+                        ],
+                        on_close: move |_| *ctx_menu.write() = None,
+                        on_select: move |action: String| {
+                            *ctx_menu.write() = None;
+                            match action.as_str() {
+                                "open-tab" => {
+                                    tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
+                                    *active_route.write() = Route::Notes;
+                                }
+                                "rename" => {
+                                    // Open the note and trigger rename mode
+                                    tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
+                                    *active_route.write() = Route::Notes;
+                                    // TODO: trigger rename mode in notes view
+                                }
+                                "delete" => {
+                                    let ctx = use_context::<crate::bootstrap::AppContext>();
+                                    let p = path_for_delete.clone();
+                                    spawn(async move {
+                                        let vault = ctx.vault();
+                                        let abs = vault.root.join(&p);
+                                        if abs.exists() {
+                                            let _ = std::fs::remove_file(&abs);
+                                            let _ = vault.reindex();
+                                        }
+                                    });
+                                }
+                                _ => {}
+                            }
+                        },
+                    }
+                }
+            }
         }
     }
 }

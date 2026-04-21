@@ -92,10 +92,10 @@ pub fn Toolbar(
         });
     };
 
-    let sync_label = match *sync_status.read() {
-        SyncStatus::Idle        => "",
-        SyncStatus::Syncing     => "⟳",
-        SyncStatus::Conflict(_) => "⚠",
+    let (sync_label, sync_title) = match *sync_status.read() {
+        SyncStatus::Idle        => ("", "Sync idle"),
+        SyncStatus::Syncing     => ("\u{27F3}", "Syncing with remote..."),
+        SyncStatus::Conflict(_) => ("\u{26A0}", "Sync conflict — check Settings > Sync for details"),
     };
 
     let grouped_results = group_results(&results.read());
@@ -107,6 +107,10 @@ pub fn Toolbar(
     rsx! {
         div { class: "toolbar",
             span { class: "toolbar-vault-name", "{vault_name}" }
+            {
+                const BUILD: &str = env!("CODEX_BUILD_HASH");
+                rsx! { span { class: "toolbar-build-hash", title: "Build {BUILD}", "{BUILD}" } }
+            }
 
             div { class: "toolbar-search-wrap",
                 input {
@@ -239,10 +243,10 @@ pub fn Toolbar(
                             .pick_folder()
                             .and_then(|path| OmegonRuntimeContext::spawn_new_instance_for_vault(&path).ok());
                     },
-                    "🗂"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
                 if !sync_label.is_empty() {
-                    span { class: "sync-badge", "{sync_label}" }
+                    span { class: "sync-badge", title: "{sync_title}", "{sync_label}" }
                 }
                 button {
                     class: if *show_agent.read() { "btn btn-ghost active" } else { "btn btn-ghost" },
@@ -304,7 +308,7 @@ pub fn Toolbar(
                         }
                         *show_agent.write() = opening;
                     },
-                    "✦"
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_OMEGON }
                 }
             }
         }

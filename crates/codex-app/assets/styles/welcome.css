@@ -164,3 +164,34 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Error banner */
+.welcome-error-banner {
+  display:          flex;
+  align-items:      center;
+  justify-content:  space-between;
+  gap:              12px;
+  max-width:        820px;
+  margin:           0 auto 16px;
+  padding:          12px 16px;
+  background:       rgba(255,80,80,0.1);
+  border:           1px solid rgba(255,80,80,0.3);
+  border-radius:    8px;
+  color:            #ff6b6b;
+  font-size:        14px;
+}
+.welcome-error-text {
+  flex:             1;
+}
+.welcome-error-dismiss {
+  padding:          4px 12px;
+  font-size:        12px;
+  background:       transparent;
+  border:           1px solid rgba(255,80,80,0.3);
+  border-radius:    4px;
+  color:            #ff6b6b;
+  cursor:           pointer;
+}
+.welcome-error-dismiss:hover {
+  background:       rgba(255,80,80,0.15);
+}

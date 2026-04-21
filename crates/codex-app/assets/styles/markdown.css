@@ -31,6 +31,146 @@
   color:         var(--primary-bright);
   margin-bottom: var(--space-6);
   line-height:   var(--line-height-tight);
+  cursor:        default;
+}
+.rename-inline {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-2);
+  flex:          1;
+  min-width:     0;
+}
+.rename-input {
+  flex:          1;
+  font-size:     var(--font-size-xl);
+  font-weight:   var(--font-weight-bold);
+  color:         var(--primary-bright);
+  background:    var(--surface);
+  border:        1px solid var(--ring);
+  border-radius: var(--radius);
+  padding:       var(--space-1) var(--space-3);
+  outline:       none;
+}
+.rename-msg {
+  font-size:     var(--font-size-xs);
+  color:         var(--muted-foreground);
+  white-space:   nowrap;
+}
+
+/* ── Query block results ──────────────────────────────────────────────────── */
+.query-result {
+  margin:         0.8em 0;
+  padding:        var(--space-3);
+  background:     var(--surface, rgba(15, 23, 42, 0.5));
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  font-size:      var(--font-size-sm);
+}
+.query-table {
+  border-collapse: collapse;
+  width:          100%;
+  font-size:      var(--font-size-sm);
+}
+.query-table th {
+  text-align:     left;
+  font-weight:    600;
+  padding:        var(--space-1) var(--space-2);
+  border-bottom:  2px solid var(--border);
+  color:          var(--primary-bright, #67e8c8);
+  text-transform: uppercase;
+  font-size:      var(--font-size-xs);
+  letter-spacing: 0.04em;
+}
+.query-table td {
+  padding:        var(--space-1) var(--space-2);
+  border-bottom:  1px solid var(--border-dim, rgba(45,49,64,0.5));
+}
+.query-table a {
+  color:          var(--prose-link, #4cc9f0);
+  text-decoration: none;
+}
+.query-list {
+  list-style:     none;
+  padding:        0;
+}
+.query-list li {
+  padding:        var(--space-1) 0;
+}
+.query-tasks {
+  list-style:     none;
+  padding:        0;
+}
+.query-task {
+  padding:        var(--space-1) 0;
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+}
+.query-task.critical { color: #ef4444; }
+.query-task.high { color: #f97316; }
+.query-task-col {
+  font-size:      var(--font-size-xs);
+  color:          var(--muted-foreground);
+}
+.query-error {
+  color:          #ef4444;
+  font-size:      var(--font-size-sm);
+  padding:        var(--space-2);
+}
+
+/* ── CM6 horizontal rule ──────────────────────────────────────────────────── */
+.cm-hr-line {
+  border-bottom:  1px solid var(--border, #2d3140);
+  padding-bottom: 0.5em !important;
+  margin-bottom:  0.5em;
+  min-height:     1px;
+}
+
+/* ── CM6 table rendering ──────────────────────────────────────────────────── */
+.cm-table-header {
+  background:     rgba(42, 180, 200, 0.08) !important;
+  font-weight:    600;
+  border-bottom:  2px solid var(--border, #2d3140);
+}
+.cm-table-sep {
+  font-size:      0.5em;
+  color:          var(--muted-foreground, #475569) !important;
+  opacity:        0.4;
+  line-height:    1;
+}
+.cm-table-row {
+  border-bottom:  1px solid var(--border-dim, rgba(45,49,64,0.3));
+}
+.cm-table-header,
+.cm-table-row {
+  font-family:    var(--font-mono, monospace);
+  font-size:      var(--font-size-sm, 13px);
+  padding-left:   4px !important;
+}
+/* Rendered table widget in CM6 live mode */
+.cm-table-widget {
+  margin:         0.5em 0;
+}
+.cm-rendered-table {
+  border-collapse: collapse;
+  width:          100%;
+  font-size:      var(--font-size-sm, 14px);
+  font-family:    var(--font-sans);
+}
+.cm-rendered-table th {
+  text-align:     left;
+  font-weight:    600;
+  color:          var(--primary-bright, #67e8c8);
+  padding:        8px 12px;
+  background:     rgba(42, 180, 200, 0.08);
+  border-bottom:  2px solid var(--border, #2d3140);
+}
+.cm-rendered-table td {
+  padding:        8px 12px;
+  border-bottom:  1px solid var(--border-dim, rgba(45,49,64,0.3));
+}
+.cm-rendered-table tr:last-child td {
+  border-bottom:  none;
 }
 
 .notes-empty,
@@ -468,4 +608,39 @@
   transform:  translateY(0);
   min-height: 22px;
   max-height: 22px;
+}
+
+/* ── CodeMirror editor container (Live mode) ────────────────────────────── */
+.cm-editor-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cm-editor-container .cm-editor {
+  flex: 1;
+  overflow: auto;
+}
+.cm-editor-container .cm-editor .cm-scroller {
+  font-family: var(--font-sans);
+}
+
+/* ── Save status indicator ──────────────────────────────────────────────── */
+.save-status {
+  font-size: var(--font-size-xs);
+  margin-right: var(--space-2);
+  transition: opacity var(--duration-fast);
+}
+.save-status.dirty {
+  color: var(--warning, #f59e0b);
+}
+.save-status.saved {
+  color: var(--success, #22c55e);
+  opacity: 0.7;
+}
+.mode-hint {
+  font-size: var(--font-size-xs);
+  color: var(--muted-foreground);
+  margin-right: var(--space-2);
+  opacity: 0.5;
 }

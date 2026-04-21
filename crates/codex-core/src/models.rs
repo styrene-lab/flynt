@@ -1,7 +1,7 @@
 use crate::datum::{Entity, EntityKind};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::{Path, PathBuf}};
 use uuid::Uuid;
 
 // ── Newtype IDs ───────────────────────────────────────────────────────────────
@@ -225,6 +225,13 @@ pub struct Task {
     pub position: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Decay rate — controls how quickly relevance fades without interaction.
+    #[serde(default)]
+    pub decay: DecayRate,
+    /// Last time a human or agent interacted with this task (view, edit, mention).
+    /// Resets the decay clock. Defaults to updated_at if never set.
+    #[serde(default)]
+    pub last_touched_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -247,6 +254,145 @@ pub enum TaskStatus {
     Archived,
 }
 
+// ── Task Decay ───────────────────────────────────────────────────────────────
+
+/// Controls how quickly a task loses relevance without interaction.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecayRate {
+    /// No decay — task stays fully relevant until manually resolved.
+    /// Use for tracked project work, sprint items.
+    None,
+    /// Slow decay — ~14 day half-life. Longer-term personal goals.
+    Slow,
+    /// Natural decay — ~7 day half-life. Default for personal tasks.
+    Natural,
+    /// Fast decay — ~3 day half-life. Ephemeral reminders, quick errands.
+    Fast,
+    /// Custom half-life in days.
+    Custom(f64),
+}
+
+impl Default for DecayRate {
+    fn default() -> Self {
+        Self::Natural
+    }
+}
+
+impl DecayRate {
+    /// Half-life in days. Returns None for non-decaying tasks.
+    /// Custom values are clamped to a minimum of 0.1 days (~2.4 hours).
+    pub fn half_life_days(&self) -> Option<f64> {
+        match self {
+            Self::None => Option::None,
+            Self::Slow => Some(14.0),
+            Self::Natural => Some(7.0),
+            Self::Fast => Some(3.0),
+            Self::Custom(d) => Some(d.max(0.1)),
+        }
+    }
+}
+
+impl Task {
+    /// Compute the current relevance score (0.0–1.0).
+    ///
+    /// - 1.0 = just touched, fully relevant
+    /// - 0.0 = completely decayed
+    /// - Tasks with `DecayRate::None` always return 1.0
+    /// - Done/Archived tasks always return 0.0
+    pub fn relevance(&self) -> f64 {
+        if matches!(self.status, TaskStatus::Done | TaskStatus::Archived) {
+            return 0.0;
+        }
+        let half_life = match self.decay.half_life_days() {
+            Some(hl) => hl,
+            Option::None => return 1.0, // no decay
+        };
+
+        let anchor = self.last_touched_at.unwrap_or(self.updated_at);
+        let elapsed_days = (Utc::now() - anchor).num_seconds() as f64 / 86400.0;
+        if elapsed_days <= 0.0 {
+            return 1.0;
+        }
+
+        // Exponential decay: relevance = 2^(-t/half_life)
+        let lambda = (2.0_f64).ln() / half_life;
+        (-lambda * elapsed_days).exp()
+    }
+
+    /// Whether the task has decayed below the visibility threshold (0.3).
+    pub fn is_fading(&self) -> bool {
+        self.relevance() < 0.3
+    }
+
+    /// Whether the task should be auto-archived (relevance < 0.1).
+    pub fn should_auto_archive(&self) -> bool {
+        self.relevance() < 0.1
+    }
+
+    /// Touch the task — resets the decay clock.
+    pub fn touch(&mut self) {
+        self.last_touched_at = Some(Utc::now());
+    }
+}
+
+// ── Notifications (git-synced, serverless push) ──────────────────────────────
+
+/// A notification record synced via git between devices.
+/// Written to `.codex/notifications/pending/<id>.json`.
+/// After delivery, moved to `.codex/notifications/delivered/`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Notification {
+    pub id: Uuid,
+    pub kind: NotificationKind,
+    pub title: String,
+    pub body: String,
+    /// Which vault originated this notification.
+    pub source_vault: String,
+    /// Task ID if this notification relates to a task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<TaskId>,
+    pub created_at: DateTime<Utc>,
+    /// Set when delivered on a device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationKind {
+    /// Task approaching its due date.
+    DueDate,
+    /// Task is decaying — needs attention or will auto-archive.
+    Decay,
+    /// Task was auto-archived by the decay system.
+    AutoArchived,
+    /// Agent-initiated — Omegon wants the user's attention.
+    Agent,
+    /// Vox communication — inbound message from an agent or system.
+    Vox,
+}
+
+impl Notification {
+    pub fn new(kind: NotificationKind, title: impl Into<String>, body: impl Into<String>, source_vault: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            kind,
+            title: title.into(),
+            body: body.into(),
+            source_vault: source_vault.into(),
+            task_id: None,
+            created_at: Utc::now(),
+            delivered_at: None,
+        }
+    }
+
+    pub fn for_task(mut self, task_id: TaskId) -> Self {
+        self.task_id = Some(task_id);
+        self
+    }
+}
+
 // ── Kanban Board ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -254,6 +400,9 @@ pub struct Board {
     pub id: BoardId,
     pub name: String,
     pub columns: Vec<Column>,
+    /// When set, tasks on this board belong to a git-backed project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -274,8 +423,16 @@ impl Board {
                 Column { name: "Review".into(), wip_limit: None },
                 Column { name: "Done".into(), wip_limit: None },
             ],
+            project_id: None,
             created_at: Utc::now(),
         }
+    }
+
+    /// Create a board associated with a git-backed project.
+    pub fn for_project(name: impl Into<String>, project_id: Uuid) -> Self {
+        let mut board = Self::default_sprint(name);
+        board.project_id = Some(project_id);
+        board
     }
 }
 
@@ -287,20 +444,33 @@ impl Task {
     ) -> Self {
         let now = Utc::now();
         Self {
-            id:            TaskId::new(),
+            id:              TaskId::new(),
             board_id,
-            column:        column.into(),
-            title:         title.into(),
-            description:   String::new(),
-            priority:      Priority::Medium,
-            status:        TaskStatus::Todo,
-            tags:          Vec::new(),
-            document_refs: Vec::new(),
-            due_date:      None,
-            position:      u32::MAX, // store sorts by position asc; MAX = append
-            created_at:    now,
-            updated_at:    now,
+            column:          column.into(),
+            title:           title.into(),
+            description:     String::new(),
+            priority:        Priority::Medium,
+            status:          TaskStatus::Todo,
+            tags:            Vec::new(),
+            document_refs:   Vec::new(),
+            due_date:        None,
+            position:        u32::MAX,
+            created_at:      now,
+            updated_at:      now,
+            decay:           DecayRate::default(),
+            last_touched_at: None,
         }
+    }
+
+    /// Create a non-decaying task (for tracked project work).
+    pub fn new_tracked(
+        board_id: BoardId,
+        column:   impl Into<String>,
+        title:    impl Into<String>,
+    ) -> Self {
+        let mut task = Self::new(board_id, column, title);
+        task.decay = DecayRate::None;
+        task
     }
 }
 
@@ -342,6 +512,9 @@ pub struct LocalRuntimeConfig {
     pub omegon_mind_db_path: Option<PathBuf>,
     #[serde(default)]
     pub styrene_identity_profile: Option<String>,
+    /// Omegon serve daemon host:port for mobile agent connections.
+    #[serde(default)]
+    pub omegon_serve_host: Option<String>,
 }
 
 /// Appearance settings — theme name and prose font scale.
@@ -403,6 +576,61 @@ pub enum SyncConfig {
     },
 }
 
+// ── Git-backed project config ────────────────────────────────────────────────
+
+/// Describes how a project's data maps to a git repository.
+///
+/// Each project is backed 1:1 by a git repo. The repo can be the vault's own
+/// repo (most common) or a separate external repo. In both cases the project
+/// data lives at a configurable sub-path within the repo.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum GitBacking {
+    /// Project data lives inside the vault's own git repo.
+    VaultRepo {
+        /// Path relative to vault root where this project's data lives
+        /// (e.g. ".codex/projects/my-project").
+        sub_path: PathBuf,
+    },
+    /// Project data lives in a separate external git repo.
+    ExternalRepo {
+        /// Absolute path to the repo root on disk.
+        repo_root: PathBuf,
+        /// Sub-path within the repo where project data lives.
+        sub_path: PathBuf,
+        /// Remote name (e.g. "origin").
+        remote: String,
+        /// Branch name.
+        branch: String,
+    },
+}
+
+impl GitBacking {
+    /// The sub-path within the repo where project data lives.
+    pub fn sub_path(&self) -> &Path {
+        match self {
+            Self::VaultRepo { sub_path } => sub_path,
+            Self::ExternalRepo { sub_path, .. } => sub_path,
+        }
+    }
+
+    /// Whether this backing uses the vault's own repo.
+    pub fn is_vault_repo(&self) -> bool {
+        matches!(self, Self::VaultRepo { .. })
+    }
+}
+
+/// Configuration for project-level atomic commits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ProjectCommitConfig {
+    /// Auto-commit debounce in seconds. 0 = manual only.
+    #[serde(default)]
+    pub auto_commit_seconds: u64,
+    /// Commit message prefix (e.g. "[codex:my-project]").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_prefix: Option<String>,
+}
+
 // ── Omegon profile + Codex operator settings ────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -443,6 +671,13 @@ pub struct CodexOperatorSettings {
     pub preferred_extensions: Vec<String>,
     pub rail_extension: String,
     pub vox: VoxSettings,
+    /// Persisted ACP config — model, thinking level, posture, etc.
+    /// Keys are config option IDs, values are the selected value IDs.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub acp_config: std::collections::HashMap<String, String>,
+    /// Per-vault agent daemon configuration — model, posture, vox channels.
+    #[serde(default)]
+    pub agent_daemon: crate::daemon::AgentDaemonConfig,
 }
 
 impl Default for CodexOperatorSettings {
@@ -453,6 +688,8 @@ impl Default for CodexOperatorSettings {
             preferred_extensions: vec!["vox".into()],
             rail_extension: "vox".into(),
             vox: VoxSettings::default(),
+            acp_config: std::collections::HashMap::new(),
+            agent_daemon: crate::daemon::AgentDaemonConfig::default(),
         }
     }
 }

@@ -8,21 +8,30 @@ use crate::bootstrap::AppContext;
 
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
-async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String) {
+async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String, project_id: Option<uuid::Uuid>) {
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
-        vault.store.save_task(&Task::new(board_id, col, title))
+        let task = Task::new(board_id, col, title);
+        if let Some(pid) = project_id {
+            vault.save_project_task(&task, &pid)
+        } else {
+            vault.store.save_task(&task)
+        }
     })
     .await;
 }
 
-async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
+async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Option<uuid::Uuid>) {
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.column     = col;
             t.updated_at = Utc::now();
-            vault.store.save_task(&t)
+            if let Some(pid) = project_id {
+                vault.save_project_task(&t, &pid)
+            } else {
+                vault.store.save_task(&t)
+            }
         } else {
             Ok(())
         }
@@ -30,13 +39,17 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
     .await;
 }
 
-async fn archive_task(ctx: AppContext, task_id: TaskId) {
+async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid::Uuid>) {
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.status     = TaskStatus::Archived;
             t.updated_at = Utc::now();
-            vault.store.save_task(&t)
+            if let Some(pid) = project_id {
+                vault.save_project_task(&t, &pid)
+            } else {
+                vault.store.save_task(&t)
+            }
         } else {
             Ok(())
         }
@@ -44,12 +57,14 @@ async fn archive_task(ctx: AppContext, task_id: TaskId) {
     .await;
 }
 
-async fn create_board(ctx: AppContext, name: String) {
+async fn create_board(ctx: AppContext, name: String) -> anyhow::Result<()> {
     let vault = ctx.vault();
-    let _ = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         vault.store.save_board(&Board::default_sprint(name))
     })
-    .await;
+    .await
+    .map_err(|e| anyhow::anyhow!("{e}"))??;
+    Ok(())
 }
 
 // ── Top-level view ────────────────────────────────────────────────────────────
@@ -125,6 +140,7 @@ pub fn KanbanView() -> Element {
 fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let ctx     = use_context::<AppContext>();
     let board_id = board.id.clone();
+    let project_id = board.project_id;
 
     let tasks = use_resource(move || {
         let _ = refresh();
@@ -158,6 +174,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                             rsx! {
                                 KanbanColumn {
                                     board_id: board.id.clone(),
+                                    project_id,
                                     column: col,
                                     tasks: col_tasks,
                                     dragging,
@@ -176,10 +193,11 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
 
 #[component]
 fn KanbanColumn(
-    board_id:  BoardId,
-    column:    Column,
-    tasks:     Vec<Task>,
-    dragging:  Signal<Option<TaskId>>,
+    board_id:   BoardId,
+    project_id: Option<uuid::Uuid>,
+    column:     Column,
+    tasks:      Vec<Task>,
+    dragging:   Signal<Option<TaskId>>,
     mut refresh: Signal<u64>,
 ) -> Element {
     let ctx         = use_context::<AppContext>();
@@ -214,7 +232,7 @@ fn KanbanColumn(
         let col = col_add1.clone();
         let bid = bid_add1.clone();
         spawn(async move {
-            create_task(c, bid, col, title).await;
+            create_task(c, bid, col, title, project_id).await;
             *refresh.write() += 1;
         });
         *new_title.write() = String::new();
@@ -230,7 +248,7 @@ fn KanbanColumn(
                 let col = col_add2.clone();
                 let bid = bid_add2.clone();
                 spawn(async move {
-                    create_task(c, bid, col, title).await;
+                    create_task(c, bid, col, title, project_id).await;
                     *refresh.write() += 1;
                 });
                 *new_title.write() = String::new();
@@ -264,7 +282,7 @@ fn KanbanColumn(
                 let c = ctx_drop.clone();
                 let col = col_drop.clone();
                 spawn(async move {
-                    move_task(c, tid, col).await;
+                    move_task(c, tid, col, project_id).await;
                     *refresh.write() += 1;
                 });
                 *dragging.write() = None;
@@ -277,7 +295,7 @@ fn KanbanColumn(
 
             div { class: "kanban-column-body",
                 for task in tasks.iter().cloned() {
-                    TaskCard { task, dragging, refresh }
+                    TaskCard { task, project_id, dragging, refresh }
                 }
 
                 if *adding.read() {
@@ -316,14 +334,18 @@ fn KanbanColumn(
 // ── Task card ────────────────────────────────────────────────────────────────
 
 #[component]
-fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
+fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
     let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
     let mut inline_title = use_signal(|| task.title.clone());
+    let mut inline_desc = use_signal(|| task.description.clone());
+    let mut inline_priority = use_signal(|| task.priority);
+    let mut inline_due = use_signal(|| task.due_date.map(|d| d.to_string()).unwrap_or_default());
 
     let tid_drag = task.id.clone();
     let tid_archive = task.id.clone();
     let ctx_archive = ctx.clone();
+    let priority_class = priority_badge_class(task.priority);
 
     rsx! {
         div {
@@ -333,8 +355,15 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
             ondragend:   move |_| *dragging.write() = None,
 
             div { class: "task-card-top",
-                div { class: "task-priority {priority_badge_class(task.priority)}" }
+                div { class: "task-priority {priority_class}" }
                 div { class: "task-title", "{task.title}" }
+                if !task.tags.is_empty() {
+                    div { class: "task-tags-inline",
+                        for tag in task.tags.iter() {
+                            span { class: "task-tag", "{tag}" }
+                        }
+                    }
+                }
                 button {
                     class: "task-menu-btn",
                     title: if *open.read() { "Close details" } else { "Open details" },
@@ -342,7 +371,7 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                         let is_open = *open.read();
                         *open.write() = !is_open;
                     },
-                    if *open.read() { "▾" } else { "▸" }
+                    if *open.read() { "−" } else { "+" }
                 }
             }
 
@@ -356,6 +385,42 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                         }
                     }
 
+                    label { class: "field",
+                        span { "Description" }
+                        textarea {
+                            class: "task-desc-input",
+                            value: "{inline_desc}",
+                            rows: "3",
+                            placeholder: "Task description…",
+                            oninput: move |e| *inline_desc.write() = e.value(),
+                        }
+                    }
+
+                    div { class: "task-detail-row",
+                        label { class: "field",
+                            span { "Priority" }
+                            select {
+                                value: "{priority_to_str(*inline_priority.read())}",
+                                onchange: move |e| {
+                                    *inline_priority.write() = str_to_priority(&e.value());
+                                },
+                                option { value: "low", "Low" }
+                                option { value: "medium", "Medium" }
+                                option { value: "high", "High" }
+                                option { value: "critical", "Critical" }
+                            }
+                        }
+
+                        label { class: "field",
+                            span { "Due date" }
+                            input {
+                                r#type: "date",
+                                value: "{inline_due}",
+                                oninput: move |e| *inline_due.write() = e.value(),
+                            }
+                        }
+                    }
+
                     div { class: "row gap-2",
                         button {
                             class: "btn btn-primary",
@@ -363,13 +428,23 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                                 let c = ctx.clone();
                                 let task_id = task.id.clone();
                                 let new_title = inline_title.read().trim().to_string();
+                                let new_desc = inline_desc.read().clone();
+                                let new_priority = *inline_priority.read();
+                                let new_due = inline_due.read().clone();
                                 spawn(async move {
                                     let vault = c.vault();
                                     let _ = tokio::task::spawn_blocking(move || {
                                         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
                                             t.title      = new_title;
+                                            t.description = new_desc;
+                                            t.priority   = new_priority;
+                                            t.due_date   = chrono::NaiveDate::parse_from_str(&new_due, "%Y-%m-%d").ok();
                                             t.updated_at = Utc::now();
-                                            vault.store.save_task(&t)
+                                            if let Some(pid) = project_id {
+                                                vault.save_project_task(&t, &pid)
+                                            } else {
+                                                vault.store.save_task(&t)
+                                            }
                                         } else {
                                             Ok(())
                                         }
@@ -386,7 +461,7 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                                 let c = ctx_archive.clone();
                                 let task_id = tid_archive.clone();
                                 spawn(async move {
-                                    archive_task(c, task_id).await;
+                                    archive_task(c, task_id, project_id).await;
                                     *refresh.write() += 1;
                                 });
                             },
@@ -396,6 +471,24 @@ fn TaskCard(task: Task, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u6
                 }
             }
         }
+    }
+}
+
+fn priority_to_str(p: Priority) -> &'static str {
+    match p {
+        Priority::Low => "low",
+        Priority::Medium => "medium",
+        Priority::High => "high",
+        Priority::Critical => "critical",
+    }
+}
+
+fn str_to_priority(s: &str) -> Priority {
+    match s {
+        "low" => Priority::Low,
+        "high" => Priority::High,
+        "critical" => Priority::Critical,
+        _ => Priority::Medium,
     }
 }
 
@@ -413,29 +506,56 @@ fn priority_badge_class(priority: Priority) -> &'static str {
 #[component]
 fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
     let ctx = use_context::<AppContext>();
-    let mut name = use_signal(String::new);
+    let ctx2 = ctx.clone();
+    let mut name = use_signal(|| "Sprint 1".to_string());
+    let mut error_msg: Signal<Option<String>> = use_signal(|| None);
+
+    let do_create = move |_| {
+        let n = name.read().trim().to_string();
+        if n.is_empty() { return; }
+        let c = ctx.clone();
+        spawn(async move {
+            match create_board(c, n).await {
+                Ok(()) => *refresh.write() += 1,
+                Err(e) => *error_msg.write() = Some(format!("Could not create board — {e}")),
+            }
+        });
+        *name.write() = String::new();
+    };
 
     rsx! {
         div { class: "new-board-prompt",
             h2 { class: "view-heading", "Create your first board" }
-            input {
-                value: "{name}",
-                placeholder: "Sprint / Project board name…",
-                oninput: move |e| *name.write() = e.value(),
+            p { class: "muted", "Boards organize tasks into columns like Backlog, In Progress, Review, and Done." }
+            div { class: "row gap-2",
+                input {
+                    autofocus: true,
+                    value: "{name}",
+                    placeholder: "Board name…",
+                    oninput: move |e| *name.write() = e.value(),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            let n = name.read().trim().to_string();
+                            if n.is_empty() { return; }
+                            let c = ctx2.clone();
+                            spawn(async move {
+                                match create_board(c, n).await {
+                                    Ok(()) => *refresh.write() += 1,
+                                    Err(e) => *error_msg.write() = Some(format!("Could not create board — {e}")),
+                                }
+                            });
+                            *name.write() = String::new();
+                        }
+                    },
+                }
+                button {
+                    class: "btn btn-primary",
+                    onclick: do_create,
+                    "Create board"
+                }
             }
-            button {
-                class: "btn btn-primary",
-                onclick: move |_| {
-                    let n = name.read().trim().to_string();
-                    if n.is_empty() { return; }
-                    let c = ctx.clone();
-                    spawn(async move {
-                        create_board(c, n).await;
-                        *refresh.write() += 1;
-                    });
-                    *name.write() = String::new();
-                },
-                "Create board"
+            if let Some(ref err) = *error_msg.read() {
+                p { class: "text-error", "{err}" }
             }
         }
     }
@@ -462,8 +582,9 @@ fn NewBoardInline(mut refresh: Signal<u64>) -> Element {
                                 if n.is_empty() { return; }
                                 let c = ctx.clone();
                                 spawn(async move {
-                                    create_board(c, n).await;
-                                    *refresh.write() += 1;
+                                    if create_board(c, n).await.is_ok() {
+                                        *refresh.write() += 1;
+                                    }
                                 });
                                 *name.write() = String::new();
                                 *open.write() = false;
