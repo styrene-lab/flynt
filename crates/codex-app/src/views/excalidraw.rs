@@ -315,13 +315,21 @@ pub fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Resul
 /// Check if a document's content is purely an excalidraw embed wrapper.
 /// Returns the excalidraw file path if so.
 pub fn excalidraw_embed_path(content: &str) -> Option<String> {
-    let body = content.lines()
-        .skip_while(|l| l.starts_with("+++") || (!l.is_empty() && !l.starts_with("!")))
-        .filter(|l| !l.trim().is_empty() && !l.starts_with("+++"))
-        .collect::<Vec<_>>();
+    // Strip TOML frontmatter (+++...+++) to get the body
+    let body = if let Some(rest) = content.strip_prefix("+++\n") {
+        if let Some(end) = rest.find("\n+++") {
+            rest[end + 4..].trim()
+        } else {
+            content.trim()
+        }
+    } else {
+        content.trim()
+    };
 
-    if body.len() == 1 {
-        let line = body[0].trim();
+    // Body should be exactly one non-empty line: ![[something.excalidraw]]
+    let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() == 1 {
+        let line = lines[0].trim();
         if line.starts_with("![[") && line.ends_with(".excalidraw]]") {
             let inner = &line[3..line.len()-2];
             return Some(inner.to_string());
@@ -372,6 +380,12 @@ mod tests {
     #[test]
     fn rejects_frontmatter_only() {
         assert_eq!(excalidraw_embed_path("+++\ntitle = \"Empty\"\n+++\n"), None);
+    }
+
+    #[test]
+    fn detects_excalidraw_with_expanded_frontmatter() {
+        let content = "+++\nid = \"abc-123\"\ntitle = \"Drawing\"\ntags = [\"drawing\"]\naliases = []\nimported_reference = false\n\n[publication]\nenabled = false\nvisibility = \"private\"\n+++\n\n![[Drawing.excalidraw]]\n";
+        assert_eq!(excalidraw_embed_path(content), Some("Drawing.excalidraw".into()));
     }
 
     #[test]
