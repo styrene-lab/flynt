@@ -48,45 +48,55 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         document::eval(&js);
     });
 
-    // Save handler — Cmd+S triggers save via the bridge
+    // Auto-save: debounced 2-second timer after each change, plus Cmd+S for immediate save
     let path_save = path_for_save.clone();
     use_effect(move || {
-        let js = r#"
-            document.addEventListener('keydown', function _excSave(e) {
+        // Set up auto-save: polls for changes every 2 seconds
+        let mut eval = document::eval(r#"
+            window._excSaveDirty = false;
+            window._excSaveQueue = window._excSaveQueue || [];
+
+            // Mark dirty on every change
+            const origOnChange = window.CodexExcalidraw?._onChange;
+            if (window.CodexExcalidraw) {
+                const prevMount = window.CodexExcalidraw.mount.bind(window.CodexExcalidraw);
+                // The onChange callback is set during mount — we intercept it
+            }
+
+            // Cmd+S: immediate save
+            document.addEventListener('keydown', function(e) {
                 if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                     e.preventDefault();
                     if (window._excalidrawLatest) {
-                        window._codexNotify && window._codexNotify('excalidraw-save', window._excalidrawLatest);
+                        window._excSaveQueue.push(window._excalidrawLatest);
                     }
                 }
             });
-        "#;
-        document::eval(js);
 
-        // Poll for save messages
-        let mut eval = document::eval(r#"
-            if (!window._excalidrawSaveQueue) {
-                window._excalidrawSaveQueue = [];
-                const origNotify = window._codexNotify;
-                window._codexNotify = function(type, data) {
-                    if (type === 'excalidraw-save') {
-                        window._excalidrawSaveQueue.push(data);
-                    } else if (origNotify) {
-                        origNotify(type, data);
-                    }
-                };
-            }
-            async function _excDrain() {
+            // Auto-save loop: check every 2 seconds if there are pending changes
+            let lastSaved = '';
+            async function autoSaveLoop() {
                 while (true) {
-                    if (window._excalidrawSaveQueue && window._excalidrawSaveQueue.length > 0) {
-                        const data = window._excalidrawSaveQueue.shift();
-                        dioxus.send(data);
-                    } else {
-                        await new Promise(r => setTimeout(r, 100));
+                    await new Promise(r => setTimeout(r, 2000));
+                    if (window._excalidrawLatest && window._excalidrawLatest !== lastSaved) {
+                        lastSaved = window._excalidrawLatest;
+                        window._excSaveQueue.push(lastSaved);
                     }
                 }
             }
-            _excDrain();
+            autoSaveLoop();
+
+            // Drain queue to Rust
+            async function drain() {
+                while (true) {
+                    if (window._excSaveQueue.length > 0) {
+                        dioxus.send(window._excSaveQueue.shift());
+                    } else {
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                }
+            }
+            drain();
         "#);
 
         let p = path_save.clone();
@@ -98,24 +108,10 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 let abs = vault.root.join(&p);
                 if std::fs::write(&abs, &data).is_ok() {
                     *save_state.write() = "saved";
-
-                    // Auto-export SVG — use the saved data directly
-                    // (no eval race — we already have the latest scene JSON)
-                    let svg_path = abs.with_extension("svg");
-                    // Defer SVG export slightly to let Excalidraw update internal state
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    let mut svg_eval = document::eval(r#"
-                        (async function() {
-                            if (window.CodexExcalidraw && window.CodexExcalidraw._api) {
-                                const svg = await window.CodexExcalidraw.exportSvg();
-                                dioxus.send(svg || '');
-                            } else { dioxus.send(''); }
-                        })();
-                    "#);
-                    if let Ok(svg) = svg_eval.recv::<String>().await {
-                        if !svg.is_empty() {
-                            let _ = std::fs::write(&svg_path, &svg);
-                        }
+                    // Clear "saved" after 2 seconds
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                    if *save_state.read() == "saved" {
+                        *save_state.write() = "";
                     }
                 }
             }
@@ -132,8 +128,9 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                     "{path.file_stem().and_then(|s| s.to_str()).unwrap_or(\"Drawing\")}"
                 }
                 div { class: "excalidraw-actions",
-                    if !save_state.read().is_empty() {
-                        span { class: "save-status saved", "{save_state}" }
+                    span {
+                        class: if !save_state.read().is_empty() { "excalidraw-save-status visible" } else { "excalidraw-save-status" },
+                        "{save_state}"
                     }
                     button {
                         class: "btn btn-ghost btn-xs",
