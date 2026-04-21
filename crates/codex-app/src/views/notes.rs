@@ -729,6 +729,7 @@ pub fn NotesView() -> Element {
     // No tab open
     if !has_active {
         return rsx! {
+            crate::components::TabBar {}
             div { class: "notes-empty",
                 div { class: "notes-empty-content",
                     div { class: "notes-empty-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
@@ -741,11 +742,13 @@ pub fn NotesView() -> Element {
 
     let Some(data) = &*rendered.read() else {
         return rsx! {
+            crate::components::TabBar {}
             div { class: "notes-loading muted", "Loading…" }
         };
     };
     let Some((rel_path, title, body, _html)) = data else {
         return rsx! {
+            crate::components::TabBar {}
             div { class: "notes-empty",
                 p { class: "muted", "This note may have been moved or deleted." }
                 p { class: "muted", style: "font-size: 12px; margin-top: 8px;",
@@ -793,6 +796,7 @@ pub fn NotesView() -> Element {
     let ctx_rename = ctx.clone();
 
     rsx! {
+        crate::components::TabBar {}
         div { class: "notes-pane",
             div { class: "notes-topbar",
                 if *renaming.read() {

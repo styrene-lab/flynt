@@ -241,10 +241,7 @@ pub fn App() -> Element {
             div { class: "codex-body",
                 Sidebar { active_route: active_route }
                 div { class: "main-content",
-                    // Tab bar above the content area (Notes mode, not in drawing)
-                    if *active_route.read() == Route::Notes && !*is_drawing.read() {
-                        TabBar {}
-                    }
+                    // Tab bar rendered inside NotesView to avoid race with is_drawing signal
                     match *active_route.read() {
                         Route::Welcome => {
                             let mut choose_ctx = ctx.clone();
