@@ -12,7 +12,7 @@ use rfd::FileDialog;
 #[component]
 pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     let ctx     = use_context::<AppContext>();
-    let mut refresh = use_signal(|| 0_u64);
+    let mut refresh = use_context_provider(|| Signal::new(0_u64));
 
     let vault_events = ctx.vault_events();
     use_effect(move || {
@@ -175,6 +175,7 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
     let ctx              = use_context::<AppContext>();
     let mut tab_state    = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
+    let mut refresh      = use_context::<Signal<u64>>();
 
     let active_id = tab_state.read().active_id().cloned();
     let is_active = active_id.as_ref() == Some(&meta.id);
@@ -255,6 +256,7 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                                             tab_state.write().close(idx);
                                         }
                                         let _ = vault.reindex();
+                                        *refresh.write() += 1;
                                     });
                                 }
                                 _ => {}
