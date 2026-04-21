@@ -309,8 +309,27 @@ fn cm6_init_js(content: &str) -> String {
         const activeLine = state.doc.lineAt(sel.head).number;
         const doc = state.doc;
 
+        // Hide TOML frontmatter (+++ ... +++)
+        let fmStart = -1, fmEnd = -1;
+        if (doc.lines >= 1 && doc.line(1).text.trim() === '+++') {{
+            fmStart = 1;
+            for (let j = 2; j <= doc.lines; j++) {{
+                if (doc.line(j).text.trim() === '+++') {{ fmEnd = j; break; }}
+            }}
+        }}
+        if (fmStart > 0 && fmEnd > 0) {{
+            // Only hide if cursor is NOT inside the frontmatter
+            const fmFromPos = doc.line(fmStart).from;
+            const fmToPos = doc.line(fmEnd).to;
+            if (sel.head < fmFromPos || sel.head > fmToPos) {{
+                // Hide entire frontmatter block
+                decs.push(Decoration.replace({{}}).range(fmFromPos, fmToPos));
+            }}
+        }}
+
         for (let i = 1; i <= doc.lines; i++) {{
             if (i === activeLine) continue; // show markup on cursor line
+            if (fmStart > 0 && fmEnd > 0 && i >= fmStart && i <= fmEnd) continue; // skip frontmatter lines
             const line = doc.line(i);
             const text = line.text;
 
@@ -634,6 +653,41 @@ fn cm6_init_js(content: &str) -> String {
         return Decoration.set(decs);
     }});
 
+    // Save on blur / visibility change — never lose content
+    document.addEventListener('visibilitychange', () => {{
+        if (document.hidden && window._codexCM) {{
+            window._codexNotify('autosave', window._codexCM.state.doc.toString());
+        }}
+    }});
+    window.addEventListener('blur', () => {{
+        if (window._codexCM) {{
+            window._codexNotify('autosave', window._codexCM.state.doc.toString());
+        }}
+    }});
+
+    // Formatting shortcuts: wrap selection with markdown syntax
+    function wrapSelection(view, before, after) {{
+        const sel = view.state.selection.main;
+        const selected = view.state.sliceDoc(sel.from, sel.to);
+        // If already wrapped, unwrap
+        if (selected.startsWith(before) && selected.endsWith(after)) {{
+            view.dispatch({{ changes: {{ from: sel.from, to: sel.to, insert: selected.slice(before.length, -after.length) }} }});
+        }} else {{
+            view.dispatch({{ changes: {{ from: sel.from, to: sel.to, insert: before + selected + after }} }});
+        }}
+        return true;
+    }}
+    const formatKeymap = keymap.of([
+        {{ key: 'Mod-b', run: (v) => wrapSelection(v, '**', '**') }},
+        {{ key: 'Mod-i', run: (v) => wrapSelection(v, '*', '*') }},
+        {{ key: 'Mod-k', run: (v) => {{
+            const sel = v.state.selection.main;
+            const selected = v.state.sliceDoc(sel.from, sel.to);
+            v.dispatch({{ changes: {{ from: sel.from, to: sel.to, insert: '[' + selected + '](url)' }} }});
+            return true;
+        }} }},
+    ]);
+
     let saveTimer = null;
     const changeHandler = EditorView.updateListener.of((update) => {{
         if (update.docChanged) {{
@@ -642,7 +696,7 @@ fn cm6_init_js(content: &str) -> String {
             // Immediately sync to Rust state
             window._codexNotify('edit', doc);
             // Debounced auto-save
-            saveTimer = setTimeout(() => window._codexNotify('autosave', doc), 2000);
+            saveTimer = setTimeout(() => window._codexNotify('autosave', doc), 500);
         }}
     }});
 
@@ -661,9 +715,17 @@ fn cm6_init_js(content: &str) -> String {
     }}]);
 
     const docText = {escaped};
+    // Place cursor after frontmatter (first blank line after +++ closing)
+    let cursorPos = docText.length;
+    const fmMatch = docText.match(/^\+\+\+\n[\s\S]*?\n\+\+\+\n/);
+    if (fmMatch) {{
+        cursorPos = fmMatch[0].length;
+        // Skip any blank lines after frontmatter
+        while (cursorPos < docText.length && docText[cursorPos] === '\n') cursorPos++;
+    }}
     const state = EditorState.create({{
         doc: docText,
-        selection: {{ anchor: docText.length }},
+        selection: {{ anchor: cursorPos }},
         extensions: [
             codexTheme,
             syntaxHighlighting(codexHighlight),
@@ -679,6 +741,7 @@ fn cm6_init_js(content: &str) -> String {
             closeBrackets(),
             keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
             saveKeymap,
+            formatKeymap,
             changeHandler,
             hideMarkupPlugin,
             tablePlugin,

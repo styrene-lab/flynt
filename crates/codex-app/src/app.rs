@@ -244,9 +244,51 @@ pub fn App() -> Element {
                     // Tab bar rendered inside NotesView to avoid race with is_drawing signal
                     match *active_route.read() {
                         Route::Welcome => {
+                            let mut start_ctx = ctx.clone();
                             let mut choose_ctx = ctx.clone();
-                            let mut create_ctx = ctx.clone();
                             let import_ctx = ctx.clone();
+
+                            // "Get started" — one-click setup
+                            let on_get_started = move |_| {
+                                *welcome_error.write() = None;
+                                let vault_root = dirs::document_dir()
+                                    .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+                                    .join("Codex");
+                                match OmegonRuntimeContext::initialize_vault(
+                                    &vault_root,
+                                    "Codex",
+                                    codex_core::models::SyncConfig::None,
+                                ) {
+                                    Ok(vault) => {
+                                        // Create a welcome note
+                                        let welcome_path = std::path::PathBuf::from("Welcome.md");
+                                        let welcome_content = include_str!("../assets/welcome-note.md");
+                                        let _ = vault.save_document_content(&welcome_path, welcome_content);
+                                        let _ = vault.reindex();
+
+                                        let mut profile = launcher_profile();
+                                        profile.last_vault_root = Some(vault_root.clone());
+                                        profile.wizard_completed = true;
+                                        if !profile.recent_vaults.contains(&vault_root) {
+                                            profile.recent_vaults.push(vault_root.clone());
+                                        }
+                                        let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                        launcher_profile.set(profile);
+                                        start_ctx.set_runtime(runtime_state_for_vault_root(vault_root));
+
+                                        // Open the welcome note
+                                        let vault = start_ctx.vault();
+                                        if let Ok(Some(doc)) = vault.store.find_document_by_slug("welcome") {
+                                            tab_state.write().open(doc.id, "Welcome".into());
+                                        }
+                                        *active_route.write() = Route::Notes;
+                                    }
+                                    Err(e) => {
+                                        *welcome_error.write() = Some(format!("Could not create notebook: {e}"));
+                                    }
+                                }
+                            };
+
                             let on_choose_existing = move |_| {
                                 *welcome_error.write() = None;
                                 let Some(selected_root) = FileDialog::new().pick_folder() else {
@@ -289,48 +331,6 @@ pub fn App() -> Element {
                                 }
                                 *active_route.write() = Route::Notes;
                             };
-                            let on_create_local = move |_| {
-                                *welcome_error.write() = None;
-                                let Some(local_path) = FileDialog::new()
-                                    .set_directory(
-                                        dirs::document_dir()
-                                            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))),
-                                    )
-                                    .pick_folder()
-                                else {
-                                    return;
-                                };
-                                let name = local_path
-                                    .file_name()
-                                    .and_then(|name| name.to_str())
-                                    .unwrap_or("Black Meridian")
-                                    .to_string();
-                                match OmegonRuntimeContext::initialize_vault(
-                                    &local_path,
-                                    &name,
-                                    codex_core::models::SyncConfig::None,
-                                ) {
-                                    Ok(_vault) => {
-                                        let mut profile = launcher_profile();
-                                        profile.pending_setup = Some(PendingVaultSetup::CreateLocal {
-                                            path: local_path.clone(),
-                                            name: name.clone(),
-                                        });
-                                        profile.last_vault_root = Some(local_path.clone());
-                                        profile.wizard_completed = true;
-                                        if !profile.recent_vaults.contains(&local_path) {
-                                            profile.recent_vaults.push(local_path.clone());
-                                        }
-                                        let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                                        launcher_profile.set(profile);
-                                        create_ctx.set_runtime(runtime_state_for_vault_root(local_path.clone()));
-                                        *active_route.write() = Route::Notes;
-                                    }
-                                    Err(e) => {
-                                        *welcome_error.write() = Some(format!("Could not create vault: {e}"));
-                                    }
-                                }
-                            };
                             let on_clone_remote = move |_| {
                                 *clone_dialog_open.write() = true;
                                 *clone_error.write() = None;
@@ -353,35 +353,6 @@ pub fn App() -> Element {
                                     }
                                 }
                             };
-                            let on_seed_demo_publication = move |_| {
-                                *welcome_error.write() = None;
-                                let Some(repo_root) = FileDialog::new()
-                                    .set_directory(
-                                        dirs::document_dir()
-                                            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))),
-                                    )
-                                    .pick_folder()
-                                else {
-                                    return;
-                                };
-                                if let Err(e) = OmegonRuntimeContext::seed_demo_publication_repo(&repo_root) {
-                                    *welcome_error.write() = Some(format!("Could not create demo: {e}"));
-                                    return;
-                                }
-                                let site_name = repo_root
-                                    .file_name()
-                                    .and_then(|name| name.to_str())
-                                    .unwrap_or("codex-publication-demo")
-                                    .to_string();
-                                let mut profile = launcher_profile();
-                                profile.pending_setup = Some(PendingVaultSetup::SeedDemoPublication {
-                                    repo_root: repo_root.clone(),
-                                    site_name,
-                                });
-                                profile.wizard_completed = true;
-                                let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                                launcher_profile.set(profile);
-                            };
                             rsx! {
                                 if let Some(err) = welcome_error.read().as_ref() {
                                     div { class: "welcome-error-banner",
@@ -395,11 +366,10 @@ pub fn App() -> Element {
                                 }
                                 WelcomeView {
                                     launcher_profile: launcher_profile(),
+                                    on_get_started,
                                     on_choose_existing,
-                                    on_create_local,
                                     on_clone_remote,
                                     on_import_markdown,
-                                    on_seed_demo_publication,
                                 }
                             }
                         },

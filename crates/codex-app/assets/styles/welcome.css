@@ -1,168 +1,130 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   Welcome / first-run wizard
+   Welcome / first-run
    ───────────────────────────────────────────────────────────────────────────── */
 
 .view-welcome {
-  min-height: 100%;
-  display: flex;
-  align-items: flex-start;
+  min-height:     100%;
+  display:        flex;
+  align-items:    center;
   justify-content: center;
-  padding: var(--space-10);
+  padding:        var(--space-10);
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--primary) 10%, transparent), transparent 24%),
     var(--background);
 }
 
 .welcome-shell {
-  width: min(920px, 100%);
-  display: flex;
+  width:          min(520px, 100%);
+  display:        flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap:            var(--space-6);
+  text-align:     center;
 }
 
 .welcome-hero {
-  display: flex;
+  display:        flex;
   flex-direction: column;
-  gap: var(--space-3);
-}
-
-.welcome-kicker {
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--primary-bright);
-  font-weight: var(--font-weight-semibold);
+  gap:            var(--space-3);
 }
 
 .welcome-title {
-  font-size: clamp(34px, 4vw, 52px);
-  line-height: 1.05;
-  font-weight: 700;
-  color: var(--foreground);
+  font-size:      var(--font-size-3xl, 2rem);
+  font-weight:    var(--font-weight-bold, 700);
+  color:          var(--primary-bright, #e8f0f6);
+  line-height:    1.2;
 }
 
 .welcome-subtitle {
-  max-width: 760px;
-  font-size: var(--font-size-lg);
-  color: var(--muted-foreground);
-  line-height: 1.55;
+  font-size:      var(--font-size-base, 15px);
+  color:          var(--muted-foreground, #607888);
+  line-height:    1.6;
 }
 
-.welcome-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-4);
-}
-
-.welcome-card {
-  display: flex;
+/* Primary CTA */
+.welcome-primary {
+  display:        flex;
   flex-direction: column;
-  gap: var(--space-3);
-  min-height: 188px;
-  padding: var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 92%, transparent), var(--card));
-  box-shadow: var(--shadow-md);
-  transition:
-    transform var(--duration-fast) var(--ease),
-    border-color var(--duration-fast) var(--ease),
-    box-shadow var(--duration-fast) var(--ease),
-    background var(--duration-fast) var(--ease);
+  align-items:    center;
+  gap:            8px;
+  margin:         16px 0;
 }
 
-.welcome-card:hover {
-  transform: translateY(-1px);
-  border-color: var(--primary-muted);
-  box-shadow: var(--shadow-lg);
+.welcome-start-btn {
+  padding:        16px 48px;
+  font-size:      16px;
+  font-weight:    700;
+  color:          var(--background, #02030a);
+  background:     var(--primary, #2ab4c8);
+  border:         none;
+  border-radius:  8px;
+  cursor:         pointer;
+  transition:     filter 0.15s, transform 0.1s;
+}
+.welcome-start-btn:hover {
+  filter:         brightness(1.15);
+}
+.welcome-start-btn:active {
+  transform:      scale(0.98);
 }
 
-.welcome-card.primary {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  box-shadow: var(--shadow-lg), var(--shadow-glow);
+.welcome-start-hint {
+  font-size:      12px;
+  color:          var(--muted-foreground, #607888);
+  opacity:        0.7;
 }
 
-.welcome-card-icon {
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--primary) 18%, transparent);
-  color: var(--primary-bright);
-  font-size: 18px;
+/* Advanced toggle */
+.welcome-advanced {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  gap:            12px;
 }
 
-.welcome-card-title {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
-  color: var(--foreground);
+.welcome-toggle-advanced {
+  background:     none;
+  border:         none;
+  color:          var(--muted-foreground, #607888);
+  font-size:      13px;
+  cursor:         pointer;
+  padding:        4px 8px;
+}
+.welcome-toggle-advanced:hover {
+  color:          var(--foreground, #c4d8e4);
 }
 
-.welcome-card-body {
-  flex: 1;
-  font-size: var(--font-size-sm);
-  color: var(--muted-foreground);
-  line-height: 1.5;
+.welcome-options {
+  width:          100%;
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
 }
 
-.welcome-card-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: auto;
+.welcome-option {
+  display:        flex;
+  flex-direction: column;
+  align-items:    flex-start;
+  text-align:     left;
+  padding:        12px 16px;
+  background:     var(--surface, #0c1018);
+  border:         1px solid var(--border, #1a2233);
+  border-radius:  8px;
+  cursor:         pointer;
+  transition:     border-color 0.15s;
 }
-
-.welcome-card-action {
-  color: var(--primary-bright);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+.welcome-option:hover {
+  border-color:   var(--primary, #2ab4c8);
 }
-
-.welcome-card-meta {
-  font-size: var(--font-size-xs);
-  color: var(--dim-foreground, var(--muted-foreground));
+.welcome-option-title {
+  font-size:      14px;
+  font-weight:    600;
+  color:          var(--foreground, #c4d8e4);
+  margin-bottom:  2px;
 }
-
-.welcome-status-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-4);
-}
-
-.welcome-status-card {
-  padding: var(--space-4);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
-}
-
-.welcome-status-label {
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-  margin-bottom: var(--space-2);
-}
-
-.welcome-status-value {
-  font-size: var(--font-size-sm);
-  color: var(--foreground);
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-@media (max-width: 720px) {
-  .view-welcome {
-    padding: var(--space-6);
-  }
-
-  .welcome-grid,
-  .welcome-status-panel {
-    grid-template-columns: 1fr;
-  }
+.welcome-option-desc {
+  font-size:      12px;
+  color:          var(--muted-foreground, #607888);
+  line-height:    1.5;
 }
 
 /* Error banner */
@@ -171,7 +133,7 @@
   align-items:      center;
   justify-content:  space-between;
   gap:              12px;
-  max-width:        820px;
+  max-width:        520px;
   margin:           0 auto 16px;
   padding:          12px 16px;
   background:       rgba(255,80,80,0.1);
