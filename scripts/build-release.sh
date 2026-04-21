@@ -15,6 +15,8 @@ dx build --platform desktop --release
 cd "$ROOT"
 
 APP="target/dx/codex-app/release/macos/CodexApp.app"
+# Copy icon as both names — Dioxus sets CFBundleIconFile to "icon.icns"
+cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/icon.icns"
 cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Excalidraw bundle — lazy-loaded at runtime, not picked up by asset!() macro
