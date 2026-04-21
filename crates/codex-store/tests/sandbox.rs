@@ -893,39 +893,167 @@ fn test_get_backlinks() {
 
 // ── create_drawing ──────────────────────────────────────────────────────────
 
+/// Mirror of create_drawing from codex-app (can't import it directly — UI crate)
+fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
+    let drawings_dir = vault_root.join("drawings");
+    std::fs::create_dir_all(&drawings_dir)?;
+    let filename = format!("{name}.excalidraw");
+    let rel_path = std::path::PathBuf::from("drawings").join(&filename);
+    let abs_path = vault_root.join(&rel_path);
+    let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
+    std::fs::write(&abs_path, scene)?;
+    Ok(rel_path)
+}
+
 #[test]
 fn test_create_drawing() {
     let tmp = tempfile::Builder::new().prefix("codex-test-").tempdir().unwrap();
     let root = tmp.path().to_path_buf();
-    std::fs::create_dir_all(&root).unwrap();
 
-    let md_path = codex_app_views_excalidraw_create_drawing(&root, "Test Drawing");
-    assert!(md_path.is_ok());
-
-    let md_path = md_path.unwrap();
-    assert!(md_path.to_string_lossy().ends_with(".md"));
-
-    // Check the .excalidraw file exists
+    let path = create_drawing(&root, "Test Drawing").unwrap();
+    assert!(path.to_string_lossy().ends_with(".excalidraw"));
     assert!(root.join("drawings/Test Drawing.excalidraw").exists());
 
-    // Check the .md file exists and embeds the drawing
-    let md_content = std::fs::read_to_string(root.join(&md_path)).unwrap();
-    assert!(md_content.contains("![[Test Drawing.excalidraw]]"));
-    assert!(md_content.contains("title = \"Test Drawing\""));
+    // Content should be valid JSON scene
+    let content = std::fs::read_to_string(root.join(&path)).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(parsed["type"], "excalidraw");
+    assert_eq!(parsed["version"], 2);
 }
 
-/// Wrapper to call create_drawing without importing codex-app
-fn codex_app_views_excalidraw_create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
-    let drawings_dir = vault_root.join("drawings");
-    std::fs::create_dir_all(&drawings_dir)?;
-    let excalidraw_filename = format!("{name}.excalidraw");
-    let excalidraw_abs = drawings_dir.join(&excalidraw_filename);
-    let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
-    std::fs::write(&excalidraw_abs, scene)?;
-    let md_filename = format!("{name}.md");
-    let md_path = std::path::PathBuf::from("drawings").join(&md_filename);
-    let md_abs = vault_root.join(&md_path);
-    let md_content = format!("+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_filename}]]\n");
-    std::fs::write(&md_abs, md_content)?;
-    Ok(md_path)
+#[test]
+fn test_create_drawing_idempotent_dir() {
+    let tmp = tempfile::Builder::new().prefix("codex-test-").tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
+
+    create_drawing(&root, "First").unwrap();
+    create_drawing(&root, "Second").unwrap();
+
+    assert!(root.join("drawings/First.excalidraw").exists());
+    assert!(root.join("drawings/Second.excalidraw").exists());
+}
+
+// ── Delete document (Move to Trash) ─────────────────────────────────────────
+
+#[test]
+fn test_delete_document_removes_file_and_index() {
+    let (_tmp, vault) = setup_vault();
+
+    // Get a document that exists
+    let docs = vault.store.list_documents().unwrap();
+    assert!(!docs.is_empty());
+    let target = &docs[0];
+    let abs_path = vault.root.join(&target.path);
+    assert!(abs_path.exists(), "file should exist before delete");
+
+    // Delete it
+    std::fs::remove_file(&abs_path).unwrap();
+    vault.store.delete_document(&target.id).unwrap();
+
+    // Verify it's gone from both disk and index
+    assert!(!abs_path.exists(), "file should be gone after delete");
+    assert!(vault.store.get_document(&target.id).unwrap().is_none(),
+        "document should be gone from index after delete");
+}
+
+#[test]
+fn test_delete_document_does_not_affect_others() {
+    let (_tmp, vault) = setup_vault();
+
+    let docs = vault.store.list_documents().unwrap();
+    let initial_count = docs.len();
+    assert!(initial_count >= 2, "need at least 2 docs for this test");
+
+    let target = &docs[0];
+    let other = &docs[1];
+
+    std::fs::remove_file(vault.root.join(&target.path)).unwrap();
+    vault.store.delete_document(&target.id).unwrap();
+
+    // Other document should still exist
+    assert!(vault.store.get_document(&other.id).unwrap().is_some(),
+        "other document should survive the delete");
+
+    let remaining = vault.store.list_documents().unwrap();
+    assert_eq!(remaining.len(), initial_count - 1);
+}
+
+// ── Vault switching ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_switch_vault_opens_different_content() {
+    // Create two separate vaults with different content
+    let tmp1 = tempfile::Builder::new().prefix("codex-vault1-").tempdir().unwrap();
+    let tmp2 = tempfile::Builder::new().prefix("codex-vault2-").tempdir().unwrap();
+
+    let vault1 = Vault::open(tmp1.path()).unwrap();
+    vault1.save_document_content(
+        &std::path::PathBuf::from("vault1-note.md"),
+        "+++\ntitle = \"Vault One Note\"\ntags = []\n+++\n\nContent from vault 1.",
+    ).unwrap();
+    vault1.reindex().unwrap();
+
+    let vault2 = Vault::open(tmp2.path()).unwrap();
+    vault2.save_document_content(
+        &std::path::PathBuf::from("vault2-note.md"),
+        "+++\ntitle = \"Vault Two Note\"\ntags = []\n+++\n\nContent from vault 2.",
+    ).unwrap();
+    vault2.reindex().unwrap();
+
+    // Vault 1 should have its doc, not vault 2's
+    let docs1 = vault1.store.list_documents().unwrap();
+    assert!(docs1.iter().any(|d| d.title == "Vault One Note"));
+    assert!(!docs1.iter().any(|d| d.title == "Vault Two Note"));
+
+    // Vault 2 should have its doc, not vault 1's
+    let docs2 = vault2.store.list_documents().unwrap();
+    assert!(docs2.iter().any(|d| d.title == "Vault Two Note"));
+    assert!(!docs2.iter().any(|d| d.title == "Vault One Note"));
+}
+
+#[test]
+fn test_switch_vault_reindexes_correctly() {
+    let tmp = tempfile::Builder::new().prefix("codex-switch-").tempdir().unwrap();
+    let vault = Vault::open(tmp.path()).unwrap();
+
+    // Start empty
+    let (count, _) = vault.reindex().unwrap();
+    assert_eq!(count, 0);
+
+    // Add a file and reindex (simulates what happens on vault switch)
+    vault.save_document_content(
+        &std::path::PathBuf::from("new.md"),
+        "+++\ntitle = \"New\"\ntags = []\n+++\n\nHello.",
+    ).unwrap();
+    let (count, _) = vault.reindex().unwrap();
+    assert_eq!(count, 1);
+
+    let docs = vault.store.list_documents().unwrap();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].title, "New");
+}
+
+// ── Excalidraw file detection ───────────────────────────────────────────────
+
+#[test]
+fn test_excalidraw_files_not_indexed_as_documents() {
+    let tmp = tempfile::Builder::new().prefix("codex-test-").tempdir().unwrap();
+    let vault = Vault::open(tmp.path()).unwrap();
+
+    // Create a .excalidraw file
+    create_drawing(tmp.path(), "Diagram").unwrap();
+
+    // Also create a regular .md file
+    vault.save_document_content(
+        &std::path::PathBuf::from("note.md"),
+        "+++\ntitle = \"Note\"\ntags = []\n+++\n\nA note.",
+    ).unwrap();
+
+    vault.reindex().unwrap();
+
+    let docs = vault.store.list_documents().unwrap();
+    // Only the .md should be indexed, not the .excalidraw
+    assert_eq!(docs.len(), 1, "only .md files should be indexed, got: {:?}",
+        docs.iter().map(|d| &d.title).collect::<Vec<_>>());
+    assert_eq!(docs[0].title, "Note");
 }
