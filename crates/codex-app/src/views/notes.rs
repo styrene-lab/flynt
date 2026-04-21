@@ -971,17 +971,22 @@ pub fn NotesView() -> Element {
                         }}
                     }
                     "save" | "autosave" => {
-                        // Don't write to edit_body — avoid triggering re-render
                         let content = data.to_string();
-                        if let Some(Some((p, _, _, _))) = &*rendered.read() {
+                        // peek — do NOT subscribe reactively
+                        if let Some(Some((p, _, _, _))) = &*rendered.peek() {
                             let path = p.clone();
                             let vault = c.vault();
                             match tokio::task::spawn_blocking(move || {
                                 vault.save_document_content(&path, &content)
                             }).await {
                                 Ok(Ok(())) => {
-                                    *save_state.write() = SaveState::Saved;
-                                    *save_err.write() = None;
+                                    // Only write if state actually changed — avoid churn
+                                    if !matches!(*save_state.peek(), SaveState::Saved) {
+                                        *save_state.write() = SaveState::Saved;
+                                    }
+                                    if save_err.peek().is_some() {
+                                        *save_err.write() = None;
+                                    }
                                 }
                                 Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
                                 Err(e) => *save_err.write() = Some(format!("Save interrupted — {e}")),
