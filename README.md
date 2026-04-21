@@ -139,7 +139,7 @@ Codex auto-commits, pulls, and pushes on a timer. Merge conflicts are detected a
 cargo test -p codex-core -p codex-store
 ```
 
-212 tests covering: document parsing, query DSL, task decay math, vault lifecycle, tag operations, notifications, git sync (status, commit, pull, push, clone, conflicts), and integration tests.
+269 tests covering: document parsing, query DSL, task decay math, vault lifecycle, tag operations, notifications, git sync (status, commit, pull, push, clone, conflicts), and integration tests.
 
 ---
 
