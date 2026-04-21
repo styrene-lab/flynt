@@ -160,6 +160,18 @@ pub fn SettingsView() -> Element {
         }
     };
     let save = move |_| {
+        // Validate git sync config
+        if let codex_core::models::SyncConfig::Git { ref remote, ref branch, .. } = *sync_config.read() {
+            if remote.trim().is_empty() {
+                *save_msg.write() = Some(("err", "Git remote name cannot be empty."));
+                return;
+            }
+            if branch.trim().is_empty() {
+                *save_msg.write() = Some(("err", "Git branch name cannot be empty."));
+                return;
+            }
+        }
+
         // Validate paths before saving
         for (label, val) in [
             ("Local state root", local_state_root.read().clone()),

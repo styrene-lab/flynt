@@ -482,13 +482,17 @@ impl Vault {
                         continue;
                     }
                     exported += 1;
+                    let doc_obj = self.store.get_document_by_path(&document.path)?;
+                    let vis = doc_obj.as_ref()
+                        .map(|d| effective_publication_visibility(d, &self.config.publication))
+                        .unwrap_or(PublicationVisibility::Public);
                     manifest_entries.push(PublicationManifestEntry {
                         title: published.title,
                         slug: published.slug,
                         source_path: published.source_path,
                         output_path: published.output_path,
                         tags: document.tags,
-                        visibility: PublicationVisibility::Public,
+                        visibility: vis,
                     });
                 }
                 Ok(None) => skipped_private += 1,

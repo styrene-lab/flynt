@@ -1057,3 +1057,245 @@ fn test_excalidraw_files_not_indexed_as_documents() {
         docs.iter().map(|d| &d.title).collect::<Vec<_>>());
     assert_eq!(docs[0].title, "Note");
 }
+
+// ── Publication system ──────────────────────────────────────────────────────
+
+#[test]
+fn test_publication_unlisted_exported_but_marked_correctly() {
+    let (_tmp, vault) = setup_vault();
+    let output = _tmp.path().join("pub-output");
+
+    // Create an unlisted document
+    vault.save_document_content(
+        &std::path::PathBuf::from("unlisted-note.md"),
+        "+++\ntitle = \"Secret Page\"\ntags = []\n[publication]\nenabled = true\nvisibility = \"unlisted\"\n+++\n\nUnlisted content.",
+    ).unwrap();
+    vault.reindex().unwrap();
+
+    let report = vault.export_publication_tree(&output).unwrap();
+    assert!(report.exported >= 1, "unlisted note should be exported");
+
+    // Check manifest — visibility should be Unlisted, not hardcoded Public
+    let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
+    let docs = manifest["documents"].as_array().unwrap();
+    let secret = docs.iter().find(|d| d["title"] == "Secret Page");
+    assert!(secret.is_some(), "Secret Page should be in manifest");
+    assert_eq!(secret.unwrap()["visibility"], "unlisted",
+        "manifest should reflect actual visibility, not hardcode Public");
+}
+
+#[test]
+fn test_publication_private_not_exported() {
+    let (_tmp, vault) = setup_vault();
+    let output = _tmp.path().join("pub-output");
+
+    vault.save_document_content(
+        &std::path::PathBuf::from("private-note.md"),
+        "+++\ntitle = \"Private\"\ntags = []\n[publication]\nenabled = true\nvisibility = \"private\"\n+++\n\nSecret.",
+    ).unwrap();
+    vault.reindex().unwrap();
+
+    let report = vault.export_publication_tree(&output).unwrap();
+    // Private doc should NOT be exported
+    if output.join("manifest.json").exists() {
+        let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
+        let docs = manifest["documents"].as_array().unwrap();
+        assert!(!docs.iter().any(|d| d["title"] == "Private"),
+            "private note should not appear in manifest");
+    }
+}
+
+#[test]
+fn test_publication_policy_rules_tag_match() {
+    let (_tmp, vault) = setup_vault();
+    let output = _tmp.path().join("pub-output");
+
+    // Set policy: default private, public if tagged "published"
+    let mut config = vault.config.clone();
+    config.publication.default_visibility = PublicationVisibility::Private;
+    config.publication.rules = vec![
+        codex_core::models::PublicationRule {
+            match_tag: Some("published".into()),
+            match_path_prefix: None,
+            visibility: PublicationVisibility::Public,
+        },
+    ];
+    vault.save_config(&config).unwrap();
+
+    vault.save_document_content(
+        &std::path::PathBuf::from("tagged.md"),
+        "+++\ntitle = \"Tagged\"\ntags = [\"published\"]\n[publication]\nenabled = true\n+++\n\nShould be public.",
+    ).unwrap();
+    vault.save_document_content(
+        &std::path::PathBuf::from("untagged.md"),
+        "+++\ntitle = \"Untagged\"\ntags = [\"other\"]\n[publication]\nenabled = true\n+++\n\nShould be private.",
+    ).unwrap();
+    vault.reindex().unwrap();
+
+    // Re-open vault to pick up new config
+    let vault = std::sync::Arc::new(codex_store::vault::Vault::open(&vault.root).unwrap());
+    vault.reindex().unwrap();
+    let report = vault.export_publication_tree(&output).unwrap();
+
+    let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
+    let docs = manifest["documents"].as_array().unwrap();
+    let titles: Vec<&str> = docs.iter().filter_map(|d| d["title"].as_str()).collect();
+
+    assert!(titles.contains(&"Tagged"), "tagged doc should be exported");
+    assert!(!titles.contains(&"Untagged"), "untagged doc should NOT be exported (default private)");
+}
+
+#[test]
+fn test_publication_policy_rules_path_prefix() {
+    let (_tmp, vault) = setup_vault();
+    let output = _tmp.path().join("pub-output");
+
+    let mut config = vault.config.clone();
+    config.publication.default_visibility = PublicationVisibility::Private;
+    config.publication.rules = vec![
+        codex_core::models::PublicationRule {
+            match_tag: None,
+            match_path_prefix: Some("public/".into()),
+            visibility: PublicationVisibility::Public,
+        },
+    ];
+    vault.save_config(&config).unwrap();
+
+    std::fs::create_dir_all(vault.root.join("public")).unwrap();
+    vault.save_document_content(
+        &std::path::PathBuf::from("public/visible.md"),
+        "+++\ntitle = \"Visible\"\ntags = []\n[publication]\nenabled = true\n+++\n\nPublic path.",
+    ).unwrap();
+    vault.save_document_content(
+        &std::path::PathBuf::from("hidden.md"),
+        "+++\ntitle = \"Hidden\"\ntags = []\n[publication]\nenabled = true\n+++\n\nNot in public path.",
+    ).unwrap();
+    vault.reindex().unwrap();
+
+    let vault = std::sync::Arc::new(codex_store::vault::Vault::open(&vault.root).unwrap());
+    vault.reindex().unwrap();
+    let report = vault.export_publication_tree(&output).unwrap();
+
+    let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
+    let docs = manifest["documents"].as_array().unwrap();
+    let titles: Vec<&str> = docs.iter().filter_map(|d| d["title"].as_str()).collect();
+
+    assert!(titles.contains(&"Visible"), "path-matched doc should be exported");
+    assert!(!titles.contains(&"Hidden"), "non-matched doc should NOT be exported");
+}
+
+#[test]
+fn test_publication_wikilink_to_private_becomes_plain_text() {
+    let (_tmp, vault) = setup_vault();
+    let output = _tmp.path().join("pub-output");
+
+    vault.save_document_content(
+        &std::path::PathBuf::from("public-note.md"),
+        "+++\ntitle = \"Public Note\"\ntags = []\n[publication]\nenabled = true\nvisibility = \"public\"\n+++\n\nSee [[Private Note]] for details.",
+    ).unwrap();
+    vault.save_document_content(
+        &std::path::PathBuf::from("private-note.md"),
+        "+++\ntitle = \"Private Note\"\ntags = []\n+++\n\nThis is private.",
+    ).unwrap();
+    vault.reindex().unwrap();
+
+    let report = vault.export_publication_tree(&output).unwrap();
+    assert!(report.exported >= 1);
+
+    // The exported public note should NOT have a clickable link to the private note
+    let exported_md = std::fs::read_to_string(output.join("public-note.md")).unwrap();
+    assert!(!exported_md.contains("[[Private Note]]"), "wikilink to private doc should be rewritten");
+    assert!(exported_md.contains("Private Note"), "text should remain, just not as a link");
+}
+
+#[test]
+fn test_publication_empty_board_exports() {
+    let (_tmp, vault) = setup_vault();
+    let output = _tmp.path().join("pub-output");
+
+    // Create a project with publication enabled
+    std::fs::create_dir_all(vault.root.join("projects")).unwrap();
+    vault.save_document_content(
+        &std::path::PathBuf::from("projects/test-project.md"),
+        "+++\ntitle = \"Test Project\"\nkind = \"project\"\n[publication]\nenabled = true\nvisibility = \"public\"\n[data]\n+++\n\n# Test Project",
+    ).unwrap();
+    vault.reindex().unwrap();
+
+    // Create a board with no tasks
+    let doc = vault.store.list_documents().unwrap();
+    let project_doc = doc.iter().find(|d| d.title == "Test Project");
+    if let Some(proj) = project_doc {
+        if let Ok(Some(full_doc)) = vault.store.get_document(&proj.id) {
+            if let Some(id) = full_doc.frontmatter.id {
+                let board = Board::for_project("Empty Board", id);
+                vault.store.save_board(&board).unwrap();
+            }
+        }
+    }
+
+    let report = vault.export_publication_tree(&output).unwrap();
+    // Should not crash even with empty board
+    assert!(report.errors.is_empty(), "empty board export should not error: {:?}", report.errors);
+}
+
+// ── Sync config validation ──────────────────────────────────────────────────
+
+#[test]
+fn test_sync_config_serialization_roundtrip() {
+    let config = SyncConfig::Git {
+        remote: "origin".into(),
+        branch: "main".into(),
+        auto_commit_seconds: 60,
+    };
+    let serialized = toml::to_string(&config).unwrap();
+    let deserialized: SyncConfig = toml::from_str(&serialized).unwrap();
+    match deserialized {
+        SyncConfig::Git { remote, branch, auto_commit_seconds } => {
+            assert_eq!(remote, "origin");
+            assert_eq!(branch, "main");
+            assert_eq!(auto_commit_seconds, 60);
+        }
+        _ => panic!("expected Git variant"),
+    }
+}
+
+#[test]
+fn test_sync_config_none_roundtrip() {
+    let config = SyncConfig::None;
+    let serialized = toml::to_string(&config).unwrap();
+    let deserialized: SyncConfig = toml::from_str(&serialized).unwrap();
+    assert!(matches!(deserialized, SyncConfig::None));
+}
+
+#[test]
+fn test_sync_config_icloud_roundtrip() {
+    let config = SyncConfig::ICloud;
+    let serialized = toml::to_string(&config).unwrap();
+    let deserialized: SyncConfig = toml::from_str(&serialized).unwrap();
+    assert!(matches!(deserialized, SyncConfig::ICloud));
+}
+
+#[test]
+fn test_sync_config_s3_roundtrip() {
+    let config = SyncConfig::S3 {
+        bucket: "my-bucket".into(),
+        prefix: "vault/".into(),
+        region: "us-east-1".into(),
+        endpoint: Some("https://s3.example.com".into()),
+    };
+    let serialized = toml::to_string(&config).unwrap();
+    let deserialized: SyncConfig = toml::from_str(&serialized).unwrap();
+    match deserialized {
+        SyncConfig::S3 { bucket, prefix, region, endpoint } => {
+            assert_eq!(bucket, "my-bucket");
+            assert_eq!(prefix, "vault/");
+            assert_eq!(region, "us-east-1");
+            assert_eq!(endpoint, Some("https://s3.example.com".into()));
+        }
+        _ => panic!("expected S3 variant"),
+    }
+}
