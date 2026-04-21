@@ -252,17 +252,42 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Create a new empty .excalidraw file in the drawings/ directory.
-/// Returns the relative path to the .excalidraw file.
+/// Create a new excalidraw drawing: a `.excalidraw` data file plus
+/// a `.md` wrapper that embeds it. Returns the `.md` path (indexable by Codex).
 pub fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<PathBuf> {
     let drawings_dir = vault_root.join("drawings");
     std::fs::create_dir_all(&drawings_dir)?;
 
-    let filename = format!("{name}.excalidraw");
-    let rel_path = PathBuf::from("drawings").join(&filename);
-    let abs_path = vault_root.join(&rel_path);
+    // Create the .excalidraw data file
+    let excalidraw_file = format!("{name}.excalidraw");
+    let excalidraw_abs = drawings_dir.join(&excalidraw_file);
     let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
-    std::fs::write(&abs_path, scene)?;
+    std::fs::write(&excalidraw_abs, scene)?;
 
-    Ok(rel_path)
+    // Create a .md wrapper so the document is indexable and openable as a tab
+    let md_file = format!("{name}.md");
+    let md_rel = PathBuf::from("drawings").join(&md_file);
+    let md_abs = vault_root.join(&md_rel);
+    let md_content = format!("+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_file}]]\n");
+    std::fs::write(&md_abs, md_content)?;
+
+    Ok(md_rel)
+}
+
+/// Check if a document's content is purely an excalidraw embed wrapper.
+/// Returns the excalidraw file path if so.
+pub fn excalidraw_embed_path(content: &str) -> Option<String> {
+    let body = content.lines()
+        .skip_while(|l| l.starts_with("+++") || (!l.is_empty() && !l.starts_with("!")))
+        .filter(|l| !l.trim().is_empty() && !l.starts_with("+++"))
+        .collect::<Vec<_>>();
+
+    if body.len() == 1 {
+        let line = body[0].trim();
+        if line.starts_with("![[") && line.ends_with(".excalidraw]]") {
+            let inner = &line[3..line.len()-2];
+            return Some(inner.to_string());
+        }
+    }
+    None
 }

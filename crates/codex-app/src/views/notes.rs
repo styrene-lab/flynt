@@ -612,27 +612,6 @@ document.addEventListener('click', function(e) {
 pub fn NotesView() -> Element {
     let ctx       = use_context::<AppContext>();
     let tab_state = use_context::<Signal<TabState>>();
-    let mut active_drawing = use_context::<Signal<Option<std::path::PathBuf>>>();
-
-    // If there's an active drawing, render ExcalidrawView instead of the editor
-    if let Some(drawing_path) = active_drawing.read().clone() {
-        return rsx! {
-            div { class: "notes-pane",
-                div { class: "notes-topbar",
-                    h1 { class: "doc-title",
-                        {drawing_path.file_stem().and_then(|s| s.to_str()).unwrap_or("Drawing")}
-                    }
-                    button {
-                        class: "btn btn-ghost btn-xs",
-                        onclick: move |_| *active_drawing.write() = None,
-                        "Close drawing"
-                    }
-                }
-                crate::views::ExcalidrawView { path: drawing_path }
-            }
-        };
-    }
-
     let ctx_res   = ctx.clone();
     let ctx_save2 = ctx.clone();
 
@@ -718,19 +697,16 @@ pub fn NotesView() -> Element {
                         }
                     }
                     "open-drawing" => {
-                        // Open a .excalidraw file in the Excalidraw editor
+                        // Open the excalidraw wrapper .md in a tab — NotesView
+                        // detects the embed and renders ExcalidrawView automatically
                         let drawing_file = data.to_string();
+                        let slug = drawing_file.replace(".excalidraw", "").to_lowercase();
                         let vault = c.vault();
-                        // Look for the file in common locations
-                        let candidates = [
-                            std::path::PathBuf::from(&drawing_file),
-                            std::path::PathBuf::from("drawings").join(&drawing_file),
-                        ];
-                        for candidate in &candidates {
-                            if vault.root.join(candidate).exists() {
-                                *active_drawing.write() = Some(candidate.clone());
-                                break;
-                            }
+                        if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
+                            vault.store.find_document_by_slug(&slug)
+                        }).await.unwrap_or(Ok(None)) {
+                            ts_link.write().open(meta.id.clone(), meta.title.clone());
+                            *ar_link.write() = Route::Notes;
                         }
                     }
                     "nav" => {
@@ -777,6 +753,25 @@ pub fn NotesView() -> Element {
             }
         };
     };
+
+    // If this document is an excalidraw wrapper, render ExcalidrawView directly
+    if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(body) {
+        let vault_root = ctx.vault_root();
+        // Resolve the .excalidraw file relative to the document's directory
+        let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));
+        let excalidraw_path = doc_dir.join(&excalidraw_file);
+        let abs = vault_root.join(&excalidraw_path);
+        if abs.exists() {
+            return rsx! {
+                div { class: "notes-pane",
+                    div { class: "notes-topbar",
+                        h1 { class: "doc-title", "{title}" }
+                    }
+                    crate::views::ExcalidrawView { path: excalidraw_path }
+                }
+            };
+        }
+    }
 
     // Eagerly seed edit_body if it's empty and we have content —
     // ensures CM6 has content even before use_effect fires.

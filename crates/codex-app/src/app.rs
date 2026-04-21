@@ -31,8 +31,6 @@ pub fn App() -> Element {
     // Tab state — provided via context so sidebar, tab bar, and notes share it
     use_context_provider(|| Signal::new(TabState::default()));
 
-    // Active drawing — when set, NotesView renders ExcalidrawView for this path
-    use_context_provider(|| Signal::new(None::<PathBuf>));
 
     // Route — provided via context so search view can navigate back
     let mut active_route = use_context_provider(|| {
@@ -55,7 +53,6 @@ pub fn App() -> Element {
     // ── Native menu event handler ────────────────────────────────────────
     let ctx_menu_handler = ctx.clone();
     let mut show_agent_menu = show_agent;
-    let mut drawing_signal: Signal<Option<PathBuf>> = use_context();
     dioxus::desktop::use_muda_event_handler(move |event| {
         match event.id().0.as_str() {
             crate::menu::VIEW_NOTES => *active_route.write() = Route::Notes,
@@ -122,14 +119,18 @@ pub fn App() -> Element {
             }
             crate::menu::NEW_DRAWING => {
                 let c = ctx_menu_handler;
+                let mut ts = tab_state;
                 let mut ar = active_route;
-                let mut ds = drawing_signal;
                 spawn(async move {
                     let vault = c.vault();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
                     let name = format!("Drawing {ts_suffix}");
-                    if let Ok(path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                        *ds.write() = Some(path);
+                    if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                        let _ = vault.reindex();
+                        let slug = name.to_lowercase();
+                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                            ts.write().open(doc.id, name);
+                        }
                         *ar.write() = Route::Notes;
                     }
                 });
