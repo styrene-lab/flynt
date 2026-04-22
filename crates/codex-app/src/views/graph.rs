@@ -470,9 +470,21 @@ fn filter_graph<'a>(
         if let Some(ref ids) = local_ids {
             if !ids.contains(n.id.as_str()) { return false; }
         }
-        // Kind filter
+        // Kind filter — also match by folder for design_node and scenario
         if let Some(ref k) = s.kind {
-            if &n.kind != k { return false; }
+            let kind_match = &n.kind == k;
+            let folder_match = match k {
+                GraphNodeKind::DesignNode => {
+                    let g = n.group.to_lowercase();
+                    g == "design" || g == "openspec" || g.starts_with("design")
+                }
+                GraphNodeKind::Scenario => {
+                    let g = n.group.to_lowercase();
+                    g == "openspec" || g.starts_with("spec")
+                }
+                _ => false,
+            };
+            if !kind_match && !folder_match { return false; }
         }
         // Group filter
         if let Some(ref g) = s.group {
