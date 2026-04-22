@@ -130,6 +130,11 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
             .and_then(|s| serde_json::from_str(&format!("\"{s}\"")).ok())
             .unwrap_or_default(),
         last_touched_at: None,
+        external_refs: data
+            .and_then(|d| d.get("external_refs"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default(),
         design_node_id: get_str("design_node")
             .and_then(|s| Uuid::parse_str(&s).ok()),
     })

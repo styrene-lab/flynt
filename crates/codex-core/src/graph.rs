@@ -592,6 +592,7 @@ mod tests {
                 status: Default::default(),
                 tags: vec![],
                 document_refs: vec![a.clone()],
+                external_refs: vec![],
                 due_date: None,
                 position: 0,
                 created_at: now,

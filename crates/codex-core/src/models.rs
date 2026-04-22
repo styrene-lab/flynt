@@ -223,6 +223,10 @@ pub struct Task {
     pub tags: Vec<String>,
     /// Documents linked to this task
     pub document_refs: Vec<DocumentId>,
+    /// External references — URLs to GitHub issues, PRs, Notion pages, etc.
+    /// Rendered as badges when URL pattern is recognized.
+    #[serde(default)]
+    pub external_refs: Vec<String>,
     pub due_date: Option<NaiveDate>,
     /// Ordering position within column (ascending)
     pub position: u32,
@@ -460,6 +464,7 @@ impl Task {
             status:          TaskStatus::Todo,
             tags:            Vec::new(),
             document_refs:   Vec::new(),
+            external_refs:   Vec::new(),
             due_date:        None,
             position:        u32::MAX,
             created_at:      now,
@@ -768,6 +773,7 @@ mod tests {
             status,
             tags: vec![],
             document_refs: vec![],
+            external_refs: vec![],
             due_date: None,
             position: 0,
             created_at: anchor,
