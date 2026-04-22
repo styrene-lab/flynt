@@ -645,6 +645,47 @@
   opacity: 0.5;
 }
 
+/* ── External ref badges ─────────────────────────────────────────── */
+.external-ref {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           5px;
+  padding:       2px 8px;
+  background:    var(--surface, #0c1018);
+  border:        1px solid var(--border, #1a2233);
+  border-radius: 4px;
+  font-size:     13px;
+  text-decoration: none;
+  color:         var(--foreground, #c4d8e4);
+  vertical-align: middle;
+  margin:        0 2px;
+  transition:    border-color 0.15s;
+}
+.external-ref:hover {
+  border-color:  var(--primary, #2ab4c8);
+  text-decoration: none;
+}
+.external-ref-badge {
+  height:        16px;
+  vertical-align: middle;
+}
+.external-ref-provider {
+  font-size:     11px;
+  font-weight:   600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity:       0.6;
+}
+.external-ref-label {
+  color:         var(--primary, #2ab4c8);
+}
+.ref-github .external-ref-provider { color: #c9d1d9; }
+.ref-gitlab .external-ref-provider { color: #fc6d26; }
+.ref-linear .external-ref-provider { color: #5e6ad2; }
+.ref-jira .external-ref-provider   { color: #0052cc; }
+.ref-notion .external-ref-provider { color: #999; }
+.ref-ado .external-ref-provider    { color: #0078d4; }
+
 /* ── CM6 task checkbox ────────────────────────────────────────────── */
 .cm-task-checkbox {
   width:          16px;

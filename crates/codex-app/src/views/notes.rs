@@ -111,6 +111,43 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
         }
     }
 
+    // Replace bare external URLs with smart badges
+    // Match <a href="https://...">https://...</a> (autolinked URLs where text == href)
+    let mut out = String::with_capacity(html.len());
+    let mut search_from = 0;
+    while let Some(start) = html[search_from..].find("<a href=\"http") {
+        let abs_start = search_from + start;
+        if let Some(close) = html[abs_start..].find("</a>") {
+            let tag_end = abs_start + close + 4;
+            let tag = &html[abs_start..tag_end];
+            // Extract href
+            if let (Some(href_start), Some(href_end)) = (tag.find("href=\""), tag.find("\">")) {
+                let href = &tag[href_start + 6..href_end];
+                // Extract link text
+                let text_start = href_end + 2;
+                let text_end = tag.len() - 4; // before </a>
+                let text = &tag[text_start..text_end];
+                // Only replace if link text IS the URL (autolinked) or starts with http
+                if text.starts_with("http") || text == href {
+                    let ext_ref = codex_core::external_ref::parse_ref(href);
+                    if ext_ref.provider != codex_core::external_ref::Provider::Generic {
+                        let badge = codex_core::external_ref::render_html(&ext_ref);
+                        out.push_str(&html[search_from..abs_start]);
+                        out.push_str(&badge);
+                        search_from = tag_end;
+                        continue;
+                    }
+                }
+            }
+            out.push_str(&html[search_from..tag_end]);
+            search_from = tag_end;
+        } else {
+            break;
+        }
+    }
+    out.push_str(&html[search_from..]);
+    let html = out;
+
     html
 }
 

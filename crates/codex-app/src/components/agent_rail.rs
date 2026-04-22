@@ -32,7 +32,37 @@ fn render_md(content: &str) -> String {
     opts.extension.autolink = true;
     opts.extension.footnotes = true;
     opts.render.unsafe_ = true;
-    markdown_to_html(content, &opts)
+    let html = markdown_to_html(content, &opts);
+
+    // Replace autolinked external URLs with smart badges
+    let mut out = String::with_capacity(html.len());
+    let mut pos = 0;
+    while let Some(start) = html[pos..].find("<a href=\"http") {
+        let abs = pos + start;
+        if let Some(close) = html[abs..].find("</a>") {
+            let end = abs + close + 4;
+            let tag = &html[abs..end];
+            if let (Some(hs), Some(he)) = (tag.find("href=\""), tag.find("\">")) {
+                let href = &tag[hs + 6..he];
+                let text = &tag[he + 2..tag.len() - 4];
+                if text.starts_with("http") {
+                    let ext = codex_core::external_ref::parse_ref(href);
+                    if ext.provider != codex_core::external_ref::Provider::Generic {
+                        out.push_str(&html[pos..abs]);
+                        out.push_str(&codex_core::external_ref::render_html(&ext));
+                        pos = end;
+                        continue;
+                    }
+                }
+            }
+            out.push_str(&html[pos..end]);
+            pos = end;
+        } else {
+            break;
+        }
+    }
+    out.push_str(&html[pos..]);
+    out
 }
 
 fn tool_kind_label(kind: &str) -> &str {
