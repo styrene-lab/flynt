@@ -268,6 +268,73 @@ impl Vault {
         self.index_file(&abs_path)
     }
 
+    /// Set or clear the `kind` field in a document's TOML frontmatter.
+    /// Pass `None` to remove the kind (revert to plain document).
+    pub fn set_document_kind(&self, rel_path: &Path, kind: Option<&str>) -> Result<()> {
+        let abs_path = self.root.join(rel_path);
+        let raw = fs::read_to_string(&abs_path)?;
+
+        let updated = if raw.starts_with("+++") {
+            // Find the closing +++ by scanning byte offsets directly
+            // (handles both LF and CRLF line endings)
+            let first_newline = raw.find('\n').ok_or_else(|| anyhow::anyhow!("Malformed frontmatter"))?;
+            let search_start = first_newline + 1;
+            let mut closing_pos = None;
+            for (i, line) in raw[search_start..].split('\n').enumerate() {
+                let trimmed = line.trim_end_matches('\r').trim();
+                if trimmed == "+++" {
+                    // Calculate byte offset from start of raw
+                    let offset: usize = raw[search_start..].split('\n')
+                        .take(i)
+                        .map(|l| l.len() + 1) // +1 for the \n
+                        .sum();
+                    closing_pos = Some(search_start + offset);
+                    break;
+                }
+            }
+            let closing_pos = closing_pos.ok_or_else(|| anyhow::anyhow!("Malformed frontmatter: no closing +++"))?;
+
+            let fm_text = &raw[first_newline + 1..closing_pos];
+            let closing_line_end = raw[closing_pos..].find('\n')
+                .map(|p| closing_pos + p + 1)
+                .unwrap_or(raw.len());
+            let after_fm = &raw[closing_line_end..];
+
+            // Remove existing kind line — match only `kind = ` or `kind=` at the
+            // start of the line (after optional whitespace), not inside [data] tables
+            let mut new_fm = String::new();
+            let mut in_table = false;
+            for line in fm_text.lines() {
+                let stripped = line.trim_start();
+                // Track TOML table headers
+                if stripped.starts_with('[') {
+                    in_table = true;
+                }
+                // Only remove top-level `kind` key, not inside [data] or other tables
+                if !in_table && (stripped.starts_with("kind =") || stripped.starts_with("kind=")) {
+                    continue; // drop old kind
+                }
+                new_fm.push_str(line);
+                new_fm.push('\n');
+            }
+            // Insert new kind if provided (at top level, after first line)
+            if let Some(k) = kind {
+                let insert_pos = new_fm.find('\n').map(|p| p + 1).unwrap_or(0);
+                new_fm.insert_str(insert_pos, &format!("kind = \"{k}\"\n"));
+            }
+            format!("+++\n{new_fm}+++\n{after_fm}")
+        } else {
+            // No frontmatter — prepend one
+            match kind {
+                Some(k) => format!("+++\nkind = \"{k}\"\n+++\n\n{raw}"),
+                None => raw, // nothing to do
+            }
+        };
+
+        fs::write(&abs_path, &updated)?;
+        self.index_file(&abs_path)
+    }
+
     /// Write updated markdown content to a new file path and index it.
     pub fn create_document(&self, rel_path: &Path, title: &str) -> Result<()> {
         let abs_path = self.root.join(rel_path);
@@ -2096,5 +2163,228 @@ Design for the authentication subsystem.
         // Verify it shows up in list_entities_by_kind
         let design_nodes = vault.store.list_entities_by_kind(&EntityKind::DesignNode).unwrap();
         assert!(design_nodes.iter().any(|m| m.id == doc_id), "design node should appear in kind listing");
+    }
+
+    #[test]
+    fn set_document_kind_on_existing_frontmatter() {
+        use codex_core::datum::EntityKind;
+
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        // Create a plain document with frontmatter
+        let content = "+++\ntitle = \"My Note\"\ntags = [\"test\"]\n+++\n\n# My Note\n\nSome content.\n";
+        let path = std::path::PathBuf::from("my-note.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+        vault.reindex().unwrap();
+
+        // Set kind to design_node
+        vault.set_document_kind(&path, Some("design_node")).unwrap();
+
+        // Re-read the file and verify
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.contains("kind = \"design_node\""), "should contain kind field: {updated}");
+        assert!(updated.contains("title = \"My Note\""), "should preserve title");
+        assert!(updated.contains("tags = [\"test\"]"), "should preserve tags");
+        assert!(updated.contains("# My Note"), "should preserve body");
+
+        // Reindex and verify entity kind
+        vault.reindex().unwrap();
+        let docs = vault.store.list_documents().unwrap();
+        let doc = docs.iter().find(|d| d.title == "My Note").unwrap();
+        assert_eq!(doc.entity_kind, Some(EntityKind::DesignNode));
+    }
+
+    #[test]
+    fn set_document_kind_replaces_existing_kind() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let content = "+++\ntitle = \"Task Doc\"\nkind = \"task\"\n+++\n\nBody\n";
+        let path = std::path::PathBuf::from("task-doc.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        // Change kind from task to project
+        vault.set_document_kind(&path, Some("project")).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.contains("kind = \"project\""), "should have new kind: {updated}");
+        assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
+    }
+
+    #[test]
+    fn set_document_kind_clear_removes_kind() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let content = "+++\ntitle = \"Typed\"\nkind = \"design_node\"\n+++\n\nBody\n";
+        let path = std::path::PathBuf::from("typed.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        // Clear the kind
+        vault.set_document_kind(&path, None).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
+        assert!(updated.contains("title = \"Typed\""), "should preserve title");
+    }
+
+    #[test]
+    fn set_document_kind_no_frontmatter_creates_one() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let content = "# Just a note\n\nNo frontmatter here.\n";
+        let path = std::path::PathBuf::from("plain.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        vault.set_document_kind(&path, Some("design_node")).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.starts_with("+++\n"), "should start with frontmatter");
+        assert!(updated.contains("kind = \"design_node\""), "should contain kind");
+        assert!(updated.contains("# Just a note"), "should preserve body");
+    }
+
+    #[test]
+    fn set_document_kind_clear_on_plain_doc_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let content = "# Plain\n\nNo kind to clear.\n";
+        let path = std::path::PathBuf::from("noop.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        vault.set_document_kind(&path, None).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        // File gets reindexed (frontmatter added by indexer) but no kind field
+        assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
+        assert!(updated.contains("# Plain"), "should preserve body");
+    }
+
+    #[test]
+    fn set_document_kind_preserves_data_table() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        let content = "+++\ntitle = \"Design\"\nkind = \"design_node\"\n\n[data]\nstatus = \"exploring\"\npriority = 5\n+++\n\n# Design\n";
+        let path = std::path::PathBuf::from("with-data.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        // Change kind — [data] table should be preserved
+        vault.set_document_kind(&path, Some("project")).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.contains("kind = \"project\""), "new kind: {updated}");
+        assert!(updated.contains("[data]"), "should preserve data table: {updated}");
+        assert!(updated.contains("status = \"exploring\""), "should preserve data fields: {updated}");
+        assert!(updated.contains("priority = 5"), "should preserve data fields: {updated}");
+    }
+
+    #[test]
+    fn set_document_kind_does_not_match_similar_field_names() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        // "kind_of_thing" should NOT be matched as the "kind" field
+        let content = "+++\ntitle = \"Test\"\nkind_of_thing = \"misc\"\n+++\n\nBody\n";
+        let path = std::path::PathBuf::from("similar.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        vault.set_document_kind(&path, Some("project")).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.contains("kind = \"project\""), "should have kind: {updated}");
+        assert!(updated.contains("kind_of_thing = \"misc\""), "should preserve similar field: {updated}");
+    }
+
+    #[test]
+    fn set_document_kind_does_not_remove_kind_inside_data_table() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        // kind inside [data] should be preserved
+        let content = "+++\ntitle = \"Node\"\nkind = \"design_node\"\n\n[data]\nkind = \"subtype-a\"\nstatus = \"active\"\n+++\n\nBody\n";
+        let path = std::path::PathBuf::from("nested-kind.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        vault.set_document_kind(&path, Some("project")).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.contains("kind = \"project\""), "should have new top-level kind: {updated}");
+        // The [data] section's kind field should be preserved
+        assert!(updated.contains("kind = \"subtype-a\""), "should preserve kind inside [data]: {updated}");
+    }
+
+    #[test]
+    fn set_document_kind_handles_crlf_line_endings() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        // CRLF line endings
+        let content = "+++\r\ntitle = \"CRLF\"\r\nkind = \"task\"\r\n+++\r\n\r\nBody\r\n";
+        let path = std::path::PathBuf::from("crlf.md");
+        std::fs::write(vault_root.join(&path), content).unwrap();
+
+        vault.set_document_kind(&path, Some("design_node")).unwrap();
+        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        assert!(updated.contains("kind = \"design_node\""), "should have new kind: {updated}");
+        assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
+        assert!(updated.contains("Body"), "should preserve body: {updated}");
+    }
+
+    #[test]
+    fn graph_edges_from_wikilinks() {
+        let tmp = TempDir::new().unwrap();
+        let vault_root = tmp.path().join("vault");
+        std::fs::create_dir_all(&vault_root).unwrap();
+        let vault = Vault::open(&vault_root).unwrap();
+
+        // Create two documents with wikilinks between them
+        let id_a = uuid::Uuid::new_v4();
+        let id_b = uuid::Uuid::new_v4();
+        std::fs::write(
+            vault_root.join("alpha.md"),
+            format!("+++\nid = \"{id_a}\"\ntitle = \"Alpha\"\n+++\n\n# Alpha\n\nSee [[Beta]] for details.\n"),
+        ).unwrap();
+        std::fs::write(
+            vault_root.join("beta.md"),
+            format!("+++\nid = \"{id_b}\"\ntitle = \"Beta\"\n+++\n\n# Beta\n\nRefer back to [[Alpha]].\n"),
+        ).unwrap();
+
+        let (indexed, errors) = vault.reindex().unwrap();
+        assert_eq!(indexed, 2, "should index both files");
+        assert!(errors.is_empty());
+
+        // Verify outgoing links are stored
+        let doc_a = vault.store.get_document(&codex_core::models::DocumentId(id_a)).unwrap().unwrap();
+        assert_eq!(doc_a.outgoing_links.len(), 1, "alpha should link to beta");
+        assert_eq!(doc_a.outgoing_links[0].target.to_lowercase(), "beta");
+
+        let doc_b = vault.store.get_document(&codex_core::models::DocumentId(id_b)).unwrap().unwrap();
+        assert_eq!(doc_b.outgoing_links.len(), 1, "beta should link to alpha");
+        assert_eq!(doc_b.outgoing_links[0].target.to_lowercase(), "alpha");
+
+        // Build graph and verify edges
+        let graph = codex_core::graph::build_graph_payload(&*vault.store).unwrap();
+        assert!(graph.nodes.len() >= 2, "should have at least 2 nodes");
+        assert!(!graph.edges.is_empty(), "should have wikilink edges, got: {:?}", graph.edges);
+
+        let wikilink_edges: Vec<_> = graph.edges.iter()
+            .filter(|e| matches!(e.kind, codex_core::graph::GraphEdgeKind::Wikilink))
+            .collect();
+        assert_eq!(wikilink_edges.len(), 2, "should have 2 wikilink edges (A→B and B→A), got {}", wikilink_edges.len());
     }
 }

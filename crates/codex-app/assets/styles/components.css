@@ -413,7 +413,10 @@
   box-shadow:  0 4px 16px rgba(0,0,0,0.4);
 }
 .ctx-menu-item {
-  display:     block;
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  gap:             var(--space-6);
   width:       100%;
   text-align:  left;
   border:      none;
@@ -431,6 +434,16 @@
 }
 .ctx-menu-item.danger:hover {
   background:  rgba(239, 68, 68, 0.1);
+}
+.ctx-menu-sep {
+  height:     1px;
+  background: var(--border);
+  margin:     var(--space-1) 0;
+}
+.ctx-menu-key {
+  font-size: var(--font-size-xs);
+  color:     var(--muted-foreground);
+  opacity:   0.6;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════

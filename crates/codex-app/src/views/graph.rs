@@ -157,6 +157,12 @@ pub fn GraphView() -> Element {
                         div { class: "graph-topbar",
                             div { class: "graph-stats",
                                 "{filtered_nodes.len()} nodes · {filtered_edges.len()} links"
+                                if filtered_edges.len() != payload.edges.len() {
+                                    {
+                                        let total = payload.edges.len();
+                                        rsx! { span { class: "muted", " ({total} total)" } }
+                                    }
+                                }
                             }
                             input {
                                 r#type: "text",
@@ -200,7 +206,10 @@ pub fn GraphView() -> Element {
                                                 class: if s.kind.as_ref() == Some(&kind) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
                                                 onclick: {
                                                     let kind = kind.clone();
-                                                    move |_| settings.write().kind = Some(kind.clone())
+                                                    move |_| {
+                                                        let mut s = settings.write();
+                                                        if s.kind.as_ref() == Some(&kind) { s.kind = None; } else { s.kind = Some(kind.clone()); }
+                                                    }
                                                 },
                                                 "{format_node_kind(&kind)}"
                                             }
@@ -218,7 +227,10 @@ pub fn GraphView() -> Element {
                                                     class: if s.group.as_ref() == Some(group) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
                                                     onclick: {
                                                         let group = group.clone();
-                                                        move |_| settings.write().group = Some(group.clone())
+                                                        move |_| {
+                                                            let mut s = settings.write();
+                                                            if s.group.as_ref() == Some(&group) { s.group = None; } else { s.group = Some(group.clone()); }
+                                                        }
                                                     },
                                                     "{group}"
                                                 }
@@ -237,7 +249,10 @@ pub fn GraphView() -> Element {
                                                     class: if s.tag.as_ref() == Some(tag) { "btn btn-primary btn-xs tag-chip" } else { "btn btn-ghost btn-xs tag-chip" },
                                                     onclick: {
                                                         let tag = tag.clone();
-                                                        move |_| settings.write().tag = Some(tag.clone())
+                                                        move |_| {
+                                                            let mut s = settings.write();
+                                                            if s.tag.as_ref() == Some(&tag) { s.tag = None; } else { s.tag = Some(tag.clone()); }
+                                                        }
                                                     },
                                                     "#{tag}"
                                                 }
@@ -465,7 +480,7 @@ fn filter_graph<'a>(
         visited
     });
 
-    let nodes: Vec<_> = payload.nodes.iter().filter(|n| {
+    let mut nodes: Vec<_> = payload.nodes.iter().filter(|n| {
         // Local graph restriction
         if let Some(ref ids) = local_ids {
             if !ids.contains(n.id.as_str()) { return false; }
@@ -508,19 +523,52 @@ fn filter_graph<'a>(
     }).collect();
 
     let ids: std::collections::HashSet<_> = nodes.iter().map(|n| n.id.as_str()).collect();
+
+    // When filters are active, also include edges where at least one end is in
+    // the filtered set, and pull in the neighbor node so the edge can render.
+    let has_filter = s.kind.is_some() || s.group.is_some() || s.tag.is_some();
+    let all_ids: std::collections::HashMap<&str, &codex_core::graph::GraphNode> = payload.nodes.iter()
+        .map(|n| (n.id.as_str(), n)).collect();
+
+    let mut neighbor_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
     let edges: Vec<_> = payload.edges.iter().filter(|e| {
-        if !ids.contains(e.source.as_str()) || !ids.contains(e.target.as_str()) {
-            return false;
-        }
-        match e.kind {
+        let edge_allowed = match e.kind {
             GraphEdgeKind::Wikilink => s.show_wikilinks,
             GraphEdgeKind::TaskMembership => s.show_task_links,
             GraphEdgeKind::SemanticSupport => s.show_semantic,
             GraphEdgeKind::Dependency => true,
             GraphEdgeKind::ParentChild => true,
             GraphEdgeKind::Validates => true,
+        };
+        if !edge_allowed { return false; }
+
+        let src_in = ids.contains(e.source.as_str());
+        let tgt_in = ids.contains(e.target.as_str());
+
+        if src_in && tgt_in { return true; }
+
+        // Cross-boundary: include if at least one end is a filtered node
+        if has_filter && (src_in || tgt_in) {
+            // Track the external neighbor so we can add it to the node list
+            if !src_in { neighbor_ids.insert(e.source.as_str()); }
+            if !tgt_in { neighbor_ids.insert(e.target.as_str()); }
+            return true;
         }
+
+        false
     }).collect();
+
+    // Add neighbor nodes that were pulled in by cross-boundary edges
+    if !neighbor_ids.is_empty() {
+        for nid in &neighbor_ids {
+            if let Some(node) = all_ids.get(nid) {
+                if !ids.contains(nid) {
+                    nodes.push(node);
+                }
+            }
+        }
+    }
 
     (nodes, edges)
 }

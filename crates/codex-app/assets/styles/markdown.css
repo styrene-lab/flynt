@@ -11,13 +11,20 @@
 }
 
 .notes-pane {
-  flex:    1;
-  overflow-y: auto;
-  padding: var(--space-8) var(--space-10);
+  flex:           1;
+  display:        flex;
+  flex-direction: column;
+  overflow:       hidden;
 }
 
-/* In edit mode the split pane manages its own scroll; pane becomes a flex container */
-.notes-pane:has(.editor-split) {
+.notes-scroll {
+  flex:       1;
+  overflow-y: auto;
+  padding:    var(--space-8) var(--space-10);
+}
+
+/* In edit mode the split pane manages its own scroll */
+.notes-scroll:has(.editor-split) {
   padding:        0;
   overflow:       hidden;
   display:        flex;
@@ -208,19 +215,14 @@
 
 /* Notes top bar: title + actions row */
 .notes-topbar {
-  display:       flex;
-  align-items:   center;
+  display:         flex;
+  align-items:     center;
   justify-content: space-between;
-  gap:           var(--space-4);
-  margin-bottom: 0;
-  position:      sticky;
-  top:           0;
-  z-index:       50;
-  background:    var(--background);
-  padding:       8px var(--space-10);
-  margin:        0 calc(-1 * var(--space-10));
-  width:         calc(100% + 2 * var(--space-10));
-  border-bottom: 1px solid var(--border);
+  gap:             var(--space-4);
+  flex-shrink:     0;
+  background:      var(--background);
+  padding:         8px var(--space-10);
+  border-bottom:   1px solid var(--border);
 }
 
 .notes-actions {

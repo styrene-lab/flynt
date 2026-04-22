@@ -36,8 +36,9 @@ fn split_frontmatter(raw: &str) -> (Frontmatter, String) {
     (Frontmatter::default(), raw.to_string())
 }
 
-/// Extract all `[[wikilink]]` patterns from markdown content.
-/// Handles `[[target]]` and `[[target|display]]` and `[[target#anchor]]`.
+/// Extract all `[[wikilink]]` patterns and local markdown links from content.
+/// Handles `[[target]]`, `[[target|display]]`, `[[target#anchor]]`,
+/// and standard `[text](path.md)` links to local files.
 fn extract_wikilinks(body: &str) -> Vec<WikiLink> {
     let arena = Arena::new();
     let opts = Options::default();
@@ -45,10 +46,50 @@ fn extract_wikilinks(body: &str) -> Vec<WikiLink> {
 
     let mut links = Vec::new();
 
-    // Walk every text node and scan for [[...]]
     for node in root.descendants() {
-        if let NodeValue::Text(ref text) = node.data.borrow().value {
-            links.extend(scan_wikilinks(text));
+        match &node.data.borrow().value {
+            // Scan text nodes for [[wikilinks]]
+            NodeValue::Text(text) => {
+                links.extend(scan_wikilinks(text));
+            }
+            // Extract local markdown links: [text](path.md)
+            NodeValue::Link(link) => {
+                let url = &link.url;
+                // Skip external URLs and anchors-only
+                if url.starts_with("http://") || url.starts_with("https://")
+                    || url.starts_with("mailto:") || url.starts_with('#')
+                    || url.is_empty()
+                {
+                    continue;
+                }
+                // Resolve relative paths — strip leading ../ and extract the filename
+                let path = std::path::Path::new(url.split('#').next().unwrap_or(url));
+                // Only include links to markdown files or extensionless refs
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if !ext.is_empty() && ext != "md" { continue; }
+                // Use the file stem as the target slug (like wikilinks do)
+                let target = path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if target.is_empty() { continue; }
+                let anchor = url.find('#').map(|i| url[i + 1..].to_string());
+                // Extract display text from child text nodes
+                let display: String = node.descendants()
+                    .filter_map(|child| {
+                        if let NodeValue::Text(ref t) = child.data.borrow().value {
+                            Some(t.clone())
+                        } else { None }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                links.push(WikiLink {
+                    target,
+                    display: if display.is_empty() { None } else { Some(display) },
+                    anchor,
+                });
+            }
+            _ => {}
         }
     }
 
@@ -203,5 +244,56 @@ mod tests {
         let (body, fm, _) = parse_document_source(raw);
         assert_eq!(fm.title.as_deref(), Some("Just FM"));
         assert!(body.is_empty() || body.trim().is_empty());
+    }
+
+    // ── Markdown reference link extraction ─────────────────────────
+
+    #[test]
+    fn extracts_local_markdown_link() {
+        let (_, _, links) = parse_document_source("See [design doc](../docs/provider-landscape.md) for details.");
+        assert!(links.iter().any(|l| l.target == "provider-landscape"), "links: {links:?}");
+    }
+
+    #[test]
+    fn extracts_local_link_with_anchor() {
+        let (_, _, links) = parse_document_source("See [arch](design.md#overview) section.");
+        let link = links.iter().find(|l| l.target == "design").unwrap();
+        assert_eq!(link.anchor.as_deref(), Some("overview"));
+    }
+
+    #[test]
+    fn ignores_external_http_links() {
+        let (_, _, links) = parse_document_source("See [docs](https://example.com/design.md).");
+        assert!(links.is_empty(), "should not extract http links: {links:?}");
+    }
+
+    #[test]
+    fn ignores_image_links() {
+        let (_, _, links) = parse_document_source("See [photo](image.png).");
+        assert!(links.is_empty(), "should not extract image links: {links:?}");
+    }
+
+    #[test]
+    fn extracts_extensionless_local_link() {
+        let (_, _, links) = parse_document_source("See [roadmap](../roadmap) here.");
+        assert!(links.iter().any(|l| l.target == "roadmap"), "links: {links:?}");
+    }
+
+    #[test]
+    fn extracts_mixed_wikilinks_and_md_links() {
+        let (_, _, links) = parse_document_source(
+            "See [[alpha]] and [beta doc](beta.md) and [[gamma]]."
+        );
+        assert_eq!(links.len(), 3);
+        assert!(links.iter().any(|l| l.target == "alpha"));
+        assert!(links.iter().any(|l| l.target == "beta"));
+        assert!(links.iter().any(|l| l.target == "gamma"));
+    }
+
+    #[test]
+    fn local_link_preserves_display_text() {
+        let (_, _, links) = parse_document_source("See [the design](design.md).");
+        let link = links.iter().find(|l| l.target == "design").unwrap();
+        assert_eq!(link.display.as_deref(), Some("the design"));
     }
 }

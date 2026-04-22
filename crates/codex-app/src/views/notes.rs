@@ -597,7 +597,6 @@ fn cm6_init_js(content: &str) -> String {
                 if (wlIdx > 0 && text[wlIdx - 1] === '!') {{ wlIdx += 2; continue; }}
                 const wlEnd = text.indexOf(']]', wlIdx + 2);
                 if (wlEnd > wlIdx) {{
-                    // Mark the whole [[target]] as a wikilink
                     decs.push(Decoration.mark({{ class: 'cm-wikilink' }}).range(line.from + wlIdx, line.from + wlEnd + 2));
                     wlIdx = wlEnd + 2;
                 }} else break;
@@ -615,6 +614,41 @@ fn cm6_init_js(content: &str) -> String {
                         widget: new EmbedWidget(ref, type),
                     }}).range(line.from, line.to));
                 }}
+            }}
+        }}
+        return Decoration.set(decs, true);
+    }});
+
+    // ── Wikilink bracket hiding — lightweight, selection-aware ──
+    // Separate from combinedPlugin so structural decorations don't recompute on cursor move.
+    const wikilinkHidePlugin = EditorView.decorations.compute(['doc', 'selection'], (state) => {{
+        const decs = [];
+        const doc = state.doc;
+        const sel = state.selection.main;
+        const activeLine = doc.lineAt(sel.head).number;
+
+        for (let i = 1; i <= doc.lines; i++) {{
+            if (i === activeLine) continue; // show raw syntax on active line
+            const line = doc.line(i);
+            const text = line.text;
+            let idx = 0, safety = 0;
+            while ((idx = text.indexOf('[[', idx)) !== -1 && safety++ < 20) {{
+                // Skip embed syntax ![[
+                if (idx > 0 && text[idx - 1] === '!') {{ idx += 2; continue; }}
+                const end = text.indexOf(']]', idx + 2);
+                if (end > idx) {{
+                    const inner = text.substring(idx + 2, end);
+                    const pipe = inner.indexOf('|');
+                    // Hide opening [[
+                    decs.push(Decoration.replace({{}}).range(line.from + idx, line.from + idx + 2));
+                    // For [[target|display]], also hide target and pipe
+                    if (pipe >= 0) {{
+                        decs.push(Decoration.replace({{}}).range(line.from + idx + 2, line.from + idx + 2 + pipe + 1));
+                    }}
+                    // Hide closing ]]
+                    decs.push(Decoration.replace({{}}).range(line.from + end, line.from + end + 2));
+                    idx = end + 2;
+                }} else break;
             }}
         }}
         return Decoration.set(decs, true);
@@ -837,6 +871,68 @@ fn cm6_init_js(content: &str) -> String {
         }},
     }}]);
 
+    // Context menu action dispatcher
+    window._codexCtxAction = function(id, view) {{
+        const sel = view.state.selection.main;
+        const selected = view.state.sliceDoc(sel.from, sel.to);
+        const line = view.state.doc.lineAt(sel.head);
+
+        function wrap(before, after) {{
+            if (selected.startsWith(before) && selected.endsWith(after)) {{
+                view.dispatch({{ changes: {{ from: sel.from, to: sel.to, insert: selected.slice(before.length, -after.length) }} }});
+            }} else {{
+                view.dispatch({{ changes: {{ from: sel.from, to: sel.to, insert: before + selected + after }} }});
+            }}
+        }}
+
+        function insertAtLineStart(prefix) {{
+            const text = line.text;
+            // If line already has this prefix, remove it
+            if (text.startsWith(prefix)) {{
+                view.dispatch({{ changes: {{ from: line.from, to: line.from + prefix.length, insert: '' }} }});
+            }} else {{
+                // Remove any existing heading prefix first
+                const hm = text.match(/^#{{1,6}}\s/);
+                const remove = hm ? hm[0].length : 0;
+                view.dispatch({{ changes: {{ from: line.from, to: line.from + remove, insert: prefix }} }});
+            }}
+        }}
+
+        function insertBlock(text) {{
+            // Insert at end of current line with newlines
+            const pos = line.to;
+            view.dispatch({{ changes: {{ from: pos, insert: '\n' + text + '\n' }}, selection: {{ anchor: pos + 1 + text.length }} }});
+        }}
+
+        switch (id) {{
+            case 'bold':      wrap('**', '**'); break;
+            case 'italic':    wrap('*', '*'); break;
+            case 'code':      wrap('`', '`'); break;
+            case 'strike':    wrap('~~', '~~'); break;
+            case 'link':      view.dispatch({{ changes: {{ from: sel.from, to: sel.to, insert: '[' + selected + '](url)' }} }}); break;
+            case 'wikilink':  wrap('[[', ']]'); break;
+            case 'h1':        insertAtLineStart('# '); break;
+            case 'h2':        insertAtLineStart('## '); break;
+            case 'h3':        insertAtLineStart('### '); break;
+            case 'bullet':    insertAtLineStart('- '); break;
+            case 'task':      insertAtLineStart('- [ ] '); break;
+            case 'quote':     insertAtLineStart('> '); break;
+            case 'codeblock': insertBlock('```\n\n```'); break;
+            case 'table':     insertBlock('| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |'); break;
+            case 'hr':        insertBlock('---'); break;
+        }}
+        view.focus();
+        // Notify edit
+        clearTimeout(saveTimer);
+        clearTimeout(editTimer);
+        editTimer = setTimeout(() => {{
+            if (window._codexCM) window._codexNotify('edit', window._codexCM.state.doc.toString());
+        }}, 300);
+        saveTimer = setTimeout(() => {{
+            if (window._codexCM) window._codexNotify('autosave', window._codexCM.state.doc.toString());
+        }}, 1500);
+    }};
+
     const docText = {escaped};
     // Place cursor after frontmatter (first blank line after +++ closing)
     let cursorPos = docText.length;
@@ -867,19 +963,110 @@ fn cm6_init_js(content: &str) -> String {
             formatKeymap,
             changeHandler,
             combinedPlugin,
-            // Click handler for wikilinks
+            wikilinkHidePlugin,
+            // Click handler for wikilinks + custom context menu
             EditorView.domEventHandlers({{
-                click(event) {{
+                click(event, view) {{
+                    // Dismiss context menu on any click
+                    const old = document.getElementById('codex-ctx-menu');
+                    if (old) old.remove();
+
                     const target = event.target;
                     if (target && target.closest && target.closest('.cm-wikilink')) {{
                         const el = target.closest('.cm-wikilink');
-                        const text = el.textContent;
-                        // Extract link target from [[target]] or [[target|display]]
-                        const m = text.match(/\[\[([^\]|]+)/);
-                        if (m) {{
-                            window._codexNotify('nav', m[1].trim());
+                        // Get the link target from the raw document text at this position
+                        const pos = view.posAtDOM(el);
+                        const line = view.state.doc.lineAt(pos);
+                        const text = line.text;
+                        // Find the [[target]] or [[target|display]] at this position
+                        let idx = 0;
+                        while ((idx = text.indexOf('[[', idx)) !== -1) {{
+                            const end = text.indexOf(']]', idx + 2);
+                            if (end > idx) {{
+                                const absFrom = line.from + idx;
+                                const absTo = line.from + end + 2;
+                                if (pos >= absFrom && pos <= absTo) {{
+                                    const inner = text.substring(idx + 2, end);
+                                    const pipe = inner.indexOf('|');
+                                    const linkTarget = pipe >= 0 ? inner.substring(0, pipe) : inner;
+                                    window._codexNotify('nav', linkTarget.trim());
+                                    break;
+                                }}
+                                idx = end + 2;
+                            }} else break;
                         }}
                     }}
+                }},
+                contextmenu(event) {{
+                    event.preventDefault();
+                    // Remove old menu
+                    const old = document.getElementById('codex-ctx-menu');
+                    if (old) old.remove();
+
+                    const view = window._codexCM;
+                    if (!view) return true;
+
+                    const sel = view.state.selection.main;
+                    const hasSelection = sel.from !== sel.to;
+
+                    const menu = document.createElement('div');
+                    menu.id = 'codex-ctx-menu';
+                    menu.className = 'ctx-menu';
+                    menu.style.cssText = `left:${{event.clientX}}px;top:${{event.clientY}}px;position:fixed;z-index:1000;`;
+
+                    const items = [
+                        ...(hasSelection ? [
+                            {{ id: 'bold',      label: 'Bold',           key: '\u{{2318}}B' }},
+                            {{ id: 'italic',    label: 'Italic',         key: '\u{{2318}}I' }},
+                            {{ id: 'code',      label: 'Inline Code',    key: '' }},
+                            {{ id: 'strike',    label: 'Strikethrough',  key: '' }},
+                            {{ id: 'link',      label: 'Link',           key: '\u{{2318}}K' }},
+                            {{ id: 'wikilink',  label: 'Wikilink',       key: '' }},
+                            {{ id: 'sep' }},
+                        ] : []),
+                        {{ id: 'h1',        label: 'Heading 1',      key: '' }},
+                        {{ id: 'h2',        label: 'Heading 2',      key: '' }},
+                        {{ id: 'h3',        label: 'Heading 3',      key: '' }},
+                        {{ id: 'sep' }},
+                        {{ id: 'bullet',    label: 'Bullet List',    key: '' }},
+                        {{ id: 'task',      label: 'Task List',      key: '' }},
+                        {{ id: 'quote',     label: 'Blockquote',     key: '' }},
+                        {{ id: 'codeblock', label: 'Code Block',     key: '' }},
+                        {{ id: 'table',     label: 'Table',          key: '' }},
+                        {{ id: 'hr',        label: 'Horizontal Rule', key: '' }},
+                    ];
+
+                    items.forEach(it => {{
+                        if (it.id === 'sep') {{
+                            const sep = document.createElement('div');
+                            sep.className = 'ctx-menu-sep';
+                            menu.appendChild(sep);
+                            return;
+                        }}
+                        const btn = document.createElement('button');
+                        btn.className = 'ctx-menu-item';
+                        btn.innerHTML = it.key ? `<span>${{it.label}}</span><span class="ctx-menu-key">${{it.key}}</span>` : it.label;
+                        btn.onclick = () => {{
+                            menu.remove();
+                            overlay.remove();
+                            _codexCtxAction(it.id, view);
+                        }};
+                        menu.appendChild(btn);
+                    }});
+
+                    const overlay = document.createElement('div');
+                    overlay.className = 'ctx-menu-overlay';
+                    overlay.onclick = () => {{ menu.remove(); overlay.remove(); }};
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(menu);
+
+                    // Clamp to viewport
+                    requestAnimationFrame(() => {{
+                        const r = menu.getBoundingClientRect();
+                        if (r.right > window.innerWidth) menu.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+                        if (r.bottom > window.innerHeight) menu.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
+                    }});
+                    return true;
                 }}
             }}),
             EditorView.lineWrapping,
@@ -1279,6 +1466,7 @@ pub fn NotesView() -> Element {
                 }
             }
 
+            div { class: "notes-scroll",
             // Excalidraw files get their own editor
             if crate::views::excalidraw::is_excalidraw(rel_path) {
                 crate::views::ExcalidrawView { path: rel_path.clone() }
@@ -1353,6 +1541,7 @@ pub fn NotesView() -> Element {
                     }
                 },
             }
+            } // notes-scroll
         }
     }
 }

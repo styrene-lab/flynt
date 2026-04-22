@@ -7,14 +7,19 @@ pub struct ContextMenuItem {
     pub label: String,
     pub id: String,
     pub danger: bool,
+    pub separator_before: bool,
 }
 
 impl ContextMenuItem {
     pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
-        Self { id: id.into(), label: label.into(), danger: false }
+        Self { id: id.into(), label: label.into(), danger: false, separator_before: false }
     }
     pub fn danger(id: impl Into<String>, label: impl Into<String>) -> Self {
-        Self { id: id.into(), label: label.into(), danger: true }
+        Self { id: id.into(), label: label.into(), danger: true, separator_before: false }
+    }
+    pub fn sep(mut self) -> Self {
+        self.separator_before = true;
+        self
     }
 }
 
@@ -37,12 +42,23 @@ pub fn ContextMenu(
             for item in items.iter() {
                 {
                     let id = item.id.clone();
-                    rsx! {
-                        button {
-                            key: "{item.id}",
-                            class: if item.danger { "ctx-menu-item danger" } else { "ctx-menu-item" },
-                            onclick: move |_| on_select.call(id.clone()),
-                            "{item.label}"
+                    let sep = item.separator_before;
+                    if sep {
+                        rsx! {
+                            div { class: "ctx-menu-sep" }
+                            button {
+                                class: if item.danger { "ctx-menu-item danger" } else { "ctx-menu-item" },
+                                onclick: move |_| on_select.call(id.clone()),
+                                "{item.label}"
+                            }
+                        }
+                    } else {
+                        rsx! {
+                            button {
+                                class: if item.danger { "ctx-menu-item danger" } else { "ctx-menu-item" },
+                                onclick: move |_| on_select.call(id.clone()),
+                                "{item.label}"
+                            }
                         }
                     }
                 }

@@ -211,15 +211,36 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                 let _path_for_rename = doc_path.clone();
                 let title_for_tab = doc_title.clone();
                 let id_for_tab = meta.id.clone();
+                let kind_items = {
+                    use codex_core::datum::EntityKind;
+                    let current_kind = meta.entity_kind.clone();
+                    let mut items = Vec::new();
+                    if !matches!(current_kind, Some(EntityKind::DesignNode)) {
+                        items.push(crate::components::ContextMenuItem::new("kind-design_node", "Convert to Design Node"));
+                    }
+                    if !matches!(current_kind, Some(EntityKind::Project)) {
+                        items.push(crate::components::ContextMenuItem::new("kind-project", "Convert to Project"));
+                    }
+                    if current_kind.is_some() {
+                        items.push(crate::components::ContextMenuItem::new("kind-clear", "Remove Kind"));
+                    }
+                    // Mark first item with separator
+                    if let Some(first) = items.first_mut() { *first = first.clone().sep(); }
+                    items
+                };
                 rsx! {
                     crate::components::ContextMenu {
                         x, y,
-                        items: vec![
-                            crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
-                            crate::components::ContextMenuItem::new("rename", "Rename…"),
-                            crate::components::ContextMenuItem::new("reveal", "Reveal in Finder"),
-                            crate::components::ContextMenuItem::danger("delete", "Move to Trash"),
-                        ],
+                        items: {
+                            let mut all = vec![
+                                crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
+                                crate::components::ContextMenuItem::new("rename", "Rename…"),
+                                crate::components::ContextMenuItem::new("reveal", "Reveal in Finder"),
+                            ];
+                            all.extend(kind_items);
+                            all.push(crate::components::ContextMenuItem::danger("delete", "Move to Trash").sep());
+                            all
+                        },
                         on_close: move |_| *ctx_menu.write() = None,
                         on_select: move |action: String| {
                             *ctx_menu.write() = None;
@@ -239,6 +260,18 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                                     { let _ = std::process::Command::new("open").arg("-R").arg(&abs).spawn(); }
                                     #[cfg(target_os = "linux")]
                                     { if let Some(dir) = abs.parent() { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); } }
+                                }
+                                a if a.starts_with("kind-") => {
+                                    let kind_val = &a[5..];
+                                    let p = path_for_delete.clone();
+                                    let kind_opt = if kind_val == "clear" { None } else { Some(kind_val.to_string()) };
+                                    spawn(async move {
+                                        let vault = ctx.vault();
+                                        let _ = tokio::task::spawn_blocking(move || {
+                                            vault.set_document_kind(&p, kind_opt.as_deref())
+                                        }).await;
+                                        *refresh.write() += 1;
+                                    });
                                 }
                                 "delete" => {
                                     let p = path_for_delete.clone();
