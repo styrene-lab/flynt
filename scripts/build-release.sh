@@ -115,6 +115,49 @@ cd "$IPA_STAGING" && zip -r -q "$DIST/Codex-$VERSION.ipa" Payload/
 cd "$ROOT" && rm -rf "$IPA_STAGING"
 echo "✓ iOS IPA: $DIST/Codex-$VERSION.ipa"
 
+# ── Linux (cross-compile or native) ─────────────────────────────────────────
+if [[ "$(uname)" == "Linux" ]]; then
+  echo "--- Linux desktop ---"
+  cd "$ROOT/crates/codex-app"
+  dx build --platform desktop --release
+  cd "$ROOT"
+
+  LINUX_BIN="target/dx/codex-app/release/linux/codex-app"
+  if [ -f "$LINUX_BIN" ]; then
+    # Create tarball with binary + icon + .desktop file
+    LINUX_STAGING=$(mktemp -d)
+    mkdir -p "$LINUX_STAGING/codex-$VERSION"
+    cp "$LINUX_BIN" "$LINUX_STAGING/codex-$VERSION/codex"
+    cp "crates/codex-app/assets/icon.png" "$LINUX_STAGING/codex-$VERSION/codex.png"
+    cat > "$LINUX_STAGING/codex-$VERSION/codex.desktop" <<DESK
+[Desktop Entry]
+Name=Codex
+Comment=Markdown notes, kanban, and knowledge graph
+Exec=codex
+Icon=codex
+Type=Application
+Categories=Office;TextEditor;
+DESK
+    cat > "$LINUX_STAGING/codex-$VERSION/install.sh" <<'INST'
+#!/bin/bash
+set -e
+PREFIX="${1:-$HOME/.local}"
+install -Dm755 codex "$PREFIX/bin/codex"
+install -Dm644 codex.png "$PREFIX/share/icons/hicolor/512x512/apps/codex.png"
+install -Dm644 codex.desktop "$PREFIX/share/applications/codex.desktop"
+sed -i "s|Exec=codex|Exec=$PREFIX/bin/codex|" "$PREFIX/share/applications/codex.desktop"
+sed -i "s|Icon=codex|Icon=$PREFIX/share/icons/hicolor/512x512/apps/codex.png|" "$PREFIX/share/applications/codex.desktop"
+echo "Installed to $PREFIX — run: $PREFIX/bin/codex"
+INST
+    chmod +x "$LINUX_STAGING/codex-$VERSION/install.sh"
+    tar -czf "$DIST/Codex-$VERSION-linux-x86_64.tar.gz" -C "$LINUX_STAGING" "codex-$VERSION"
+    rm -rf "$LINUX_STAGING"
+    echo "✓ Linux tarball: $DIST/Codex-$VERSION-linux-x86_64.tar.gz"
+  fi
+elif [[ "$(uname)" == "Darwin" ]]; then
+  echo "--- Linux (skipped — run on NixOS for native build) ---"
+fi
+
 echo ""
 echo "=== Codex v$VERSION ==="
 ls -lh "$DIST"/Codex-"$VERSION".*

@@ -235,7 +235,7 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                             let mut all = vec![
                                 crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
                                 crate::components::ContextMenuItem::new("rename", "Rename…"),
-                                crate::components::ContextMenuItem::new("reveal", "Reveal in Finder"),
+                                crate::components::ContextMenuItem::new("reveal", if cfg!(target_os = "macos") { "Reveal in Finder" } else { "Open in File Manager" }),
                             ];
                             all.extend(kind_items);
                             all.push(crate::components::ContextMenuItem::danger("delete", "Move to Trash").sep());
