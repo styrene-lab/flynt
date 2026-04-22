@@ -17,6 +17,7 @@ pub enum GraphNodeKind {
     MemoryFact,
     Communication,
     DesignNode,
+    Scenario,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +27,7 @@ pub enum GraphEdgeKind {
     TaskMembership,
     SemanticSupport,
     Dependency,
+    Validates,
     ParentChild,
 }
 
@@ -78,6 +80,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             Some(crate::datum::EntityKind::Link) => GraphNodeKind::Link,
             Some(crate::datum::EntityKind::Task) => GraphNodeKind::Task,
             Some(crate::datum::EntityKind::DesignNode) => GraphNodeKind::DesignNode,
+            Some(crate::datum::EntityKind::OpenSpecScenario) => GraphNodeKind::Scenario,
             _ if matches!(
                 meta.metadata.get("kind").map(|field| &field.value),
                 Some(MetadataValue::String(value)) if value == "agent_communication"
@@ -230,6 +233,7 @@ pub fn format_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::MemoryFact => "memory",
         GraphNodeKind::Communication => "communication",
         GraphNodeKind::DesignNode => "design_node",
+        GraphNodeKind::Scenario => "scenario",
     }
 }
 
@@ -369,6 +373,7 @@ pub fn kind_color(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::MemoryFact => "rgb(249,115,22)",
         GraphNodeKind::Communication => "rgb(236,72,153)",
         GraphNodeKind::DesignNode => "rgb(16,185,129)",
+        GraphNodeKind::Scenario => "rgb(34,197,94)",
     }
 }
 
@@ -427,6 +432,7 @@ pub fn render_graph_svg(payload: &GraphPayload, config: &LayoutConfig) -> String
                 GraphEdgeKind::SemanticSupport => "0.2",
                 GraphEdgeKind::Dependency => "0.5",
                 GraphEdgeKind::ParentChild => "0.6",
+                GraphEdgeKind::Validates => "0.5",
             };
             svg.push_str(&format!(
                 r#"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="rgb(45,49,64)" stroke-width="0.8" opacity="{opacity}"/>"#
@@ -592,6 +598,7 @@ mod tests {
                 updated_at: now,
                 decay: Default::default(),
                 last_touched_at: Some(now),
+                design_node_id: None,
             }],
         };
 

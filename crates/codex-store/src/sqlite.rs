@@ -680,6 +680,7 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         updated_at: parse_dt(updated_at),
         decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
         last_touched_at: last_touched.and_then(|s| s.parse().ok()),
+        design_node_id: None, // TODO: persist in SQLite schema
     })
 }
 

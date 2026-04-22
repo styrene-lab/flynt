@@ -264,6 +264,8 @@ pub enum EntityKind {
     Link,
     /// An Omegon design tree node (epic, feature, task, etc.)
     DesignNode,
+    /// An OpenSpec scenario — Given/When/Then validation of a design decision.
+    OpenSpecScenario,
     /// User-defined entity type (e.g. "contact", "sprint", "milestone").
     #[serde(untagged)]
     Custom(String),
@@ -278,6 +280,7 @@ impl EntityKind {
             "repo" => Self::Repo,
             "link" => Self::Link,
             "design_node" => Self::DesignNode,
+            "openspec_scenario" => Self::OpenSpecScenario,
             other => Self::Custom(other.to_string()),
         }
     }
@@ -290,6 +293,7 @@ impl EntityKind {
             Self::Repo => "repo",
             Self::Link => "link",
             Self::DesignNode => "design_node",
+            Self::OpenSpecScenario => "openspec_scenario",
             Self::Custom(s) => s,
         }
     }
@@ -745,6 +749,84 @@ impl<'a> DesignNodeView<'a> {
 
     pub fn related(&self) -> Vec<String> {
         self.entity.get_text_list("related")
+    }
+}
+
+/// An OpenSpec scenario — a Given/When/Then validation of a design decision.
+///
+/// On disk:
+/// ```toml
+/// +++
+/// kind = "openspec_scenario"
+/// [data]
+/// title = "Expired token rejected"
+/// domain = "auth"
+/// status = "passing"
+/// design_node = "uuid-of-design-decision"
+/// change = "token-rotation"
+/// last_verified = "2026-04-21T12:00:00Z"
+/// last_result = "pass"
+/// test_source = "tests/auth/test_token_expiry.rs"
+/// +++
+/// ```
+#[derive(Debug, Clone)]
+pub struct OpenSpecScenarioView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> OpenSpecScenarioView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::OpenSpecScenario {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        self.entity.get_text("title").unwrap_or("Untitled Scenario")
+    }
+
+    pub fn domain(&self) -> &str {
+        self.entity.get_text("domain").unwrap_or("general")
+    }
+
+    /// Scenario lifecycle: draft → active → passing → failing → deferred
+    pub fn status(&self) -> &str {
+        self.entity.get_text("status").unwrap_or("draft")
+    }
+
+    /// The design node this scenario validates.
+    pub fn design_node_id(&self) -> Option<&str> {
+        self.entity.get_text("design_node")
+    }
+
+    /// The OpenSpec change name (e.g., "token-rotation").
+    pub fn change(&self) -> Option<&str> {
+        self.entity.get_text("change")
+    }
+
+    /// Last time this scenario was verified against a test run.
+    pub fn last_verified(&self) -> Option<&str> {
+        self.entity.get_text("last_verified")
+    }
+
+    /// Last test result: pass, fail, error, skip.
+    pub fn last_result(&self) -> Option<&str> {
+        self.entity.get_text("last_result")
+    }
+
+    /// Source file of the test that implements this scenario.
+    pub fn test_source(&self) -> Option<&str> {
+        self.entity.get_text("test_source")
+    }
+
+    pub fn is_passing(&self) -> bool {
+        self.status() == "passing"
+    }
+
+    pub fn is_failing(&self) -> bool {
+        self.status() == "failing"
     }
 }
 

@@ -235,6 +235,10 @@ pub struct Task {
     /// Resets the decay clock. Defaults to updated_at if never set.
     #[serde(default)]
     pub last_touched_at: Option<DateTime<Utc>>,
+    /// Optional link to a design node — makes this task an implementation leaf.
+    /// When set, the design node's lifecycle influences task status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_node_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -462,6 +466,7 @@ impl Task {
             updated_at:      now,
             decay:           DecayRate::default(),
             last_touched_at: None,
+            design_node_id:  None,
         }
     }
 
@@ -769,6 +774,7 @@ mod tests {
             updated_at: anchor,
             decay,
             last_touched_at: Some(anchor),
+            design_node_id: None,
         }
     }
 

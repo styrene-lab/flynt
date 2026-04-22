@@ -506,6 +506,7 @@ fn filter_graph<'a>(
             GraphEdgeKind::SemanticSupport => s.show_semantic,
             GraphEdgeKind::Dependency => true,
             GraphEdgeKind::ParentChild => true,
+            GraphEdgeKind::Validates => true,
         }
     }).collect();
 
@@ -575,6 +576,7 @@ fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::MemoryFact => "memory",
         GraphNodeKind::Communication => "communication",
         GraphNodeKind::DesignNode => "design_node",
+        GraphNodeKind::Scenario => "scenario",
     }
 }
 
@@ -585,6 +587,7 @@ fn format_edge_kind(kind: &GraphEdgeKind) -> &'static str {
         GraphEdgeKind::SemanticSupport => "semantic-support",
         GraphEdgeKind::Dependency => "dependency",
         GraphEdgeKind::ParentChild => "parent-child",
+        GraphEdgeKind::Validates => "validates",
     }
 }
 
