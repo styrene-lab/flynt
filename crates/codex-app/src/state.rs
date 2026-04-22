@@ -5,6 +5,10 @@ pub use codex_core::models::FontSizePreset;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThemeName(pub String);
 
+/// Bump counter to trigger inline rename in NotesView.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct RenameTrigger(pub u64);
+
 #[derive(Clone, PartialEq, Debug, Default)]
 pub enum Route {
     Welcome,

@@ -176,6 +176,7 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
     let mut tab_state    = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
     let mut refresh      = use_context::<Signal<u64>>();
+    let mut rename_trigger = use_context::<Signal<crate::state::RenameTrigger>>();
 
     let active_id = tab_state.read().active_id().cloned();
     let is_active = active_id.as_ref() == Some(&meta.id);
@@ -228,10 +229,9 @@ fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
                                     *active_route.write() = Route::Notes;
                                 }
                                 "rename" => {
-                                    // Open the note and trigger rename mode
                                     tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
                                     *active_route.write() = Route::Notes;
-                                    // TODO: trigger rename mode in notes view
+                                    rename_trigger.write().0 += 1;
                                 }
                                 "reveal" => {
                                     let abs = ctx.vault().root.join(&path_for_delete);

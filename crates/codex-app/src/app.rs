@@ -34,6 +34,9 @@ pub fn App() -> Element {
     // Drawing mode flag — set by NotesView when showing ExcalidrawView
     let _is_drawing = use_context_provider(|| Signal::new(false));
 
+    // Rename trigger — sidebar bumps this, NotesView watches and opens inline rename
+    use_context_provider(|| Signal::new(crate::state::RenameTrigger(0)));
+
 
     // Route — provided via context so search view can navigate back
     let mut active_route = use_context_provider(|| {

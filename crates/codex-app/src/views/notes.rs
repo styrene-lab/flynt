@@ -1090,6 +1090,15 @@ pub fn NotesView() -> Element {
 
     let mut renaming = use_signal(|| false);
     let mut rename_input = use_signal(|| title.clone());
+
+    // Watch for rename trigger from sidebar context menu
+    let rename_trigger = use_context::<Signal<crate::state::RenameTrigger>>();
+    let mut last_rename_ver = use_signal(|| 0u64);
+    if rename_trigger.read().0 > *last_rename_ver.peek() {
+        *last_rename_ver.write() = rename_trigger.read().0;
+        *rename_input.write() = title.clone();
+        *renaming.write() = true;
+    }
     let mut rename_msg: Signal<Option<String>> = use_signal(|| None);
     let path_for_rename = path.clone();
     let ctx_rename = ctx.clone();
