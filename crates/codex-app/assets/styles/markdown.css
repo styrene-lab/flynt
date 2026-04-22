@@ -26,12 +26,15 @@
 
 .notes-pane > .doc-title,
 .notes-topbar .doc-title {
-  font-size:     var(--font-size-2xl);
+  font-size:     var(--font-size-lg, 18px);
   font-weight:   var(--font-weight-bold);
   color:         var(--primary-bright);
-  margin-bottom: var(--space-6);
-  line-height:   var(--line-height-tight);
+  margin-bottom: 0;
+  line-height:   1.3;
   cursor:        default;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
 }
 .rename-inline {
   display:       flex;
@@ -206,15 +209,17 @@
 /* Notes top bar: title + actions row */
 .notes-topbar {
   display:       flex;
-  align-items:   flex-start;
+  align-items:   center;
   justify-content: space-between;
   gap:           var(--space-4);
-  margin-bottom: var(--space-6);
+  margin-bottom: 0;
   position:      sticky;
   top:           0;
   z-index:       50;
   background:    var(--background);
-  padding:       var(--space-4) 0;
+  padding:       8px var(--space-10);
+  margin:        0 calc(-1 * var(--space-10));
+  width:         calc(100% + 2 * var(--space-10));
   border-bottom: 1px solid var(--border);
 }
 
