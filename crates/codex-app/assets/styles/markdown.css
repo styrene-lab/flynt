@@ -210,6 +210,12 @@
   justify-content: space-between;
   gap:           var(--space-4);
   margin-bottom: var(--space-6);
+  position:      sticky;
+  top:           0;
+  z-index:       50;
+  background:    var(--background);
+  padding:       var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .notes-actions {
@@ -643,6 +649,15 @@
   color: var(--muted-foreground);
   margin-right: var(--space-2);
   opacity: 0.5;
+}
+
+/* ── CM6 wikilinks ───────────────────────────────────────────────── */
+.cm-wikilink {
+  color:         var(--primary, #2ab4c8);
+  cursor:        pointer;
+}
+.cm-wikilink:hover {
+  text-decoration: underline;
 }
 
 /* ── External ref badges ─────────────────────────────────────────── */

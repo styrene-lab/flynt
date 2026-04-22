@@ -590,6 +590,19 @@ fn cm6_init_js(content: &str) -> String {
                 continue;
             }}
 
+            // Wikilinks: [[target]] or [[target|display]] — add link styling
+            let wlIdx = 0, wlSafety = 0;
+            while ((wlIdx = text.indexOf('[[', wlIdx)) !== -1 && wlSafety++ < 20) {{
+                // Skip embed syntax ![[
+                if (wlIdx > 0 && text[wlIdx - 1] === '!') {{ wlIdx += 2; continue; }}
+                const wlEnd = text.indexOf(']]', wlIdx + 2);
+                if (wlEnd > wlIdx) {{
+                    // Mark the whole [[target]] as a wikilink
+                    decs.push(Decoration.mark({{ class: 'cm-wikilink' }}).range(line.from + wlIdx, line.from + wlEnd + 2));
+                    wlIdx = wlEnd + 2;
+                }} else break;
+            }}
+
             // Embed: ![[file.excalidraw]] or ![[image.png]]
             const embedMatch = trimmed.match(/^!\[\[(.+?)\]\]$/);
             if (embedMatch) {{
@@ -854,6 +867,21 @@ fn cm6_init_js(content: &str) -> String {
             formatKeymap,
             changeHandler,
             combinedPlugin,
+            // Click handler for wikilinks
+            EditorView.domEventHandlers({{
+                click(event) {{
+                    const target = event.target;
+                    if (target && target.closest && target.closest('.cm-wikilink')) {{
+                        const el = target.closest('.cm-wikilink');
+                        const text = el.textContent;
+                        // Extract link target from [[target]] or [[target|display]]
+                        const m = text.match(/\[\[([^\]|]+)/);
+                        if (m) {{
+                            window._codexNotify('nav', m[1].trim());
+                        }}
+                    }}
+                }}
+            }}),
             EditorView.lineWrapping,
         ],
     }});
