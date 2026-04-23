@@ -450,11 +450,11 @@ impl Entity {
 ///
 /// [data]
 /// name = "codex"
-/// url = "https://github.com/black-meridian/codex"
+/// url = "https://github.com/example-org/codex"
 /// provider = "github"
-/// org = "black-meridian"
+/// org = "example-org"
 /// default_branch = "main"
-/// local_path = "/Users/cwilson/workspace/black-meridian/codex"
+/// local_path = "/home/user/projects/codex"
 /// +++
 /// ```
 #[derive(Debug, Clone)]
@@ -922,7 +922,7 @@ mod tests {
     fn entity_builder_pattern() {
         let project = Entity::new(EntityKind::Project)
             .with_field("title", Datum::Text("Alpha".into()))
-            .with_field("owner", Datum::Text("cwilson".into()))
+            .with_field("owner", Datum::Text("testuser".into()))
             .with_field("columns", Datum::List(vec![
                 Datum::Text("Backlog".into()),
                 Datum::Text("Done".into()),
@@ -930,7 +930,7 @@ mod tests {
 
         assert_eq!(project.kind, EntityKind::Project);
         assert_eq!(project.get_text("title"), Some("Alpha"));
-        assert_eq!(project.get_text("owner"), Some("cwilson"));
+        assert_eq!(project.get_text("owner"), Some("testuser"));
         assert_eq!(project.get_text_list("columns"), vec!["Backlog", "Done"]);
     }
 
@@ -966,17 +966,17 @@ mod tests {
     fn repo_view_from_entity() {
         let repo = Entity::new(EntityKind::Repo)
             .with_field("name", Datum::Text("codex".into()))
-            .with_field("url", Datum::Text("https://github.com/black-meridian/codex".into()))
+            .with_field("url", Datum::Text("https://github.com/example-org/codex".into()))
             .with_field("provider", Datum::Text("github".into()))
-            .with_field("org", Datum::Text("black-meridian".into()))
+            .with_field("org", Datum::Text("example-org".into()))
             .with_field("default_branch", Datum::Text("main".into()))
             .with_field("local_path", Datum::Text("/workspace/codex".into()));
 
         let view = RepoView::from_entity(&repo).unwrap();
         assert_eq!(view.name(), "codex");
-        assert_eq!(view.url(), Some("https://github.com/black-meridian/codex"));
+        assert_eq!(view.url(), Some("https://github.com/example-org/codex"));
         assert_eq!(view.provider(), Some("github"));
-        assert_eq!(view.org(), Some("black-meridian"));
+        assert_eq!(view.org(), Some("example-org"));
         assert_eq!(view.default_branch(), "main");
         assert_eq!(view.local_path(), Some("/workspace/codex"));
 
@@ -1031,10 +1031,10 @@ mod tests {
             kind = "repo"
 
             [data]
-            name = "prefon-vie"
-            url = "https://github.com/black-meridian/prefon-vie"
+            name = "my-project"
+            url = "https://github.com/example-org/my-project"
             provider = "github"
-            org = "black-meridian"
+            org = "example-org"
             default_branch = "main"
         "#;
         let val: toml::Value = toml::from_str(toml_str).unwrap();
@@ -1042,9 +1042,9 @@ mod tests {
 
         assert_eq!(entity.kind, EntityKind::Repo);
         let view = RepoView::from_entity(&entity).unwrap();
-        assert_eq!(view.name(), "prefon-vie");
+        assert_eq!(view.name(), "my-project");
         assert_eq!(view.provider(), Some("github"));
-        assert_eq!(view.org(), Some("black-meridian"));
+        assert_eq!(view.org(), Some("example-org"));
     }
 
     #[test]

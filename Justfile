@@ -4,7 +4,7 @@ set shell := ["bash", "-cu"]
 default:
     @just --list --unsorted
 
-vault := env_var_or_default("CODEX_VAULT", env_var("HOME") + "/workspace/black-meridian")
+vault := env_var_or_default("CODEX_VAULT", env_var("HOME") + "/Documents/Codex")
 version := `grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'`
 
 # ─── Development ────────────────────────────────────────────
@@ -165,13 +165,13 @@ register:
 
 share_ext_src := "crates/codex-mobile/ios/ShareExtension"
 share_ext_bundle_id := "io.styrene.codex.share-extension"
-ios_team := "UZBY9DM42N"
+ios_team := env_var_or_default("APPLE_TEAM_ID", "UZBY9DM42N")
 ios_profiles := "crates/codex-mobile/ios/profiles"
-asc_key_id := "52M7PW86X4"
-asc_issuer := "33205cd9-400e-4310-90dc-ec625ba74abe"
-asc_key_path := "crates/codex-mobile/ios/keys/AuthKey_52M7PW86X4.p8"
-dist_identity := "Apple Distribution: CHRISTOPHER RYAN WILSON (UZBY9DM42N)"
-installer_identity := "3rd Party Mac Developer Installer: CHRISTOPHER RYAN WILSON (UZBY9DM42N)"
+asc_key_id := env_var_or_default("ASC_KEY_ID", "")
+asc_issuer := env_var_or_default("ASC_ISSUER", "")
+asc_key_path := env_var_or_default("ASC_KEY_PATH", "crates/codex-mobile/ios/keys/AuthKey.p8")
+dist_identity := env_var_or_default("APPLE_DIST_IDENTITY", "Apple Distribution")
+installer_identity := env_var_or_default("APPLE_INSTALLER_IDENTITY", "3rd Party Mac Developer Installer")
 
 # Build the iOS Share Extension .appex
 build-share-extension:

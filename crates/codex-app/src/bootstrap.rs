@@ -267,12 +267,12 @@ impl OmegonRuntimeContext {
 
         std::fs::write(
             repo_root.join("astro.config.mjs"),
-            "import { defineConfig } from 'astro/config';\n\nexport default defineConfig({\n  site: 'https://black-meridian.github.io/codex-site',\n});\n",
+            "import { defineConfig } from 'astro/config';\n\nexport default defineConfig({\n  site: 'https://example-org.github.io/codex-site',\n});\n",
         )?;
 
         std::fs::write(
             repo_root.join("src/pages/index.astro"),
-            "---\nconst title = 'Codex Publication Demo';\n---\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <title>{title}</title>\n    <style>body{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:3rem;background:#06080e;color:#c4d8e4}a{color:#6ecad8}code{background:#0e1622;padding:.2rem .4rem;border-radius:4px}</style>\n  </head>\n  <body>\n    <h1>{title}</h1>\n    <p>This Astro site demonstrates what a published Codex vault can look like.</p>\n    <p>Copy local publication preview artifacts into <code>public/preview/</code> or evolve this into a richer adapter over the publication manifest.</p>\n    <ul>\n      <li><a href=\"/preview/home.html\">Preview exported home page</a></li>\n      <li><a href=\"https://github.com/black-meridian/codex\">Codex source</a></li>\n    </ul>\n  </body>\n</html>\n",
+            "---\nconst title = 'Codex Publication Demo';\n---\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <title>{title}</title>\n    <style>body{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:3rem;background:#06080e;color:#c4d8e4}a{color:#6ecad8}code{background:#0e1622;padding:.2rem .4rem;border-radius:4px}</style>\n  </head>\n  <body>\n    <h1>{title}</h1>\n    <p>This Astro site demonstrates what a published Codex vault can look like.</p>\n    <p>Copy local publication preview artifacts into <code>public/preview/</code> or evolve this into a richer adapter over the publication manifest.</p>\n    <ul>\n      <li><a href=\"/preview/home.html\">Preview exported home page</a></li>\n      <li><a href=\"https://github.com/example-org/codex\">Codex source</a></li>\n    </ul>\n  </body>\n</html>\n",
         )?;
 
         std::fs::write(
@@ -403,7 +403,7 @@ mod tests {
                 codex_index_db_path: Some(tmp.path().join("state/custom-index.db")),
                 omegon_runtime_root: Some(tmp.path().join("state/omegon-runtime")),
                 omegon_mind_db_path: Some(tmp.path().join("state/omegon-runtime/minds/codex-mind.db")),
-                styrene_identity_profile: Some("black-meridian".into()),
+                styrene_identity_profile: Some("example-org".into()),
                 omegon_serve_host: None,
             },
         );
@@ -419,16 +419,16 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("launcher-profile.json");
         let profile = LauncherProfile {
-            last_vault_root: Some(tmp.path().join("vaults/black-meridian")),
+            last_vault_root: Some(tmp.path().join("vaults/example-org")),
             wizard_completed: true,
-            recent_vaults: vec![tmp.path().join("vaults/black-meridian")],
+            recent_vaults: vec![tmp.path().join("vaults/example-org")],
             known_vaults: vec![KnownVault {
                 name: "Black Meridian".into(),
-                root: tmp.path().join("vaults/black-meridian"),
+                root: tmp.path().join("vaults/example-org"),
             }],
             pending_setup: Some(PendingVaultSetup::LinkGithub {
-                local_path: tmp.path().join("vaults/black-meridian"),
-                repo: "git@github.com:black-meridian/codex-vault.git".into(),
+                local_path: tmp.path().join("vaults/example-org"),
+                repo: "git@github.com:example-org/codex-vault.git".into(),
                 branch: "main".into(),
             }),
         };
@@ -445,7 +445,7 @@ mod tests {
         let vault = OmegonRuntimeContext::initialize_github_linked_vault(
             &local_path,
             "Black Meridian",
-            "git@github.com:black-meridian/codex-vault.git",
+            "git@github.com:example-org/codex-vault.git",
             "main",
         )
         .unwrap();
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(
             vault.config.sync,
             SyncConfig::Git {
-                remote: "git@github.com:black-meridian/codex-vault.git".into(),
+                remote: "git@github.com:example-org/codex-vault.git".into(),
                 branch: "main".into(),
                 auto_commit_seconds: 60,
             }
@@ -468,7 +468,7 @@ mod tests {
         let vault = OmegonRuntimeContext::initialize_github_pages_publication(
             &local_path,
             "Black Meridian",
-            "https://github.com/black-meridian/codex-site.git",
+            "https://github.com/example-org/codex-site.git",
             "gh-pages",
         )
         .unwrap();
@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(
             home.frontmatter.publication.target,
             Some(PublicationTarget {
-                repo: "https://github.com/black-meridian/codex-site.git".into(),
+                repo: "https://github.com/example-org/codex-site.git".into(),
                 branch: "gh-pages".into(),
                 site_dir: "site".into(),
             })

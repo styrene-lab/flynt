@@ -111,7 +111,7 @@ jobs:
   #   APPLE_INSTALLER_CERT_P12_B64 - 3rd Party Mac Developer Installer cert, base64
   #   APPLE_INSTALLER_CERT_PASSWORD
   #   APPLE_API_KEY_P8_B64         - App Store Connect API key (.p8), base64
-  #   APPLE_API_KEY_ID             - Key ID (e.g. 52M7PW86X4)
+  #   APPLE_API_KEY_ID             - Key ID (e.g. ABC123XYZ)
   #   APPLE_API_ISSUER             - Issuer ID
   #   IOS_DIST_PROFILE_B64         - iOS App Store distribution profile, base64
   #   IOS_SHARE_DIST_PROFILE_B64   - iOS share extension distribution profile, base64

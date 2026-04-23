@@ -10,7 +10,21 @@ site/dist/
 .vault/
 result
 
-# iOS signing keys & profiles
+# Omegon agent state
+.omegon/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# iOS/macOS signing keys & profiles
 *.p8
+*.p12
 *.mobileprovision
+*.provisionprofile
 private_keys/
+crates/codex-mobile/ios/keys/
+crates/codex-mobile/ios/profiles/
+crates/codex-app/profiles/
