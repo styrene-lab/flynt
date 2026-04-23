@@ -1,0 +1,39 @@
+{
+  "name": "Codex",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "default"
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "serayuzgur.crates",
+        "vadimcn.vscode-lldb"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.check.command": "check",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "forwardPorts": [],
+  "postCreateCommand": "cargo fetch && cargo build -p codex-agent --release",
+  "postStartCommand": "echo 'Codex dev ready. Run: cargo test -p codex-core -p codex-store'",
+  "remoteEnv": {
+    "CODEX_VAULT": "${containerWorkspaceFolder}/.vault",
+    "RUST_LOG": "info"
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder}/.vault,target=${containerWorkspaceFolder}/.vault,type=bind,consistency=cached"
+  ]
+}

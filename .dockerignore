@@ -1,0 +1,11 @@
+target/
+dist/
+.vault/
+result
+site/node_modules/
+site/dist/
+site/.astro/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
