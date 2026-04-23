@@ -31,17 +31,15 @@ Your vault is a folder of `.md` files. Codex indexes them, links them, and gets 
 
 ### macOS
 
-**TestFlight (recommended):** [Join the beta](https://testflight.apple.com/join/PLACEHOLDER) — automatic updates, no Gatekeeper issues.
-
-**Direct download:** Grab the DMG from [Releases](https://github.com/styrene-labs/codex/releases/latest). Open it, drag to Applications.
+Download the latest DMG from [Releases](https://github.com/styrene-lab/codex/releases/latest). Open it, drag to Applications.
 
 ### iOS
 
-**TestFlight:** [Join the beta](https://testflight.apple.com/join/PLACEHOLDER) — includes the Share Extension for saving links, text, and images from any app.
+TestFlight beta — contact the team for access. Includes the Share Extension for saving links, text, and images from any app.
 
 ### Linux
 
-CI builds for `x86_64` and `aarch64` are available from [Releases](https://github.com/styrene-labs/codex/releases). Requires `webkit2gtk-4.1` and GTK 3.
+CI builds for `x86_64` and `aarch64` are available from [Releases](https://github.com/styrene-lab/codex/releases). Requires `webkit2gtk-4.1` and GTK 3.
 
 ```sh
 # Ubuntu/Debian
@@ -67,7 +65,7 @@ cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform io
 
 1. Open Codex
 2. Choose **Clone remote vault**
-3. Enter `git@github.com:styrene-labs/codex-demo-vault.git`, branch `main`
+3. Enter `git@github.com:styrene-lab/codex-demo-vault.git`, branch `main`
 4. The demo vault opens with documentation and a live knowledge graph
 
 Or choose **Create local vault** to start fresh.
@@ -161,7 +159,7 @@ cargo test -p codex-core -p codex-store
 Codex is part of the [Styrene](https://styrene.io) stack:
 
 - **[Omegon](https://omegon.styrene.io)** — terminal-native AI agent harness (powers the Codex agent sidebar)
-- **[Styrene Identity](https://github.com/styrene-labs/styrene-rs)** — cross-device identity, key derivation, and vault encryption (planned integration)
+- **[Styrene Identity](https://github.com/styrene-lab/styrene-rs)** — cross-device identity, key derivation, and vault encryption (planned integration)
 
 ---
 
