@@ -1,3 +1,4 @@
+use std::time::Duration;
 use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;
 use crate::views::{agent, graph, kanban, notes};
@@ -25,7 +26,23 @@ pub fn App() -> Element {
         }
     };
 
-    use_context_provider(|| Signal::new(rt));
+    use_context_provider(|| Signal::new(rt.clone()));
+
+    // Poll the share-extension inbox every 5 seconds
+    let vault_for_inbox = rt.vault.clone();
+    use_future(move || {
+        let vault = vault_for_inbox.clone();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                match crate::bootstrap::drain_inbox(&vault) {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!("Imported {n} notes from share inbox"),
+                    Err(e) => tracing::warn!("Inbox drain error: {e}"),
+                }
+            }
+        }
+    });
 
     let mut tab = use_signal(|| Tab::Notes);
     let mut selected_note: Signal<Option<String>> = use_signal(|| None);

@@ -20,3 +20,7 @@ dioxus      = { workspace = true, features = ["mobile"] }
 tokio-tungstenite = { version = "0.26", features = ["connect"] }
 futures-util = { workspace = true }
 url = "2"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSURL", "NSString"] }

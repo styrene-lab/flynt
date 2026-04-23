@@ -1,7 +1,7 @@
 use anyhow::Result;
 use codex_core::models::SyncConfig;
 use codex_store::{sync::AutoSyncHandle, vault::Vault};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{info, warn};
 
 /// Vault root on mobile — uses the app's Documents directory.
@@ -34,6 +34,13 @@ pub fn bootstrap() -> Result<MobileRuntime> {
             }
         }
         Err(e) => warn!("Reindex failed: {e}"),
+    }
+
+    // Drain share-extension inbox
+    match drain_inbox(&vault) {
+        Ok(0) => {}
+        Ok(n) => info!("Imported {n} notes from share inbox"),
+        Err(e) => warn!("Inbox drain error: {e}"),
     }
 
     // Start auto-sync if configured
@@ -71,4 +78,73 @@ pub fn bootstrap() -> Result<MobileRuntime> {
         vault,
         _sync_handle: sync_handle,
     })
+}
+
+// ─── Share Extension Inbox ────────────────────────────────────
+
+/// Drain the share-extension inbox: move .md files (and assets/) from the
+/// App Group container into the vault, then index each one.
+pub fn drain_inbox(vault: &Vault) -> Result<usize> {
+    let Some(inbox) = app_group_inbox_dir() else {
+        return Ok(0);
+    };
+    if !inbox.exists() {
+        return Ok(0);
+    }
+
+    let mut count = 0;
+
+    // Move shared assets first (images etc.)
+    let inbox_assets = inbox.join("assets");
+    if inbox_assets.is_dir() {
+        let vault_assets = vault.root.join("assets");
+        fs::create_dir_all(&vault_assets)?;
+        for entry in fs::read_dir(&inbox_assets)? {
+            let entry = entry?;
+            let dest = vault_assets.join(entry.file_name());
+            fs::rename(entry.path(), &dest)?;
+        }
+        let _ = fs::remove_dir(&inbox_assets);
+    }
+
+    // Move .md files into vault root and index
+    for entry in fs::read_dir(&inbox)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().map_or(false, |e| e == "md") {
+            let dest = vault.root.join(path.file_name().unwrap());
+            fs::rename(&path, &dest)?;
+            if let Err(e) = vault.index_file(&dest) {
+                warn!("Failed to index shared note {}: {e}", dest.display());
+            }
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
+/// Resolve the codex-inbox directory inside the App Group shared container.
+fn app_group_inbox_dir() -> Option<PathBuf> {
+    app_group_container().map(|c| c.join("codex-inbox"))
+}
+
+/// Get the App Group container path via NSFileManager.
+#[cfg(target_os = "ios")]
+fn app_group_container() -> Option<PathBuf> {
+    use objc2::rc::Retained;
+    use objc2_foundation::{NSFileManager, NSString};
+
+    let fm = NSFileManager::defaultManager();
+    let group = NSString::from_str("group.io.styrene.codex");
+    let url: Option<Retained<objc2_foundation::NSURL>> =
+        fm.containerURLForSecurityApplicationGroupIdentifier(&group);
+    url.and_then(|u| u.path().map(|p| PathBuf::from(p.to_string())))
+}
+
+/// Stub for non-iOS builds (macOS dev, tests).
+#[cfg(not(target_os = "ios"))]
+fn app_group_container() -> Option<PathBuf> {
+    // On macOS, use a local dev path for testing the inbox flow
+    dirs::data_dir().map(|d| d.join("io.styrene.codex.group"))
 }

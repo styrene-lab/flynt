@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "codex-agent"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "codex-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "codex-mobile"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -705,6 +705,8 @@ dependencies = [
  "dioxus",
  "dirs 5.0.1",
  "futures-util",
+ "objc2",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tokio",
@@ -717,7 +719,7 @@ dependencies = [
 
 [[package]]
 name = "codex-store"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3421,6 +3423,7 @@ checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
 dependencies = [
  "bitflags 2.11.1",
  "block2",
+ "libc",
  "objc2",
  "objc2-core-foundation",
 ]

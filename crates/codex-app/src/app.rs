@@ -301,13 +301,15 @@ pub fn App() -> Element {
                                     *welcome_error.write() = Some("Please select a folder, not a file.".into());
                                     return;
                                 }
-                                if let Err(e) = OmegonRuntimeContext::initialize_vault(
+                                // Existing folders: don't modify source files (no frontmatter injection)
+                                if let Err(e) = OmegonRuntimeContext::initialize_vault_with_indexing(
                                     &selected_root,
                                     selected_root
                                         .file_name()
                                         .and_then(|name| name.to_str())
                                         .unwrap_or("Codex"),
                                     codex_core::models::SyncConfig::None,
+                                    codex_core::models::IndexingConfig { write_frontmatter: false },
                                 ) {
                                     *welcome_error.write() = Some(format!("Could not open vault: {e}"));
                                     return;

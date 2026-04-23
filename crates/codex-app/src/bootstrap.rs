@@ -123,11 +123,21 @@ impl OmegonRuntimeContext {
     }
 
     pub fn initialize_vault(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Vault> {
+        Self::initialize_vault_with_indexing(path, name, sync, Default::default())
+    }
+
+    pub fn initialize_vault_with_indexing(
+        path: &Path,
+        name: &str,
+        sync: SyncConfig,
+        indexing: codex_core::models::IndexingConfig,
+    ) -> anyhow::Result<Vault> {
         std::fs::create_dir_all(path)?;
         let vault = Vault::open(path)?;
         let mut config: VaultConfig = vault.config.clone();
         config.vault_name = name.to_string();
         config.sync = sync;
+        config.indexing = indexing;
         vault.save_config(&config)?;
         let vault = Vault::open(path)?;
         let mut profile = Self::load_launcher_profile();

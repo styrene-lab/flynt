@@ -104,6 +104,22 @@ jobs:
           name: codex-linux-${{ matrix.arch }}
           path: ${{ env.ARCHIVE }}
 
+  # ─── Apple Signing Setup (shared) ─────────────────────────
+  # Required GitHub Secrets:
+  #   APPLE_DIST_CERT_P12_B64      - Apple Distribution cert + key as .p12, base64
+  #   APPLE_DIST_CERT_PASSWORD     - Password for the .p12
+  #   APPLE_INSTALLER_CERT_P12_B64 - 3rd Party Mac Developer Installer cert, base64
+  #   APPLE_INSTALLER_CERT_PASSWORD
+  #   APPLE_API_KEY_P8_B64         - App Store Connect API key (.p8), base64
+  #   APPLE_API_KEY_ID             - Key ID (e.g. 52M7PW86X4)
+  #   APPLE_API_ISSUER             - Issuer ID
+  #   IOS_DIST_PROFILE_B64         - iOS App Store distribution profile, base64
+  #   IOS_SHARE_DIST_PROFILE_B64   - iOS share extension distribution profile, base64
+  #   MACOS_DIST_PROFILE_B64       - macOS App Store distribution profile, base64
+  #   APPLE_SIGNING_CERT_B64       - Developer ID cert for DMG signing (existing)
+  #   APPLE_SIGNING_CERT_PASSWORD
+  #   APPLE_CODESIGN_IDENTITY      - Developer ID identity string (existing)
+
   build-macos:
     name: Build macOS (universal)
     runs-on: macos-14
@@ -128,46 +144,75 @@ jobs:
       - name: Prepare app bundle
         run: |
           APP="target/dx/codex-app/release/macos/CodexApp.app"
-          cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${RELEASE_TAG#v}" "$APP/Contents/Info.plist" 2>/dev/null
+          PLIST="$APP/Contents/Info.plist"
+          PB=/usr/libexec/PlistBuddy
 
-          # Copy Excalidraw bundle
+          cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
+          $PB -c "Set :CFBundleIconFile AppIcon" "$PLIST" 2>/dev/null || \
+            $PB -c "Add :CFBundleIconFile string AppIcon" "$PLIST"
+          $PB -c "Set :CFBundleShortVersionString ${RELEASE_TAG#v}" "$PLIST" 2>/dev/null
+          $PB -c "Add :LSApplicationCategoryType string public.app-category.productivity" "$PLIST" 2>/dev/null || \
+            $PB -c "Set :LSApplicationCategoryType public.app-category.productivity" "$PLIST"
+          $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || true
+
           mkdir -p "$APP/Contents/Resources/assets/vendor"
           cp crates/codex-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
 
-      - name: Sign app bundle
-        if: env.APPLE_SIGNING_CERT_B64 != ''
+      - name: Import signing certs
+        if: env.APPLE_DIST_CERT_P12_B64 != ''
         env:
+          APPLE_DIST_CERT_P12_B64: ${{ secrets.APPLE_DIST_CERT_P12_B64 }}
+          APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
           APPLE_SIGNING_CERT_B64: ${{ secrets.APPLE_SIGNING_CERT_B64 }}
           APPLE_SIGNING_CERT_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
-          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_INSTALLER_CERT_P12_B64: ${{ secrets.APPLE_INSTALLER_CERT_P12_B64 }}
+          APPLE_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERT_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/codex-signing.keychain-db"
-          CERT_PATH="$RUNNER_TEMP/codex-signing.p12"
           KEYCHAIN_PASSWORD="${{ github.run_id }}-${{ github.run_attempt }}"
 
-          echo "$APPLE_SIGNING_CERT_B64" | base64 --decode > "$CERT_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "${APPLE_SIGNING_CERT_PASSWORD}" -T /usr/bin/codesign -T /usr/bin/security -A
+
+          # Apple Distribution cert (for TestFlight)
+          echo "$APPLE_DIST_CERT_P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -A
+
+          # Developer ID cert (for DMG direct distribution)
+          if [ -n "$APPLE_SIGNING_CERT_B64" ]; then
+            echo "$APPLE_SIGNING_CERT_B64" | base64 --decode > "$RUNNER_TEMP/devid.p12"
+            security import "$RUNNER_TEMP/devid.p12" -k "$KEYCHAIN_PATH" \
+              -P "$APPLE_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -A
+          fi
+
+          # Mac Installer Distribution cert (for .pkg)
+          if [ -n "$APPLE_INSTALLER_CERT_P12_B64" ]; then
+            echo "$APPLE_INSTALLER_CERT_P12_B64" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+            security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN_PATH" \
+              -P "$APPLE_INSTALLER_CERT_PASSWORD" -T /usr/bin/productbuild -T /usr/bin/security -A
+          fi
+
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Sign for DMG (Developer ID)
+        if: env.APPLE_CODESIGN_IDENTITY != ''
+        env:
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+        run: |
           APP="target/dx/codex-app/release/macos/CodexApp.app"
-          ENTITLEMENTS="crates/codex-app/Codex.entitlements"
 
           find "$APP/Contents" -type f \( -name "*.dylib" -o -perm +111 \) ! -name "Info.plist" ! -name "*.plist" | while read -r bin; do
             codesign -f -s "$APPLE_CODESIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" --options runtime --timestamp "$bin" 2>/dev/null || true
           done
 
           codesign -f -s "$APPLE_CODESIGN_IDENTITY" \
-            --keychain "$KEYCHAIN_PATH" \
-            --options runtime \
-            --timestamp \
-            --entitlements "$ENTITLEMENTS" \
+            --keychain "$KEYCHAIN_PATH" --options runtime --timestamp \
+            --entitlements crates/codex-app/Codex.entitlements \
             "$APP"
 
       - name: Create DMG
@@ -179,11 +224,6 @@ jobs:
           ln -s /Applications "$STAGING/Applications"
           hdiutil create -volname "Codex" -srcfolder "$STAGING" -ov -format UDZO "Codex-$VERSION-macos.dmg"
           rm -rf "$STAGING"
-
-          if [ -n "${APPLE_CODESIGN_IDENTITY:-}" ]; then
-            codesign -f -s "$APPLE_CODESIGN_IDENTITY" --timestamp "Codex-$VERSION-macos.dmg"
-          fi
-
           echo "DMG=Codex-$VERSION-macos.dmg" >> "$GITHUB_ENV"
 
       - name: Notarize DMG
@@ -196,20 +236,64 @@ jobs:
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "$KEY_PATH"
           xcrun notarytool submit "$DMG" \
-            --key "$KEY_PATH" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --wait
+            --key "$KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
           xcrun stapler staple "$DMG"
 
-      - name: Upload artifact
+      - name: Build TestFlight .pkg
+        if: env.APPLE_DIST_CERT_P12_B64 != ''
+        env:
+          APPLE_DIST_CERT_P12_B64: ${{ secrets.APPLE_DIST_CERT_P12_B64 }}
+          MACOS_DIST_PROFILE_B64: ${{ secrets.MACOS_DIST_PROFILE_B64 }}
+        run: |
+          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          DIST_APP="dist/Codex.app"
+          rm -rf dist/Codex.app
+          mkdir -p dist
+          cp -R "$APP" "$DIST_APP"
+
+          # Embed provisioning profile
+          if [ -n "$MACOS_DIST_PROFILE_B64" ]; then
+            echo "$MACOS_DIST_PROFILE_B64" | base64 --decode > "$DIST_APP/Contents/embedded.provisionprofile"
+          fi
+
+          # Strip quarantine xattr (ITMS-91109)
+          xattr -cr "$DIST_APP"
+
+          # Re-sign with Apple Distribution + sandbox entitlements
+          DIST_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution" | head -1 | sed 's/.*"\(.*\)"/\1/')
+          codesign --deep --force \
+            --entitlements crates/codex-app/Codex.appstore.entitlements \
+            --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
+            --options runtime "$DIST_APP"
+
+          # Package .pkg
+          INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "3rd Party Mac Developer Installer" | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ -n "$INSTALLER_IDENTITY" ]; then
+            productbuild --component "$DIST_APP" /Applications --sign "$INSTALLER_IDENTITY" dist/Codex.pkg
+          else
+            productbuild --component "$DIST_APP" /Applications dist/Codex.pkg
+          fi
+
+      - name: Upload to TestFlight (macOS)
+        if: env.APPLE_API_KEY_P8_B64 != ''
+        env:
+          APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          mkdir -p private_keys
+          echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          xcrun altool --upload-app --type osx --file dist/Codex.pkg \
+            --api-key "$APPLE_API_KEY_ID" --api-issuer "$APPLE_API_ISSUER"
+
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: codex-macos
           path: ${{ env.DMG }}
 
   build-ios:
-    name: Build iOS
+    name: Build iOS + TestFlight
     runs-on: macos-14
 
     steps:
@@ -224,39 +308,174 @@ jobs:
       - name: Install Dioxus CLI
         run: cargo install dioxus-cli
 
-      - name: Build iOS release
+      - name: Import signing certs & profiles
+        if: env.APPLE_DIST_CERT_P12_B64 != ''
+        env:
+          APPLE_DIST_CERT_P12_B64: ${{ secrets.APPLE_DIST_CERT_P12_B64 }}
+          APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
+          IOS_DIST_PROFILE_B64: ${{ secrets.IOS_DIST_PROFILE_B64 }}
+          IOS_SHARE_DIST_PROFILE_B64: ${{ secrets.IOS_SHARE_DIST_PROFILE_B64 }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/codex-signing.keychain-db"
+          KEYCHAIN_PASSWORD="${{ github.run_id }}-${{ github.run_attempt }}"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$APPLE_DIST_CERT_P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -A
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Install provisioning profiles with UUID filenames
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          for VAR in IOS_DIST_PROFILE_B64 IOS_SHARE_DIST_PROFILE_B64; do
+            PROFILE_DATA="${!VAR}"
+            if [ -n "$PROFILE_DATA" ]; then
+              PROFILE_PATH="$RUNNER_TEMP/profile_${VAR}.mobileprovision"
+              echo "$PROFILE_DATA" | base64 --decode > "$PROFILE_PATH"
+              UUID=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null | grep -A1 UUID | grep string | sed 's/.*<string>//;s/<\/string.*//')
+              cp "$PROFILE_PATH" "$PROFILES_DIR/$UUID.mobileprovision"
+            fi
+          done
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Build iOS app
         run: |
           cd crates/codex-mobile
           IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
 
-      - name: Prepare IPA
+      - name: Patch Info.plist
         run: |
-          MAPP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          APP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          PLIST="$APP/Info.plist"
+          PB=/usr/libexec/PlistBuddy
           VERSION="${RELEASE_TAG#v}"
-          ICONS="crates/codex-mobile/assets/AppIcon.appiconset"
 
-          # Icons
-          cp "$ICONS/icon-120.png" "$MAPP/AppIcon60x60@2x.png"
-          cp "$ICONS/icon-180.png" "$MAPP/AppIcon60x60@3x.png"
-          cp "$ICONS/icon-80.png"  "$MAPP/AppIcon40x40@2x.png"
-          cp "$ICONS/icon-120.png" "$MAPP/AppIcon40x40@3x.png"
-          cp "$ICONS/icon-58.png"  "$MAPP/AppIcon29x29@2x.png"
-          cp "$ICONS/icon-87.png"  "$MAPP/AppIcon29x29@3x.png"
-          cp "$ICONS/icon-40.png"  "$MAPP/AppIcon20x20@2x.png"
-          cp "$ICONS/icon-60.png"  "$MAPP/AppIcon20x20@3x.png"
+          $PB -c "Add :CFBundlePackageType string APPL" "$PLIST" 2>/dev/null || $PB -c "Set :CFBundlePackageType APPL" "$PLIST"
+          $PB -c "Add :MinimumOSVersion string 17.0" "$PLIST" 2>/dev/null || $PB -c "Set :MinimumOSVersion 17.0" "$PLIST"
+          $PB -c "Add :DTPlatformName string iphoneos" "$PLIST" 2>/dev/null || $PB -c "Set :DTPlatformName iphoneos" "$PLIST"
+          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "17.0")
+          $PB -c "Add :DTPlatformVersion string $SDK_VER" "$PLIST" 2>/dev/null || $PB -c "Set :DTPlatformVersion $SDK_VER" "$PLIST"
+          $PB -c "Add :DTSDKName string iphoneos$SDK_VER" "$PLIST" 2>/dev/null || $PB -c "Set :DTSDKName iphoneos$SDK_VER" "$PLIST"
+          XCODE_BUILD=$(defaults read "$(xcode-select -p)/../Info.plist" DTXcodeBuild 2>/dev/null || echo "unknown")
+          SDK_BUILD=$(xcrun --sdk iphoneos --show-sdk-build-version 2>/dev/null || echo "unknown")
+          $PB -c "Add :DTXcode string $XCODE_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTXcode $XCODE_BUILD" "$PLIST"
+          $PB -c "Add :DTXcodeBuild string $XCODE_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTXcodeBuild $XCODE_BUILD" "$PLIST"
+          $PB -c "Add :DTSDKBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTSDKBuild $SDK_BUILD" "$PLIST"
+          $PB -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || true
+          $PB -c "Set :CFBundleDisplayName Codex" "$PLIST"
+          $PB -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+          $PB -c "Set :CFBundleVersion $VERSION" "$PLIST"
+          $PB -c "Delete :CFBundleSupportedPlatforms" "$PLIST" 2>/dev/null || true
+          $PB -c "Add :CFBundleSupportedPlatforms array" "$PLIST"
+          $PB -c "Add :CFBundleSupportedPlatforms:0 string iPhoneOS" "$PLIST"
+          $PB -c "Add :UILaunchScreen dict" "$PLIST" 2>/dev/null || true
 
-          # IPA
-          IPA_STAGING=$(mktemp -d)
-          mkdir -p "$IPA_STAGING/Payload"
-          cp -r "$MAPP" "$IPA_STAGING/Payload/CodexMobile.app"
-          cd "$IPA_STAGING" && zip -r -q "$GITHUB_WORKSPACE/Codex-$VERSION.ipa" Payload/
-          echo "IPA=Codex-$VERSION.ipa" >> "$GITHUB_ENV"
+          # Compile asset catalog and merge actool's partial plist
+          PARTIAL_PLIST=$(mktemp)
+          xcrun actool "crates/codex-mobile/assets/Assets.xcassets" \
+            --compile "$APP" --platform iphoneos --minimum-deployment-target 17.0 \
+            --app-icon AppIcon --target-device iphone --target-device ipad \
+            --compress-pngs --output-format human-readable-text \
+            --output-partial-info-plist "$PARTIAL_PLIST"
+          plutil -convert xml1 "$PLIST"
+          $PB -c "Merge $PARTIAL_PLIST" "$PLIST"
+          rm -f "$PARTIAL_PLIST"
+          plutil -convert binary1 "$PLIST"
 
-      - name: Upload artifact
+      - name: Build share extension
+        run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          BUILD_DIR="target/share-extension-build"
+          APPEX_DIR="$BUILD_DIR/CodexShare.appex"
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$APPEX_DIR"
+          xcrun --sdk iphoneos swiftc \
+            crates/codex-mobile/ios/ShareExtension/Sources/*.swift \
+            -o "$APPEX_DIR/CodexShare" \
+            -target arm64-apple-ios17.0 -module-name CodexShare \
+            -application-extension \
+            -Xlinker -e -Xlinker _NSExtensionMain \
+            -framework Foundation -framework UIKit -framework SwiftUI -framework UniformTypeIdentifiers \
+            -sdk "$SDK_PATH" -O
+          cp crates/codex-mobile/ios/ShareExtension/Info.plist "$APPEX_DIR/Info.plist"
+
+      - name: Assemble bundle + sign
+        if: env.KEYCHAIN_PATH != ''
+        env:
+          IOS_DIST_PROFILE_B64: ${{ secrets.IOS_DIST_PROFILE_B64 }}
+          IOS_SHARE_DIST_PROFILE_B64: ${{ secrets.IOS_SHARE_DIST_PROFILE_B64 }}
+        run: |
+          APP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          PLUGINS="$APP/PlugIns"
+          mkdir -p "$PLUGINS"
+          cp -R target/share-extension-build/CodexShare.appex "$PLUGINS/"
+
+          # Embed distribution provisioning profiles
+          echo "$IOS_DIST_PROFILE_B64" | base64 --decode > "$APP/embedded.mobileprovision"
+          echo "$IOS_SHARE_DIST_PROFILE_B64" | base64 --decode > "$PLUGINS/CodexShare.appex/embedded.mobileprovision"
+
+          # Sign (inside-out)
+          DIST_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution" | head -1 | sed 's/.*"\(.*\)"/\1/')
+          codesign --force \
+            --entitlements crates/codex-mobile/ios/ShareExtension/ShareExtension.entitlements \
+            --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
+            "$PLUGINS/CodexShare.appex"
+          codesign --force \
+            --entitlements crates/codex-mobile/ios/Codex.entitlements \
+            --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
+            "$APP"
+
+      - name: Export IPA via xcodebuild
+        if: env.KEYCHAIN_PATH != ''
+        run: |
+          APP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          APP_NAME=$(basename "$APP")
+          ARCHIVE="target/Codex.xcarchive"
+          rm -rf "$ARCHIVE" target/ipa
+
+          mkdir -p "$ARCHIVE/Products/Applications"
+          cp -R "$APP" "$ARCHIVE/Products/Applications/"
+          PB=/usr/libexec/PlistBuddy
+          $PB -c "Add :ArchiveVersion integer 2" "$ARCHIVE/Info.plist"
+          $PB -c "Add :Name string Codex" "$ARCHIVE/Info.plist"
+          $PB -c "Add :SchemeName string Codex" "$ARCHIVE/Info.plist"
+          $PB -c "Add :ApplicationProperties dict" "$ARCHIVE/Info.plist"
+          $PB -c "Add :ApplicationProperties:ApplicationPath string Applications/$APP_NAME" "$ARCHIVE/Info.plist"
+          $PB -c "Add :ApplicationProperties:CFBundleIdentifier string io.styrene.codex" "$ARCHIVE/Info.plist"
+          VERSION="${RELEASE_TAG#v}"
+          $PB -c "Add :ApplicationProperties:CFBundleShortVersionString string $VERSION" "$ARCHIVE/Info.plist"
+          $PB -c "Add :ApplicationProperties:CFBundleVersion string $VERSION" "$ARCHIVE/Info.plist"
+
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportPath target/ipa \
+            -exportOptionsPlist crates/codex-mobile/ios/ExportOptions.plist
+
+      - name: Upload to TestFlight (iOS)
+        if: env.APPLE_API_KEY_P8_B64 != ''
+        env:
+          APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          mkdir -p private_keys
+          echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          IPA=$(ls target/ipa/*.ipa | head -1)
+          xcrun altool --upload-app --type ios --file "$IPA" \
+            --api-key "$APPLE_API_KEY_ID" --api-issuer "$APPLE_API_ISSUER"
+
+      - name: Upload IPA artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: codex-ios
-          path: ${{ env.IPA }}
+          path: target/ipa/*.ipa
 
   release:
     name: Create GitHub Release

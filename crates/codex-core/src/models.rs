@@ -513,6 +513,28 @@ pub struct VaultConfig {
     pub publication: PublicationPolicy,
     #[serde(default)]
     pub security: crate::seal::SealConfig,
+    #[serde(default)]
+    pub indexing: IndexingConfig,
+}
+
+/// Controls how the indexer interacts with source files.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IndexingConfig {
+    /// When true (default), the indexer writes a stable UUID into files missing
+    /// frontmatter IDs. When false, IDs are tracked in the database only and
+    /// source files are never modified — ideal for existing repos and shared codebases.
+    #[serde(default = "IndexingConfig::default_write_frontmatter")]
+    pub write_frontmatter: bool,
+}
+
+impl IndexingConfig {
+    fn default_write_frontmatter() -> bool { true }
+}
+
+impl Default for IndexingConfig {
+    fn default() -> Self {
+        Self { write_frontmatter: true }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

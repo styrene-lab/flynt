@@ -15,14 +15,15 @@ A desktop + mobile app for notes, tasks, drawings, and knowledge graphs — buil
 Your vault is a folder of `.md` files. Codex indexes them, links them, and gets out of the way.
 
 - **Wikilinks & backlinks** — `[[note]]` creates connections. The knowledge graph shows how ideas relate.
-- **Live markdown preview** — CodeMirror 6 with table rendering, horizontal rules, and inline formatting.
+- **Live markdown preview** — Obsidian-style live editing with CodeMirror 6. Headings, tables, bold, links render inline; click to reveal raw syntax.
 - **Kanban boards** — task management with decay-based relevance scoring. Untouched tasks fade naturally.
 - **Excalidraw drawings** — visual thinking embedded directly in notes.
 - **Query blocks** — `TABLE`, `LIST`, `TASK` queries inline in your documents (like Dataview).
 - **Daily notes & templates** — date-indexed journals with variable expansion.
 - **Git sync** — auto-commit + push/pull in the background. Multi-device, no server.
 - **AI agent** — Omegon in the sidebar with full vault read/write access.
-- **Cross-platform** — macOS (notarized DMG), iOS, Linux amd64/aarch64.
+- **iOS Share Extension** — share links, text, and images from any iOS app into your vault.
+- **Cross-platform** — macOS (DMG + TestFlight), iOS (TestFlight), Linux amd64/aarch64.
 
 ---
 
@@ -30,20 +31,22 @@ Your vault is a folder of `.md` files. Codex indexes them, links them, and gets 
 
 ### macOS
 
-Download the latest notarized DMG from [Releases](https://github.com/styrene-lab/codex/releases/latest). Open it, drag to Applications.
+**TestFlight (recommended):** [Join the beta](https://testflight.apple.com/join/PLACEHOLDER) — automatic updates, no Gatekeeper issues.
+
+**Direct download:** Grab the DMG from [Releases](https://github.com/styrene-labs/codex/releases/latest). Open it, drag to Applications.
+
+### iOS
+
+**TestFlight:** [Join the beta](https://testflight.apple.com/join/PLACEHOLDER) — includes the Share Extension for saving links, text, and images from any app.
 
 ### Linux
 
-CI builds for `x86_64` and `aarch64` are available from [Releases](https://github.com/styrene-lab/codex/releases). Requires `webkit2gtk-4.1` and GTK 3.
+CI builds for `x86_64` and `aarch64` are available from [Releases](https://github.com/styrene-labs/codex/releases). Requires `webkit2gtk-4.1` and GTK 3.
 
 ```sh
 # Ubuntu/Debian
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
-
-### iOS
-
-Ad-hoc or TestFlight. Contact the team for access.
 
 ### Build from source
 
@@ -64,7 +67,7 @@ cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform io
 
 1. Open Codex
 2. Choose **Clone remote vault**
-3. Enter `git@github.com:styrene-lab/codex-demo-vault.git`, branch `main`
+3. Enter `git@github.com:styrene-labs/codex-demo-vault.git`, branch `main`
 4. The demo vault opens with documentation and a live knowledge graph
 
 Or choose **Create local vault** to start fresh.
@@ -158,7 +161,7 @@ cargo test -p codex-core -p codex-store
 Codex is part of the [Styrene](https://styrene.io) stack:
 
 - **[Omegon](https://omegon.styrene.io)** — terminal-native AI agent harness (powers the Codex agent sidebar)
-- **[Styrene Identity](https://github.com/styrene-lab/styrene-rs)** — cross-device identity, key derivation, and vault encryption (planned integration)
+- **[Styrene Identity](https://github.com/styrene-labs/styrene-rs)** — cross-device identity, key derivation, and vault encryption (planned integration)
 
 ---
 
@@ -168,4 +171,4 @@ Business Source License 1.1 — see [LICENSE](LICENSE).
 
 Free for non-production use (evaluation, development, testing, personal use). Change date: 2031. Change license: MIT.
 
-For commercial licensing: licensing@blackmeridian.io
+For commercial licensing: licensing@styrene.io

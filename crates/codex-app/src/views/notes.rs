@@ -252,7 +252,12 @@ fn cm6_init_js(content: &str) -> String {
         closeBrackets,
         searchKeymap, highlightSelectionMatches,
         HighlightStyle, tags,
+        createLivePreview, createBlockRender, createFrontmatterHider,
     }} = CM;
+
+    const livePreview = createLivePreview();
+    const blockRenderPlugin = createBlockRender();
+    const frontmatterPlugin = createFrontmatterHider();
 
     class TableWidget extends WidgetType {{
         constructor(html) {{ super(); this._html = html; }}
@@ -962,40 +967,41 @@ fn cm6_init_js(content: &str) -> String {
             saveKeymap,
             formatKeymap,
             changeHandler,
-            combinedPlugin,
-            wikilinkHidePlugin,
-            // Click handler for wikilinks + custom context menu
+            livePreview,
+            blockRenderPlugin,
+            frontmatterPlugin,
+            // Click wikilink to navigate; uses document text at click position
             EditorView.domEventHandlers({{
                 click(event, view) {{
-                    // Dismiss context menu on any click
                     const old = document.getElementById('codex-ctx-menu');
                     if (old) old.remove();
 
-                    const target = event.target;
-                    if (target && target.closest && target.closest('.cm-wikilink')) {{
-                        const el = target.closest('.cm-wikilink');
-                        // Get the link target from the raw document text at this position
-                        const pos = view.posAtDOM(el);
-                        const line = view.state.doc.lineAt(pos);
-                        const text = line.text;
-                        // Find the [[target]] or [[target|display]] at this position
-                        let idx = 0;
-                        while ((idx = text.indexOf('[[', idx)) !== -1) {{
-                            const end = text.indexOf(']]', idx + 2);
-                            if (end > idx) {{
-                                const absFrom = line.from + idx;
-                                const absTo = line.from + end + 2;
-                                if (pos >= absFrom && pos <= absTo) {{
-                                    const inner = text.substring(idx + 2, end);
-                                    const pipe = inner.indexOf('|');
-                                    const linkTarget = pipe >= 0 ? inner.substring(0, pipe) : inner;
-                                    window._codexNotify('nav', linkTarget.trim());
-                                    break;
-                                }}
-                                idx = end + 2;
-                            }} else break;
-                        }}
+                    // Get position from click coordinates (works regardless of decorations)
+                    const pos = view.posAtCoords({{ x: event.clientX, y: event.clientY }});
+                    if (pos === null) return;
+                    const line = view.state.doc.lineAt(pos);
+                    const text = line.text;
+                    const colInLine = pos - line.from;
+                    // Check if click landed inside a [[wikilink]]
+                    let idx = 0;
+                    let found = false;
+                    while ((idx = text.indexOf('[[', idx)) !== -1) {{
+                        const end = text.indexOf(']]', idx + 2);
+                        if (end > idx) {{
+                            const absFrom = line.from + idx;
+                            const absTo = line.from + end + 2;
+                            if (pos >= absFrom && pos <= absTo) {{
+                                const inner = text.substring(idx + 2, end);
+                                const pipe = inner.indexOf('|');
+                                const linkTarget = pipe >= 0 ? inner.substring(0, pipe) : inner;
+                                window._codexNotify('nav', linkTarget.trim());
+                                found = true;
+                                break;
+                            }}
+                            idx = end + 2;
+                        }} else break;
                     }}
+                    if (found) return true;
                 }},
                 contextmenu(event) {{
                     event.preventDefault();
@@ -1076,7 +1082,13 @@ fn cm6_init_js(content: &str) -> String {
     window._codexCM = new EditorView({{ state, parent: container }});
     window._codexCM.focus();
     }} // end _initCM
-    _initCM();
+    try {{ _initCM(); }} catch(e) {{
+        const c = document.getElementById('codex-cm-editor');
+        if (c) {{
+            c.innerHTML = '<pre style="color:#ef4444;padding:20px;font-size:12px;white-space:pre-wrap;">CM6 error: ' + e.message + '\n\n' + (e.stack || '') + '</pre>';
+        }}
+        if (window._codexNotify) window._codexNotify('debug', 'CM6_ERROR: ' + e.message);
+    }}
 }})();
 "#)
 }
@@ -1392,6 +1404,35 @@ pub fn NotesView() -> Element {
                                 }
                             },
                         }
+                        {
+                            let title = title.clone();
+                            let path_for_rename = path_for_rename.clone();
+                            let ctx_rename = ctx_rename.clone();
+                            rsx! { button {
+                            class: "btn btn-primary btn-xs",
+                            onclick: move |_| {
+                                let new_title = rename_input.read().trim().to_string();
+                                if new_title.is_empty() || new_title == title { *renaming.write() = false; return; }
+                                let p = path_for_rename.clone();
+                                let c = ctx_rename.clone();
+                                spawn(async move {
+                                    let vault = c.vault();
+                                    match tokio::task::spawn_blocking(move || {
+                                        vault.rename_document(&p, &new_title)
+                                    }).await {
+                                        Ok(Ok(n)) => {
+                                            *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
+                                            render_ver += 1;
+                                        }
+                                        Ok(Err(e)) => *rename_msg.write() = Some(format!("Rename failed — {e}")),
+                                        Err(e) => *rename_msg.write() = Some(format!("Rename interrupted — {e}")),
+                                    }
+                                    *renaming.write() = false;
+                                });
+                            },
+                            "Save"
+                        } }
+                        }
                         button { class: "btn btn-ghost btn-xs", onclick: move |_| *renaming.write() = false, "Cancel" }
                     }
                 } else {
@@ -1416,7 +1457,6 @@ pub fn NotesView() -> Element {
                             button {
                                 class: "btn btn-ghost",
                                 onclick: move |_| {
-                                    // Sync CM6 content to edit_body before switching
                                     spawn(async move {
                                         let mut eval = document::eval("if(window._codexCM){dioxus.send(window._codexCM.state.doc.toString())}else{dioxus.send('')}");
                                         if let Ok(content) = eval.recv::<String>().await {

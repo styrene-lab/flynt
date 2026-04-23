@@ -40,7 +40,7 @@ Build both with:
 2. Add UDID to provisioning profile in Apple Developer portal
 3. Build: `./scripts/build-release.sh 0.1.0`
 4. Install via Xcode or `xcrun devicectl device install app`
-5. Push vault data: `xcrun devicectl device copy to --device <name> --domain-type appDataContainer --domain-identifier com.black-meridian.codex --source <vault-dir> --destination Documents/Codex`
+5. Push vault data: `xcrun devicectl device copy to --device <name> --domain-type appDataContainer --domain-identifier io.styrene.codex --source <vault-dir> --destination Documents/Codex`
 
 ### TestFlight (future)
 1. Build IPA

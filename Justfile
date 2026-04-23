@@ -5,7 +5,7 @@ default:
     @just --list --unsorted
 
 vault := env_var_or_default("CODEX_VAULT", env_var("HOME") + "/workspace/black-meridian")
-version := "0.1.0"
+version := `grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'`
 
 # ─── Development ────────────────────────────────────────────
 
@@ -38,7 +38,11 @@ build:
 bundle:
     #!/usr/bin/env bash
     set -euo pipefail
-    dx bundle --platform desktop --release
+    cd crates/codex-app && dx bundle --platform desktop --release && cd ../..
+    # Dioxus outputs to target/dx/; copy to dist/
+    rm -rf dist/Codex.app
+    mkdir -p dist
+    cp -R target/dx/codex-app/release/macos/CodexApp.app dist/Codex.app
     PLIST="dist/Codex.app/Contents/Info.plist"
 
     # Version info
@@ -57,7 +61,7 @@ bundle:
     /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLName string com.black-meridian.codex" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLName string io.styrene.codex" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string codex-note" "$PLIST"
 
@@ -156,6 +160,242 @@ dist: bundle open
 register:
     /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
         -f dist/Codex.app
+
+# ─── iOS ───────────────────────────────────────────────────
+
+share_ext_src := "crates/codex-mobile/ios/ShareExtension"
+share_ext_bundle_id := "io.styrene.codex.share-extension"
+ios_team := "UZBY9DM42N"
+ios_profiles := "crates/codex-mobile/ios/profiles"
+asc_key_id := "52M7PW86X4"
+asc_issuer := "33205cd9-400e-4310-90dc-ec625ba74abe"
+asc_key_path := "crates/codex-mobile/ios/keys/AuthKey_52M7PW86X4.p8"
+dist_identity := "Apple Distribution: CHRISTOPHER RYAN WILSON (UZBY9DM42N)"
+installer_identity := "3rd Party Mac Developer Installer: CHRISTOPHER RYAN WILSON (UZBY9DM42N)"
+
+# Build the iOS Share Extension .appex
+build-share-extension:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SDK="iphoneos"
+    SWIFT_TARGET="arm64-apple-ios17.0"
+    SDK_PATH=$(xcrun --sdk "$SDK" --show-sdk-path)
+    BUILD_DIR="target/share-extension-build"
+    APPEX_DIR="$BUILD_DIR/CodexShare.appex"
+
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$APPEX_DIR"
+
+    xcrun --sdk "$SDK" swiftc \
+        {{share_ext_src}}/Sources/*.swift \
+        -o "$APPEX_DIR/CodexShare" \
+        -target "$SWIFT_TARGET" \
+        -module-name CodexShare \
+        -application-extension \
+        -Xlinker -e -Xlinker _NSExtensionMain \
+        -framework Foundation \
+        -framework UIKit \
+        -framework SwiftUI \
+        -framework UniformTypeIdentifiers \
+        -sdk "$SDK_PATH" \
+        -O
+
+    cp {{share_ext_src}}/Info.plist "$APPEX_DIR/Info.plist"
+    echo "  Built share extension at $APPEX_DIR"
+
+# Inject share extension into a built iOS .app bundle
+inject-share-extension app_path:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PLUGINS="{{app_path}}/PlugIns"
+    mkdir -p "$PLUGINS"
+    cp -R target/share-extension-build/CodexShare.appex "$PLUGINS/"
+    # Embed provisioning profiles
+    cp {{ios_profiles}}/Codex_Dist.mobileprovision "{{app_path}}/embedded.mobileprovision"
+    cp {{ios_profiles}}/Codex_Share_Dist.mobileprovision "$PLUGINS/CodexShare.appex/embedded.mobileprovision"
+    echo "  Injected ShareExtension + profiles into {{app_path}}"
+
+# Sign iOS app + share extension (inside-out)
+sign-ios app_path identity="Apple Development":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Sign extension first
+    codesign --force \
+        --entitlements {{share_ext_src}}/ShareExtension.entitlements \
+        --sign "{{identity}}" \
+        "{{app_path}}/PlugIns/CodexShare.appex"
+    # Sign main app
+    codesign --force \
+        --entitlements crates/codex-mobile/ios/Codex.entitlements \
+        --sign "{{identity}}" \
+        "{{app_path}}"
+    echo "  Signed app + share extension"
+
+# Full iOS build: dx build -> share extension -> inject -> sign
+ios-release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building iOS app..."
+    cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release && cd ../..
+
+    APP=$(find target/dx/codex-mobile -name "*.app" -type d | head -1)
+    PLIST="$APP/Info.plist"
+
+    # Patch Info.plist for App Store Connect requirements
+    PB=/usr/libexec/PlistBuddy
+    $PB -c "Add :CFBundlePackageType string APPL" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :CFBundlePackageType APPL" "$PLIST"
+    $PB -c "Add :MinimumOSVersion string 17.0" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :MinimumOSVersion 17.0" "$PLIST"
+    $PB -c "Add :DTPlatformName string iphoneos" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTPlatformName iphoneos" "$PLIST"
+    SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "17.0")
+    $PB -c "Add :DTPlatformVersion string $SDK_VER" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTPlatformVersion $SDK_VER" "$PLIST"
+    $PB -c "Add :DTSDKName string iphoneos$SDK_VER" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTSDKName iphoneos$SDK_VER" "$PLIST"
+    XCODE_BUILD=$(defaults read "$(xcode-select -p)/../Info.plist" DTXcodeBuild 2>/dev/null || echo "17E202")
+    SDK_BUILD=$(xcrun --sdk iphoneos --show-sdk-build-version 2>/dev/null || echo "23E252")
+    $PB -c "Add :DTXcode string $XCODE_BUILD" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTXcode $XCODE_BUILD" "$PLIST"
+    $PB -c "Add :DTXcodeBuild string $XCODE_BUILD" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTXcodeBuild $XCODE_BUILD" "$PLIST"
+    $PB -c "Add :DTSDKBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTSDKBuild $SDK_BUILD" "$PLIST"
+    $PB -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :DTCompiler com.apple.compilers.llvm.clang.1_0" "$PLIST"
+    $PB -c "Set :CFBundleDisplayName Codex" "$PLIST"
+    # CFBundleSupportedPlatforms must be single value
+    $PB -c "Delete :CFBundleSupportedPlatforms" "$PLIST" 2>/dev/null || true
+    $PB -c "Add :CFBundleSupportedPlatforms array" "$PLIST"
+    $PB -c "Add :CFBundleSupportedPlatforms:0 string iPhoneOS" "$PLIST"
+    # Icon asset catalog reference
+    $PB -c "Add :CFBundleIconName string AppIcon" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :CFBundleIconName AppIcon" "$PLIST"
+    # Launch screen (UILaunchScreen dict for iOS 14+, replaces storyboard requirement)
+    $PB -c "Add :UILaunchScreen dict" "$PLIST" 2>/dev/null || true
+    echo "  Patched Info.plist"
+
+    # Compile asset catalog and merge actool's generated icon plist keys
+    # Apple's validation requires the exact CFBundleIcons structure that actool produces —
+    # hand-crafted PlistBuddy entries are subtly different and get rejected.
+    PARTIAL_PLIST=$(mktemp)
+    xcrun actool "crates/codex-mobile/assets/Assets.xcassets" \
+        --compile "$APP" \
+        --platform iphoneos \
+        --minimum-deployment-target 17.0 \
+        --app-icon AppIcon \
+        --target-device iphone \
+        --target-device ipad \
+        --compress-pngs \
+        --output-format human-readable-text \
+        --output-partial-info-plist "$PARTIAL_PLIST"
+    # Merge actool's partial plist (CFBundleIcons, CFBundlePrimaryIcon, CFBundleIconName)
+    plutil -convert xml1 "$PLIST"
+    $PB -c "Merge $PARTIAL_PLIST" "$PLIST"
+    rm -f "$PARTIAL_PLIST"
+    # Convert to binary plist (standard for iOS bundles)
+    plutil -convert binary1 "$PLIST"
+
+    echo "Building share extension..."
+    just build-share-extension
+    echo "Injecting into $APP..."
+    just inject-share-extension "$APP"
+    just sign-ios "$APP" "{{dist_identity}}"
+    echo "iOS bundle with Share Extension ready at $APP"
+
+# Package .app into .ipa via xcarchive + xcodebuild export
+ios-ipa: ios-release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    APP=$(find target/dx/codex-mobile -name "*.app" -type d | head -1)
+    APP_NAME=$(basename "$APP")
+    ARCHIVE="target/Codex.xcarchive"
+    rm -rf "$ARCHIVE"
+    mkdir -p "$ARCHIVE/Products/Applications"
+    cp -R "$APP" "$ARCHIVE/Products/Applications/"
+    /usr/libexec/PlistBuddy -c "Add :ArchiveVersion integer 2" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :Name string Codex" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :SchemeName string Codex" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties dict" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:ApplicationPath string Applications/$APP_NAME" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:CFBundleIdentifier string io.styrene.codex" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:CFBundleShortVersionString string 0.4.0" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:CFBundleVersion string 0.4.0" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:SigningIdentity string {{dist_identity}}" "$ARCHIVE/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :ApplicationProperties:Team string UZBY9DM42N" "$ARCHIVE/Info.plist"
+    IPA_DIR="target/ipa"
+    rm -rf "$IPA_DIR"
+    xcodebuild -exportArchive \
+        -archivePath "$ARCHIVE" \
+        -exportPath "$IPA_DIR" \
+        -exportOptionsPlist crates/codex-mobile/ios/ExportOptions.plist
+    echo "  Exported IPA to $IPA_DIR/"
+
+# Upload IPA to TestFlight
+ios-testflight: ios-ipa
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IPA=$(ls target/ipa/*.ipa | head -1)
+    just _upload-testflight ios "$IPA"
+
+# ─── macOS TestFlight ──────────────────────────────────────
+
+# Bundle + sign macOS app for TestFlight (uses Apple Distribution, not Developer ID)
+mac-testflight-build: bundle
+    #!/usr/bin/env bash
+    set -euo pipefail
+    APP="dist/Codex.app"
+    PLIST="$APP/Contents/Info.plist"
+    PB=/usr/libexec/PlistBuddy
+
+    # Add LSApplicationCategoryType (required for App Store/TestFlight)
+    $PB -c "Add :LSApplicationCategoryType string public.app-category.productivity" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :LSApplicationCategoryType public.app-category.productivity" "$PLIST"
+    $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || \
+    $PB -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"
+
+    # Embed provisioning profile (strip quarantine xattr)
+    cp crates/codex-app/profiles/Styrene_Codex_PKM_Beta.provisionprofile "$APP/Contents/embedded.provisionprofile"
+    xattr -cr "$APP"
+
+    echo "Signing for TestFlight with Apple Distribution cert..."
+    codesign --deep --force \
+        --entitlements crates/codex-app/Codex.appstore.entitlements \
+        --sign "{{dist_identity}}" \
+        --options runtime \
+        "$APP"
+
+    echo "Packaging .pkg for upload..."
+    PKG="dist/Codex.pkg"
+    productbuild --component "$APP" /Applications --sign "{{installer_identity}}" "$PKG"
+    echo "  Built $PKG"
+
+# Upload macOS build to TestFlight
+mac-testflight: mac-testflight-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _upload-testflight osx dist/Codex.pkg
+
+# ─── Shared upload helper ──────────────────────────────────
+
+# Upload a build to TestFlight via App Store Connect API
+_upload-testflight type file:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p private_keys
+    cp "{{asc_key_path}}" "private_keys/AuthKey_{{asc_key_id}}.p8"
+    echo "Uploading {{file}} to TestFlight..."
+    xcrun altool --upload-app \
+        --type "{{type}}" \
+        --file "{{file}}" \
+        --api-key "{{asc_key_id}}" \
+        --api-issuer "{{asc_issuer}}"
+    echo "  Uploaded — check App Store Connect for processing status"
+
+# Upload both iOS and macOS to TestFlight
+testflight: ios-testflight mac-testflight
+    @echo "  Both platforms uploaded to TestFlight"
 
 clean:
     cargo clean

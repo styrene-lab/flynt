@@ -210,6 +210,7 @@ pub fn SettingsView() -> Element {
                 rules: publication_rules.read().clone(),
             },
             security: ctx.vault().config.security.clone(),
+            indexing: ctx.vault().config.indexing.clone(),
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {

@@ -3,6 +3,58 @@
    All values via CSS tokens.
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* ── CM6 Live Preview ────────────────────────────────────────────────────── */
+.cm-hide { font-size: 0; }
+.cm-bullet { font-size: 0; }
+.cm-bullet::before { content: '\2022'; font-size: var(--font-size-md, 15px); color: var(--ring, #2ab4c8); margin-right: 0.5em; }
+.cm-rendered-blockquote {
+  border-left: 3px solid var(--prose-blockquote-bar, #2ab4c8);
+  padding-left: var(--space-4, 16px);
+  margin: var(--space-4, 16px) 0;
+  color: var(--prose-blockquote, #94a3b8);
+  font-style: italic;
+}
+
+/* ── Context Menu ────────────────────────────────────────────────────────── */
+.ctx-menu {
+  background: var(--surface, #0f172a);
+  border: 1px solid var(--border, #1e293b);
+  border-radius: var(--radius, 6px);
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  font-size: var(--font-size-sm, 13px);
+  font-family: var(--font-sans);
+  color: var(--foreground, #e2e8f0);
+}
+.ctx-menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--foreground, #e2e8f0);
+  font-size: var(--font-size-sm, 13px);
+  cursor: pointer;
+  text-align: left;
+}
+.ctx-menu-item:hover {
+  background: var(--accent, rgba(42, 180, 200, 0.15));
+  color: var(--primary-bright, #67e8c8);
+}
+.ctx-menu-key {
+  color: var(--muted-foreground, #475569);
+  font-size: var(--font-size-xs, 11px);
+  margin-left: 16px;
+}
+.ctx-menu-sep {
+  height: 1px;
+  background: var(--border-dim, rgba(45, 49, 64, 0.5));
+  margin: 4px 8px;
+}
+
 /* ── Notes view shell ─────────────────────────────────────────────────────── */
 .view-notes {
   display:  flex;

@@ -33,6 +33,6 @@ tempfile    = "3"
 
 [package.metadata.bundle]
 name = "Codex"
-identifier = "com.black-meridian.codex"
+identifier = "io.styrene.codex"
 icon = ["assets/icon.icns"]
 short_description = "Notes and tasks for Omegon"

@@ -126,6 +126,7 @@ impl Vault {
                 local_runtime: Default::default(),
                 publication: Default::default(),
                 security: Default::default(),
+                indexing: Default::default(),
             };
             fs::write(&config_path, toml::to_string(&cfg)?)?;
             cfg
@@ -230,11 +231,14 @@ impl Vault {
             .unwrap_or_else(DocumentId::new);
 
         // If the file has no id in frontmatter, write it back so it survives a DB wipe.
+        // When write_frontmatter is false (e.g. existing repos), skip file mutation.
         if frontmatter.id.is_none() {
             frontmatter.id = Some(id.0);
-            let new_fm = toml::to_string(&frontmatter).unwrap_or_default();
-            let new_raw = format!("+++\n{new_fm}+++\n\n{body}");
-            std::fs::write(path, &new_raw)?;
+            if self.config.indexing.write_frontmatter {
+                let new_fm = toml::to_string(&frontmatter).unwrap_or_default();
+                let new_raw = format!("+++\n{new_fm}+++\n\n{body}");
+                std::fs::write(path, &new_raw)?;
+            }
         }
 
         let now = Utc::now();

@@ -2,10 +2,10 @@
 out_dir = "dist"
 
 [bundle]
-identifier = "com.black-meridian.codex"
-publisher = "Black Meridian"
+identifier = "io.styrene.codex"
+publisher = "Styrene Labs"
 icon = ["assets/icon.icns", "assets/icon.png"]
-copyright = "© 2026 Black Meridian"
+copyright = "© 2026 Styrene Labs"
 category = "public.app-category.productivity"
 short_description = "Notes and task tracker with Omegon agent surface."
 long_description = """

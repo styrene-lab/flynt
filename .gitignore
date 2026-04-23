@@ -9,3 +9,8 @@ site/.astro/
 site/dist/
 .vault/
 result
+
+# iOS signing keys & profiles
+*.p8
+*.mobileprovision
+private_keys/
