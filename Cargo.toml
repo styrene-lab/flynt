@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/codex-models",
     "crates/codex-core",
     "crates/codex-store",
     "crates/codex-app",
@@ -9,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 authors = ["Black Meridian"]
 
@@ -64,6 +65,7 @@ dirs = "5"
 dioxus = { version = "0.7", features = ["launch", "devtools", "logger", "lib", "desktop"] }
 
 # Internal crates
+codex-models = { path = "crates/codex-models" }
 codex-core = { path = "crates/codex-core" }
 codex-store = { path = "crates/codex-store" }
 codex-agent = { path = "crates/codex-agent" }

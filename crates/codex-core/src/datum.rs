@@ -266,6 +266,8 @@ pub enum EntityKind {
     DesignNode,
     /// An OpenSpec scenario — Given/When/Then validation of a design decision.
     OpenSpecScenario,
+    /// A workspace lease — tracks which machine holds a vault checkout.
+    WorkspaceLease,
     /// User-defined entity type (e.g. "contact", "sprint", "milestone").
     #[serde(untagged)]
     Custom(String),
@@ -281,6 +283,7 @@ impl EntityKind {
             "link" => Self::Link,
             "design_node" => Self::DesignNode,
             "openspec_scenario" => Self::OpenSpecScenario,
+            "workspace_lease" => Self::WorkspaceLease,
             other => Self::Custom(other.to_string()),
         }
     }
@@ -294,6 +297,7 @@ impl EntityKind {
             Self::Link => "link",
             Self::DesignNode => "design_node",
             Self::OpenSpecScenario => "openspec_scenario",
+            Self::WorkspaceLease => "workspace_lease",
             Self::Custom(s) => s,
         }
     }
@@ -827,6 +831,84 @@ impl<'a> OpenSpecScenarioView<'a> {
 
     pub fn is_failing(&self) -> bool {
         self.status() == "failing"
+    }
+}
+
+/// A workspace lease — tracks which machine holds a vault checkout and its
+/// sync role/mutability.
+///
+/// On disk (stored in `ai/workspaces/<machine_id>.md`):
+/// ```toml
+/// +++
+/// kind = "workspace_lease"
+/// [data]
+/// federation_key = "vault:abc123"
+/// machine_id = "macbook-pro-chris"
+/// last_heartbeat = "2026-04-25T10:30:00Z"
+/// role = "primary"
+/// mutability = "read_write"
+/// label = "Chris's MacBook Pro"
+/// archived = false
+/// +++
+/// ```
+#[derive(Debug, Clone)]
+pub struct WorkspaceLeaseView<'a> {
+    pub entity: &'a Entity,
+}
+
+impl<'a> WorkspaceLeaseView<'a> {
+    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
+        if entity.kind == EntityKind::WorkspaceLease {
+            Some(Self { entity })
+        } else {
+            None
+        }
+    }
+
+    /// The federation key identifying the shared vault this lease belongs to.
+    pub fn federation_key(&self) -> &str {
+        self.entity.get_text("federation_key").unwrap_or("")
+    }
+
+    /// Machine identifier (hostname, device name, etc.)
+    pub fn machine_id(&self) -> &str {
+        self.entity.get_text("machine_id").unwrap_or("unknown")
+    }
+
+    /// ISO-8601 timestamp of the last heartbeat from this machine.
+    pub fn last_heartbeat(&self) -> Option<&str> {
+        self.entity.get_text("last_heartbeat")
+    }
+
+    /// Role in the federation: primary, replica, observer.
+    pub fn role(&self) -> &str {
+        self.entity.get_text("role").unwrap_or("replica")
+    }
+
+    /// Mutability: read_write, read_only.
+    pub fn mutability(&self) -> &str {
+        self.entity.get_text("mutability").unwrap_or("read_only")
+    }
+
+    /// Human-readable label for the machine.
+    pub fn label(&self) -> &str {
+        self.entity.get_text("label").unwrap_or("")
+    }
+
+    /// Whether the lease has been archived (machine decommissioned).
+    pub fn archived(&self) -> bool {
+        self.entity.get_bool("archived").unwrap_or(false)
+    }
+
+    /// Check if the lease is stale (heartbeat older than threshold seconds).
+    pub fn is_stale(&self, threshold_secs: i64) -> bool {
+        self.last_heartbeat()
+            .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
+            .map(|hb| {
+                let age = chrono::Utc::now().signed_duration_since(hb);
+                age.num_seconds() > threshold_secs
+            })
+            .unwrap_or(true) // no heartbeat = stale
     }
 }
 

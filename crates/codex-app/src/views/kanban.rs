@@ -67,12 +67,20 @@ async fn create_board(ctx: AppContext, name: String) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn delete_board(ctx: AppContext, board_id: BoardId) -> anyhow::Result<()> {
+    let vault = ctx.vault();
+    tokio::task::spawn_blocking(move || vault.store.delete_board(&board_id))
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))??;
+    Ok(())
+}
+
 // ── Top-level view ────────────────────────────────────────────────────────────
 
 #[component]
 pub fn KanbanView() -> Element {
     let ctx = use_context::<AppContext>();
-    let refresh = use_signal(|| 0_u64);
+    let mut refresh = use_signal(|| 0_u64);
 
     let boards = use_resource(move || {
         let _ = refresh(); // reactive dep
@@ -95,6 +103,8 @@ pub fn KanbanView() -> Element {
             }
         }
     });
+
+    let mut confirm_delete: Signal<Option<BoardId>> = use_signal(|| None);
 
     rsx! {
         div { class: "view-kanban",
@@ -121,6 +131,47 @@ pub fn KanbanView() -> Element {
                             }
                         }
                         NewBoardInline { refresh }
+
+                        // Delete active board — right-aligned
+                        if let Some(active_id) = active_board.read().clone() {
+                            {
+                                let is_confirming = confirm_delete.read().as_ref() == Some(&active_id);
+                                rsx! {
+                                    div { class: "board-delete-zone",
+                                        if is_confirming {
+                                            span { class: "board-delete-confirm-label", "Delete board and all tasks?" }
+                                            button {
+                                                class: "btn btn-danger btn-sm",
+                                                onclick: move |_| {
+                                                    let c = ctx.clone();
+                                                    let bid = active_id.clone();
+                                                    spawn(async move {
+                                                        if delete_board(c, bid).await.is_ok() {
+                                                            *active_board.write() = None;
+                                                            *refresh.write() += 1;
+                                                        }
+                                                    });
+                                                    *confirm_delete.write() = None;
+                                                },
+                                                "Confirm"
+                                            }
+                                            button {
+                                                class: "btn btn-ghost btn-sm",
+                                                onclick: move |_| *confirm_delete.write() = None,
+                                                "Cancel"
+                                            }
+                                        } else {
+                                            button {
+                                                class: "board-delete-btn",
+                                                title: "Delete this board",
+                                                onclick: move |_| *confirm_delete.write() = Some(active_id.clone()),
+                                                "\u{2715}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     if let Some(board) = list.iter()
                         .find(|b| active_board.read().as_ref() == Some(&b.id))

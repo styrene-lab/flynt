@@ -4,30 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::{Path, PathBuf}};
 use uuid::Uuid;
 
-// ── Newtype IDs ───────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct DocumentId(pub Uuid);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TaskId(pub Uuid);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct BoardId(pub Uuid);
-
-impl DocumentId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
-}
-impl TaskId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
-}
-impl BoardId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
-}
-
-impl Default for DocumentId { fn default() -> Self { Self::new() } }
-impl Default for TaskId { fn default() -> Self { Self::new() } }
-impl Default for BoardId { fn default() -> Self { Self::new() } }
+// ── Re-export task types from codex-models ──────────────────────────────────
+// These are the canonical definitions. codex-core re-exports for backward compat.
+pub use codex_models::task::{
+    BoardId, DecayRate, DocumentId, Priority, Task, TaskId, TaskStatus,
+};
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
@@ -208,144 +189,8 @@ pub struct WikiLink {
 
 // ── Kanban Task ───────────────────────────────────────────────────────────────
 
-/// A task stored as a markdown file with TOML frontmatter under `.codex/tasks/`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Task {
-    pub id: TaskId,
-    pub board_id: BoardId,
-    /// Name of the column this task lives in
-    pub column: String,
-    pub title: String,
-    /// Markdown body — rendered in the task detail pane
-    pub description: String,
-    pub priority: Priority,
-    pub status: TaskStatus,
-    pub tags: Vec<String>,
-    /// Documents linked to this task
-    pub document_refs: Vec<DocumentId>,
-    /// External references — URLs to GitHub issues, PRs, Notion pages, etc.
-    /// Rendered as badges when URL pattern is recognized.
-    #[serde(default)]
-    pub external_refs: Vec<String>,
-    pub due_date: Option<NaiveDate>,
-    /// Ordering position within column (ascending)
-    pub position: u32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    /// Decay rate — controls how quickly relevance fades without interaction.
-    #[serde(default)]
-    pub decay: DecayRate,
-    /// Last time a human or agent interacted with this task (view, edit, mention).
-    /// Resets the decay clock. Defaults to updated_at if never set.
-    #[serde(default)]
-    pub last_touched_at: Option<DateTime<Utc>>,
-    /// Optional link to a design node — makes this task an implementation leaf.
-    /// When set, the design node's lifecycle influences task status.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_node_id: Option<Uuid>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum Priority {
-    #[default]
-    Medium,
-    Low,
-    High,
-    Critical,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskStatus {
-    #[default]
-    Todo,
-    InProgress,
-    Done,
-    Archived,
-}
-
-// ── Task Decay ───────────────────────────────────────────────────────────────
-
-/// Controls how quickly a task loses relevance without interaction.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DecayRate {
-    /// No decay — task stays fully relevant until manually resolved.
-    /// Use for tracked project work, sprint items.
-    None,
-    /// Slow decay — ~14 day half-life. Longer-term personal goals.
-    Slow,
-    /// Natural decay — ~7 day half-life. Default for personal tasks.
-    Natural,
-    /// Fast decay — ~3 day half-life. Ephemeral reminders, quick errands.
-    Fast,
-    /// Custom half-life in days.
-    Custom(f64),
-}
-
-impl Default for DecayRate {
-    fn default() -> Self {
-        Self::Natural
-    }
-}
-
-impl DecayRate {
-    /// Half-life in days. Returns None for non-decaying tasks.
-    /// Custom values are clamped to a minimum of 0.1 days (~2.4 hours).
-    pub fn half_life_days(&self) -> Option<f64> {
-        match self {
-            Self::None => Option::None,
-            Self::Slow => Some(14.0),
-            Self::Natural => Some(7.0),
-            Self::Fast => Some(3.0),
-            Self::Custom(d) => Some(d.max(0.1)),
-        }
-    }
-}
-
-impl Task {
-    /// Compute the current relevance score (0.0–1.0).
-    ///
-    /// - 1.0 = just touched, fully relevant
-    /// - 0.0 = completely decayed
-    /// - Tasks with `DecayRate::None` always return 1.0
-    /// - Done/Archived tasks always return 0.0
-    pub fn relevance(&self) -> f64 {
-        if matches!(self.status, TaskStatus::Done | TaskStatus::Archived) {
-            return 0.0;
-        }
-        let half_life = match self.decay.half_life_days() {
-            Some(hl) => hl,
-            Option::None => return 1.0, // no decay
-        };
-
-        let anchor = self.last_touched_at.unwrap_or(self.updated_at);
-        let elapsed_days = (Utc::now() - anchor).num_seconds() as f64 / 86400.0;
-        if elapsed_days <= 0.0 {
-            return 1.0;
-        }
-
-        // Exponential decay: relevance = 2^(-t/half_life)
-        let lambda = (2.0_f64).ln() / half_life;
-        (-lambda * elapsed_days).exp()
-    }
-
-    /// Whether the task has decayed below the visibility threshold (0.3).
-    pub fn is_fading(&self) -> bool {
-        self.relevance() < 0.3
-    }
-
-    /// Whether the task should be auto-archived (relevance < 0.1).
-    pub fn should_auto_archive(&self) -> bool {
-        self.relevance() < 0.1
-    }
-
-    /// Touch the task — resets the decay clock.
-    pub fn touch(&mut self) {
-        self.last_touched_at = Some(Utc::now());
-    }
-}
+// Task, Priority, TaskStatus, DecayRate, TaskId, BoardId, DocumentId
+// are defined in codex-models and re-exported above.
 
 // ── Notifications (git-synced, serverless push) ──────────────────────────────
 
@@ -444,46 +289,6 @@ impl Board {
         let mut board = Self::default_sprint(name);
         board.project_id = Some(project_id);
         board
-    }
-}
-
-impl Task {
-    pub fn new(
-        board_id: BoardId,
-        column:   impl Into<String>,
-        title:    impl Into<String>,
-    ) -> Self {
-        let now = Utc::now();
-        Self {
-            id:              TaskId::new(),
-            board_id,
-            column:          column.into(),
-            title:           title.into(),
-            description:     String::new(),
-            priority:        Priority::Medium,
-            status:          TaskStatus::Todo,
-            tags:            Vec::new(),
-            document_refs:   Vec::new(),
-            external_refs:   Vec::new(),
-            due_date:        None,
-            position:        u32::MAX,
-            created_at:      now,
-            updated_at:      now,
-            decay:           DecayRate::default(),
-            last_touched_at: None,
-            design_node_id:  None,
-        }
-    }
-
-    /// Create a non-decaying task (for tracked project work).
-    pub fn new_tracked(
-        board_id: BoardId,
-        column:   impl Into<String>,
-        title:    impl Into<String>,
-    ) -> Self {
-        let mut task = Self::new(board_id, column, title);
-        task.decay = DecayRate::None;
-        task
     }
 }
 
@@ -611,6 +416,22 @@ pub enum SyncConfig {
         region: String,
         endpoint: Option<String>,
     },
+    /// Forge-backed sync via Scribe — bidirectional issue/task sync with
+    /// Forgejo, GitHub, or GitLab.
+    Forge {
+        /// Scribe forge endpoint identifier.
+        forge_id: String,
+        /// Org/owner on the forge.
+        org: String,
+        /// Repo name on the forge.
+        repo: String,
+        /// Sync issues ↔ codex tasks.
+        #[serde(default)]
+        sync_issues: bool,
+        /// Auto-commit debounce in seconds (0 = manual only).
+        #[serde(default)]
+        auto_commit_seconds: u64,
+    },
 }
 
 // ── Git-backed project config ────────────────────────────────────────────────
@@ -640,6 +461,19 @@ pub enum GitBacking {
         /// Branch name.
         branch: String,
     },
+    /// Project is backed by a forge-managed repo (via Scribe sync engine).
+    ForgeRepo {
+        /// Scribe forge endpoint identifier.
+        forge_id: String,
+        /// Org/owner on the forge.
+        org: String,
+        /// Repo name on the forge.
+        repo: String,
+        /// Local clone path (managed by scribe).
+        local_path: PathBuf,
+        /// Sub-path within the repo where project data lives.
+        sub_path: PathBuf,
+    },
 }
 
 impl GitBacking {
@@ -648,12 +482,35 @@ impl GitBacking {
         match self {
             Self::VaultRepo { sub_path } => sub_path,
             Self::ExternalRepo { sub_path, .. } => sub_path,
+            Self::ForgeRepo { sub_path, .. } => sub_path,
         }
     }
 
     /// Whether this backing uses the vault's own repo.
     pub fn is_vault_repo(&self) -> bool {
         matches!(self, Self::VaultRepo { .. })
+    }
+
+    /// Whether this backing is managed by a forge via Scribe.
+    pub fn is_forge_repo(&self) -> bool {
+        matches!(self, Self::ForgeRepo { .. })
+    }
+
+    /// Resolve the absolute repo root directory.
+    ///
+    /// For `VaultRepo`, returns `vault_root`.
+    /// For `ExternalRepo` and `ForgeRepo`, returns their own root path.
+    pub fn repo_root(&self, vault_root: &Path) -> PathBuf {
+        match self {
+            Self::VaultRepo { .. } => vault_root.to_path_buf(),
+            Self::ExternalRepo { repo_root, .. } => repo_root.clone(),
+            Self::ForgeRepo { local_path, .. } => local_path.clone(),
+        }
+    }
+
+    /// Resolve the absolute path to the data directory (repo_root + sub_path).
+    pub fn data_root(&self, vault_root: &Path) -> PathBuf {
+        self.repo_root(vault_root).join(self.sub_path())
     }
 }
 

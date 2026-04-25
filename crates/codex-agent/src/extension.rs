@@ -26,8 +26,39 @@ impl Extension for CodexExtension {
 
     async fn handle_rpc(&self, method: &str, params: Value) -> omegon_extension::Result<Value> {
         match method {
+            // ── v2 handshake ────────────────────────────────────────────────
+            "initialize" => {
+                let tools = self.handle_rpc("get_tools", json!({})).await?;
+                Ok(json!({
+                    "protocol_version": 2,
+                    "extension_info": {
+                        "name": self.name(),
+                        "version": self.version(),
+                        "sdk_version": "0.16.0"
+                    },
+                    "capabilities": {
+                        "tools": true, "widgets": false, "mind": true,
+                        "vox": false, "resources": false, "prompts": false,
+                        "sampling": false, "elicitation": false, "streaming": false
+                    },
+                    "tools": tools
+                }))
+            }
+
+            // ── v2 tool execution (tools/call + execute_tool) ───────────────
+            "tools/call" => {
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let args = params.get("arguments").cloned().unwrap_or(json!({}));
+                self.handle_rpc(&format!("execute_{name}"), args).await
+            }
+            "execute_tool" => {
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let args = params.get("args").cloned().unwrap_or(json!({}));
+                self.handle_rpc(&format!("execute_{name}"), args).await
+            }
+
             // ── Discovery ────────────────────────────────────────────────────
-            "get_tools" => Ok(json!([
+            "get_tools" | "tools/list" => Ok(json!([
                 {
                     "name": "search_documents",
                     "label": "Search Documents",
@@ -206,6 +237,29 @@ impl Extension for CodexExtension {
                         "type": "object",
                         "properties": {
                             "status": { "type": "string", "description": "Filter by status: seed, exploring, resolved, decided, implementing, implemented, blocked, deferred, archived" }
+                        }
+                    }
+                },
+                {
+                    "name": "delete_board",
+                    "label": "Delete Board",
+                    "description": "Delete a kanban board and all its tasks.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": { "id": { "type": "string" } },
+                        "required": ["id"]
+                    }
+                },
+                {
+                    "name": "get_workspace_leases",
+                    "label": "Get Workspace Leases",
+                    "description": "List workspace leases — machine checkouts of this vault. Shows federation key, machine id, heartbeat, role, mutability, and staleness. Useful for showing workspace sync status in the Omegon sidebar.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "federation_key": { "type": "string", "description": "Filter by federation key" },
+                            "include_archived": { "type": "boolean", "default": false, "description": "Include archived (decommissioned) leases" },
+                            "staleness_threshold_secs": { "type": "integer", "default": 300, "description": "Seconds after which a lease is considered stale" }
                         }
                     }
                 },
@@ -574,6 +628,74 @@ impl Extension for CodexExtension {
                         "issue_type": node_issue_type,
                         "open_questions_count": open_questions_count,
                         "dependencies_count": deps_count,
+                    }));
+                }
+                Ok(json!(results))
+            }
+
+            "execute_delete_board" => {
+                let id = params["id"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'id'"))?;
+                let id = codex_core::models::BoardId(
+                    uuid::Uuid::parse_str(id)
+                        .map_err(|_| omegon_extension::Error::invalid_params("invalid 'id'"))?,
+                );
+                self.vault
+                    .store
+                    .delete_board(&id)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                Ok(json!({ "deleted": true }))
+            }
+
+            "execute_get_workspace_leases" => {
+                let federation_key_filter = params["federation_key"].as_str();
+                let include_archived = params["include_archived"].as_bool().unwrap_or(false);
+                let staleness_secs = params["staleness_threshold_secs"].as_i64().unwrap_or(300);
+
+                let leases = self
+                    .vault
+                    .store
+                    .list_entities_by_kind(&codex_core::datum::EntityKind::WorkspaceLease)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                let mut results: Vec<Value> = Vec::new();
+                for meta in leases {
+                    let doc = self
+                        .vault
+                        .store
+                        .get_document(&meta.id)
+                        .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                    let view = doc.as_ref()
+                        .and_then(|d| d.entity.as_ref())
+                        .and_then(codex_core::datum::WorkspaceLeaseView::from_entity);
+
+                    let view = match view {
+                        Some(v) => v,
+                        None => continue,
+                    };
+
+                    if !include_archived && view.archived() {
+                        continue;
+                    }
+                    if let Some(fk) = federation_key_filter {
+                        if view.federation_key() != fk {
+                            continue;
+                        }
+                    }
+
+                    let stale = view.is_stale(staleness_secs);
+                    results.push(json!({
+                        "id": meta.id.0.to_string(),
+                        "federation_key": view.federation_key(),
+                        "machine_id": view.machine_id(),
+                        "last_heartbeat": view.last_heartbeat(),
+                        "role": view.role(),
+                        "mutability": view.mutability(),
+                        "label": view.label(),
+                        "archived": view.archived(),
+                        "stale": stale,
                     }));
                 }
                 Ok(json!(results))

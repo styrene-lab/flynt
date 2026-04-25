@@ -49,21 +49,124 @@
   box-shadow: inset 0 -2px 0 var(--primary);
 }
 
-.new-board-btn {
-  color: var(--muted-foreground);
+/* ── New board: empty-state prompt ────────────────────────────────────────── */
+.new-board-prompt {
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  flex:            1;
+  padding:         var(--space-8);
 }
 
-.new-board-inline {
+.new-board-prompt h2 {
+  font-size:   var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+  margin:      0 0 var(--space-2) 0;
+}
+
+.new-board-prompt p {
+  color:         var(--muted-foreground);
+  font-size:     var(--font-size-sm);
+  margin:        0 0 var(--space-4) 0;
+  max-width:     420px;
+  text-align:    center;
+  line-height:   var(--line-height-normal);
+}
+
+.new-board-prompt .row {
+  width:         100%;
+  max-width:     360px;
+}
+
+.new-board-prompt input {
+  flex:           1;
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  padding:        var(--space-2) var(--space-3);
+  font-size:      var(--font-size-sm);
+  color:          var(--foreground);
+}
+
+.new-board-prompt input:focus {
+  border-color: var(--ring);
+  outline:      none;
+}
+
+/* ── New board: inline (tab bar) ─────────────────────────────────────────── */
+.board-new-inline {
   display:     flex;
   align-items: center;
   gap:         var(--space-2);
   margin-left: var(--space-2);
 }
 
-.new-board-input {
-  width: 160px;
-  padding: 4px var(--space-2);
-  font-size: var(--font-size-sm);
+.board-new-inline input {
+  width:          160px;
+  padding:        4px var(--space-2);
+  font-size:      var(--font-size-sm);
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius-sm);
+  color:          var(--foreground);
+}
+
+.board-new-inline input:focus {
+  border-color: var(--ring);
+  outline:      none;
+}
+
+/* ── Board delete ────────────────────────────────────────────────────────── */
+.board-delete-zone {
+  display:      flex;
+  align-items:  center;
+  gap:          var(--space-2);
+  margin-left:  auto;
+  padding-left: var(--space-3);
+}
+
+.board-delete-btn {
+  font-size:      12px;
+  color:          var(--muted-foreground);
+  width:          22px;
+  height:         22px;
+  border-radius:  var(--radius-sm);
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+  opacity:        0.5;
+  transition:     opacity    var(--duration-fast) var(--ease),
+                  color      var(--duration-fast) var(--ease),
+                  background var(--duration-fast) var(--ease);
+}
+
+.board-delete-btn:hover {
+  opacity:    1;
+  color:      var(--error);
+  background: rgba(200, 48, 48, 0.12);
+}
+
+.board-delete-confirm-label {
+  font-size:   var(--font-size-xs);
+  color:       var(--error);
+  white-space: nowrap;
+}
+
+.btn-danger {
+  background: var(--error);
+  color:      #fff;
+  border:     none;
+}
+.btn-danger:hover {
+  filter: brightness(1.1);
+}
+
+.btn-sm {
+  padding:     3px var(--space-2);
+  font-size:   var(--font-size-xs);
+  line-height: 1.4;
 }
 
 /* ── Board: horizontal column strip ──────────────────────────────────────── */

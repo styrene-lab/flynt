@@ -11,3 +11,4 @@ pub mod templates;
 pub mod parser;
 pub mod seal;
 pub mod external_ref;
+pub mod task_file;

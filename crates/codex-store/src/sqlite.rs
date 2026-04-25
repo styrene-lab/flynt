@@ -506,6 +506,20 @@ impl VaultStore for SqliteStore {
         Ok(())
     }
 
+    fn delete_board(&self, id: &BoardId) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Cascade: remove all tasks belonging to this board first.
+        conn.execute(
+            "DELETE FROM tasks WHERE board_id = ?1",
+            params![id.0.to_string()],
+        )?;
+        conn.execute(
+            "DELETE FROM boards WHERE id = ?1",
+            params![id.0.to_string()],
+        )?;
+        Ok(())
+    }
+
     // ── Project dirty tracking ───────────────────────────────────────────────
 
     fn list_dirty_tasks(&self, project_id: &uuid::Uuid) -> Result<Vec<Task>> {

@@ -33,6 +33,7 @@ pub enum Provider {
     Notion,
     Jira,
     AzureDevOps,
+    Forgejo,
     Generic,
 }
 
@@ -45,6 +46,7 @@ impl Provider {
             Self::Notion => "Notion",
             Self::Jira => "Jira",
             Self::AzureDevOps => "Azure DevOps",
+            Self::Forgejo => "Forgejo",
             Self::Generic => "Link",
         }
     }
@@ -57,6 +59,7 @@ impl Provider {
             Self::Notion => "ref-notion",
             Self::Jira => "ref-jira",
             Self::AzureDevOps => "ref-ado",
+            Self::Forgejo => "ref-forgejo",
             Self::Generic => "ref-generic",
         }
     }
@@ -77,6 +80,8 @@ pub fn parse_ref(url: &str) -> ExternalRef {
     if let Some(r) = parse_jira(url) { return r; }
     // Azure DevOps: work items
     if let Some(r) = parse_ado(url) { return r; }
+    // Forgejo/Gitea: issues, PRs (self-hosted, configurable domain)
+    if let Some(r) = parse_forgejo(url) { return r; }
 
     // Generic fallback
     let label = url
@@ -244,6 +249,48 @@ fn parse_ado(url: &str) -> Option<ExternalRef> {
         url: url.to_string(),
         label: format!("#{id}"),
         provider: Provider::AzureDevOps,
+        badge_url: None,
+        icon_url: None,
+    })
+}
+
+fn parse_forgejo(url: &str) -> Option<ExternalRef> {
+    // Forgejo/Gitea instances are self-hosted, so we can't match on domain.
+    // Instead, look for the Forgejo/Gitea URL pattern: /org/repo/issues/N or /org/repo/pulls/N
+    // with a path that contains "/api/v1/" marker or specific Forgejo patterns.
+    //
+    // For now, match URLs that have been explicitly tagged with a forge: query param
+    // (e.g., ?forge=forgejo) or that contain /src/ (Gitea/Forgejo file browser pattern).
+    // Full integration will use scribe's forge registry to resolve known Forgejo domains.
+    let path = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+
+    // Check for ?forge=forgejo tag (explicit tagging by scribe)
+    if !url.contains("forge=forgejo") && !url.contains("forge=gitea") {
+        return None;
+    }
+
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() < 4 { return None; }
+
+    // parts[0] = domain, parts[1] = org, parts[2] = repo, parts[3] = kind
+    let _domain = parts[0];
+    let org = parts[1];
+    let repo = parts[2];
+    let kind = parts[3].split('?').next().unwrap_or(parts[3]);
+
+    if parts.len() < 5 { return None; }
+    let number = parts[4].split('?').next().unwrap_or(parts[4]);
+
+    let label = match kind {
+        "issues" => format!("{org}/{repo}#{number}"),
+        "pulls" => format!("{org}/{repo}#{number}"),
+        _ => return None,
+    };
+
+    Some(ExternalRef {
+        url: url.to_string(),
+        label,
+        provider: Provider::Forgejo,
         badge_url: None,
         icon_url: None,
     })

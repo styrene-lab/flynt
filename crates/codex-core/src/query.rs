@@ -260,6 +260,7 @@ mod tests {
         fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
         fn list_boards(&self) -> Result<Vec<Board>> { Ok(vec![]) }
         fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
+        fn delete_board(&self, _id: &BoardId) -> Result<()> { Ok(()) }
         fn list_dirty_tasks(&self, _pid: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
         fn list_dirty_documents(&self, _pid: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
         fn mark_committed(&self, _t: &[TaskId], _d: &[DocumentId], _at: DateTime<Utc>) -> Result<()> { Ok(()) }

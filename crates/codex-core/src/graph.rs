@@ -18,6 +18,7 @@ pub enum GraphNodeKind {
     Communication,
     DesignNode,
     Scenario,
+    WorkspaceLease,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +82,7 @@ pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
             Some(crate::datum::EntityKind::Task) => GraphNodeKind::Task,
             Some(crate::datum::EntityKind::DesignNode) => GraphNodeKind::DesignNode,
             Some(crate::datum::EntityKind::OpenSpecScenario) => GraphNodeKind::Scenario,
+            Some(crate::datum::EntityKind::WorkspaceLease) => GraphNodeKind::WorkspaceLease,
             _ if matches!(
                 meta.metadata.get("kind").map(|field| &field.value),
                 Some(MetadataValue::String(value)) if value == "agent_communication"
@@ -234,6 +236,7 @@ pub fn format_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Communication => "communication",
         GraphNodeKind::DesignNode => "design_node",
         GraphNodeKind::Scenario => "scenario",
+        GraphNodeKind::WorkspaceLease => "workspace_lease",
     }
 }
 
@@ -374,6 +377,7 @@ pub fn kind_color(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Communication => "rgb(236,72,153)",
         GraphNodeKind::DesignNode => "rgb(16,185,129)",
         GraphNodeKind::Scenario => "rgb(34,197,94)",
+        GraphNodeKind::WorkspaceLease => "rgb(168,85,247)",
     }
 }
 
@@ -525,6 +529,7 @@ mod tests {
         fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
         fn list_boards(&self) -> Result<Vec<Board>> { Ok(self.boards.clone()) }
         fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
+        fn delete_board(&self, _id: &BoardId) -> Result<()> { Ok(()) }
         fn list_dirty_tasks(&self, _project_id: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
         fn list_dirty_documents(&self, _project_id: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
         fn mark_committed(&self, _task_ids: &[TaskId], _doc_ids: &[DocumentId], _at: chrono::DateTime<chrono::Utc>) -> Result<()> { Ok(()) }

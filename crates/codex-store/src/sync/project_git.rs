@@ -53,6 +53,16 @@ impl ProjectGit {
                     remote_config: Some((remote.clone(), branch.clone())),
                 })
             }
+            GitBacking::ForgeRepo { local_path, sub_path, .. } => {
+                // Forge-managed repos behave like external repos at the git level.
+                // Scribe handles the forge API sync; codex just operates on the local clone.
+                let _ = util::open_repo(local_path)?;
+                Ok(Self {
+                    repo_root: local_path.clone(),
+                    sub_path: sub_path.clone(),
+                    remote_config: None, // scribe manages remote sync
+                })
+            }
         }
     }
 

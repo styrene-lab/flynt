@@ -69,14 +69,14 @@ fn filter_and_serialize(payload: &GraphPayload, s: &GraphSettings) -> String {
 fn esc(s: &str) -> String { s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n") }
 fn kind_str(k: &GraphNodeKind) -> &'static str {
     match k { GraphNodeKind::Document=>"document", GraphNodeKind::Task=>"task", GraphNodeKind::Board=>"board",
-              GraphNodeKind::Repo=>"repo", GraphNodeKind::Link=>"link", GraphNodeKind::MemoryFact=>"memory", GraphNodeKind::Communication=>"communication", GraphNodeKind::DesignNode=>"design_node", GraphNodeKind::Scenario=>"scenario" }
+              GraphNodeKind::Repo=>"repo", GraphNodeKind::Link=>"link", GraphNodeKind::MemoryFact=>"memory", GraphNodeKind::Communication=>"communication", GraphNodeKind::DesignNode=>"design_node", GraphNodeKind::Scenario=>"scenario", GraphNodeKind::WorkspaceLease=>"workspace_lease" }
 }
 fn edge_str(k: &GraphEdgeKind) -> &'static str {
     match k { GraphEdgeKind::Wikilink=>"wikilink", GraphEdgeKind::TaskMembership=>"task-membership", GraphEdgeKind::SemanticSupport=>"semantic-support", GraphEdgeKind::Dependency=>"dependency", GraphEdgeKind::ParentChild=>"parent-child", GraphEdgeKind::Validates=>"validates" }
 }
 fn kind_label(k: &GraphNodeKind) -> &'static str {
     match k { GraphNodeKind::Document=>"Doc", GraphNodeKind::Task=>"Task", GraphNodeKind::Board=>"Board",
-              GraphNodeKind::Repo=>"Repo", GraphNodeKind::Link=>"Link", GraphNodeKind::MemoryFact=>"Memory", GraphNodeKind::Communication=>"Comms", GraphNodeKind::DesignNode=>"Design", GraphNodeKind::Scenario=>"Spec" }
+              GraphNodeKind::Repo=>"Repo", GraphNodeKind::Link=>"Link", GraphNodeKind::MemoryFact=>"Memory", GraphNodeKind::Communication=>"Comms", GraphNodeKind::DesignNode=>"Design", GraphNodeKind::Scenario=>"Spec", GraphNodeKind::WorkspaceLease=>"Lease" }
 }
 
 #[component]

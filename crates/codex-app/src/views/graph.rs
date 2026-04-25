@@ -637,6 +637,7 @@ fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
         GraphNodeKind::Communication => "communication",
         GraphNodeKind::DesignNode => "design_node",
         GraphNodeKind::Scenario => "scenario",
+        GraphNodeKind::WorkspaceLease => "workspace_lease",
     }
 }
 

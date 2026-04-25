@@ -86,6 +86,9 @@ pub fn App() -> Element {
                                     codex_core::models::SyncConfig::S3 { bucket, .. } => {
                                         format!("S3: {bucket}")
                                     }
+                                    codex_core::models::SyncConfig::Forge { org, repo, .. } => {
+                                        format!("Forge: {org}/{repo}")
+                                    }
                                 };
                                 rsx! {
                                     div { class: "settings-section",

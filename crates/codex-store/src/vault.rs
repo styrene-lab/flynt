@@ -781,10 +781,7 @@ impl Vault {
                 if let Some(backing) = view.git_backing() {
                     let md = task_file::serialize_task_to_markdown(task, project_id);
                     let rel_path = task_file::task_file_path(backing.sub_path(), &task.id);
-                    let abs_path = match &backing {
-                        GitBacking::VaultRepo { .. } => self.root.join(&rel_path),
-                        GitBacking::ExternalRepo { repo_root, .. } => repo_root.join(&rel_path),
-                    };
+                    let abs_path = backing.repo_root(&self.root).join(&rel_path);
                     if let Some(parent) = abs_path.parent() {
                         fs::create_dir_all(parent)?;
                     }
@@ -810,10 +807,7 @@ impl Vault {
             if let Some(view) = ProjectView::from_entity(&entity) {
                 if let Some(backing) = view.git_backing() {
                     let rel_path = task_file::task_file_path(backing.sub_path(), task_id);
-                    let abs_path = match &backing {
-                        GitBacking::VaultRepo { .. } => self.root.join(&rel_path),
-                        GitBacking::ExternalRepo { repo_root, .. } => repo_root.join(&rel_path),
-                    };
+                    let abs_path = backing.repo_root(&self.root).join(&rel_path);
                     if abs_path.exists() {
                         fs::remove_file(&abs_path)?;
                     }
@@ -839,10 +833,7 @@ impl Vault {
             .context("project has no git_backing configured")?;
         let commit_config = view.commit_config();
 
-        let data_root = match &backing {
-            GitBacking::VaultRepo { sub_path } => self.root.join(sub_path),
-            GitBacking::ExternalRepo { repo_root, sub_path, .. } => repo_root.join(sub_path),
-        };
+        let data_root = backing.data_root(&self.root);
 
         // Ensure directories exist
         fs::create_dir_all(data_root.join("tasks"))?;
@@ -855,10 +846,7 @@ impl Vault {
         for task in &dirty_tasks {
             let md = task_file::serialize_task_to_markdown(task, &project_id);
             let rel_path = task_file::task_file_path(backing.sub_path(), &task.id);
-            let abs_path = match &backing {
-                GitBacking::VaultRepo { .. } => self.root.join(&rel_path),
-                GitBacking::ExternalRepo { repo_root, .. } => repo_root.join(&rel_path),
-            };
+            let abs_path = backing.repo_root(&self.root).join(&rel_path);
             if let Some(parent) = abs_path.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -876,10 +864,7 @@ impl Vault {
                     backing.sub_path(),
                     &TaskId(*entity_id),
                 );
-                let abs_path = match &backing {
-                    GitBacking::VaultRepo { .. } => self.root.join(&rel_path),
-                    GitBacking::ExternalRepo { repo_root, .. } => repo_root.join(&rel_path),
-                };
+                let abs_path = backing.repo_root(&self.root).join(&rel_path);
                 if abs_path.exists() {
                     fs::remove_file(&abs_path)?;
                     report.files_removed += 1;
@@ -922,12 +907,7 @@ impl Vault {
         let backing = view.git_backing()
             .context("project has no git_backing configured")?;
 
-        let tasks_dir = match &backing {
-            GitBacking::VaultRepo { sub_path } => self.root.join(sub_path).join("tasks"),
-            GitBacking::ExternalRepo { repo_root, sub_path, .. } => {
-                repo_root.join(sub_path).join("tasks")
-            }
-        };
+        let tasks_dir = backing.data_root(&self.root).join("tasks");
 
         if !tasks_dir.exists() {
             return Ok(0);

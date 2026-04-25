@@ -17,7 +17,7 @@ thiserror   = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }
 tracing-subscriber = { workspace = true }
-omegon-extension = "0.15"
+omegon-extension = { path = "../../../omegon/core/crates/omegon-extension" }
 async-trait = "0.1"
 dirs        = "5"
 clap = { version = "4", features = ["derive", "env"] }

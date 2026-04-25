@@ -8,6 +8,7 @@ default = ["file-watcher"]
 file-watcher = ["dep:notify"]
 
 [dependencies]
+codex-models = { workspace = true }
 codex-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

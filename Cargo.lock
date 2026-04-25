@@ -683,6 +683,7 @@ dependencies = [
  "anyhow",
  "base64",
  "chrono",
+ "codex-models",
  "comrak",
  "serde",
  "serde_json",
@@ -718,12 +719,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-models"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "toml",
+ "uuid",
+]
+
+[[package]]
 name = "codex-store"
 version = "0.5.0"
 dependencies = [
  "anyhow",
  "chrono",
  "codex-core",
+ "codex-models",
  "comrak",
  "dirs 5.0.1",
  "git2",
@@ -3465,9 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-extension"
-version = "0.15.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab62d501b2142527011c29a4abf0a5d40d53f4971e040eb033cc80d4abf84066"
+version = "0.16.1"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -51,6 +51,7 @@ pub trait VaultStore: Send + Sync {
     fn get_board(&self, id: &BoardId) -> Result<Option<Board>>;
     fn list_boards(&self) -> Result<Vec<Board>>;
     fn save_board(&self, board: &Board) -> Result<()>;
+    fn delete_board(&self, id: &BoardId) -> Result<()>;
 
     // ── Project dirty tracking ───────────────────────────────────────────────
     /// List tasks for a project that have been modified since last commit.
