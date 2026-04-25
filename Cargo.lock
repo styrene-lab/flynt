@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "codex-agent"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "codex-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "codex-mobile"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "codex-models"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "codex-store"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3478,7 +3478,8 @@ dependencies = [
 
 [[package]]
 name = "omegon-extension"
-version = "0.16.1"
+version = "0.17.0-rc.1"
+source = "git+https://github.com/styrene-lab/omegon.git?rev=295d790e#295d790e92d2b6723735b90879987319deaa382a"
 dependencies = [
  "anyhow",
  "async-trait",
