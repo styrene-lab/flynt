@@ -236,8 +236,10 @@ jobs:
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "$KEY_PATH"
           xcrun notarytool submit "$DMG" \
-            --key "$KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
-          xcrun stapler staple "$DMG"
+            --key "$KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" \
+            --wait --timeout 600
+          # Apple's CDN can lag behind notarytool --wait; retry staple once after a delay
+          xcrun stapler staple "$DMG" || (sleep 30 && xcrun stapler staple "$DMG")
 
       - name: Build TestFlight .pkg
         if: env.APPLE_DIST_CERT_P12_B64 != ''
@@ -347,7 +349,18 @@ jobs:
       - name: Build iOS app
         run: |
           cd crates/codex-mobile
-          IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
+          # Resolve the Apple Distribution identity from keychain for dx codesign
+          if [ -n "$KEYCHAIN_PATH" ]; then
+            DIST_ID=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution" | head -1 | sed 's/.*"\(.*\)"/\1/')
+            if [ -n "$DIST_ID" ]; then
+              IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release \
+                --codesign true --apple-team-id "$DIST_ID"
+            else
+              IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release --codesign false
+            fi
+          else
+            IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release --codesign false
+          fi
 
       - name: Patch Info.plist
         run: |
