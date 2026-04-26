@@ -287,7 +287,7 @@ jobs:
           mkdir -p private_keys
           echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           xcrun altool --upload-app --type osx --file dist/Codex.pkg \
-            --api-key "$APPLE_API_KEY_ID" --api-issuer "$APPLE_API_ISSUER"
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -473,7 +473,7 @@ jobs:
           echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           IPA=$(ls target/ipa/*.ipa | head -1)
           xcrun altool --upload-app --type ios --file "$IPA" \
-            --api-key "$APPLE_API_KEY_ID" --api-issuer "$APPLE_API_ISSUER"
+            --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
 
       - name: Upload IPA artifact
         if: always()
