@@ -154,6 +154,8 @@ jobs:
           $PB -c "Add :LSApplicationCategoryType string public.app-category.productivity" "$PLIST" 2>/dev/null || \
             $PB -c "Set :LSApplicationCategoryType public.app-category.productivity" "$PLIST"
           $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || true
+          $PB -c "Add :LSMinimumSystemVersion string 12.0" "$PLIST" 2>/dev/null || \
+            $PB -c "Set :LSMinimumSystemVersion 12.0" "$PLIST"
 
           mkdir -p "$APP/Contents/Resources/assets/vendor"
           cp crates/codex-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
