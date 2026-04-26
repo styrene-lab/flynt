@@ -71,3 +71,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Cargo check
         run: cargo check -p codex-core -p codex-store -p codex-app
+
+  lipstyk:
+    name: lipstyk
+    uses: styrene-lab/lipstyk/.github/workflows/lipstyk.yml@main
+    with:
+      paths: "crates/"
+      threshold: 50

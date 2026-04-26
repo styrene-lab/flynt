@@ -1,7 +1,7 @@
 use std::time::Duration;
 use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;
-use crate::views::{agent, graph, kanban, notes};
+use crate::views::{agent, graph, kanban, notes, onboarding};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -14,6 +14,20 @@ enum Tab {
 
 #[component]
 pub fn App() -> Element {
+    // Check if a vault exists — if not, show onboarding
+    let mut vault_ready = use_signal(|| crate::bootstrap::has_vault());
+
+    if !*vault_ready.read() {
+        return rsx! {
+            style { {include_str!("../assets/mobile.css")} }
+            onboarding::OnboardingView {
+                on_complete: move |_path: std::path::PathBuf| {
+                    *vault_ready.write() = true;
+                },
+            }
+        };
+    }
+
     let rt = match crate::bootstrap::bootstrap() {
         Ok(rt) => rt,
         Err(e) => {

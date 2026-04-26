@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod app;
+pub mod daemon_manager;
 pub mod icons;
 pub mod menu;
 pub mod bootstrap;

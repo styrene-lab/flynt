@@ -568,6 +568,8 @@ pub struct RuntimeState {
     pub omegon: OmegonRuntimeContext,
     /// Background git sync handle — kept alive as long as RuntimeState exists.
     pub _sync_handle: Option<Arc<codex_store::sync::AutoSyncHandle>>,
+    /// Agent daemon lifecycle manager.
+    pub daemon: Arc<crate::daemon_manager::DaemonManager>,
 }
 
 #[derive(Clone, Copy)]
@@ -590,6 +592,10 @@ impl AppContext {
 
     pub fn omegon(&self) -> OmegonRuntimeContext {
         self.runtime.read().omegon.clone()
+    }
+
+    pub fn daemon(&self) -> Arc<crate::daemon_manager::DaemonManager> {
+        self.runtime.read().daemon.clone()
     }
 
     pub fn set_runtime(&mut self, runtime: RuntimeState) {
@@ -724,12 +730,31 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
         _ => None,
     };
 
+    // Initialize daemon manager from operator settings
+    let operator_settings = omegon.load_operator_settings();
+    let daemon = Arc::new(crate::daemon_manager::DaemonManager::new(
+        &operator_settings.agent_daemon,
+        vault_root.clone(),
+        omegon.clone(),
+    ));
+
+    // Auto-start daemon if configured
+    if operator_settings.agent_daemon.enabled && operator_settings.agent_daemon.auto_start {
+        let d = daemon.clone();
+        tokio::spawn(async move {
+            if let Err(e) = d.start().await {
+                warn!("Daemon auto-start failed: {e}");
+            }
+        });
+    }
+
     RuntimeState {
         vault_root,
         vault,
         vault_events: tx,
         omegon,
         _sync_handle: sync_handle,
+        daemon,
     }
 }
 

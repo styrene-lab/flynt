@@ -11,6 +11,15 @@ pub fn vault_root() -> PathBuf {
         .join("Codex")
 }
 
+/// Alias for use from onboarding view.
+pub fn default_vault_root() -> PathBuf { vault_root() }
+
+/// Check if a vault has been initialized (has at least a .codex directory or any .md files).
+pub fn has_vault() -> bool {
+    let root = vault_root();
+    root.join(".codex").exists() || root.join(".git").exists()
+}
+
 /// Mobile runtime state — simpler than desktop (no watcher, no omegon).
 #[derive(Clone)]
 pub struct MobileRuntime {

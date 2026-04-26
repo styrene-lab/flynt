@@ -5,6 +5,7 @@
 //! directly (Tier 1) or declares desired state for Auspex (Tier 2).
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Per-vault agent daemon configuration.
 /// Stored in `.codex/operator-settings.json` under `agent_daemon`.
@@ -174,6 +175,34 @@ pub enum InboundCapability {
 }
 
 impl InboundCapability {
+    /// All known capability variants.
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::ResearchLinks,
+            Self::CaptureIdeas,
+            Self::ManageTasks,
+            Self::AnswerQuestions,
+            Self::DailyDigest,
+            Self::CreateDocuments,
+            Self::SearchVault,
+            Self::EnrichNotes,
+        ]
+    }
+
+    /// Human-readable label for the settings UI.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::ResearchLinks => "Research Links",
+            Self::CaptureIdeas => "Capture Ideas",
+            Self::ManageTasks => "Manage Tasks",
+            Self::AnswerQuestions => "Answer Questions",
+            Self::DailyDigest => "Daily Digest",
+            Self::CreateDocuments => "Create Documents",
+            Self::SearchVault => "Search Vault",
+            Self::EnrichNotes => "Enrich Notes",
+        }
+    }
+
     /// System prompt fragment describing this capability to the agent.
     pub fn system_prompt(&self) -> &'static str {
         match self {
@@ -233,6 +262,29 @@ pub enum DaemonState {
     AuspexManaged {
         instance_id: String,
     },
+}
+
+impl fmt::Display for DaemonState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Disabled => write!(f, "Disabled"),
+            Self::Stopped => write!(f, "Stopped"),
+            Self::Starting => write!(f, "Starting…"),
+            Self::Running { port, .. } => write!(f, "Running (port {port})"),
+            Self::Unhealthy(reason) => write!(f, "Unhealthy: {reason}"),
+            Self::AuspexManaged { instance_id } => write!(f, "Auspex ({instance_id})"),
+        }
+    }
+}
+
+impl DaemonState {
+    pub fn is_running(&self) -> bool {
+        matches!(self, Self::Running { .. })
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        matches!(self, Self::Disabled | Self::Stopped)
+    }
 }
 
 #[cfg(test)]

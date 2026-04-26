@@ -105,6 +105,47 @@ impl GitSync {
 }
 
 impl GitSync {
+    /// Build credential callbacks that use a personal access token for HTTPS auth.
+    /// The token is passed as the password with an empty username (GitHub convention).
+    pub fn credential_callbacks_with_token(token: String) -> RemoteCallbacks<'static> {
+        let mut cb = RemoteCallbacks::new();
+        cb.credentials(move |_url, _username_from_url, _allowed_types| {
+            Cred::userpass_plaintext(&token, "x-oauth-basic")
+        });
+        cb
+    }
+
+    /// Clone a remote repository using a personal access token or OAuth token.
+    /// On failure, cleans up the destination directory if it was created by the clone.
+    pub fn clone_repo_with_token(
+        url: &str,
+        branch: &str,
+        dest: &std::path::Path,
+        token: &str,
+    ) -> Result<Repository> {
+        use git2::build::RepoBuilder;
+
+        let dest_existed = dest.exists();
+
+        let mut fetch_opts = FetchOptions::new();
+        fetch_opts.remote_callbacks(Self::credential_callbacks_with_token(token.to_string()));
+
+        let result = RepoBuilder::new()
+            .branch(branch)
+            .fetch_options(fetch_opts)
+            .clone(url, dest);
+
+        match result {
+            Ok(repo) => Ok(repo),
+            Err(e) => {
+                if !dest_existed && dest.exists() {
+                    let _ = std::fs::remove_dir_all(dest);
+                }
+                Err(e.into())
+            }
+        }
+    }
+
     /// Clone a remote repository into `dest`. Returns the cloned repo.
     /// On failure, cleans up the destination directory if it was created by the clone.
     pub fn clone_repo(url: &str, branch: &str, dest: &std::path::Path) -> Result<Repository> {

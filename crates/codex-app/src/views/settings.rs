@@ -1,5 +1,6 @@
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
+    components::daemon_settings::DaemonSettingsSection,
     state::ThemeName,
     views::PublicationRulesEditor,
 };
@@ -132,6 +133,9 @@ pub fn SettingsView() -> Element {
     let mut vox_enabled = use_signal(|| initial_operator.vox.enabled);
     let mut vox_tts_enabled = use_signal(|| initial_operator.vox.tts_enabled);
     let mut vox_voice = use_signal(|| initial_operator.vox.voice.clone());
+
+    // Daemon config — managed by DaemonSettingsSection
+    let daemon_config = use_signal(|| initial_operator.agent_daemon.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
     let publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
@@ -266,7 +270,7 @@ pub fn SettingsView() -> Element {
                 voice: vox_voice.read().trim().to_string(),
             },
             acp_config: initial_operator.acp_config.clone(),
-            agent_daemon: initial_operator.agent_daemon.clone(),
+            agent_daemon: daemon_config.read().clone(),
         };
 
         match vault.save_config(&config) {
@@ -572,6 +576,11 @@ pub fn SettingsView() -> Element {
                     SettingsRow { label: "Operator settings",
                         span { class: "settings-path muted", "{omegon.operator_settings_path.display()}" }
                     }
+                }
+
+                // ── Agent Daemon ────────────────────────────────────────────
+                DaemonSettingsSection {
+                    config: daemon_config,
                 }
 
                 // ── Save bar ─────────────────────────────────────────────────

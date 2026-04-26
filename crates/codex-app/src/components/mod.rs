@@ -1,6 +1,7 @@
 pub mod agent_rail;
 pub mod command_palette;
 pub mod context_menu;
+pub mod daemon_settings;
 pub mod sidebar;
 pub mod tab_bar;
 pub mod toolbar;
