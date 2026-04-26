@@ -122,7 +122,7 @@ jobs:
 
   build-macos:
     name: Build macOS (universal)
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +139,7 @@ jobs:
       - name: Build desktop release
         run: |
           cd crates/codex-app
-          dx build --platform desktop --release
+          MACOSX_DEPLOYMENT_TARGET=12.0 dx build --platform desktop --release
 
       - name: Prepare app bundle
         run: |
@@ -297,7 +297,7 @@ jobs:
 
   build-ios:
     name: Build iOS + TestFlight
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
