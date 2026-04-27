@@ -297,6 +297,7 @@ jobs:
           fi
 
       - name: Upload to TestFlight (macOS)
+        continue-on-error: true
         if: env.APPLE_API_KEY_P8_B64 != ''
         env:
           APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
@@ -482,6 +483,7 @@ jobs:
           echo "IPA=target/ipa/Codex-${VERSION}.ipa" >> "$GITHUB_ENV"
 
       - name: Upload to TestFlight (iOS)
+        continue-on-error: true
         if: env.APPLE_API_KEY_P8_B64 != ''
         env:
           APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}

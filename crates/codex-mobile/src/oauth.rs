@@ -36,7 +36,8 @@ pub fn get_token() -> Option<String> {
         let token = unsafe { std::ffi::CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned();
-        unsafe { libc::free(ptr as *mut std::ffi::c_void) };
+        extern "C" { fn free(ptr: *mut std::ffi::c_void); }
+        unsafe { free(ptr as *mut std::ffi::c_void) };
         Some(token)
     }
     #[cfg(not(target_os = "ios"))]
