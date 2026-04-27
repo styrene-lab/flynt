@@ -70,7 +70,7 @@
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "codex";
-          version = "0.4.0";
+          version = "0.6.0";
           src = ./.;
 
           cargoLock.lockFile = ./Cargo.lock;
