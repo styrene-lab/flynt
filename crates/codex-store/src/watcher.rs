@@ -26,7 +26,8 @@ impl VaultWatcher {
             let Ok(event) = res else { return };
             for path in event.paths {
                 if path.starts_with(&codex_dir) { continue; }
-                if !path.extension().map(|e| e == "md").unwrap_or(false) { continue; }
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if ext != "md" && ext != "excalidraw" && ext != "d2" { continue; }
                 let evt = match event.kind {
                     notify::EventKind::Create(_) => VaultChangeEvent::FileCreated(path),
                     notify::EventKind::Modify(_) => VaultChangeEvent::FileModified(path),

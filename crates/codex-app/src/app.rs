@@ -28,6 +28,9 @@ pub fn App() -> Element {
     use_context_provider(|| Signal::new(None::<u32>));
     use_context_provider(|| Signal::new(None::<String>));
 
+    // Shared ACP session — populated by AgentRail, used by CommandPalette agent mode
+    use_context_provider(|| Signal::new(None::<std::rc::Rc<crate::acp::AcpSession>>));
+
     // Tab state — provided via context so sidebar, tab bar, and notes share it
     use_context_provider(|| Signal::new(TabState::default()));
 
@@ -52,6 +55,7 @@ pub fn App() -> Element {
     let show_agent = use_signal(|| false);
     let sync_status = use_signal(|| SyncStatus::Idle);
     let mut palette_open = use_signal(|| false);
+    let mut palette_mode = use_signal(|| crate::components::command_palette::PaletteMode::Command);
 
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
@@ -169,6 +173,115 @@ pub fn App() -> Element {
         }
     });
 
+    // Auto-render SVG when .excalidraw or .d2 files are created/modified
+    {
+        let vault_events = ctx.vault_events();
+        let vault_for_svg = ctx.vault();
+        use_future(move || {
+            let mut rx = vault_events.subscribe();
+            let vault = vault_for_svg.clone();
+            async move {
+                loop {
+                    let Ok(evt) = rx.recv().await else { break };
+                    // Re-read viz config on each event so settings changes take effect immediately
+                    let viz = vault.config.visualization.clone();
+                    let path = match evt {
+                        codex_store::watcher::VaultChangeEvent::FileCreated(p)
+                        | codex_store::watcher::VaultChangeEvent::FileModified(p) => p,
+                        _ => continue,
+                    };
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    let svg_path = path.with_extension("svg");
+
+                    match ext {
+                        "excalidraw" if viz.excalidraw_auto_export => {
+                            // Render via the webview's Excalidraw bundle
+                            let scene_json = match std::fs::read_to_string(&path) {
+                                Ok(s) => s,
+                                Err(_) => continue,
+                            };
+                            let escaped = serde_json::to_string(&scene_json).unwrap_or_default();
+                            let js = format!(
+                                r#"(async function() {{
+                                    if (window.CodexExcalidraw && window.CodexExcalidraw.renderSceneToSvg) {{
+                                        let svg = await window.CodexExcalidraw.renderSceneToSvg({escaped});
+                                        dioxus.send(svg || '');
+                                    }} else {{ dioxus.send(''); }}
+                                }})();"#
+                            );
+                            let mut eval = document::eval(&js);
+                            if let Ok(svg) = eval.recv::<String>().await {
+                                if !svg.is_empty() {
+                                    let _ = std::fs::write(&svg_path, &svg);
+                                }
+                            }
+                        }
+                        "d2" if viz.d2_auto_render => {
+                            // Render via d2 CLI with configured theme and layout
+                            let input = path.clone();
+                            let output = svg_path.clone();
+                            let d2_bin = viz.d2_bin.clone().unwrap_or_else(|| "d2".into());
+                            let theme = viz.d2_theme.to_string();
+                            let layout = viz.d2_layout.clone();
+                            let result = tokio::task::spawn_blocking(move || {
+                                // Enrich PATH for GUI apps that inherit a stripped environment
+                                let mut path_env = std::env::var("PATH").unwrap_or_default();
+                                for extra in [
+                                    "/opt/homebrew/bin",
+                                    "/usr/local/bin",
+                                    "/etc/profiles/per-user/default/bin",
+                                ] {
+                                    if !path_env.contains(extra) {
+                                        path_env = format!("{extra}:{path_env}");
+                                    }
+                                }
+                                // Also prepend user-specific Nix/Homebrew paths
+                                if let Ok(home) = std::env::var("HOME") {
+                                    for suffix in [".nix-profile/bin", ".local/bin"] {
+                                        let p = format!("{home}/{suffix}");
+                                        if !path_env.contains(&p) {
+                                            path_env = format!("{p}:{path_env}");
+                                        }
+                                    }
+                                }
+                                std::process::Command::new(&d2_bin)
+                                    .env("PATH", &path_env)
+                                    .args(["--theme", &theme, "--layout", &layout])
+                                    .arg(&input)
+                                    .arg(&output)
+                                    .output()
+                            }).await;
+                            match result {
+                                Ok(Ok(out)) if out.status.success() => {
+                                    tracing::debug!("D2 rendered: {}", svg_path.display());
+                                }
+                                Ok(Ok(out)) => {
+                                    let stderr = String::from_utf8_lossy(&out.stderr);
+                                    tracing::warn!("D2 render failed: {stderr}");
+                                }
+                                Ok(Err(e)) => {
+                                    if e.kind() == std::io::ErrorKind::NotFound {
+                                        tracing::debug!("d2 CLI not found — skipping render for {}", path.display());
+                                    } else {
+                                        tracing::warn!("D2 render error: {e}");
+                                    }
+                                }
+                                Err(e) => tracing::warn!("D2 task join error: {e}"),
+                            }
+                        }
+                        _ => continue,
+                    }
+
+                    // Re-index the wrapper .md if it exists
+                    let md_path = path.with_extension("md");
+                    if md_path.exists() {
+                        let _ = vault.index_file(&md_path);
+                    }
+                }
+            }
+        });
+    }
+
     let mut launcher_profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
 
     // Clone dialog state
@@ -205,6 +318,9 @@ pub fn App() -> Element {
         document::Script {
             src: asset!("/assets/vendor/excalidraw.bundle.js"),
         }
+        document::Script {
+            src: asset!("/assets/vendor/codex-excalidraw-headless.js"),
+        }
         document::Stylesheet { href: asset!("/assets/vendor/excalidraw.css") }
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
@@ -225,15 +341,22 @@ pub fn App() -> Element {
             "data-theme": "{theme.read().0}",
             tabindex: "0",
             onkeydown: move |e| {
-                // ⌘P — command palette
+                // ⌘P — command palette (command mode)
                 if (e.modifiers().meta() || e.modifiers().ctrl()) && e.key() == Key::Character("p".to_string()) {
                     e.prevent_default();
+                    *palette_mode.write() = crate::components::command_palette::PaletteMode::Command;
                     let v = *palette_open.read();
                     *palette_open.write() = !v;
                 }
+                // ⌘K — command palette (agent delegation mode)
+                if (e.modifiers().meta() || e.modifiers().ctrl()) && e.key() == Key::Character("k".to_string()) {
+                    e.prevent_default();
+                    *palette_mode.write() = crate::components::command_palette::PaletteMode::Agent;
+                    *palette_open.write() = true;
+                }
             },
 
-            CommandPalette { open: palette_open }
+            CommandPalette { open: palette_open, mode: palette_mode }
 
             Toolbar {
                 sync_status,

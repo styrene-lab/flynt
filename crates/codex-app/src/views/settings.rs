@@ -1,12 +1,13 @@
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
     components::daemon_settings::DaemonSettingsSection,
+    components::provider_settings::ProviderSettingsSection,
     state::ThemeName,
     views::PublicationRulesEditor,
 };
 use codex_core::models::{
     AppearanceConfig, CodexOperatorSettings, FontSizePreset, LocalRuntimeConfig,
-    OmegonProfile, OmegonProfileModel, SyncConfig, VaultConfig,
+    OmegonProfile, OmegonProfileModel, SyncConfig, VaultConfig, VisualizationConfig,
 };
 use dioxus::prelude::*;
 
@@ -85,6 +86,15 @@ pub fn SettingsView() -> Element {
             .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
+    let mut omegon_channel = use_signal(|| ctx.vault().config.local_runtime.omegon_channel.clone());
+    let mut omegon_bin_override = use_signal(|| {
+        ctx.vault()
+            .config
+            .local_runtime
+            .omegon_bin_override
+            .clone()
+            .unwrap_or_default()
+    });
     let mut styrene_identity_profile = use_signal(|| {
         ctx.vault()
             .config
@@ -133,6 +143,16 @@ pub fn SettingsView() -> Element {
     let mut vox_enabled = use_signal(|| initial_operator.vox.enabled);
     let mut vox_tts_enabled = use_signal(|| initial_operator.vox.tts_enabled);
     let mut vox_voice = use_signal(|| initial_operator.vox.voice.clone());
+
+    // Indexing
+    let mut write_frontmatter = use_signal(|| ctx.vault().config.indexing.write_frontmatter);
+
+    // Visualization
+    let mut excalidraw_auto_export = use_signal(|| ctx.vault().config.visualization.excalidraw_auto_export);
+    let mut d2_auto_render = use_signal(|| ctx.vault().config.visualization.d2_auto_render);
+    let mut d2_theme = use_signal(|| ctx.vault().config.visualization.d2_theme.to_string());
+    let mut d2_layout = use_signal(|| ctx.vault().config.visualization.d2_layout.clone());
+    let mut d2_bin = use_signal(|| ctx.vault().config.visualization.d2_bin.clone().unwrap_or_default());
 
     // Daemon config — managed by DaemonSettingsSection
     let daemon_config = use_signal(|| initial_operator.agent_daemon.clone());
@@ -200,6 +220,8 @@ pub fn SettingsView() -> Element {
             omegon_mind_db_path: path_from_input(omegon_mind_db_path.read().as_str()),
             styrene_identity_profile: string_from_input(styrene_identity_profile.read().as_str()),
             omegon_serve_host: None,
+            omegon_channel: omegon_channel.read().clone(),
+            omegon_bin_override: string_from_input(omegon_bin_override.read().as_str()),
         };
         let config = VaultConfig {
             vault_name: vault_name.read().clone(),
@@ -214,7 +236,19 @@ pub fn SettingsView() -> Element {
                 rules: publication_rules.read().clone(),
             },
             security: ctx.vault().config.security.clone(),
-            indexing: ctx.vault().config.indexing.clone(),
+            indexing: codex_core::models::IndexingConfig {
+                write_frontmatter: *write_frontmatter.read(),
+            },
+            visualization: VisualizationConfig {
+                excalidraw_auto_export: *excalidraw_auto_export.read(),
+                d2_auto_render: *d2_auto_render.read(),
+                d2_theme: d2_theme.read().parse::<u32>().unwrap_or(200),
+                d2_layout: d2_layout.read().clone(),
+                d2_bin: {
+                    let bin = d2_bin.read().trim().to_string();
+                    if bin.is_empty() { None } else { Some(bin) }
+                },
+            },
         };
 
         let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {
@@ -425,6 +459,75 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
+                // ── Visualization ────────────────────────────────────────────
+                SettingsSection { heading: "Visualization",
+                    SettingsRow { label: "Excalidraw auto-export",
+                        label { class: "checkbox-label",
+                            input {
+                                r#type: "checkbox",
+                                checked: *excalidraw_auto_export.read(),
+                                onchange: move |e| *excalidraw_auto_export.write() = e.checked(),
+                            }
+                            "Auto-export SVG when drawings are saved"
+                        }
+                    }
+                    SettingsRow { label: "D2 auto-render",
+                        label { class: "checkbox-label",
+                            input {
+                                r#type: "checkbox",
+                                checked: *d2_auto_render.read(),
+                                onchange: move |e| *d2_auto_render.write() = e.checked(),
+                            }
+                            "Auto-render D2 diagrams to SVG"
+                        }
+                    }
+                    SettingsRow { label: "D2 theme",
+                        input {
+                            class: "input settings-input settings-input-sm",
+                            r#type: "number",
+                            value: "{d2_theme}",
+                            placeholder: "200",
+                            oninput: move |e| *d2_theme.write() = e.value(),
+                        }
+                        span { class: "settings-hint muted", "(200 = dark, 0 = default)" }
+                    }
+                    SettingsRow { label: "D2 layout",
+                        div { class: "radio-group",
+                            for (value, label) in [("elk", "ELK"), ("dagre", "Dagre"), ("tala", "TALA")] {
+                                button {
+                                    class: if d2_layout.read().as_str() == value { "radio-btn active" } else { "radio-btn" },
+                                    onclick: move |_| *d2_layout.write() = value.to_string(),
+                                    "{label}"
+                                }
+                            }
+                        }
+                    }
+                    SettingsRow { label: "D2 binary",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{d2_bin}",
+                            placeholder: "d2 (on PATH)",
+                            oninput: move |e| *d2_bin.write() = e.value(),
+                        }
+                    }
+                }
+
+                // ── Indexing ────────────────────────────────────────────────────
+                SettingsSection { heading: "Indexing",
+                    SettingsRow { label: "Write frontmatter",
+                        label { class: "checkbox-label",
+                            input {
+                                r#type: "checkbox",
+                                checked: *write_frontmatter.read(),
+                                onchange: move |e| *write_frontmatter.write() = e.checked(),
+                            }
+                            "Write stable UUIDs into file frontmatter"
+                        }
+                        span { class: "settings-hint muted", "Disable for shared repos where files shouldn't be modified" }
+                    }
+                }
+
                 SettingsSection { heading: "Publication",
                     PublicationRulesEditor {
                         default_visibility: publication_default_visibility,
@@ -478,6 +581,32 @@ pub fn SettingsView() -> Element {
                             oninput: move |e| *styrene_identity_profile.write() = e.value(),
                         }
                     }
+                    SettingsRow { label: "Omegon channel",
+                        div { class: "radio-group",
+                            for ch in codex_core::models::OmegonChannel::all_named() {
+                                {
+                                    let ch_clone = ch.clone();
+                                    let lbl = ch.label().to_string();
+                                    rsx! {
+                                        button {
+                                            class: if *omegon_channel.read() == *ch { "radio-btn active" } else { "radio-btn" },
+                                            onclick: move |_| *omegon_channel.write() = ch_clone.clone(),
+                                            "{lbl}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SettingsRow { label: "Omegon binary",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{omegon_bin_override}",
+                            placeholder: "Auto-detect from channel",
+                            oninput: move |e| *omegon_bin_override.write() = e.value(),
+                        }
+                    }
                 }
 
                 // ── Omegon profile ───────────────────────────────────────────
@@ -501,12 +630,14 @@ pub fn SettingsView() -> Element {
                         }
                     }
                     SettingsRow { label: "Thinking level",
-                        input {
+                        select {
                             class: "input settings-input",
-                            r#type: "text",
                             value: "{thinking_level}",
-                            placeholder: "medium",
-                            oninput: move |e| *thinking_level.write() = e.value(),
+                            onchange: move |e| *thinking_level.write() = e.value(),
+                            option { value: "", "None" }
+                            option { value: "low", "Low" }
+                            option { value: "medium", "Medium" }
+                            option { value: "high", "High" }
                         }
                     }
                     SettingsRow { label: "Max turns",
@@ -525,43 +656,49 @@ pub fn SettingsView() -> Element {
                 }
 
                 // ── Operator ─────────────────────────────────────────────────
+                // ── Providers ────────────────────────────────────────────────
+                ProviderSettingsSection {}
+
+                // ── Operator ─────────────────────────────────────────────────
                 SettingsSection { heading: "Operator",
                     SettingsRow { label: "Active persona",
-                        input {
+                        select {
                             class: "input settings-input",
-                            r#type: "text",
                             value: "{active_persona}",
-                            placeholder: "off",
-                            oninput: move |e| *active_persona.write() = e.value(),
+                            onchange: move |e| *active_persona.write() = e.value(),
+                            option { value: "off", "Off" }
+                            option { value: "scribe", "Scribe" }
+                            option { value: "omegon", "Omegon" }
                         }
                     }
                     SettingsRow { label: "Rail extension",
-                        input {
+                        select {
                             class: "input settings-input",
-                            r#type: "text",
                             value: "{rail_extension}",
-                            placeholder: "vox",
-                            oninput: move |e| *rail_extension.write() = e.value(),
+                            onchange: move |e| *rail_extension.write() = e.value(),
+                            option { value: "", "None" }
+                            option { value: "vox", "Vox" }
+                            option { value: "codex", "Codex" }
                         }
                     }
                     SettingsRow { label: "Vox enabled",
-                        input {
-                            r#type: "checkbox",
-                            checked: *vox_enabled.read(),
-                            onchange: move |_| {
-                                let current = *vox_enabled.read();
-                                *vox_enabled.write() = !current;
-                            },
+                        label { class: "checkbox-label",
+                            input {
+                                r#type: "checkbox",
+                                checked: *vox_enabled.read(),
+                                onchange: move |e| *vox_enabled.write() = e.checked(),
+                            }
+                            "Enable Vox communication"
                         }
                     }
                     SettingsRow { label: "Vox TTS",
-                        input {
-                            r#type: "checkbox",
-                            checked: *vox_tts_enabled.read(),
-                            onchange: move |_| {
-                                let current = *vox_tts_enabled.read();
-                                *vox_tts_enabled.write() = !current;
-                            },
+                        label { class: "checkbox-label",
+                            input {
+                                r#type: "checkbox",
+                                checked: *vox_tts_enabled.read(),
+                                onchange: move |e| *vox_tts_enabled.write() = e.checked(),
+                            }
+                            "Enable text-to-speech"
                         }
                     }
                     SettingsRow { label: "Vox voice",
@@ -569,7 +706,7 @@ pub fn SettingsView() -> Element {
                             class: "input settings-input",
                             r#type: "text",
                             value: "{vox_voice}",
-                            placeholder: "default",
+                            placeholder: "System default",
                             oninput: move |e| *vox_voice.write() = e.value(),
                         }
                     }

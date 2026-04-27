@@ -320,6 +320,8 @@ pub struct VaultConfig {
     pub security: crate::seal::SealConfig,
     #[serde(default)]
     pub indexing: IndexingConfig,
+    #[serde(default)]
+    pub visualization: VisualizationConfig,
 }
 
 /// Controls how the indexer interacts with source files.
@@ -342,6 +344,48 @@ impl Default for IndexingConfig {
     }
 }
 
+/// Visualization and diagram rendering settings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VisualizationConfig {
+    /// Auto-export SVG when Excalidraw drawings are saved.
+    #[serde(default = "VisualizationConfig::default_true")]
+    pub excalidraw_auto_export: bool,
+
+    /// Auto-render D2 diagrams to SVG when .d2 files change.
+    #[serde(default = "VisualizationConfig::default_true")]
+    pub d2_auto_render: bool,
+
+    /// D2 theme number (200 = dark/Alpharius, 0 = default light).
+    #[serde(default = "VisualizationConfig::default_d2_theme")]
+    pub d2_theme: u32,
+
+    /// D2 layout engine: elk (default), dagre, tala.
+    #[serde(default = "VisualizationConfig::default_d2_layout")]
+    pub d2_layout: String,
+
+    /// Custom path to the d2 binary (if not on PATH).
+    #[serde(default)]
+    pub d2_bin: Option<String>,
+}
+
+impl VisualizationConfig {
+    fn default_true() -> bool { true }
+    fn default_d2_theme() -> u32 { 200 }
+    fn default_d2_layout() -> String { "elk".into() }
+}
+
+impl Default for VisualizationConfig {
+    fn default() -> Self {
+        Self {
+            excalidraw_auto_export: true,
+            d2_auto_render: true,
+            d2_theme: 200,
+            d2_layout: "elk".into(),
+            d2_bin: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct LocalRuntimeConfig {
     #[serde(default)]
@@ -357,6 +401,172 @@ pub struct LocalRuntimeConfig {
     /// Omegon serve daemon host:port for mobile agent connections.
     #[serde(default)]
     pub omegon_serve_host: Option<String>,
+    /// Omegon release channel: stable, rc, nightly. Determines which binary to use.
+    #[serde(default)]
+    pub omegon_channel: OmegonChannel,
+    /// Explicit path override — bypasses channel resolution entirely.
+    #[serde(default)]
+    pub omegon_bin_override: Option<String>,
+}
+
+/// Omegon release channel — determines which installed version to use.
+/// Omegon installs versioned binaries to `~/.omegon/versions/<version>/omegon`.
+/// The channel selects the latest matching version from that directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OmegonChannel {
+    /// Latest non-prerelease version (no -rc, no -nightly in version string).
+    #[default]
+    Stable,
+    /// Latest release candidate (-rc.N suffix).
+    Rc,
+    /// Latest nightly build (-nightly.YYYYMMDD suffix).
+    Nightly,
+    /// Pinned to a specific version string (e.g., "0.17.0-rc.1").
+    #[serde(untagged)]
+    Pinned(String),
+}
+
+impl OmegonChannel {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Stable => "Stable",
+            Self::Rc => "RC",
+            Self::Nightly => "Nightly",
+            Self::Pinned(v) => v,
+        }
+    }
+
+    pub fn all_named() -> &'static [Self] {
+        &[Self::Stable, Self::Rc, Self::Nightly]
+    }
+}
+
+/// Resolve the Omegon binary path from config.
+///
+/// Priority:
+///   1. Explicit binary path override
+///   2. OMEGON_BIN environment variable
+///   3. Channel-matched version in ~/.omegon/versions/
+///   4. `omegon` on PATH or well-known locations
+pub fn resolve_omegon_binary(config: &LocalRuntimeConfig) -> std::path::PathBuf {
+    // 1. Explicit override
+    if let Some(ref p) = config.omegon_bin_override {
+        let path = std::path::PathBuf::from(p);
+        if path.exists() {
+            return path;
+        }
+    }
+
+    // 2. OMEGON_BIN env var
+    if let Ok(bin) = std::env::var("OMEGON_BIN") {
+        let path = std::path::PathBuf::from(&bin);
+        if path.exists() {
+            return path;
+        }
+    }
+
+    // 3. Channel-matched version in ~/.omegon/versions/
+    let home = std::env::var("HOME").unwrap_or_default();
+    let versions_dir = std::path::PathBuf::from(&home).join(".omegon/versions");
+    if versions_dir.is_dir() {
+        if let Some(path) = resolve_from_versions_dir(&versions_dir, &config.omegon_channel) {
+            return path;
+        }
+    }
+
+    // 4. Bare `omegon` on PATH or well-known locations
+    let candidates = [
+        format!("{home}/.local/bin/omegon"),
+        format!("{home}/.cargo/bin/omegon"),
+        "/usr/local/bin/omegon".into(),
+        "/opt/homebrew/bin/omegon".into(),
+    ];
+    for c in &candidates {
+        let path = std::path::PathBuf::from(c);
+        if path.exists() {
+            return path;
+        }
+    }
+
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join("omegon");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+
+    std::path::PathBuf::from("omegon")
+}
+
+/// Scan ~/.omegon/versions/ and pick the best match for the channel.
+fn resolve_from_versions_dir(
+    versions_dir: &std::path::Path,
+    channel: &OmegonChannel,
+) -> Option<std::path::PathBuf> {
+    let entries: Vec<String> = std::fs::read_dir(versions_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().ok().map(|ft| ft.is_dir()).unwrap_or(false))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+
+    let best = match channel {
+        OmegonChannel::Pinned(version) => {
+            // Exact match (with or without v prefix)
+            let bare = version.strip_prefix('v').unwrap_or(version);
+            entries.iter().find(|e| {
+                let e_bare = e.strip_prefix('v').unwrap_or(e);
+                e_bare == bare
+            }).cloned()
+        }
+        OmegonChannel::Stable => {
+            // Latest version that has no prerelease suffix
+            let mut stable: Vec<&String> = entries.iter()
+                .filter(|v| {
+                    let bare = v.strip_prefix('v').unwrap_or(v);
+                    !bare.contains("-rc.") && !bare.contains("-nightly.")
+                })
+                .collect();
+            stable.sort();
+            stable.last().cloned().cloned()
+        }
+        OmegonChannel::Rc => {
+            // Latest -rc.N version, or fall back to latest stable
+            let mut rcs: Vec<&String> = entries.iter()
+                .filter(|v| v.contains("-rc."))
+                .collect();
+            rcs.sort();
+            rcs.last().cloned().cloned()
+                .or_else(|| {
+                    // Fall back to latest stable
+                    let mut stable: Vec<&String> = entries.iter()
+                        .filter(|v| !v.contains("-nightly."))
+                        .collect();
+                    stable.sort();
+                    stable.last().cloned().cloned()
+                })
+        }
+        OmegonChannel::Nightly => {
+            // Latest -nightly.YYYYMMDD version
+            let mut nightlies: Vec<&String> = entries.iter()
+                .filter(|v| v.contains("-nightly."))
+                .collect();
+            nightlies.sort();
+            nightlies.last().cloned().cloned()
+                .or_else(|| {
+                    // Fall back to latest anything
+                    let mut all: Vec<&String> = entries.iter().collect();
+                    all.sort();
+                    all.last().cloned().cloned()
+                })
+        }
+    };
+
+    best.map(|version| versions_dir.join(&version).join("omegon"))
+        .filter(|p| p.exists())
 }
 
 /// Appearance settings — theme name and prose font scale.

@@ -51,6 +51,10 @@ pub struct OmegonRuntimeContext {
     pub operator_settings_path: PathBuf,
     pub extensions_dir: PathBuf,
     pub vox_manifest_path: PathBuf,
+    /// Omegon release channel for binary resolution.
+    pub omegon_channel: codex_core::models::OmegonChannel,
+    /// Explicit binary path override.
+    pub omegon_bin_override: Option<String>,
 }
 
 impl OmegonRuntimeContext {
@@ -328,6 +332,8 @@ impl OmegonRuntimeContext {
             extensions_dir: home_dir.join("extensions"),
             vox_manifest_path: home_dir.join("extensions/vox/manifest.toml"),
             home_dir,
+            omegon_channel: runtime.omegon_channel.clone(),
+            omegon_bin_override: runtime.omegon_bin_override.clone(),
         }
     }
 
@@ -369,9 +375,19 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
+    /// Resolve the Omegon binary path using channel + override config.
+    pub fn resolve_binary(&self) -> PathBuf {
+        let cfg = codex_core::models::LocalRuntimeConfig {
+            omegon_channel: self.omegon_channel.clone(),
+            omegon_bin_override: self.omegon_bin_override.clone(),
+            ..Default::default()
+        };
+        codex_core::models::resolve_omegon_binary(&cfg)
+    }
+
     pub async fn spawn_background_host(&self, vault_root: &Path) -> anyhow::Result<tokio::process::Child> {
-        let binary = std::env::var("OMEGON_BIN").unwrap_or_else(|_| "omegon".into());
-        let child = Command::new(binary)
+        let binary = self.resolve_binary();
+        let child = Command::new(&binary)
             .current_dir(vault_root)
             .env("CODEX_VAULT", vault_root)
             .env("OMEGON_HOME", &self.home_dir)
@@ -669,10 +685,15 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
                         }
                         VaultChangeEvent::FileDeleted(_) => None,
                     };
-                    if let Some(p) = path {
-                        if let Err(e) = vault_clone.index_file(&p) {
-                            warn!("Re-index failed for {}: {e}", p.display());
+                    if let Some(ref p) = path {
+                        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        if ext == "md" {
+                            if let Err(e) = vault_clone.index_file(p) {
+                                warn!("Re-index failed for {}: {e}", p.display());
+                            }
                         }
+                        // .excalidraw files: schedule SVG export via webview
+                        // (handled by the UI layer listening on vault_events)
                     }
                     let _ = tx_clone.send(evt);
                 }

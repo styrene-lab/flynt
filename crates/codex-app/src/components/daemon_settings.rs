@@ -1,4 +1,7 @@
-use codex_core::daemon::{AgentDaemonConfig, DaemonState, InboundCapability};
+use codex_core::daemon::{
+    AgentDaemonConfig, DaemonState, EmailChannel, InboundCapability,
+    SignalChannel, WebhookChannel,
+};
 use dioxus::prelude::*;
 
 use crate::bootstrap::AppContext;
@@ -264,6 +267,144 @@ pub fn DaemonSettingsSection(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // ── Vox Channels ──────────────────────────────────────────
+                div { class: "settings-row",
+                    span { class: "settings-label", "Vox Channels" }
+                    div { class: "settings-control",
+                        span { class: "settings-hint", "Inbound communication channels for the agent" }
+                    }
+                }
+
+                // Signal
+                VoxChannelRow {
+                    label: "Signal",
+                    enabled: config.read().vox.signal.as_ref().map(|s| s.enabled).unwrap_or(false),
+                    on_toggle: move |enabled: bool| {
+                        let mut cfg = config.write();
+                        if enabled {
+                            if cfg.vox.signal.is_none() {
+                                cfg.vox.signal = Some(SignalChannel {
+                                    enabled: true,
+                                    phone: String::new(),
+                                    allowed_senders: vec![],
+                                });
+                            } else if let Some(ref mut s) = cfg.vox.signal {
+                                s.enabled = true;
+                            }
+                        } else if let Some(ref mut s) = cfg.vox.signal {
+                            s.enabled = false;
+                        }
+                    },
+                    detail: config.read().vox.signal.as_ref().map(|s| s.phone.clone()).unwrap_or_default(),
+                    detail_label: "Phone",
+                    on_detail_change: move |val: String| {
+                        let mut cfg = config.write();
+                        if let Some(ref mut s) = cfg.vox.signal {
+                            s.phone = val;
+                        }
+                    },
+                }
+
+                // Email
+                VoxChannelRow {
+                    label: "Email",
+                    enabled: config.read().vox.email.as_ref().map(|e| e.enabled).unwrap_or(false),
+                    on_toggle: move |enabled: bool| {
+                        let mut cfg = config.write();
+                        if enabled {
+                            if cfg.vox.email.is_none() {
+                                cfg.vox.email = Some(EmailChannel {
+                                    enabled: true,
+                                    server: String::new(),
+                                    address: String::new(),
+                                    folder: "INBOX".into(),
+                                    allowed_senders: vec![],
+                                });
+                            } else if let Some(ref mut e) = cfg.vox.email {
+                                e.enabled = true;
+                            }
+                        } else if let Some(ref mut e) = cfg.vox.email {
+                            e.enabled = false;
+                        }
+                    },
+                    detail: config.read().vox.email.as_ref().map(|e| e.address.clone()).unwrap_or_default(),
+                    detail_label: "Address",
+                    on_detail_change: move |val: String| {
+                        let mut cfg = config.write();
+                        if let Some(ref mut e) = cfg.vox.email {
+                            e.address = val;
+                        }
+                    },
+                }
+
+                // Webhook
+                VoxChannelRow {
+                    label: "Webhook",
+                    enabled: config.read().vox.webhook.as_ref().map(|w| w.enabled).unwrap_or(false),
+                    on_toggle: move |enabled: bool| {
+                        let mut cfg = config.write();
+                        if enabled {
+                            if cfg.vox.webhook.is_none() {
+                                cfg.vox.webhook = Some(WebhookChannel {
+                                    enabled: true,
+                                    path: "/inbound".into(),
+                                    secret: None,
+                                });
+                            } else if let Some(ref mut w) = cfg.vox.webhook {
+                                w.enabled = true;
+                            }
+                        } else if let Some(ref mut w) = cfg.vox.webhook {
+                            w.enabled = false;
+                        }
+                    },
+                    detail: config.read().vox.webhook.as_ref().map(|w| w.path.clone()).unwrap_or_default(),
+                    detail_label: "Path",
+                    on_detail_change: move |val: String| {
+                        let mut cfg = config.write();
+                        if let Some(ref mut w) = cfg.vox.webhook {
+                            w.path = val;
+                        }
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// Reusable Vox channel row with enable toggle + detail field.
+#[component]
+fn VoxChannelRow(
+    label: &'static str,
+    enabled: bool,
+    on_toggle: EventHandler<bool>,
+    detail: String,
+    detail_label: &'static str,
+    on_detail_change: EventHandler<String>,
+) -> Element {
+    rsx! {
+        div { class: "settings-row vox-channel-row",
+            span { class: "settings-label settings-label-indent", "{label}" }
+            div { class: "settings-control",
+                div { class: "row gap-2",
+                    label { class: "checkbox-label",
+                        input {
+                            r#type: "checkbox",
+                            checked: enabled,
+                            onchange: move |e| on_toggle.call(e.checked()),
+                        }
+                        "Enabled"
+                    }
+                    if enabled {
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{detail}",
+                            placeholder: "{detail_label}…",
+                            oninput: move |e| on_detail_change.call(e.value()),
                         }
                     }
                 }

@@ -90,6 +90,40 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
                 };
 
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
+            } else if ref_name.contains(".d2") {
+                // D2 diagram embed — same pattern as Excalidraw: look for .svg sidecar
+                let (file_ref, width) = if let Some(pipe) = ref_name.find('|') {
+                    (&ref_name[..pipe], Some(&ref_name[pipe + 1..]))
+                } else {
+                    (ref_name, None)
+                };
+
+                let candidates = [
+                    root.join(file_ref),
+                    root.join("diagrams").join(file_ref),
+                    root.join("drawings").join(file_ref),
+                ];
+                let d2_path = candidates.iter()
+                    .find(|p| p.exists())
+                    .cloned()
+                    .unwrap_or_else(|| root.join(file_ref));
+                let svg_path = d2_path.with_extension("svg");
+                let style = width.map(|w| format!(" style=\"max-width:{w}px\"")).unwrap_or_default();
+
+                let replacement = if svg_path.exists() {
+                    match std::fs::read_to_string(&svg_path) {
+                        Ok(svg) => format!(
+                            "<div class=\"d2-embed\"{style}>{svg}</div>"
+                        ),
+                        Err(_) => format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref}]</div>"),
+                    }
+                } else if d2_path.exists() {
+                    format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref} — install d2 CLI to render]</div>")
+                } else {
+                    format!("<span class=\"broken-embed\">Diagram file not found: {file_ref}</span>")
+                };
+
+                html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
             } else if ref_name.ends_with(".png") || ref_name.ends_with(".jpg") || ref_name.ends_with(".jpeg") || ref_name.ends_with(".gif") || ref_name.ends_with(".svg") || ref_name.ends_with(".webp") {
                 // Image embed — resolve path, searching common locations
                 let image_candidates = [

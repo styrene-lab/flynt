@@ -1,9 +1,22 @@
-//! Command Palette — fuzzy-searchable command overlay (⌘P).
+//! Command Palette — fuzzy-searchable command overlay.
+//!
+//! Two modes:
+//!   ⌘P — Command mode: fuzzy search through commands + notes
+//!   ⌘K — Agent mode: natural language delegation to Omegon
 
+use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
 use crate::state::{Route, TabState};
 use codex_core::store::VaultStore;
 use dioxus::prelude::*;
+use std::rc::Rc;
+use comrak::{markdown_to_html, Options};
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum PaletteMode {
+    Command,
+    Agent,
+}
 
 #[derive(Clone, PartialEq)]
 struct Cmd {
@@ -189,13 +202,15 @@ fn execute_command(
 }
 
 #[component]
-pub fn CommandPalette(mut open: Signal<bool>) -> Element {
+pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Element {
     let ctx = use_context::<AppContext>();
     let mut tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
 
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
+    let mut agent_status_msg: Signal<Option<&'static str>> = use_signal(|| None);
+    let shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
 
     // Build the full command list once (memoized — only recomputes when open changes)
     let all_commands = use_memo(move || {
@@ -247,85 +262,197 @@ pub fn CommandPalette(mut open: Signal<bool>) -> Element {
         return rsx! {};
     }
 
-    // Filter is cheap — just string matching on the cached list
-    let q = query.read().to_lowercase();
-    let filtered: Vec<Cmd> = all_commands.read().iter()
-        .filter(|c| fuzzy_match(&c.label.to_lowercase(), &q))
-        .cloned()
-        .collect();
-    let sel = (*selected.read()).min(filtered.len().saturating_sub(1));
+    let current_mode = *mode.read();
+    let mut close = move || {
+        *open.write() = false;
+        *query.write() = String::new();
+        *selected.write() = 0;
+        *agent_status_msg.write() = None;
+    };
 
     rsx! {
         div {
             class: "palette-overlay",
-            onclick: move |_| {
-                *open.write() = false;
-                *query.write() = String::new();
-            },
+            onclick: move |_| close(),
         }
-        div { class: "palette",
-            input {
-                class: "palette-input",
-                autofocus: true,
-                placeholder: "Type a command or note name…",
-                value: "{query}",
-                oninput: move |e| {
-                    *query.write() = e.value();
-                    *selected.write() = 0;
-                },
-                onkeydown: move |e| {
-                    let max = filtered.len().saturating_sub(1);
-                    match e.key() {
-                        Key::ArrowDown => {
-                            e.prevent_default();
-                            let s = *selected.read();
-                            *selected.write() = if s >= max { 0 } else { s + 1 };
-                        }
-                        Key::ArrowUp => {
-                            e.prevent_default();
-                            let s = *selected.read();
-                            *selected.write() = if s == 0 { max } else { s - 1 };
-                        }
-                        Key::Enter => {
-                            if let Some(cmd) = filtered.get(sel) {
-                                execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route);
-                                *open.write() = false;
-                                *query.write() = String::new();
-                                *selected.write() = 0;
-                            }
-                        }
-                        Key::Escape => {
-                            *open.write() = false;
-                            *query.write() = String::new();
-                        }
-                        _ => {}
-                    }
-                },
+        div { class: if current_mode == PaletteMode::Agent { "palette palette-agent" } else { "palette" },
+
+            // Mode tabs
+            div { class: "palette-mode-bar",
+                button {
+                    class: if current_mode == PaletteMode::Command { "palette-mode-tab active" } else { "palette-mode-tab" },
+                    onclick: move |_| *mode.write() = PaletteMode::Command,
+                    "Commands"
+                    span { class: "palette-shortcut", "\u{2318}P" }
+                }
+                button {
+                    class: if current_mode == PaletteMode::Agent { "palette-mode-tab active" } else { "palette-mode-tab" },
+                    onclick: move |_| *mode.write() = PaletteMode::Agent,
+                    "Agent"
+                    span { class: "palette-shortcut", "\u{2318}K" }
+                }
             }
-            div { class: "palette-results",
-                for (i, cmd) in filtered.iter().enumerate() {
-                    {
-                        let cmd_id = cmd.id.clone();
-                        let cmd_label = cmd.label.clone();
-                        rsx! {
-                            button {
-                                key: "{i}-{cmd_id}",
-                                class: if i == sel { "palette-item selected" } else { "palette-item" },
-                                onclick: move |_| {
-                                    execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route);
-                                    *open.write() = false;
-                                    *query.write() = String::new();
-                                    *selected.write() = 0;
-                                },
-                                span { class: "palette-category", "{cmd.category}" }
-                                span { class: "palette-label", "{cmd.label}" }
+
+            match current_mode {
+                PaletteMode::Command => {
+                    // ── Command mode (existing behavior) ────────────────────
+                    let q = query.read().to_lowercase();
+                    let filtered: Vec<Cmd> = all_commands.read().iter()
+                        .filter(|c| fuzzy_match(&c.label.to_lowercase(), &q))
+                        .cloned()
+                        .collect();
+                    let sel = (*selected.read()).min(filtered.len().saturating_sub(1));
+
+                    rsx! {
+                        input {
+                            class: "palette-input",
+                            autofocus: true,
+                            placeholder: "Type a command or note name…",
+                            value: "{query}",
+                            oninput: move |e| {
+                                *query.write() = e.value();
+                                *selected.write() = 0;
+                            },
+                            onkeydown: move |e| {
+                                let max = filtered.len().saturating_sub(1);
+                                match e.key() {
+                                    Key::ArrowDown => {
+                                        e.prevent_default();
+                                        let s = *selected.read();
+                                        *selected.write() = if s >= max { 0 } else { s + 1 };
+                                    }
+                                    Key::ArrowUp => {
+                                        e.prevent_default();
+                                        let s = *selected.read();
+                                        *selected.write() = if s == 0 { max } else { s - 1 };
+                                    }
+                                    Key::Enter => {
+                                        if let Some(cmd) = filtered.get(sel) {
+                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route);
+                                            close();
+                                        }
+                                    }
+                                    Key::Escape => close(),
+                                    _ => {}
+                                }
+                            },
+                        }
+                        div { class: "palette-results",
+                            for (i, cmd) in filtered.iter().enumerate() {
+                                {
+                                    let cmd_id = cmd.id.clone();
+                                    let cmd_label = cmd.label.clone();
+                                    rsx! {
+                                        button {
+                                            key: "{i}-{cmd_id}",
+                                            class: if i == sel { "palette-item selected" } else { "palette-item" },
+                                            onclick: move |_| {
+                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route);
+                                                close();
+                                            },
+                                            span { class: "palette-category", "{cmd.category}" }
+                                            span { class: "palette-label", "{cmd.label}" }
+                                        }
+                                    }
+                                }
+                            }
+                            if filtered.is_empty() {
+                                div { class: "palette-empty", "No matching commands" }
                             }
                         }
                     }
-                }
-                if filtered.is_empty() {
-                    div { class: "palette-empty", "No matching commands" }
-                }
+                },
+                PaletteMode::Agent => {
+                    // ── Agent delegation mode ───────────────────────────────
+                    // Fire-and-forget: submit prompt to the shared ACP session,
+                    // close the palette. Results flow into the vault via watcher
+                    // and appear in the agent rail transcript.
+                    let has_session = shared_session.read().is_some();
+
+                    rsx! {
+                        input {
+                            class: "palette-input palette-input-agent",
+                            autofocus: true,
+                            placeholder: if has_session {
+                                "Delegate a task to the agent…"
+                            } else {
+                                "Agent not connected — open the agent panel first"
+                            },
+                            value: "{query}",
+                            disabled: !has_session,
+                            oninput: move |e| *query.write() = e.value(),
+                            onkeydown: move |e| {
+                                match e.key() {
+                                    Key::Enter if !e.modifiers().shift() => {
+                                        e.prevent_default();
+                                        let prompt = query.read().trim().to_string();
+                                        if prompt.is_empty() { return; }
+
+                                        let Some(sess) = shared_session.read().clone() else { return };
+
+                                        // Inject vault context: active note title + route
+                                        let context_prefix = {
+                                            let ts = tab_state.read();
+                                            let route = active_route.read();
+                                            let mut ctx_parts = Vec::new();
+                                            if let Some(title) = ts.active_title() {
+                                                ctx_parts.push(format!("[Currently viewing: \"{title}\"]"));
+                                            }
+                                            match *route {
+                                                Route::Kanban => ctx_parts.push("[On: Board view]".into()),
+                                                Route::Graph => ctx_parts.push("[On: Graph view]".into()),
+                                                Route::Settings => ctx_parts.push("[On: Settings]".into()),
+                                                _ => {}
+                                            }
+                                            if ctx_parts.is_empty() {
+                                                String::new()
+                                            } else {
+                                                format!("{}\n\n", ctx_parts.join(" "))
+                                            }
+                                        };
+                                        let full_prompt = format!("{context_prefix}{prompt}");
+
+                                        // Fire and forget — submit to the existing session
+                                        spawn(async move {
+                                            sess.prompt(&full_prompt).await;
+                                        });
+
+                                        // Brief confirmation, then close
+                                        *agent_status_msg.write() = Some("Delegated");
+                                        let mut open_sig = open;
+                                        let mut query_sig = query;
+                                        let mut msg_sig = agent_status_msg;
+                                        spawn(async move {
+                                            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                                            *open_sig.write() = false;
+                                            *query_sig.write() = String::new();
+                                            *msg_sig.write() = None;
+                                        });
+                                    }
+                                    Key::Escape => close(),
+                                    _ => {}
+                                }
+                            },
+                        }
+
+                        div { class: "palette-agent-body",
+                            if let Some(msg) = *agent_status_msg.read() {
+                                div { class: "palette-agent-delegated",
+                                    span { class: "palette-agent-check", "\u{2713}" }
+                                    span { "{msg}" }
+                                }
+                            } else if !has_session {
+                                div { class: "palette-agent-hint palette-agent-hint-warn",
+                                    "Toggle the agent panel (View > Agent) to connect, then use \u{2318}K to delegate."
+                                }
+                            } else {
+                                div { class: "palette-agent-hint",
+                                    "Describe what you need. The agent acts on your vault and results appear in your notes."
+                                }
+                            }
+                        }
+                    }
+                },
             }
         }
     }

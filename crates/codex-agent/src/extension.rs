@@ -241,6 +241,33 @@ impl Extension for CodexExtension {
                     }
                 },
                 {
+                    "name": "create_drawing",
+                    "label": "Create Drawing",
+                    "description": "Create an Excalidraw drawing with optional scene elements. Returns the wrapper document path. The desktop app auto-exports SVG for inline rendering.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "Drawing name (used for filename)" },
+                            "scene": { "type": "string", "description": "Optional Excalidraw scene JSON. If omitted, creates an empty dark-themed canvas." }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                {
+                    "name": "create_d2_diagram",
+                    "label": "Create D2 Diagram",
+                    "description": "Create a D2 diagram file with source code. The desktop app auto-renders to SVG via the d2 CLI. Use ![[name.d2]] to embed inline in documents.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "Diagram name (used for filename)" },
+                            "source": { "type": "string", "description": "D2 diagram source code" },
+                            "directory": { "type": "string", "default": "diagrams", "description": "Directory within vault (default: diagrams)" }
+                        },
+                        "required": ["name", "source"]
+                    }
+                },
+                {
                     "name": "delete_board",
                     "label": "Delete Board",
                     "description": "Delete a kanban board and all its tasks.",
@@ -631,6 +658,90 @@ impl Extension for CodexExtension {
                     }));
                 }
                 Ok(json!(results))
+            }
+
+            "execute_create_drawing" => {
+                let name = params["name"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'name'"))?;
+                let scene = params["scene"].as_str();
+
+                // Create drawings directory and files
+                let drawings_dir = self.vault.root.join("drawings");
+                std::fs::create_dir_all(&drawings_dir)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                // Write .excalidraw scene file (refuse to overwrite)
+                let excalidraw_file = format!("{name}.excalidraw");
+                let excalidraw_abs = drawings_dir.join(&excalidraw_file);
+                if excalidraw_abs.exists() {
+                    return Err(omegon_extension::Error::internal_error(
+                        format!("Drawing already exists: drawings/{excalidraw_file}. Use a different name."),
+                    ));
+                }
+                let scene_content = scene.unwrap_or(
+                    r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#
+                );
+                std::fs::write(&excalidraw_abs, scene_content)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                // Write .md wrapper for indexing
+                let md_rel = format!("drawings/{name}.md");
+                let md_content = format!(
+                    "+++\ntitle = \"{}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_file}]]\n",
+                    name.replace('"', "\\\"")
+                );
+                let rel = std::path::Path::new(&md_rel);
+                self.vault
+                    .save_document_content(rel, &md_content)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                Ok(json!({
+                    "created": md_rel,
+                    "excalidraw_file": format!("drawings/{excalidraw_file}"),
+                    "has_scene": scene.is_some(),
+                }))
+            }
+
+            "execute_create_d2_diagram" => {
+                let name = params["name"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'name'"))?;
+                let source = params["source"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'source'"))?;
+                let directory = params["directory"].as_str().unwrap_or("diagrams");
+
+                // Create directory and write .d2 file
+                let dir = self.vault.root.join(directory);
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                let d2_file = format!("{name}.d2");
+                let d2_abs = dir.join(&d2_file);
+                if d2_abs.exists() {
+                    return Err(omegon_extension::Error::internal_error(
+                        format!("Diagram already exists: {directory}/{d2_file}. Use a different name."),
+                    ));
+                }
+                std::fs::write(&d2_abs, source)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                // Write .md wrapper for indexing and embedding
+                let md_rel = format!("{directory}/{name}.md");
+                let md_content = format!(
+                    "+++\ntitle = \"{}\"\ntags = [\"diagram\", \"d2\"]\n+++\n\n![[{d2_file}]]\n",
+                    name.replace('"', "\\\"")
+                );
+                let rel = std::path::Path::new(&md_rel);
+                self.vault
+                    .save_document_content(rel, &md_content)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+                Ok(json!({
+                    "created": md_rel,
+                    "d2_file": format!("{directory}/{d2_file}"),
+                }))
             }
 
             "execute_delete_board" => {

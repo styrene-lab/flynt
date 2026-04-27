@@ -5,23 +5,17 @@ use dioxus::prelude::*;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-fn find_omegon_binary() -> Option<PathBuf> {
-    let candidates = [
-        dirs::home_dir().map(|h| h.join(".local/bin/omegon")),
-        Some(PathBuf::from("/usr/local/bin/omegon")),
-        dirs::home_dir().map(|h| h.join(".cargo/bin/omegon")),
-    ];
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.exists() { return Some(candidate); }
-    }
-    // Search PATH for omegon binary (cross-platform)
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            let candidate = dir.join("omegon");
-            if candidate.exists() { return Some(candidate); }
-        }
-    }
-    None
+/// Resolve the Omegon binary using the centralized channel-aware resolver.
+pub fn find_omegon_binary_public() -> Option<PathBuf> {
+    // Caller should use ctx.omegon().resolve_binary() when context is available.
+    // This fallback uses default config for contexts where AppContext isn't accessible.
+    let path = codex_core::models::resolve_omegon_binary(&codex_core::models::LocalRuntimeConfig::default());
+    if path.exists() { Some(path) } else { None }
+}
+
+fn find_omegon_binary_from_ctx(ctx: &crate::bootstrap::AppContext) -> Option<PathBuf> {
+    let path = ctx.omegon().resolve_binary();
+    if path.exists() { Some(path) } else { None }
 }
 
 fn render_md(content: &str) -> String {
@@ -146,6 +140,7 @@ pub fn AgentRail() -> Element {
     let mut items: Signal<Vec<ChatItem>> = use_signal(Vec::new);
     let mut agent_status = use_signal(|| AgentStatus::Connecting);
     let mut session: Signal<Option<Rc<AcpSession>>> = use_signal(|| None);
+    let mut shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
     let available_commands: Signal<Vec<SlashCommand>> = use_signal(Vec::new);
     let config_options: Signal<Vec<ConfigOption>> = use_signal(Vec::new);
 
@@ -153,12 +148,12 @@ pub fn AgentRail() -> Element {
     let mut history: Signal<Vec<String>> = use_signal(Vec::new);
     let mut history_idx: Signal<Option<usize>> = use_signal(|| None);
 
-    let omegon_binary = find_omegon_binary();
+    let omegon_binary = find_omegon_binary_from_ctx(&ctx);
     let binary_found = omegon_binary.is_some();
 
     // ── Eager connect on mount + apply saved config ─────────
     use_effect(move || {
-        let binary = match find_omegon_binary() {
+        let binary = match find_omegon_binary_from_ctx(&ctx) {
             Some(b) => b,
             None => { *agent_status.write() = AgentStatus::Idle; return; }
         };
@@ -175,7 +170,8 @@ pub fn AgentRail() -> Element {
                         sess.set_config(cfg_id, value).await;
                     }
 
-                    *session.write() = Some(sess);
+                    *session.write() = Some(sess.clone());
+                    *shared_session.write() = Some(sess);
                     start_event_loop(rx, items, agent_status, available_commands, config_options);
                     *agent_status.write() = AgentStatus::Idle;
                 }
@@ -384,7 +380,8 @@ pub fn AgentRail() -> Element {
                                             for (cfg_id, value) in &saved_config {
                                                 new_sess.set_config(cfg_id, value).await;
                                             }
-                                            *session.write() = Some(new_sess);
+                                            *session.write() = Some(new_sess.clone());
+                                            *shared_session.write() = Some(new_sess);
                                             start_event_loop(rx, items, agent_status, available_commands, config_options);
                                             items.write().push(ChatItem::Message {
                                                 role: ChatRole::Assistant,
