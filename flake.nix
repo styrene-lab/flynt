@@ -69,7 +69,7 @@
         };
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "codex";
+          pname = "codyx";
           version = "0.6.0";
           src = ./.;
 
@@ -96,20 +96,22 @@
           cargoBuildFlags = [ "-p" "codex-app" ];
           cargoTestFlags = [ "-p" "codex-core" "-p" "codex-store" ];
 
-          postInstall = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+          postInstall = ''
+            mv $out/bin/codex-app $out/bin/codyx 2>/dev/null || true
+          '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
             mkdir -p $out/share/applications
             cat > $out/share/applications/codex.desktop <<DESKTOP
             [Desktop Entry]
             Name=Codex
             Comment=Markdown notes, kanban, and knowledge graph
-            Exec=$out/bin/codex-app
-            Icon=$out/share/icons/hicolor/512x512/apps/codex.png
+            Exec=$out/bin/codyx
+            Icon=$out/share/icons/hicolor/512x512/apps/codyx.png
             Type=Application
             Categories=Office;TextEditor;
             DESKTOP
 
             mkdir -p $out/share/icons/hicolor/512x512/apps
-            cp crates/codex-app/assets/icon.png $out/share/icons/hicolor/512x512/apps/codex.png
+            cp crates/codex-app/assets/icon.png $out/share/icons/hicolor/512x512/apps/codyx.png
           '';
 
           meta = with pkgs.lib; {

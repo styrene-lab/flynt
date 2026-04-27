@@ -86,8 +86,8 @@ jobs:
             exit 1
           fi
 
-          cp "$BIN" "$DIST/codex"
-          chmod +x "$DIST/codex"
+          cp "$BIN" "$DIST/codyx"
+          chmod +x "$DIST/codyx"
 
           # Copy assets directory if it exists (dx bundles assets alongside binary)
           ASSETS_DIR="$(dirname "$BIN")/assets"
@@ -96,14 +96,14 @@ jobs:
           fi
 
           # Copy icon + desktop entry
-          cp crates/codex-app/assets/icon.png "$DIST/codex.png"
+          cp crates/codex-app/assets/icon.png "$DIST/codyx.png"
 
-          cat > "$DIST/codex.desktop" << 'DESKTOP'
+          cat > "$DIST/codyx.desktop" << 'DESKTOP'
           [Desktop Entry]
           Name=Codex
           Comment=Local-first knowledge management
-          Exec=codex
-          Icon=codex
+          Exec=codyx
+          Icon=codyx
           Type=Application
           Categories=Office;TextEditor;
           MimeType=text/markdown;
@@ -547,7 +547,7 @@ jobs:
           # typed: false
           # frozen_string_literal: true
 
-          class Codex < Formula
+          class Codyx < Formula
             desc "Local-first knowledge vault — notes, tasks, diagrams, and agent integration"
             homepage "https://github.com/styrene-lab/codex"
             license "BUSL-1.1"
@@ -573,11 +573,11 @@ jobs:
             end
 
             def install
-              bin.install "codex"
+              bin.install "codyx"
               (share/"codex").install "assets" if File.directory?("assets")
-              (share/"applications").install "codex.desktop" if File.exist?("codex.desktop")
-              if File.exist?("codex.png")
-                (share/"icons/hicolor/256x256/apps").install "codex.png"
+              (share/"applications").install "codyx.desktop" if File.exist?("codyx.desktop")
+              if File.exist?("codyx.png")
+                (share/"icons/hicolor/256x256/apps").install "codyx.png"
               end
             end
 
@@ -589,15 +589,15 @@ jobs:
 
           # Push to tap
           CONTENT=$(base64 -w0 /tmp/codex.rb)
-          EXISTING_SHA=$(gh api repos/styrene-lab/homebrew-tap/contents/Formula/codex.rb --jq '.sha' 2>/dev/null || echo "")
+          EXISTING_SHA=$(gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb --jq '.sha' 2>/dev/null || echo "")
           if [ -n "$EXISTING_SHA" ]; then
-            gh api repos/styrene-lab/homebrew-tap/contents/Formula/codex.rb \
+            gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb \
               -X PUT \
               -f message="Update Codex to $VERSION" \
               -f content="$CONTENT" \
               -f sha="$EXISTING_SHA" > /dev/null
           else
-            gh api repos/styrene-lab/homebrew-tap/contents/Formula/codex.rb \
+            gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb \
               -X PUT \
               -f message="Add Codex $VERSION" \
               -f content="$CONTENT" > /dev/null
