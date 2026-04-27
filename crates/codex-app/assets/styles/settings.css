@@ -358,6 +358,26 @@
   color: var(--error) !important;
 }
 
+/* ── Advanced toggle ─────────────────────────────────────────────────────── */
+.settings-advanced-toggle {
+  display:        flex;
+  justify-content: center;
+  padding:        var(--space-4) 0;
+  border-top:     1px solid var(--border-dim);
+  margin-top:     var(--space-4);
+}
+.settings-toggle-btn {
+  background:     none;
+  border:         none;
+  color:          var(--muted-foreground);
+  font-size:      var(--font-size-sm);
+  cursor:         pointer;
+  padding:        var(--space-2) var(--space-4);
+}
+.settings-toggle-btn:hover {
+  color:          var(--foreground);
+}
+
 /* ── Font scale modifiers (applied to .codex-shell) ──────────────────────── */
 .font-sm .markdown-body { font-size: var(--font-size-base); }
 .font-md .markdown-body { font-size: var(--font-size-md);   }

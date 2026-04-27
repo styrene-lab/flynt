@@ -139,7 +139,7 @@ pub fn KanbanView() -> Element {
                                 rsx! {
                                     div { class: "board-delete-zone",
                                         if is_confirming {
-                                            span { class: "board-delete-confirm-label", "Delete board and all tasks?" }
+                                            span { class: "board-delete-confirm-label", "Delete this board and its tasks? This cannot be undone." }
                                             button {
                                                 class: "btn btn-danger btn-sm",
                                                 onclick: move |_| {

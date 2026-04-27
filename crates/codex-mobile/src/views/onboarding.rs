@@ -70,21 +70,21 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 // ── Sync choice ─────────────────────────────────────
                 Step::SyncChoice => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "How do you sync?" }
+                        h2 { class: "onboarding-title", "Sync your notes" }
 
                         div { class: "onboarding-paths",
                             button {
                                 class: "onboarding-path",
-                                onclick: move |_| *step.write() = Step::ManifestInput,
-                                span { class: "onboarding-path-title", "I have multiple vaults" }
-                                span { class: "onboarding-path-desc", "Connect your vault manifest to discover all your notebooks" }
+                                onclick: move |_| *step.write() = Step::RepoInput,
+                                span { class: "onboarding-path-title", "Connect a notebook" }
+                                span { class: "onboarding-path-desc", "Sync one notebook from an online service" }
                             }
 
                             button {
                                 class: "onboarding-path",
-                                onclick: move |_| *step.write() = Step::RepoInput,
-                                span { class: "onboarding-path-title", "I have one vault" }
-                                span { class: "onboarding-path-desc", "Connect a single notebook from GitHub or a Styrene Hub" }
+                                onclick: move |_| *step.write() = Step::ManifestInput,
+                                span { class: "onboarding-path-title", "Connect all my notebooks" }
+                                span { class: "onboarding-path-desc", "I have several notebooks and want to access them all" }
                             }
                         }
 
@@ -99,9 +99,9 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 // ── Manifest flow ───────────────────────────────────
                 Step::ManifestInput => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "Connect Your Vaults" }
+                        h2 { class: "onboarding-title", "Connect Your Notebooks" }
                         p { class: "onboarding-desc",
-                            "Enter your vault manifest URL and a personal access token."
+                            "Enter the URL for your notebook collection and your access token."
                         }
 
                         div { class: "onboarding-form",
@@ -267,9 +267,9 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 // ── Single vault / join shared ──────────────────────
                 Step::RepoInput => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "Connect a vault" }
+                        h2 { class: "onboarding-title", "Connect a notebook" }
                         p { class: "onboarding-desc",
-                            "Paste the link you were given, or enter your vault's URL."
+                            "Paste the link you were given, or enter your notebook's URL."
                         }
 
                         div { class: "onboarding-form",
@@ -303,7 +303,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     oninput: move |e| *token.write() = e.value(),
                                 }
                                 span { class: "onboarding-hint",
-                                    "Your access token. Ask the vault owner if you don't have one."
+                                    "Ask the person who shared this with you if you need a token."
                                 }
                             }
                         }

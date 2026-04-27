@@ -84,7 +84,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
                         Err(_) => format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {file_ref}]</div>"),
                     }
                 } else if excalidraw_path.exists() {
-                    format!("<div class=\"excalidraw-embed-placeholder\" data-drawing=\"{escaped_ref}\">[Drawing: {file_ref} — save to auto-export SVG]</div>")
+                    format!("<div class=\"excalidraw-embed-placeholder\" data-drawing=\"{escaped_ref}\">[Drawing: {file_ref} — open to render]</div>")
                 } else {
                     format!("<span class=\"broken-embed\">Embedded file not found: {file_ref}</span>")
                 };
@@ -118,7 +118,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn codex_core::store::V
                         Err(_) => format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref}]</div>"),
                     }
                 } else if d2_path.exists() {
-                    format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref} — install d2 CLI to render]</div>")
+                    format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref} — rendering not available]</div>")
                 } else {
                     format!("<span class=\"broken-embed\">Diagram file not found: {file_ref}</span>")
                 };

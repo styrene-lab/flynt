@@ -468,6 +468,7 @@ fn VaultSwitcher() -> Element {
                             }
                             if is_confirming {
                                 div { class: "vault-remove-confirm",
+                                    span { class: "vault-remove-hint", "Your notes are not deleted" }
                                     button {
                                         class: "btn btn-danger btn-xs",
                                         onclick: {

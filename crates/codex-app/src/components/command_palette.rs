@@ -52,6 +52,7 @@ fn execute_command(
         "view-board" => *active_route.write() = Route::Kanban,
         "view-graph" => *active_route.write() = Route::Graph,
         "view-settings" => *active_route.write() = Route::Settings,
+        "view-welcome" => *active_route.write() = Route::Welcome,
         "new-note" => {
             let c = ctx;
             let mut ts = *tab_state;
@@ -220,6 +221,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
             Cmd { id: "view-board".into(), label: "Board".into(), category: "Navigate".into() },
             Cmd { id: "view-graph".into(), label: "Graph".into(), category: "Navigate".into() },
             Cmd { id: "view-settings".into(), label: "Settings".into(), category: "Navigate".into() },
+            Cmd { id: "view-welcome".into(), label: "Welcome".into(), category: "Navigate".into() },
             Cmd { id: "new-note".into(), label: "New Note".into(), category: "Create".into() },
             Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
             Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
@@ -277,19 +279,21 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
         }
         div { class: if current_mode == PaletteMode::Agent { "palette palette-agent" } else { "palette" },
 
-            // Mode tabs
-            div { class: "palette-mode-bar",
-                button {
-                    class: if current_mode == PaletteMode::Command { "palette-mode-tab active" } else { "palette-mode-tab" },
-                    onclick: move |_| *mode.write() = PaletteMode::Command,
-                    "Commands"
-                    span { class: "palette-shortcut", "\u{2318}P" }
-                }
-                button {
-                    class: if current_mode == PaletteMode::Agent { "palette-mode-tab active" } else { "palette-mode-tab" },
-                    onclick: move |_| *mode.write() = PaletteMode::Agent,
-                    "Agent"
-                    span { class: "palette-shortcut", "\u{2318}K" }
+            // Mode tabs — only show Agent tab if connected
+            if shared_session.read().is_some() {
+                div { class: "palette-mode-bar",
+                    button {
+                        class: if current_mode == PaletteMode::Command { "palette-mode-tab active" } else { "palette-mode-tab" },
+                        onclick: move |_| *mode.write() = PaletteMode::Command,
+                        "Commands"
+                        span { class: "palette-shortcut", "\u{2318}P" }
+                    }
+                    button {
+                        class: if current_mode == PaletteMode::Agent { "palette-mode-tab active" } else { "palette-mode-tab" },
+                        onclick: move |_| *mode.write() = PaletteMode::Agent,
+                        "Agent"
+                        span { class: "palette-shortcut", "\u{2318}K" }
+                    }
                 }
             }
 

@@ -158,6 +158,7 @@ pub fn SettingsView() -> Element {
     let daemon_config = use_signal(|| initial_operator.agent_daemon.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
+    let mut show_advanced = use_signal(|| false);
     let publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
     let vault = ctx.vault();
@@ -459,6 +460,24 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
+                // ── Advanced toggle ──────────────────────────────────────────
+                div { class: "settings-advanced-toggle",
+                    button {
+                        class: "settings-toggle-btn",
+                        onclick: move |_| {
+                            let v = *show_advanced.read();
+                            *show_advanced.write() = !v;
+                        },
+                        if *show_advanced.read() {
+                            "Hide advanced settings \u{25B4}"
+                        } else {
+                            "Show advanced settings \u{25BE}"
+                        }
+                    }
+                }
+
+                if *show_advanced.read() {
+
                 // ── Visualization ────────────────────────────────────────────
                 SettingsSection { heading: "Visualization",
                     SettingsRow { label: "Excalidraw auto-export",
@@ -719,6 +738,8 @@ pub fn SettingsView() -> Element {
                 DaemonSettingsSection {
                     config: daemon_config,
                 }
+
+                } // end if show_advanced
 
                 // ── Save bar ─────────────────────────────────────────────────
                 div { class: "settings-save-bar",

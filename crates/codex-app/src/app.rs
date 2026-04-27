@@ -56,6 +56,7 @@ pub fn App() -> Element {
     let sync_status = use_signal(|| SyncStatus::Idle);
     let mut palette_open = use_signal(|| false);
     let mut palette_mode = use_signal(|| crate::components::command_palette::PaletteMode::Command);
+    let shared_acp_session = use_context::<Signal<Option<std::rc::Rc<crate::acp::AcpSession>>>>();
 
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
@@ -348,11 +349,14 @@ pub fn App() -> Element {
                     let v = *palette_open.read();
                     *palette_open.write() = !v;
                 }
-                // ⌘K — command palette (agent delegation mode)
+                // ⌘K — command palette (agent delegation mode, only if agent connected)
                 if (e.modifiers().meta() || e.modifiers().ctrl()) && e.key() == Key::Character("k".to_string()) {
                     e.prevent_default();
-                    *palette_mode.write() = crate::components::command_palette::PaletteMode::Agent;
-                    *palette_open.write() = true;
+                    if shared_acp_session.read().is_some() {
+                        *palette_mode.write() = crate::components::command_palette::PaletteMode::Agent;
+                        *palette_open.write() = true;
+                    }
+                    // If no agent, Cmd+K is silently ignored — no confusing UI
                 }
             },
 
@@ -463,6 +467,33 @@ pub fn App() -> Element {
                                 *clone_dialog_open.write() = true;
                                 *clone_error.write() = None;
                             };
+                            let icloud_ctx = ctx.clone();
+                            let on_icloud = move |_| {
+                                *welcome_error.write() = None;
+                                match codex_store::sync::icloud::create_icloud_vault("Codex") {
+                                    Ok(root) => {
+                                        let mut profile = launcher_profile();
+                                        profile.last_vault_root = Some(root.clone());
+                                        profile.wizard_completed = true;
+                                        OmegonRuntimeContext::register_known_vault(&mut profile, &root, "Codex");
+                                        let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                        launcher_profile.set(profile);
+                                        let mut c = icloud_ctx.clone();
+                                        c.set_runtime(runtime_state_for_vault_root(root));
+                                        *active_route.write() = Route::Notes;
+                                    }
+                                    Err(e) => {
+                                        let msg = format!("{e}");
+                                        if msg.contains("not available") {
+                                            *welcome_error.write() = Some(
+                                                "iCloud Drive is not enabled on this Mac. Turn it on in System Settings > Apple ID > iCloud > iCloud Drive, then try again.".into()
+                                            );
+                                        } else {
+                                            *welcome_error.write() = Some(format!("Could not create iCloud vault: {e}"));
+                                        }
+                                    }
+                                }
+                            };
                             let on_import_markdown = move |_| {
                                 *welcome_error.write() = None;
                                 let Some(source_root) = FileDialog::new().pick_folder() else {
@@ -498,6 +529,7 @@ pub fn App() -> Element {
                                     on_choose_existing,
                                     on_clone_remote,
                                     on_import_markdown,
+                                    on_icloud,
                                 }
                             }
                         },

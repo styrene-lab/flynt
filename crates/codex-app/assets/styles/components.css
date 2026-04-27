@@ -832,9 +832,16 @@
 .sidebar-doc-row:hover .vault-remove-btn { opacity: 1; }
 .vault-remove-btn:hover { color: var(--error); }
 .vault-remove-confirm {
-  display: flex;
-  gap:     var(--space-1);
-  padding: 0 var(--space-1);
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+  padding:        2px var(--space-2);
+}
+.vault-remove-confirm .row { margin-top: 2px; }
+.vault-remove-hint {
+  font-size:   9px;
+  color:       var(--muted-foreground);
+  font-style:  italic;
 }
 .vault-role-badge {
   font-size:    9px;

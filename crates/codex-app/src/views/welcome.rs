@@ -8,6 +8,7 @@ pub fn WelcomeView(
     on_choose_existing: EventHandler<()>,
     on_clone_remote: EventHandler<()>,
     on_import_markdown: EventHandler<()>,
+    on_icloud: EventHandler<()>,
 ) -> Element {
     let mut show_advanced = use_signal(|| false);
     let mut show_sync_options = use_signal(|| false);
@@ -59,15 +60,7 @@ pub fn WelcomeView(
                         div { class: "welcome-sync-options",
                             button {
                                 class: "welcome-option",
-                                onclick: move |_| {
-                                    // iCloud: create vault in iCloud Drive
-                                    match codex_store::sync::icloud::create_icloud_vault("Codex") {
-                                        Ok(root) => {
-                                            let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_vault(&root);
-                                        }
-                                        Err(e) => tracing::error!("iCloud vault failed: {e}"),
-                                    }
-                                },
+                                onclick: move |_| on_icloud.call(()),
                                 span { class: "welcome-option-title", "iCloud" }
                                 span { class: "welcome-option-desc",
                                     "Syncs automatically between Apple devices. No account setup needed."
