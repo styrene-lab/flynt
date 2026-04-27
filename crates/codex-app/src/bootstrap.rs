@@ -21,6 +21,10 @@ pub struct LauncherProfile {
     pub known_vaults: Vec<KnownVault>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_setup: Option<PendingVaultSetup>,
+    /// Path to a cloned vault manifest repo. If set, known_vaults are
+    /// supplemented from the manifest's `vaults.toml`.
+    #[serde(default)]
+    pub manifest_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +84,8 @@ impl OmegonRuntimeContext {
         // Prune vaults whose root no longer exists on disk
         profile.known_vaults.retain(|v| v.root.exists());
         profile.recent_vaults.retain(|v| v.exists());
+        // Merge any vaults from the manifest
+        Self::sync_from_manifest(&mut profile);
         profile
     }
 
@@ -90,6 +96,26 @@ impl OmegonRuntimeContext {
         }
         std::fs::write(path, serde_json::to_string_pretty(profile)?)?;
         Ok(())
+    }
+
+    /// Merge vaults from the manifest into known_vaults.
+    /// Only adds vaults that have a local_path set (cloned on this device).
+    pub fn sync_from_manifest(profile: &mut LauncherProfile) {
+        let Some(ref manifest_dir) = profile.manifest_dir else { return };
+        let Ok(manifest) = codex_core::manifest::load_manifest_with_local(manifest_dir) else { return };
+
+        for vault in &manifest.vaults {
+            let Some(ref local_path) = vault.local_path else { continue };
+            if !local_path.exists() { continue; }
+            // Add if not already known
+            if !profile.known_vaults.iter().any(|kv| kv.root == *local_path) {
+                profile.known_vaults.push(KnownVault {
+                    name: vault.name.clone(),
+                    root: local_path.clone(),
+                });
+            }
+        }
+        profile.known_vaults.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
     pub fn register_known_vault(profile: &mut LauncherProfile, root: &Path, name: &str) {

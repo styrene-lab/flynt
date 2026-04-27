@@ -8,6 +8,7 @@ pub mod query;
 pub mod store;
 pub mod sync;
 pub mod templates;
+pub mod manifest;
 pub mod parser;
 pub mod providers;
 pub mod seal;
