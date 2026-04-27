@@ -68,17 +68,31 @@ jobs:
           DIST="codex-${{ env.RELEASE_TAG }}-linux-${{ matrix.arch }}"
           mkdir -p "$DIST"
 
-          # Copy the built binary
-          APP_DIR="target/dx/codex-app/release/bundle/deb"
-          if [ -d "$APP_DIR" ]; then
-            cp -r "$APP_DIR"/* "$DIST/"
+          # Find the built binary — dx output path varies by version
+          BIN=""
+          for candidate in \
+            "target/dx/codex-app/release/linux/app/codex-app" \
+            "target/dx/codex-app/release/linux/codex-app" \
+            "target/release/codex-app"; do
+            if [ -f "$candidate" ]; then
+              BIN="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$BIN" ]; then
+            echo "ERROR: Could not find built binary. Contents of target/dx/:"
+            find target/dx/ -type f -name "codex*" 2>/dev/null || true
+            exit 1
           fi
 
-          # Fallback: copy raw binary
-          BIN="target/dx/codex-app/release/linux/codex-app"
-          if [ -f "$BIN" ]; then
-            cp "$BIN" "$DIST/codex"
-            chmod +x "$DIST/codex"
+          cp "$BIN" "$DIST/codex"
+          chmod +x "$DIST/codex"
+
+          # Copy assets directory if it exists (dx bundles assets alongside binary)
+          ASSETS_DIR="$(dirname "$BIN")/assets"
+          if [ -d "$ASSETS_DIR" ]; then
+            cp -r "$ASSETS_DIR" "$DIST/assets"
           fi
 
           # Copy icon + desktop entry
