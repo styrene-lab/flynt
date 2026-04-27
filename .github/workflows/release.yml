@@ -71,10 +71,10 @@ jobs:
           # Find the built binary — dx output path varies by version
           BIN=""
           for candidate in \
+            "target/dx/codyx/release/linux/app/codyx" \
+            "target/dx/codyx/release/linux/app/codex-app" \
             "target/dx/codex-app/release/linux/app/codyx" \
             "target/dx/codex-app/release/linux/app/codex-app" \
-            "target/dx/codex-app/release/linux/codyx" \
-            "target/dx/codex-app/release/linux/codex-app" \
             "target/release/codyx" \
             "target/release/codex-app"; do
             if [ -f "$candidate" ]; then
@@ -160,7 +160,7 @@ jobs:
 
       - name: Prepare app bundle
         run: |
-          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          APP="target/dx/codyx/release/macos/CodexApp.app"
           PLIST="$APP/Contents/Info.plist"
           PB=/usr/libexec/PlistBuddy
 
@@ -223,7 +223,7 @@ jobs:
         env:
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
         run: |
-          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          APP="target/dx/codyx/release/macos/CodexApp.app"
 
           find "$APP/Contents" -type f \( -name "*.dylib" -o -perm +111 \) ! -name "Info.plist" ! -name "*.plist" | while read -r bin; do
             codesign -f -s "$APPLE_CODESIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" --options runtime --timestamp "$bin" 2>/dev/null || true
@@ -236,7 +236,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          APP="target/dx/codyx/release/macos/CodexApp.app"
           VERSION="${RELEASE_TAG#v}"
           STAGING=$(mktemp -d)
           cp -r "$APP" "$STAGING/Codex.app"
@@ -267,7 +267,7 @@ jobs:
           APPLE_DIST_CERT_P12_B64: ${{ secrets.APPLE_DIST_CERT_P12_B64 }}
           MACOS_DIST_PROFILE_B64: ${{ secrets.MACOS_DIST_PROFILE_B64 }}
         run: |
-          APP="target/dx/codex-app/release/macos/CodexApp.app"
+          APP="target/dx/codyx/release/macos/CodexApp.app"
           DIST_APP="dist/Codex.app"
           rm -rf dist/Codex.app
           mkdir -p dist
