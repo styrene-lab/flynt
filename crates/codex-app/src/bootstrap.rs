@@ -140,6 +140,103 @@ impl OmegonRuntimeContext {
         profile.last_vault_root = Some(root);
     }
 
+    /// Add a vault to the manifest and clone it locally.
+    pub fn add_vault_to_manifest(
+        profile: &mut LauncherProfile,
+        name: &str,
+        repo: &str,
+        branch: &str,
+        token: Option<&str>,
+    ) -> anyhow::Result<PathBuf> {
+        use codex_core::manifest::{self, ManifestVault, VaultRole};
+
+        let manifest_dir = profile.manifest_dir.clone()
+            .ok_or_else(|| anyhow::anyhow!("No manifest configured. Connect a manifest first."))?;
+
+        // Add to manifest
+        let mut m = manifest::load_manifest_with_local(&manifest_dir)?;
+        let local_path = dirs::document_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(name);
+
+        let vault = ManifestVault {
+            name: name.into(),
+            repo: repo.into(),
+            branch: branch.into(),
+            role: VaultRole::Owner,
+            hub: None,
+            local_path: Some(local_path.clone()),
+            auto_commit_seconds: 60,
+        };
+        manifest::add_vault(&mut m, vault)?;
+        manifest::save_manifest(&manifest_dir, &m)?;
+        manifest::save_local_manifest(&manifest_dir, &m)?;
+
+        // Clone the repo
+        if let Some(tk) = token {
+            codex_store::sync::GitSync::clone_repo_with_token(repo, branch, &local_path, tk)?;
+        } else {
+            codex_store::sync::GitSync::clone_repo(repo, branch, &local_path)?;
+        }
+
+        // Register in launcher profile
+        Self::register_known_vault(profile, &local_path, name);
+
+        // Commit manifest changes
+        let _ = Self::commit_manifest(&manifest_dir, &format!("Add vault: {name}"));
+
+        Ok(local_path)
+    }
+
+    /// Remove a vault from the manifest. Optionally delete local files.
+    pub fn remove_vault_from_manifest(
+        profile: &mut LauncherProfile,
+        vault_name: &str,
+        delete_local: bool,
+    ) -> anyhow::Result<()> {
+        use codex_core::manifest;
+
+        let manifest_dir = profile.manifest_dir.clone()
+            .ok_or_else(|| anyhow::anyhow!("No manifest configured."))?;
+
+        let mut m = manifest::load_manifest_with_local(&manifest_dir)?;
+
+        // Find the local path before removal (for cleanup)
+        let local_path = m.vaults.iter()
+            .find(|v| v.name == vault_name)
+            .and_then(|v| v.local_path.clone());
+
+        manifest::remove_vault(&mut m, vault_name)?;
+        manifest::save_manifest(&manifest_dir, &m)?;
+        manifest::save_local_manifest(&manifest_dir, &m)?;
+
+        // Remove from known vaults
+        profile.known_vaults.retain(|v| v.name != vault_name);
+
+        // Delete local clone if requested
+        if delete_local {
+            if let Some(ref path) = local_path {
+                if path.exists() {
+                    std::fs::remove_dir_all(path)?;
+                }
+            }
+        }
+
+        let _ = Self::commit_manifest(&manifest_dir, &format!("Remove vault: {vault_name}"));
+
+        Ok(())
+    }
+
+    /// Auto-commit manifest changes so they sync to other devices.
+    fn commit_manifest(manifest_dir: &Path, message: &str) -> anyhow::Result<()> {
+        let git = codex_store::sync::git::GitSync::new(
+            manifest_dir.to_path_buf(), "origin", "main",
+        );
+        let _ = git.auto_commit(message);
+        let _ = codex_core::sync::SyncBackend::sync(&git);
+        Ok(())
+    }
+
     pub fn spawn_new_instance_for_vault(root: &Path) -> anyhow::Result<()> {
         let exe = std::env::current_exe()?;
         Command::new(exe)

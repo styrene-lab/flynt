@@ -423,31 +423,205 @@ fn VaultSwitcher() -> Element {
         }
     };
 
+    // Load manifest vaults (if manifest is configured)
+    let manifest_vaults: Vec<codex_core::manifest::ManifestVault> = profile.read().manifest_dir
+        .as_ref()
+        .and_then(|dir| codex_core::manifest::load_manifest_with_local(dir).ok())
+        .map(|m| m.vaults)
+        .unwrap_or_default();
+
+    // Uncloned manifest vaults — available to clone but not on this device yet
+    let uncloned: Vec<&codex_core::manifest::ManifestVault> = manifest_vaults.iter()
+        .filter(|v| v.local_path.as_ref().map(|p| !p.exists()).unwrap_or(true))
+        .collect();
+
+    let mut adding = use_signal(|| false);
+    let mut new_name = use_signal(String::new);
+    let mut new_repo = use_signal(String::new);
+    let mut remove_confirm: Signal<Option<String>> = use_signal(|| None);
+
     rsx! {
         div { class: "sidebar-section vault-switcher",
             div { class: "sidebar-section-header",
                 span { class: "sidebar-heading", "VAULTS" }
             }
+
+            // Current vault
             div { class: "vault-current",
                 span { class: "vault-current-name", "{current_name}" }
                 span { class: "vault-current-path", "{current_root.display()}" }
             }
+
+            // Other cloned vaults — click to switch
             for vault in profile.read().known_vaults.iter().filter(|vault| vault.root != current_root).cloned() {
-                button {
-                    class: "sidebar-doc",
-                    onclick: {
-                        let root = vault.root.clone();
-                        move |_| do_switch(root.clone())
-                    },
-                    span { class: "doc-icon", "◈" }
-                    span { class: "doc-title", "{vault.name}" }
+                {
+                    let root = vault.root.clone();
+                    let vname = vault.name.clone();
+                    let is_confirming = remove_confirm.read().as_ref() == Some(&vname);
+                    rsx! {
+                        div { class: "sidebar-doc-row",
+                            button {
+                                class: "sidebar-doc",
+                                onclick: move |_| do_switch(root.clone()),
+                                span { class: "doc-icon", "\u{25C8}" }
+                                span { class: "doc-title", "{vault.name}" }
+                            }
+                            if is_confirming {
+                                div { class: "vault-remove-confirm",
+                                    button {
+                                        class: "btn btn-danger btn-xs",
+                                        onclick: {
+                                            let name = vname.clone();
+                                            move |_| {
+                                                let mut p = OmegonRuntimeContext::load_launcher_profile();
+                                                let _ = OmegonRuntimeContext::remove_vault_from_manifest(&mut p, &name, false);
+                                                let _ = OmegonRuntimeContext::save_launcher_profile(&p);
+                                                profile.set(p);
+                                                *remove_confirm.write() = None;
+                                            }
+                                        },
+                                        "Remove"
+                                    }
+                                    button {
+                                        class: "btn btn-ghost btn-xs",
+                                        onclick: move |_| *remove_confirm.write() = None,
+                                        "Cancel"
+                                    }
+                                }
+                            } else {
+                                button {
+                                    class: "vault-remove-btn",
+                                    title: "Remove vault",
+                                    onclick: {
+                                        let name = vname.clone();
+                                        move |_| *remove_confirm.write() = Some(name.clone())
+                                    },
+                                    "\u{2715}"
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            button {
-                class: "sidebar-doc muted",
-                onclick: open_folder,
-                span { class: "doc-icon", "+" }
-                span { class: "doc-title", "Open another vault…" }
+
+            // Uncloned manifest vaults — show as available to clone
+            for vault in uncloned.iter() {
+                {
+                    let vname = vault.name.clone();
+                    let vrepo = vault.repo.clone();
+                    let vbranch = vault.branch.clone();
+                    let role = vault.role.label();
+                    rsx! {
+                        div { class: "sidebar-doc-row",
+                            button {
+                                class: "sidebar-doc muted",
+                                title: "Clone this vault to this device",
+                                onclick: move |_| {
+                                    let name = vname.clone();
+                                    let repo = vrepo.clone();
+                                    let branch = vbranch.clone();
+                                    spawn(async move {
+                                        let result = tokio::task::spawn_blocking(move || {
+                                            let mut p = OmegonRuntimeContext::load_launcher_profile();
+                                            OmegonRuntimeContext::add_vault_to_manifest(
+                                                &mut p, &name, &repo, &branch, None,
+                                            )?;
+                                            OmegonRuntimeContext::save_launcher_profile(&p)?;
+                                            Ok::<_, anyhow::Error>(p)
+                                        }).await;
+                                        match result {
+                                            Ok(Ok(p)) => profile.set(p),
+                                            Ok(Err(e)) => tracing::warn!("Clone failed: {e}"),
+                                            Err(e) => tracing::warn!("Clone task failed: {e}"),
+                                        }
+                                    });
+                                },
+                                span { class: "doc-icon", "\u{2913}" }
+                                span { class: "doc-title", "{vault.name}" }
+                                span { class: "vault-role-badge", "{role}" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add vault inline form
+            if *adding.read() {
+                div { class: "vault-add-form",
+                    input {
+                        class: "input input-sm",
+                        autofocus: true,
+                        value: "{new_name}",
+                        placeholder: "Vault name",
+                        oninput: move |e| *new_name.write() = e.value(),
+                    }
+                    input {
+                        class: "input input-sm",
+                        value: "{new_repo}",
+                        placeholder: "git@github.com:user/vault.git",
+                        oninput: move |e| *new_repo.write() = e.value(),
+                        onkeydown: move |e| {
+                            if e.key() == Key::Escape {
+                                *adding.write() = false;
+                                *new_name.write() = String::new();
+                                *new_repo.write() = String::new();
+                            }
+                        },
+                    }
+                    div { class: "row gap-2",
+                        button {
+                            class: "btn btn-primary btn-xs",
+                            disabled: new_name.read().trim().is_empty() || new_repo.read().trim().is_empty(),
+                            onclick: move |_| {
+                                let name = new_name.read().trim().to_string();
+                                let repo = new_repo.read().trim().to_string();
+                                *adding.write() = false;
+                                *new_name.write() = String::new();
+                                *new_repo.write() = String::new();
+                                spawn(async move {
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        let mut p = OmegonRuntimeContext::load_launcher_profile();
+                                        OmegonRuntimeContext::add_vault_to_manifest(
+                                            &mut p, &name, &repo, "main", None,
+                                        )?;
+                                        OmegonRuntimeContext::save_launcher_profile(&p)?;
+                                        Ok::<_, anyhow::Error>(p)
+                                    }).await;
+                                    match result {
+                                        Ok(Ok(p)) => profile.set(p),
+                                        Ok(Err(e)) => tracing::warn!("Add vault failed: {e}"),
+                                        Err(e) => tracing::warn!("Add vault task failed: {e}"),
+                                    }
+                                });
+                            },
+                            "Add"
+                        }
+                        button {
+                            class: "btn btn-ghost btn-xs",
+                            onclick: move |_| {
+                                *adding.write() = false;
+                                *new_name.write() = String::new();
+                                *new_repo.write() = String::new();
+                            },
+                            "Cancel"
+                        }
+                    }
+                }
+            } else {
+                div { class: "vault-actions",
+                    button {
+                        class: "sidebar-doc muted",
+                        onclick: move |_| *adding.write() = true,
+                        span { class: "doc-icon", "+" }
+                        span { class: "doc-title", "Add vault" }
+                    }
+                    button {
+                        class: "sidebar-doc muted",
+                        onclick: open_folder,
+                        span { class: "doc-icon", "\u{1F4C2}" }
+                        span { class: "doc-title", "Open folder…" }
+                    }
+                }
             }
         }
     }

@@ -811,6 +811,53 @@
   white-space:    nowrap;
 }
 
+/* ── Vault CRUD ────────────────────────────────────────────────────────── */
+.sidebar-doc-row {
+  display:      flex;
+  align-items:  center;
+  gap:          0;
+}
+.sidebar-doc-row .sidebar-doc {
+  flex:         1;
+  min-width:    0;
+}
+.vault-remove-btn {
+  font-size:    10px;
+  color:        var(--dim);
+  opacity:      0;
+  padding:      2px 6px;
+  border-radius: var(--radius-sm);
+  transition:   opacity 0.15s, color 0.15s;
+}
+.sidebar-doc-row:hover .vault-remove-btn { opacity: 1; }
+.vault-remove-btn:hover { color: var(--error); }
+.vault-remove-confirm {
+  display: flex;
+  gap:     var(--space-1);
+  padding: 0 var(--space-1);
+}
+.vault-role-badge {
+  font-size:    9px;
+  color:        var(--dim);
+  margin-left:  auto;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.vault-add-form {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+  padding:        var(--space-2) var(--space-3);
+}
+.vault-add-form .input-sm {
+  font-size:   var(--font-size-xs);
+  padding:     4px var(--space-2);
+}
+.vault-actions {
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Agent Rail ─────────────────────────────────────────────────────────── */
 .agent-rail {
   display:        flex;
