@@ -8,7 +8,7 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(target_os = "ios")]
-extern "C" {
+unsafe extern "C" {
     fn github_oauth_start(client_id: *const std::ffi::c_char, callback_scheme: *const std::ffi::c_char);
     fn github_oauth_get_token() -> *mut std::ffi::c_char;
     fn github_oauth_clear_token();
@@ -36,7 +36,7 @@ pub fn get_token() -> Option<String> {
         let token = unsafe { std::ffi::CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned();
-        extern "C" { fn free(ptr: *mut std::ffi::c_void); }
+        unsafe extern "C" { fn free(ptr: *mut std::ffi::c_void); }
         unsafe { free(ptr as *mut std::ffi::c_void) };
         Some(token)
     }

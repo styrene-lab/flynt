@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "codex-agent"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "codex-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "codex-mobile"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "codex-models"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "codex-store"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "chrono",
