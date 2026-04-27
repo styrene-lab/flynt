@@ -174,6 +174,78 @@ impl GitSync {
     }
 }
 
+// ── Tagging ─────────────────────────────────────────────────────────────────
+
+/// A vault tag (git tag wrapper).
+#[derive(Debug, Clone)]
+pub struct VaultTag {
+    pub name: String,
+    pub message: Option<String>,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+impl GitSync {
+    /// Create a lightweight tag at HEAD.
+    pub fn create_tag(&self, name: &str, message: Option<&str>) -> Result<()> {
+        let repo = self.open_repo()?;
+        let head = repo.head()?.peel_to_commit()?;
+        if let Some(msg) = message {
+            let sig = repo.signature()?;
+            repo.tag(name, head.as_object(), &sig, msg, false)?;
+        } else {
+            repo.tag_lightweight(name, head.as_object(), false)?;
+        }
+        Ok(())
+    }
+
+    /// List all tags with timestamps.
+    pub fn list_tags(&self) -> Result<Vec<VaultTag>> {
+        let repo = self.open_repo()?;
+        let mut tags = Vec::new();
+        repo.tag_foreach(|oid, raw_name| {
+            let name = String::from_utf8_lossy(raw_name)
+                .trim_start_matches("refs/tags/")
+                .to_string();
+            let timestamp = repo.find_commit(oid)
+                .map(|c| {
+                    chrono::DateTime::from_timestamp(c.time().seconds(), 0)
+                        .unwrap_or_default()
+                })
+                .or_else(|_| {
+                    // Annotated tag — dereference to commit
+                    repo.find_tag(oid).and_then(|tag| {
+                        tag.target().and_then(|t| t.peel_to_commit()).map(|c| {
+                            chrono::DateTime::from_timestamp(c.time().seconds(), 0)
+                                .unwrap_or_default()
+                        })
+                    })
+                })
+                .unwrap_or_default();
+            let message = repo.find_tag(oid).ok().map(|t| t.message().unwrap_or("").to_string());
+            tags.push(VaultTag { name, message, timestamp });
+            true
+        })?;
+        tags.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        Ok(tags)
+    }
+
+    /// Delete a tag.
+    pub fn delete_tag(&self, name: &str) -> Result<()> {
+        let repo = self.open_repo()?;
+        repo.tag_delete(name)?;
+        Ok(())
+    }
+
+    /// Push tags to remote.
+    pub fn push_tags(&self) -> Result<()> {
+        let repo = self.open_repo()?;
+        let mut remote = repo.find_remote(&self.remote)?;
+        let mut opts = Self::push_options();
+        remote.push(&["refs/tags/*:refs/tags/*"], Some(&mut opts))?;
+        Ok(())
+    }
+}
+
 impl SyncBackend for GitSync {
     fn name(&self) -> &str { "git" }
 

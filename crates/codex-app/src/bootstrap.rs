@@ -544,6 +544,8 @@ mod tests {
                 omegon_mind_db_path: Some(tmp.path().join("state/omegon-runtime/minds/codex-mind.db")),
                 styrene_identity_profile: Some("example-org".into()),
                 omegon_serve_host: None,
+                omegon_channel: Default::default(),
+                omegon_bin_override: None,
             },
         );
 
@@ -570,6 +572,7 @@ mod tests {
                 repo: "git@github.com:example-org/codex-vault.git".into(),
                 branch: "main".into(),
             }),
+            manifest_dir: None,
         };
 
         std::fs::write(&path, serde_json::to_string_pretty(&profile).unwrap()).unwrap();
@@ -652,6 +655,8 @@ mod tests {
             operator_settings_path: tmp.path().join("vault/.codex/operator-settings.json"),
             extensions_dir: tmp.path().join("home/extensions"),
             vox_manifest_path: tmp.path().join("home/extensions/vox/manifest.toml"),
+            omegon_channel: Default::default(),
+            omegon_bin_override: None,
         };
         std::fs::create_dir_all(runtime.global_profile_path.parent().unwrap()).unwrap();
         std::fs::write(
@@ -685,6 +690,8 @@ mod tests {
             operator_settings_path: tmp.path().join("vault/.codex/operator-settings.json"),
             extensions_dir: tmp.path().join("home/extensions"),
             vox_manifest_path: tmp.path().join("home/extensions/vox/manifest.toml"),
+            omegon_channel: Default::default(),
+            omegon_bin_override: None,
         };
 
         let settings = CodexOperatorSettings {
@@ -707,6 +714,8 @@ pub struct RuntimeState {
     pub omegon: OmegonRuntimeContext,
     /// Background git sync handle — kept alive as long as RuntimeState exists.
     pub _sync_handle: Option<Arc<codex_store::sync::AutoSyncHandle>>,
+    /// Sync status receiver — toolbar polls this for live sync state.
+    pub sync_status_rx: Option<tokio::sync::watch::Receiver<codex_store::sync::AutoSyncStatus>>,
     /// Agent daemon lifecycle manager.
     pub daemon: Arc<crate::daemon_manager::DaemonManager>,
 }
@@ -838,7 +847,7 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
 
     // Start background git sync if configured
-    let sync_handle = match &vault.config.sync {
+    let (sync_handle, sync_status_rx) = match &vault.config.sync {
         codex_core::models::SyncConfig::Git { remote, branch, auto_commit_seconds } if *auto_commit_seconds > 0 => {
             let interval = std::time::Duration::from_secs(*auto_commit_seconds);
             let vault_for_reindex = Arc::clone(&vault);
@@ -856,7 +865,8 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
             );
             info!("Auto-sync started: every {}s to {remote}/{branch}", auto_commit_seconds);
 
-            // Log status changes
+            // Clone for the toolbar, original for logging
+            let ui_rx = status_rx.clone();
             tokio::spawn(async move {
                 let mut rx = status_rx;
                 while rx.changed().await.is_ok() {
@@ -869,11 +879,10 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
                 }
             });
 
-            Some(Arc::new(handle))
+            (Some(Arc::new(handle)), Some(ui_rx))
         }
-        _ => None,
+        _ => (None, None),
     };
-
     // Initialize daemon manager from operator settings
     let operator_settings = omegon.load_operator_settings();
     let daemon = Arc::new(crate::daemon_manager::DaemonManager::new(
@@ -898,6 +907,7 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
         vault_events: tx,
         omegon,
         _sync_handle: sync_handle,
+        sync_status_rx,
         daemon,
     }
 }

@@ -53,7 +53,30 @@ pub fn App() -> Element {
     });
     let mut tab_state = use_context::<Signal<TabState>>();
     let show_agent = use_signal(|| false);
-    let sync_status = use_signal(|| SyncStatus::Idle);
+    let mut sync_status = use_signal(|| SyncStatus::Idle);
+
+    // Poll sync status from the auto-sync watcher
+    {
+        let runtime_for_sync = ctx.runtime.clone();
+        use_future(move || async move {
+            loop {
+                let rx_opt = runtime_for_sync.read().sync_status_rx.clone();
+                if let Some(rx) = rx_opt {
+                    let status = rx.borrow().clone();
+                    let ui_status = match status {
+                        codex_store::sync::AutoSyncStatus::Idle => SyncStatus::Idle,
+                        codex_store::sync::AutoSyncStatus::Committing
+                        | codex_store::sync::AutoSyncStatus::Pulling
+                        | codex_store::sync::AutoSyncStatus::Pushing => SyncStatus::Syncing,
+                        codex_store::sync::AutoSyncStatus::Conflict(files) => SyncStatus::Conflict(files.len()),
+                        codex_store::sync::AutoSyncStatus::Error(_) => SyncStatus::Syncing, // transient
+                    };
+                    *sync_status.write() = ui_status;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        });
+    }
     let mut palette_open = use_signal(|| false);
     let mut palette_mode = use_signal(|| crate::components::command_palette::PaletteMode::Command);
     let shared_acp_session = use_context::<Signal<Option<std::rc::Rc<crate::acp::AcpSession>>>>();

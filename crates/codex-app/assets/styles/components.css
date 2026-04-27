@@ -885,6 +885,27 @@
   flex-direction: column;
 }
 
+/* ── Conflict banner ─────────────────────────────────────────────────── */
+.conflict-banner {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  padding:     var(--space-2) var(--space-4);
+  background:  rgba(234, 179, 8, 0.1);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+  color:       var(--warning);
+  font-size:   var(--font-size-sm);
+  flex-shrink: 0;
+}
+.conflict-icon {
+  font-size: 16px;
+}
+.conflict-actions {
+  display:     flex;
+  gap:         var(--space-1);
+  margin-left: auto;
+}
+
 /* ── Agent Rail ─────────────────────────────────────────────────────────── */
 .agent-rail {
   display:        flex;

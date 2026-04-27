@@ -88,19 +88,21 @@ fn execute_command(
             if let Some(tmpl_name) = other.strip_prefix("template:") {
                 let templates = codex_core::templates::list_templates(&ctx.vault().root);
                 if let Some(tmpl) = templates.iter().find(|t| t.name == tmpl_name) {
-                    let title = "Untitled";
-                    let vault_name = &ctx.vault().config.vault_name;
-                    let content = codex_core::templates::expand(&tmpl.content, title, vault_name);
-                    let path = std::path::Path::new("Untitled.md");
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let title = format!("{} {ts_suffix}", tmpl.name);
+                    let vault_name = ctx.vault().config.vault_name.clone();
+                    let content = codex_core::templates::expand(&tmpl.content, &title, &vault_name);
+                    let filename = format!("{title}.md");
+                    let path = std::path::PathBuf::from(&filename);
                     let c = ctx;
                     let mut ts = *tab_state;
                     let mut ar = *active_route;
                     spawn(async move {
                         let vault = c.vault();
-                        if vault.save_document_content(path, &content).is_ok() {
+                        if vault.save_document_content(&path, &content).is_ok() {
                             let _ = vault.reindex();
-                            if let Ok(Some(doc)) = vault.store.find_document_by_slug("untitled") {
-                                ts.write().open(doc.id, "Untitled".into());
+                            if let Ok(Some(doc)) = vault.store.find_document_by_slug(&title.to_lowercase()) {
+                                ts.write().open(doc.id, title);
                                 *ar.write() = Route::Notes;
                             }
                         }
@@ -186,6 +188,27 @@ fn execute_command(
                 }
             });
         }
+        "create-tag" => {
+            let c = ctx;
+            spawn(async move {
+                let vault = c.vault();
+                if let codex_core::models::SyncConfig::Git { remote, branch, .. } = &vault.config.sync {
+                    let git = codex_store::sync::git::GitSync::new(
+                        vault.root.clone(), remote.clone(), branch.clone(),
+                    );
+                    // Auto-commit first so the tag captures current state
+                    let _ = git.auto_commit("[codex] snapshot");
+                    let tag_name = format!("snapshot-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                    match git.create_tag(&tag_name, Some("Codex vault snapshot")) {
+                        Ok(()) => {
+                            let _ = git.push_tags();
+                            tracing::info!("Created snapshot: {tag_name}");
+                        }
+                        Err(e) => tracing::warn!("Snapshot failed: {e}"),
+                    }
+                }
+            });
+        }
         "toggle-agent" => {
             // Handled by the toolbar — the palette just triggers a show_agent toggle.
             // The signal isn't accessible here, but the menu handler in app.rs handles it.
@@ -229,6 +252,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
         Cmd { id: "insert-drawing".into(), label: "Insert Drawing Here".into(), category: "Create".into() },
             Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
+            Cmd { id: "create-tag".into(), label: "Create Snapshot".into(), category: "Action".into() },
         Cmd { id: "icloud-vault".into(), label: "Create Vault in iCloud".into(), category: "Create".into() },
         ];
         let templates = codex_core::templates::list_templates(&ctx.vault().root);
@@ -415,6 +439,23 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             }
                                         };
                                         let full_prompt = format!("{context_prefix}{prompt}");
+
+                                        // Persist delegation to vault for audit trail
+                                        let vault = ctx.vault();
+                                        let ts = chrono::Local::now();
+                                        let del_path = format!(
+                                            "ai/delegations/{}.md",
+                                            ts.format("%Y%m%d-%H%M%S")
+                                        );
+                                        let del_content = format!(
+                                            "+++\ntitle = \"Delegation {}\"\ntags = [\"delegation\"]\n+++\n\n{}\n",
+                                            ts.format("%H:%M"),
+                                            prompt,
+                                        );
+                                        let _ = vault.save_document_content(
+                                            std::path::Path::new(&del_path),
+                                            &del_content,
+                                        );
 
                                         // Fire and forget — submit to the existing session
                                         spawn(async move {

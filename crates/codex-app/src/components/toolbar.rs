@@ -92,10 +92,10 @@ pub fn Toolbar(
         });
     };
 
-    let (sync_label, sync_title) = match *sync_status.read() {
-        SyncStatus::Idle        => ("", "Sync idle"),
-        SyncStatus::Syncing     => ("\u{27F3}", "Syncing with remote..."),
-        SyncStatus::Conflict(_) => ("\u{26A0}", "Sync conflict — check Settings > Sync for details"),
+    let (sync_label, sync_class, sync_title) = match *sync_status.read() {
+        SyncStatus::Idle        => ("\u{2713}", "sync-badge synced", "Synced".to_string()),
+        SyncStatus::Syncing     => ("\u{27F3}", "sync-badge syncing", "Syncing\u{2026}".to_string()),
+        SyncStatus::Conflict(n) => ("\u{26A0}", "sync-badge conflict", format!("{n} conflict(s)")),
     };
 
     let grouped_results = group_results(&results.read());
@@ -245,8 +245,8 @@ pub fn Toolbar(
                     },
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
-                if !sync_label.is_empty() {
-                    span { class: "sync-badge", title: "{sync_title}", "{sync_label}" }
+                if *sync_status.read() != SyncStatus::Idle || matches!(ctx.vault().config.sync, codex_core::models::SyncConfig::Git { .. }) {
+                    span { class: "{sync_class}", title: "{sync_title}", "{sync_label}" }
                 }
                 button {
                     class: if *show_agent.read() { "btn btn-ghost active" } else { "btn btn-ghost" },

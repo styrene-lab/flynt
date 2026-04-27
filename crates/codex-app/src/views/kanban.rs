@@ -211,6 +211,12 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
 
     let dragging: Signal<Option<TaskId>> = use_signal(|| None);
 
+    let mut adding_col = use_signal(|| false);
+    let mut new_col_name = use_signal(String::new);
+
+    let ctx_col = ctx.clone();
+    let board_for_add = board.clone();
+
     rsx! {
         div { class: "kanban-board",
             match &*tasks.read() {
@@ -222,6 +228,10 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                 .filter(|t| t.column == col.name && t.status != TaskStatus::Archived)
                                 .cloned()
                                 .collect();
+                            let col_empty = col_tasks.is_empty();
+                            let board_for_remove = board.clone();
+                            let col_name_remove = col.name.clone();
+                            let col_name_rename = col.name.clone();
                             rsx! {
                                 KanbanColumn {
                                     board_id: board.id.clone(),
@@ -230,8 +240,96 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                     tasks: col_tasks,
                                     dragging,
                                     refresh,
+                                    can_remove: col_empty,
+                                    on_remove: move |_| {
+                                        let c = ctx.clone();
+                                        let mut b = board_for_remove.clone();
+                                        let name = col_name_remove.clone();
+                                        spawn(async move {
+                                            let vault = c.vault();
+                                            b.columns.retain(|c| c.name != name);
+                                            let _ = tokio::task::spawn_blocking(move || {
+                                                vault.store.save_board(&b)
+                                            }).await;
+                                            *refresh.write() += 1;
+                                        });
+                                    },
+                                    on_rename: {
+                                        let board_for_rename = board.clone();
+                                        move |new_name: String| {
+                                            let c = ctx.clone();
+                                            let mut b = board_for_rename.clone();
+                                            let old_name = col_name_rename.clone();
+                                            spawn(async move {
+                                                let vault = c.vault();
+                                                // Rename column
+                                                if let Some(col) = b.columns.iter_mut().find(|c| c.name == old_name) {
+                                                    col.name = new_name.clone();
+                                                }
+                                                // Update tasks in this column
+                                                let _ = tokio::task::spawn_blocking(move || {
+                                                    vault.store.save_board(&b)?;
+                                                    let tasks = vault.store.list_tasks(&codex_core::store::TaskFilter {
+                                                        board_id: Some(b.id.clone()),
+                                                        column: Some(old_name),
+                                                        ..Default::default()
+                                                    })?;
+                                                    for mut t in tasks {
+                                                        t.column = new_name.clone();
+                                                        vault.store.save_task(&t)?;
+                                                    }
+                                                    Ok::<_, anyhow::Error>(())
+                                                }).await;
+                                                *refresh.write() += 1;
+                                            });
+                                        }
+                                    },
                                 }
                             }
+                        }
+                    }
+
+                    // Add column button
+                    if *adding_col.read() {
+                        div { class: "kanban-column add-column-form",
+                            input {
+                                class: "input input-sm",
+                                autofocus: true,
+                                value: "{new_col_name}",
+                                placeholder: "Column name",
+                                oninput: move |e| *new_col_name.write() = e.value(),
+                                onkeydown: move |e| {
+                                    match e.key() {
+                                        Key::Enter => {
+                                            let name = new_col_name.read().trim().to_string();
+                                            if name.is_empty() { return; }
+                                            let c = ctx_col.clone();
+                                            let mut b = board_for_add.clone();
+                                            b.columns.push(Column { name, wip_limit: None });
+                                            spawn(async move {
+                                                let vault = c.vault();
+                                                let _ = tokio::task::spawn_blocking(move || {
+                                                    vault.store.save_board(&b)
+                                                }).await;
+                                                *refresh.write() += 1;
+                                            });
+                                            *new_col_name.write() = String::new();
+                                            *adding_col.write() = false;
+                                        }
+                                        Key::Escape => {
+                                            *new_col_name.write() = String::new();
+                                            *adding_col.write() = false;
+                                        }
+                                        _ => {}
+                                    }
+                                },
+                            }
+                        }
+                    } else {
+                        button {
+                            class: "add-column-btn",
+                            onclick: move |_| *adding_col.write() = true,
+                            "+ Add column"
                         }
                     }
                 },
@@ -250,9 +348,14 @@ fn KanbanColumn(
     tasks:      Vec<Task>,
     dragging:   Signal<Option<TaskId>>,
     mut refresh: Signal<u64>,
+    can_remove: bool,
+    on_remove:  EventHandler<()>,
+    on_rename:  EventHandler<String>,
 ) -> Element {
     let ctx         = use_context::<AppContext>();
     let col_name    = column.name.clone();
+    let mut editing_name = use_signal(|| false);
+    let mut edit_value = use_signal(|| column.name.clone());
     let count       = tasks.len();
     let over_wip    = column.wip_limit.map(|l| count > l as usize).unwrap_or(false);
     let wip_label   = match column.wip_limit {
@@ -340,8 +443,45 @@ fn KanbanColumn(
             },
 
             div { class: "kanban-column-header",
-                span { class: "kanban-column-name", "{col_name}" }
+                if *editing_name.read() {
+                    input {
+                        class: "kanban-column-name-input",
+                        autofocus: true,
+                        value: "{edit_value}",
+                        oninput: move |e| *edit_value.write() = e.value(),
+                        onkeydown: move |e| {
+                            match e.key() {
+                                Key::Enter => {
+                                    let new_name = edit_value.read().trim().to_string();
+                                    if !new_name.is_empty() && new_name != col_name {
+                                        on_rename.call(new_name);
+                                    }
+                                    *editing_name.write() = false;
+                                }
+                                Key::Escape => {
+                                    *edit_value.write() = col_name.clone();
+                                    *editing_name.write() = false;
+                                }
+                                _ => {}
+                            }
+                        },
+                    }
+                } else {
+                    span {
+                        class: "kanban-column-name",
+                        ondoubleclick: move |_| *editing_name.write() = true,
+                        "{col_name}"
+                    }
+                }
                 span { class: if over_wip { "kanban-wip over" } else { "kanban-wip" }, "{wip_label}" }
+                if can_remove {
+                    button {
+                        class: "kanban-column-remove",
+                        title: "Remove empty column",
+                        onclick: move |_| on_remove.call(()),
+                        "\u{2715}"
+                    }
+                }
             }
 
             div { class: "kanban-column-body",

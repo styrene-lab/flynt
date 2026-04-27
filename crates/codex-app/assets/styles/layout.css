@@ -147,5 +147,19 @@
 
 .sync-badge {
   font-size: var(--font-size-xs);
-  color:     var(--warning);
+  padding:   1px var(--space-1);
+  border-radius: var(--radius-sm);
 }
+.sync-badge.synced {
+  color:     rgb(34, 197, 94);
+  opacity:   0.6;
+}
+.sync-badge.syncing {
+  color:     var(--primary);
+  animation: spin 1.5s linear infinite;
+}
+.sync-badge.conflict {
+  color:      var(--warning);
+  background: rgba(234, 179, 8, 0.1);
+}
+@keyframes spin { to { transform: rotate(360deg); } }

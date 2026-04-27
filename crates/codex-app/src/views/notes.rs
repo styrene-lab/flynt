@@ -1180,20 +1180,26 @@ pub fn NotesView() -> Element {
     let mut save_err   = use_signal(|| Option::<String>::None);
     let mut save_state = use_signal(|| SaveState::Clean);
     let mut render_ver = use_signal(|| 0u32);
+    let mut conflict_detected = use_signal(|| false);
 
-    let rendered: Resource<Option<(std::path::PathBuf, String, String, String)>> = use_resource(move || {
+    let rendered: Resource<Option<(std::path::PathBuf, String, String, String, bool)>> = use_resource(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
         let vault = ctx_res.vault();
         async move {
             let Some(doc_id) = selected_id else { return None; };
-            tokio::task::spawn_blocking(move || {
+            let result = tokio::task::spawn_blocking(move || {
                 vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
                     let html = render_html_with_store(&doc.content, Some(&*vault.store), Some(&vault.root));
-                    (doc.path.clone(), doc.title.clone(), doc.content.clone(), html)
+                    let has_conflicts = codex_core::conflict::has_conflict_markers(&doc.content);
+                    (doc.path.clone(), doc.title.clone(), doc.content.clone(), html, has_conflicts)
                 })
             })
-            .await.ok().flatten()
+            .await.ok().flatten();
+            if let Some(ref r) = result {
+                *conflict_detected.write() = r.4;
+            }
+            result
         }
     });
 
@@ -1202,7 +1208,7 @@ pub fn NotesView() -> Element {
     use_effect(move || {
         let current_id = tab_state.read().active_id().cloned();
         if current_id == *synced_doc_id.peek() { return; }
-        if let Some(Some((_, _, body, _))) = &*rendered.read() {
+        if let Some(Some((_, _, body, _, _))) = &*rendered.read() {
             *synced_doc_id.write() = current_id;
             *edit_body.write() = body.clone();
             *save_state.write() = SaveState::Clean;
@@ -1223,7 +1229,7 @@ pub fn NotesView() -> Element {
             let eb = edit_body.peek().clone();
             if !eb.is_empty() {
                 eb
-            } else if let Some(Some((_, _, body, _))) = &*rendered.peek() {
+            } else if let Some(Some((_, _, body, _, _))) = &*rendered.peek() {
                 body.clone()
             } else {
                 return;
@@ -1270,7 +1276,7 @@ pub fn NotesView() -> Element {
                     "save" | "autosave" => {
                         let content = data.to_string();
                         // peek — do NOT subscribe reactively
-                        if let Some(Some((p, _, _, _))) = &*rendered.peek() {
+                        if let Some(Some((p, _, _, _, _))) = &*rendered.peek() {
                             let path = p.clone();
                             let vault = c.vault();
                             match tokio::task::spawn_blocking(move || {
@@ -1346,7 +1352,7 @@ pub fn NotesView() -> Element {
             div { class: "notes-loading muted", "Loading…" }
         };
     };
-    let Some((rel_path, title, body, _html)) = data else {
+    let Some((rel_path, title, body, _html, _)) = data else {
         return rsx! {
             crate::components::TabBar {}
             div { class: "notes-empty",
@@ -1404,6 +1410,59 @@ pub fn NotesView() -> Element {
     rsx! {
         crate::components::TabBar {}
         div { class: "notes-pane",
+            // Conflict resolution banner
+            if *conflict_detected.read() {
+                div { class: "conflict-banner",
+                    span { class: "conflict-icon", "\u{26A0}" }
+                    span { "This file has merge conflicts." }
+                    div { class: "conflict-actions",
+                        button {
+                            class: "btn btn-sm btn-ghost",
+                            onclick: move |_| {
+                                let content = edit_body.read().clone();
+                                let resolved = codex_core::conflict::resolve_ours(&content);
+                                *edit_body.write() = resolved.clone();
+                                // Auto-save
+                                let p = rendered.read().as_ref().and_then(|r| r.as_ref().map(|t| t.0.clone()));
+                                let c = ctx.clone();
+                                if let Some(path) = p {
+                                    spawn(async move {
+                                        let vault = c.vault();
+                                        let _ = vault.save_document_content(&path, &resolved);
+                                        *render_ver.write() += 1;
+                                    });
+                                }
+                            },
+                            "Keep mine"
+                        }
+                        button {
+                            class: "btn btn-sm btn-ghost",
+                            onclick: move |_| {
+                                let content = edit_body.read().clone();
+                                let resolved = codex_core::conflict::resolve_theirs(&content);
+                                *edit_body.write() = resolved.clone();
+                                let p = rendered.read().as_ref().and_then(|r| r.as_ref().map(|t| t.0.clone()));
+                                let c = ctx.clone();
+                                if let Some(path) = p {
+                                    spawn(async move {
+                                        let vault = c.vault();
+                                        let _ = vault.save_document_content(&path, &resolved);
+                                        *render_ver.write() += 1;
+                                    });
+                                }
+                            },
+                            "Keep theirs"
+                        }
+                        button {
+                            class: "btn btn-sm btn-primary",
+                            onclick: move |_| {
+                                *mode.write() = EditMode::Source;
+                            },
+                            "Edit manually"
+                        }
+                    }
+                }
+            }
             div { class: "notes-topbar",
                 if *renaming.read() {
                     div { class: "rename-inline",
