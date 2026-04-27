@@ -8,17 +8,21 @@ use dioxus::prelude::*;
 pub fn ProviderSettingsSection() -> Element {
     let mut refresh = use_signal(|| 0u64);
 
-    // Probe providers on mount and on refresh
-    let statuses = use_memo(move || {
+    // Probe providers off the main thread
+    let statuses = use_resource(move || {
         let _ = refresh.read();
-        providers::probe_all()
+        async move {
+            tokio::task::spawn_blocking(providers::probe_all)
+                .await
+                .unwrap_or_default()
+        }
     });
 
     rsx! {
         section { class: "settings-section",
             h2 { class: "settings-heading", "Providers" }
             div { class: "settings-rows",
-                for (provider, status) in statuses.read().iter() {
+                for (provider, status) in statuses.read().as_ref().unwrap_or(&vec![]).iter() {
                     ProviderRow {
                         provider,
                         status: status.clone(),

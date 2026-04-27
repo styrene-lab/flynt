@@ -423,7 +423,6 @@ pub enum OmegonChannel {
     /// Latest nightly build (-nightly.YYYYMMDD suffix).
     Nightly,
     /// Pinned to a specific version string (e.g., "0.17.0-rc.1").
-    #[serde(untagged)]
     Pinned(String),
 }
 
@@ -501,6 +500,33 @@ pub fn resolve_omegon_binary(config: &LocalRuntimeConfig) -> std::path::PathBuf 
     std::path::PathBuf::from("omegon")
 }
 
+/// Parse a version string into (major, minor, patch, prerelease) for sorting.
+/// "v0.17.0-rc.1" → (0, 17, 0, "rc.1"), "0.16.1" → (0, 16, 1, "")
+fn parse_version_key(v: &str) -> (u32, u32, u32, String) {
+    let bare = v.strip_prefix('v').unwrap_or(v);
+    let (version_part, pre) = if let Some(idx) = bare.find('-') {
+        (&bare[..idx], bare[idx + 1..].to_string())
+    } else {
+        (bare, String::new())
+    };
+    let parts: Vec<u32> = version_part.split('.').filter_map(|s| s.parse().ok()).collect();
+    (
+        parts.first().copied().unwrap_or(0),
+        parts.get(1).copied().unwrap_or(0),
+        parts.get(2).copied().unwrap_or(0),
+        pre,
+    )
+}
+
+/// Sort version strings by semver (newest first).
+fn sort_versions_newest_first(versions: &mut [&String]) {
+    versions.sort_by(|a, b| {
+        let ka = parse_version_key(a);
+        let kb = parse_version_key(b);
+        kb.cmp(&ka) // descending
+    });
+}
+
 /// Scan ~/.omegon/versions/ and pick the best match for the channel.
 fn resolve_from_versions_dir(
     versions_dir: &std::path::Path,
@@ -523,44 +549,39 @@ fn resolve_from_versions_dir(
             }).cloned()
         }
         OmegonChannel::Stable => {
-            // Latest version that has no prerelease suffix
             let mut stable: Vec<&String> = entries.iter()
                 .filter(|v| {
                     let bare = v.strip_prefix('v').unwrap_or(v);
                     !bare.contains("-rc.") && !bare.contains("-nightly.")
                 })
                 .collect();
-            stable.sort();
-            stable.last().cloned().cloned()
+            sort_versions_newest_first(&mut stable);
+            stable.first().cloned().cloned()
         }
         OmegonChannel::Rc => {
-            // Latest -rc.N version, or fall back to latest stable
             let mut rcs: Vec<&String> = entries.iter()
                 .filter(|v| v.contains("-rc."))
                 .collect();
-            rcs.sort();
-            rcs.last().cloned().cloned()
+            sort_versions_newest_first(&mut rcs);
+            rcs.first().cloned().cloned()
                 .or_else(|| {
-                    // Fall back to latest stable
                     let mut stable: Vec<&String> = entries.iter()
                         .filter(|v| !v.contains("-nightly."))
                         .collect();
-                    stable.sort();
-                    stable.last().cloned().cloned()
+                    sort_versions_newest_first(&mut stable);
+                    stable.first().cloned().cloned()
                 })
         }
         OmegonChannel::Nightly => {
-            // Latest -nightly.YYYYMMDD version
             let mut nightlies: Vec<&String> = entries.iter()
                 .filter(|v| v.contains("-nightly."))
                 .collect();
-            nightlies.sort();
-            nightlies.last().cloned().cloned()
+            sort_versions_newest_first(&mut nightlies);
+            nightlies.first().cloned().cloned()
                 .or_else(|| {
-                    // Fall back to latest anything
                     let mut all: Vec<&String> = entries.iter().collect();
-                    all.sort();
-                    all.last().cloned().cloned()
+                    sort_versions_newest_first(&mut all);
+                    all.first().cloned().cloned()
                 })
         }
     };

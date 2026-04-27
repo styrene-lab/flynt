@@ -245,12 +245,31 @@ pub fn App() -> Element {
                                         }
                                     }
                                 }
-                                std::process::Command::new(&d2_bin)
+                                // Spawn with timeout to prevent blocking the thread pool
+                                let mut child = std::process::Command::new(&d2_bin)
                                     .env("PATH", &path_env)
                                     .args(["--theme", &theme, "--layout", &layout])
                                     .arg(&input)
                                     .arg(&output)
-                                    .output()
+                                    .stdout(std::process::Stdio::piped())
+                                    .stderr(std::process::Stdio::piped())
+                                    .spawn()?;
+                                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                                loop {
+                                    match child.try_wait() {
+                                        Ok(Some(_)) => break,
+                                        Ok(None) if std::time::Instant::now() > deadline => {
+                                            let _ = child.kill();
+                                            return Err(std::io::Error::new(
+                                                std::io::ErrorKind::TimedOut,
+                                                "D2 render timed out after 30s",
+                                            ));
+                                        }
+                                        Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+                                        Err(e) => return Err(e),
+                                    }
+                                }
+                                child.wait_with_output()
                             }).await;
                             match result {
                                 Ok(Ok(out)) if out.status.success() => {
@@ -379,9 +398,20 @@ pub fn App() -> Element {
                             let mut choose_ctx = ctx.clone();
                             let import_ctx = ctx.clone();
 
-                            // "Get started" — one-click setup
+                            // "Get started" / "Open your notebook"
                             let on_get_started = move |_| {
                                 *welcome_error.write() = None;
+
+                                // If we already have a vault, switch to it
+                                let existing = launcher_profile().last_vault_root.clone();
+                                if let Some(ref root) = existing {
+                                    if root.exists() {
+                                        start_ctx.set_runtime(runtime_state_for_vault_root(root.clone()));
+                                        *active_route.write() = Route::Notes;
+                                        return;
+                                    }
+                                }
+
                                 let vault_root = dirs::document_dir()
                                     .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
                                     .join("Codex");
@@ -624,37 +654,44 @@ pub fn App() -> Element {
                                             *clone_error.write() = None;
 
                                             let token = clone_token.read().trim().to_string();
-                                            let clone_result = if token.is_empty() {
-                                                OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch)
-                                            } else {
-                                                // Token provided — use HTTPS token auth
-                                                codex_store::sync::GitSync::clone_repo_with_token(&url, &branch, &dest, &token)
-                                                    .map(|_| codex_store::vault::Vault::open(&dest).unwrap())
-                                            };
-                                            match clone_result {
-                                                Ok(_vault) => {
-                                                    let mut profile = launcher_profile();
-                                                    profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
-                                                        local_path: dest.clone(),
-                                                        repo: url,
-                                                        branch,
-                                                    });
-                                                    profile.last_vault_root = Some(dest.clone());
-                                                    profile.wizard_completed = true;
-                                                    if !profile.recent_vaults.contains(&dest) {
-                                                        profile.recent_vaults.push(dest.clone());
+                                            spawn(async move {
+                                                let clone_result = tokio::task::spawn_blocking(move || {
+                                                    if token.is_empty() {
+                                                        OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch)
+                                                    } else {
+                                                        codex_store::sync::GitSync::clone_repo_with_token(&url, &branch, &dest, &token)
+                                                            .and_then(|_| codex_store::vault::Vault::open(&dest).map_err(Into::into))
+                                                    }.map(|_| (dest, url, branch))
+                                                }).await;
+
+                                                match clone_result {
+                                                    Ok(Ok((dest, url, branch))) => {
+                                                        let mut profile = launcher_profile();
+                                                        profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
+                                                            local_path: dest.clone(),
+                                                            repo: url,
+                                                            branch,
+                                                        });
+                                                        profile.last_vault_root = Some(dest.clone());
+                                                        profile.wizard_completed = true;
+                                                        if !profile.recent_vaults.contains(&dest) {
+                                                            profile.recent_vaults.push(dest.clone());
+                                                        }
+                                                        let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
+                                                        launcher_profile.set(profile);
+                                                        github_ctx.set_runtime(runtime_state_for_vault_root(dest));
+                                                        *clone_dialog_open.write() = false;
+                                                        *active_route.write() = Route::Notes;
                                                     }
-                                                    let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                                                    launcher_profile.set(profile);
-                                                    github_ctx.set_runtime(runtime_state_for_vault_root(dest));
-                                                    *clone_dialog_open.write() = false;
-                                                    *active_route.write() = Route::Notes;
+                                                    Ok(Err(e)) => {
+                                                        *clone_error.write() = Some(format!("{e:#}"));
+                                                    }
+                                                    Err(e) => {
+                                                        *clone_error.write() = Some(format!("Clone failed: {e}"));
+                                                    }
                                                 }
-                                                Err(e) => {
-                                                    *clone_error.write() = Some(format!("{e:#}"));
-                                                }
-                                            }
-                                            *clone_busy.write() = false;
+                                                *clone_busy.write() = false;
+                                            });
                                         }
                                     },
                                     if *clone_busy.read() { "Cloning..." } else { "Clone" }

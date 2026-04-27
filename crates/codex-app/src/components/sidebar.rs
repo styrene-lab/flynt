@@ -424,6 +424,8 @@ fn VaultSwitcher() -> Element {
     };
 
     // Load manifest vaults (if manifest is configured)
+    let mut vault_error: Signal<Option<String>> = use_signal(|| None);
+
     let manifest_vaults: Vec<codex_core::manifest::ManifestVault> = profile.read().manifest_dir
         .as_ref()
         .and_then(|dir| codex_core::manifest::load_manifest_with_local(dir).ok())
@@ -532,8 +534,8 @@ fn VaultSwitcher() -> Element {
                                         }).await;
                                         match result {
                                             Ok(Ok(p)) => profile.set(p),
-                                            Ok(Err(e)) => tracing::warn!("Clone failed: {e}"),
-                                            Err(e) => tracing::warn!("Clone task failed: {e}"),
+                                            Ok(Err(e)) => *vault_error.write() = Some(format!("Clone failed: {e}")),
+                                            Err(e) => *vault_error.write() = Some(format!("Clone failed: {e}")),
                                         }
                                     });
                                 },
@@ -590,8 +592,8 @@ fn VaultSwitcher() -> Element {
                                     }).await;
                                     match result {
                                         Ok(Ok(p)) => profile.set(p),
-                                        Ok(Err(e)) => tracing::warn!("Add vault failed: {e}"),
-                                        Err(e) => tracing::warn!("Add vault task failed: {e}"),
+                                        Ok(Err(e)) => *vault_error.write() = Some(format!("{e}")),
+                                        Err(e) => *vault_error.write() = Some(format!("{e}")),
                                     }
                                 });
                             },
@@ -609,6 +611,18 @@ fn VaultSwitcher() -> Element {
                     }
                 }
             } else {
+                // Error display
+                if let Some(ref err) = *vault_error.read() {
+                    div { class: "vault-error",
+                        span { "{err}" }
+                        button {
+                            class: "vault-error-dismiss",
+                            onclick: move |_| *vault_error.write() = None,
+                            "\u{2715}"
+                        }
+                    }
+                }
+
                 div { class: "vault-actions",
                     button {
                         class: "sidebar-doc muted",

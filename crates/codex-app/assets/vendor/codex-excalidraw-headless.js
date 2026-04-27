@@ -1,52 +1,63 @@
 // Headless Excalidraw SVG export — uses the public mount/export/unmount API.
 // Loaded after excalidraw.bundle.js. Does not depend on minified internals.
+// Serializes concurrent requests to prevent mount/unmount races.
 (function() {
     if (!window.CodexExcalidraw) return;
 
-    // Override or add renderSceneToSvg using the public API
-    window.CodexExcalidraw.renderSceneToSvg = async function(sceneJson) {
+    // Queue to serialize headless render requests
+    var queue = Promise.resolve();
+
+    window.CodexExcalidraw.renderSceneToSvg = function(sceneJson) {
+        // Chain onto the queue so concurrent calls execute one at a time
+        queue = queue.then(function() {
+            return renderOnce(sceneJson);
+        }).catch(function() { return ''; });
+        return queue;
+    };
+
+    async function renderOnce(sceneJson) {
         try {
             var scene = typeof sceneJson === 'string' ? JSON.parse(sceneJson) : sceneJson;
             var elements = scene.elements || [];
             if (elements.length === 0) return '';
 
-            // Create a hidden container
+            // Create a hidden container with unique ID
+            var containerId = 'codex-excalidraw-headless-' + Date.now();
             var container = document.createElement('div');
-            container.id = 'codex-excalidraw-headless';
+            container.id = containerId;
             container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
             document.body.appendChild(container);
 
-            // Mount Excalidraw into the hidden container
-            var apiReady = new Promise(function(resolve) {
+            // Save current API reference
+            var prevApi = window.CodexExcalidraw._api;
+            var prevRoot = window.CodexExcalidraw._root;
+
+            // Mount into the hidden container
+            window.CodexExcalidraw.mount(containerId, JSON.stringify(scene), function() {});
+
+            // Wait for API to be ready
+            await new Promise(function(resolve) {
                 var check = setInterval(function() {
                     if (window.CodexExcalidraw._api) {
                         clearInterval(check);
                         resolve();
                     }
                 }, 10);
-                // Timeout after 5 seconds
                 setTimeout(function() { clearInterval(check); resolve(); }, 5000);
             });
-
-            // Save current API reference
-            var prevApi = window.CodexExcalidraw._api;
-            var prevRoot = window.CodexExcalidraw._root;
-
-            window.CodexExcalidraw.mount('codex-excalidraw-headless', JSON.stringify(scene), function() {});
-            await apiReady;
 
             var svg = '';
             if (window.CodexExcalidraw._api) {
                 svg = await window.CodexExcalidraw.exportSvg() || '';
             }
 
-            // Cleanup: unmount and remove container
+            // Cleanup
             if (window.CodexExcalidraw._root) {
                 try { window.CodexExcalidraw._root.unmount(); } catch(e) {}
             }
-            document.body.removeChild(container);
+            if (container.parentNode) container.parentNode.removeChild(container);
 
-            // Restore previous API state
+            // Restore previous state
             window.CodexExcalidraw._api = prevApi;
             window.CodexExcalidraw._root = prevRoot;
 
@@ -54,5 +65,5 @@
         } catch(e) {
             return '';
         }
-    };
+    }
 })();
