@@ -2,6 +2,7 @@
 name = "codex-app"
 version.workspace = true
 edition.workspace = true
+default-run = "codyx"
 
 [dependencies]
 codex-core  = { workspace = true }

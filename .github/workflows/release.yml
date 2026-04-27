@@ -71,8 +71,11 @@ jobs:
           # Find the built binary — dx output path varies by version
           BIN=""
           for candidate in \
+            "target/dx/codex-app/release/linux/app/codyx" \
             "target/dx/codex-app/release/linux/app/codex-app" \
+            "target/dx/codex-app/release/linux/codyx" \
             "target/dx/codex-app/release/linux/codex-app" \
+            "target/release/codyx" \
             "target/release/codex-app"; do
             if [ -f "$candidate" ]; then
               BIN="$candidate"
@@ -82,7 +85,7 @@ jobs:
 
           if [ -z "$BIN" ]; then
             echo "ERROR: Could not find built binary. Contents of target/dx/:"
-            find target/dx/ -type f -name "codex*" 2>/dev/null || true
+            find target/dx/ -type f \( -name "codex*" -o -name "codyx*" \) 2>/dev/null || true
             exit 1
           fi
 
