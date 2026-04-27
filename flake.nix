@@ -40,7 +40,7 @@
         linuxNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
           pkg-config
           cmake
-          wrapGAppsHook
+          wrapGAppsHook3
         ]);
 
         # Environment variables for pkg-config discovery on Linux
@@ -79,7 +79,7 @@
             pkgs.pkg-config
             pkgs.cmake
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-            pkgs.wrapGAppsHook
+            pkgs.wrapGAppsHook3
           ];
 
           buildInputs = [
