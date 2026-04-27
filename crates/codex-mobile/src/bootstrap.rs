@@ -41,6 +41,13 @@ pub fn bootstrap() -> Result<MobileRuntime> {
             for e in &errs {
                 warn!("Index error: {e}");
             }
+            // Create a welcome note for fresh vaults
+            if n == 0 {
+                let welcome = std::path::PathBuf::from("Welcome.md");
+                let content = "+++\ntitle = \"Welcome\"\ntags = []\n+++\n\n# Welcome to Codex\n\nThis is your first note. Start writing, or explore the app.\n\n- **Notes** — write and organize your thoughts\n- **Board** — track tasks with kanban boards\n- **Graph** — see how your notes connect\n";
+                let _ = vault.save_document_content(&welcome, content);
+                let _ = vault.reindex();
+            }
         }
         Err(e) => warn!("Reindex failed: {e}"),
     }

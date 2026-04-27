@@ -12,6 +12,8 @@ pub fn WelcomeView(
 ) -> Element {
     let mut show_advanced = use_signal(|| false);
     let mut show_sync_options = use_signal(|| false);
+    let has_existing_vault = launcher_profile.last_vault_root.is_some()
+        || !launcher_profile.known_vaults.is_empty();
 
     rsx! {
         div { class: "view-welcome",
@@ -27,15 +29,22 @@ pub fn WelcomeView(
                 // ── Primary paths ─────────────────────────────────────
                 div { class: "welcome-paths",
 
-                    // Path 1: Just start writing (tier 3)
+                    // Path 1: Start writing or return to existing notebook
                     button {
                         class: "welcome-path-card primary",
                         onclick: move |_| on_get_started.call(()),
                         div { class: "welcome-path-icon", "\u{270F}" }
                         div { class: "welcome-path-content",
-                            span { class: "welcome-path-title", "Start writing" }
-                            span { class: "welcome-path-desc",
-                                "Create a notebook in your Documents folder. You can set up sync later."
+                            if has_existing_vault {
+                                span { class: "welcome-path-title", "Open your notebook" }
+                                span { class: "welcome-path-desc",
+                                    "Return to your notes."
+                                }
+                            } else {
+                                span { class: "welcome-path-title", "Start writing" }
+                                span { class: "welcome-path-desc",
+                                    "Create a notebook in your Documents folder. You can set up sync later."
+                                }
                             }
                         }
                     }

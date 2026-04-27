@@ -744,7 +744,9 @@ pub fn SettingsView() -> Element {
                 // ── Save bar ─────────────────────────────────────────────────
                 div { class: "settings-save-bar",
                     button { class: "btn btn-primary", onclick: save, "Save changes" }
-                    button { class: "btn btn-ghost", onclick: publish_preview, "Export local preview" }
+                    if *show_advanced.read() {
+                        button { class: "btn btn-ghost", onclick: publish_preview, "Export local preview" }
+                    }
                     if let Some((kind, msg)) = *save_msg.read() {
                         span {
                             class: if kind == "ok" { "save-msg ok" } else { "save-msg err" },

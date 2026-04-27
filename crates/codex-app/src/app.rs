@@ -290,6 +290,7 @@ pub fn App() -> Element {
     let mut clone_url: Signal<String> = use_signal(|| "git@github.com:".to_string());
     let mut clone_branch: Signal<String> = use_signal(|| "main".to_string());
     let mut clone_error: Signal<Option<String>> = use_signal(|| None);
+    let mut clone_token: Signal<String> = use_signal(String::new);
     let mut clone_busy = use_signal(|| false);
 
     // Welcome screen error banner
@@ -547,15 +548,15 @@ pub fn App() -> Element {
                         onclick: move |_| *clone_dialog_open.write() = false,
                         div { class: "modal-dialog",
                             onclick: move |e| e.stop_propagation(),
-                            h2 { "Clone remote vault" }
-                            p { class: "modal-hint", "Enter the Git repository URL and branch. SSH (git@...) and HTTPS both work." }
+                            h2 { "Connect a notebook" }
+                            p { class: "modal-hint", "Enter the URL for your notebook. This is usually a link from GitHub, a Styrene Hub, or another hosting service." }
 
                             div { class: "modal-field",
-                                label { "Repository URL" }
+                                label { "Notebook URL" }
                                 input {
                                     r#type: "text",
                                     value: "{clone_url}",
-                                    placeholder: "git@github.com:user/vault.git",
+                                    placeholder: "https://github.com/you/my-notebook.git",
                                     oninput: move |e| *clone_url.write() = e.value(),
                                 }
                             }
@@ -566,6 +567,16 @@ pub fn App() -> Element {
                                     value: "{clone_branch}",
                                     placeholder: "main",
                                     oninput: move |e| *clone_branch.write() = e.value(),
+                                }
+                            }
+
+                            div { class: "modal-field",
+                                label { "Access token (optional)" }
+                                input {
+                                    r#type: "password",
+                                    value: "{clone_token}",
+                                    placeholder: "Only needed for private notebooks",
+                                    oninput: move |e| *clone_token.write() = e.value(),
                                 }
                             }
 
@@ -612,7 +623,15 @@ pub fn App() -> Element {
                                             *clone_busy.write() = true;
                                             *clone_error.write() = None;
 
-                                            match OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch) {
+                                            let token = clone_token.read().trim().to_string();
+                                            let clone_result = if token.is_empty() {
+                                                OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch)
+                                            } else {
+                                                // Token provided — use HTTPS token auth
+                                                codex_store::sync::GitSync::clone_repo_with_token(&url, &branch, &dest, &token)
+                                                    .map(|_| codex_store::vault::Vault::open(&dest).unwrap())
+                                            };
+                                            match clone_result {
                                                 Ok(_vault) => {
                                                     let mut profile = launcher_profile();
                                                     profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
