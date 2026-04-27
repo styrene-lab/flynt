@@ -5,6 +5,7 @@ use std::path::PathBuf;
 #[derive(Clone, PartialEq)]
 enum Step {
     Welcome,
+    SyncChoice,
     RepoInput,
     ManifestInput,
     ManifestVaults,
@@ -30,52 +31,87 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
     rsx! {
         div { class: "onboarding",
             match step.read().clone() {
+                // ── Welcome: use-case driven ────────────────────────
                 Step::Welcome => rsx! {
                     div { class: "onboarding-card",
-                        h1 { class: "onboarding-title", "Welcome to Codex" }
+                        h1 { class: "onboarding-title", "Codex" }
                         p { class: "onboarding-desc",
-                            "Your local-first knowledge vault. Sync notes across devices with git, or start fresh."
+                            "Your notes, ideas, and projects — always yours."
                         }
 
-                        div { class: "onboarding-actions",
+                        div { class: "onboarding-paths",
                             button {
-                                class: "btn btn-primary",
-                                onclick: move |_| *step.write() = Step::ManifestInput,
-                                "Connect vaults"
-                            }
-                            button {
-                                class: "btn btn-ghost",
-                                onclick: move |_| *step.write() = Step::RepoInput,
-                                "Clone single repo"
-                            }
-                            button {
-                                class: "btn btn-ghost",
+                                class: "onboarding-path primary",
                                 onclick: move |_| {
                                     let vault_root = crate::bootstrap::default_vault_root();
                                     on_complete.call(vault_root);
                                 },
-                                "Create local vault"
+                                span { class: "onboarding-path-title", "Start writing" }
+                                span { class: "onboarding-path-desc", "Create a local notebook" }
+                            }
+
+                            button {
+                                class: "onboarding-path",
+                                onclick: move |_| *step.write() = Step::SyncChoice,
+                                span { class: "onboarding-path-title", "Sync across devices" }
+                                span { class: "onboarding-path-desc", "Keep notes in sync between devices" }
+                            }
+
+                            button {
+                                class: "onboarding-path",
+                                onclick: move |_| *step.write() = Step::RepoInput,
+                                span { class: "onboarding-path-title", "Join a shared vault" }
+                                span { class: "onboarding-path-desc", "Paste a link someone shared with you" }
                             }
                         }
                     }
                 },
 
-                // ── Manifest flow ───────────────────────────────────────
+                // ── Sync choice ─────────────────────────────────────
+                Step::SyncChoice => rsx! {
+                    div { class: "onboarding-card",
+                        h2 { class: "onboarding-title", "How do you sync?" }
+
+                        div { class: "onboarding-paths",
+                            button {
+                                class: "onboarding-path",
+                                onclick: move |_| *step.write() = Step::ManifestInput,
+                                span { class: "onboarding-path-title", "I have multiple vaults" }
+                                span { class: "onboarding-path-desc", "Connect your vault manifest to discover all your notebooks" }
+                            }
+
+                            button {
+                                class: "onboarding-path",
+                                onclick: move |_| *step.write() = Step::RepoInput,
+                                span { class: "onboarding-path-title", "I have one vault" }
+                                span { class: "onboarding-path-desc", "Connect a single notebook from GitHub or a Styrene Hub" }
+                            }
+                        }
+
+                        button {
+                            class: "btn btn-ghost",
+                            onclick: move |_| *step.write() = Step::Welcome,
+                            "Back"
+                        }
+                    }
+                },
+
+                // ── Manifest flow ───────────────────────────────────
                 Step::ManifestInput => rsx! {
                     div { class: "onboarding-card",
                         h2 { class: "onboarding-title", "Connect Your Vaults" }
                         p { class: "onboarding-desc",
-                            "Enter the URL of your vault manifest repository. This is a small repo that lists all your vaults."
+                            "Enter your vault manifest URL and a personal access token."
                         }
 
                         div { class: "onboarding-form",
                             label { class: "onboarding-field",
-                                span { "Manifest repo URL" }
+                                span { "Manifest URL" }
                                 input {
                                     class: "input",
                                     r#type: "url",
                                     value: "{repo_url}",
-                                    placeholder: "https://github.com/user/codex-manifest.git",
+                                    placeholder: "https://github.com/you/codex-manifest.git",
                                     oninput: move |e| *repo_url.write() = e.value(),
                                 }
                             }
@@ -101,7 +137,6 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     *step.write() = Step::Cloning;
                                     *error_msg.write() = None;
 
-                                    // Clone manifest repo to a temp location
                                     let dest = crate::bootstrap::default_vault_root()
                                         .parent()
                                         .unwrap_or(&PathBuf::from("."))
@@ -109,7 +144,6 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     let dest_for_result = dest.clone();
                                     spawn(async move {
                                         match tokio::task::spawn_blocking(move || {
-                                            // Remove existing manifest dir if present
                                             let _ = std::fs::remove_dir_all(&dest);
                                             crate::oauth::clone_with_token(&url, "main", &dest, &tk)?;
                                             codex_core::manifest::load_manifest(&dest)
@@ -134,7 +168,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                             }
                             button {
                                 class: "btn btn-ghost",
-                                onclick: move |_| *step.write() = Step::Welcome,
+                                onclick: move |_| *step.write() = Step::SyncChoice,
                                 "Back"
                             }
                         }
@@ -147,25 +181,23 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                         if let Some(ref m) = *manifest.read() {
                             if !m.identity.name.is_empty() {
                                 p { class: "onboarding-desc",
-                                    "Signed in as {m.identity.name}. Select a vault to sync to this device."
+                                    "Welcome back, {m.identity.name}. Pick a vault to sync."
                                 }
                             }
                             div { class: "onboarding-vault-list",
                                 for (idx, vault) in m.vaults.iter().enumerate() {
                                     {
                                         let is_selected = *selected_vault.read() == Some(idx);
-                                        let vault_name_display = vault.name.clone();
-                                        let role_label = vault.role.label();
-                                        let hub_label = vault.hub.as_deref().unwrap_or("git");
+                                        let name = vault.name.clone();
+                                        let role = vault.role.label();
                                         rsx! {
                                             button {
                                                 key: "vault-{idx}",
                                                 class: if is_selected { "onboarding-vault-item selected" } else { "onboarding-vault-item" },
                                                 onclick: move |_| *selected_vault.write() = Some(idx),
-                                                div { class: "onboarding-vault-name", "{vault_name_display}" }
+                                                div { class: "onboarding-vault-name", "{name}" }
                                                 div { class: "onboarding-vault-meta",
-                                                    span { class: "onboarding-vault-role", "{role_label}" }
-                                                    span { class: "onboarding-vault-hub", "{hub_label}" }
+                                                    span { class: "onboarding-vault-role", "{role}" }
                                                 }
                                             }
                                         }
@@ -197,7 +229,6 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                             crate::oauth::clone_with_token(
                                                 &vault.repo, &vault.branch, &dest, &tk
                                             )?;
-                                            // Update manifest sidecar with local path
                                             if let Some(ref mdir) = mdir {
                                                 if let Some(v) = manifest_clone.vaults.iter_mut()
                                                     .find(|v| v.name == vault.name)
@@ -222,7 +253,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                         }
                                     });
                                 },
-                                "Clone selected vault"
+                                "Sync this vault"
                             }
                             button {
                                 class: "btn btn-ghost",
@@ -233,22 +264,22 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                     }
                 },
 
-                // ── Single repo flow (unchanged) ────────────────────────
+                // ── Single vault / join shared ──────────────────────
                 Step::RepoInput => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "Clone Repository" }
+                        h2 { class: "onboarding-title", "Connect a vault" }
                         p { class: "onboarding-desc",
-                            "Enter a git repository URL and a personal access token."
+                            "Paste the link you were given, or enter your vault's URL."
                         }
 
                         div { class: "onboarding-form",
                             label { class: "onboarding-field",
-                                span { "Repository URL" }
+                                span { "Vault URL" }
                                 input {
                                     class: "input",
                                     r#type: "url",
                                     value: "{repo_url}",
-                                    placeholder: "https://github.com/user/vault.git",
+                                    placeholder: "https://github.com/you/my-vault.git",
                                     oninput: move |e| *repo_url.write() = e.value(),
                                 }
                             }
@@ -263,7 +294,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                 }
                             }
                             label { class: "onboarding-field",
-                                span { "Personal access token" }
+                                span { "Access token" }
                                 input {
                                     class: "input",
                                     r#type: "password",
@@ -272,7 +303,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     oninput: move |e| *token.write() = e.value(),
                                 }
                                 span { class: "onboarding-hint",
-                                    "Create at github.com/settings/tokens with 'repo' scope"
+                                    "Your access token. Ask the vault owner if you don't have one."
                                 }
                             }
                         }
@@ -286,9 +317,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     let br = branch.read().trim().to_string();
                                     let tk = token.read().trim().to_string();
 
-                                    let name = url
-                                        .rsplit('/')
-                                        .next()
+                                    let name = url.rsplit('/').next()
                                         .unwrap_or("vault")
                                         .trim_end_matches(".git")
                                         .to_string();
@@ -313,7 +342,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                         }
                                     });
                                 },
-                                "Clone"
+                                "Connect"
                             }
                             button {
                                 class: "btn btn-ghost",
@@ -324,23 +353,19 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                     }
                 },
 
-                // ── Shared states ───────────────────────────────────────
+                // ── Shared states ───────────────────────────────────
                 Step::Cloning => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "Cloning…" }
-                        p { class: "onboarding-desc",
-                            "Downloading your vault. This may take a moment."
-                        }
+                        h2 { class: "onboarding-title", "Setting up…" }
+                        p { class: "onboarding-desc", "Downloading your vault. This may take a moment." }
                         div { class: "onboarding-spinner" }
                     }
                 },
 
                 Step::Done => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "Vault ready" }
-                        p { class: "onboarding-desc",
-                            "Your vault \"{vault_name}\" is ready to use."
-                        }
+                        h2 { class: "onboarding-title", "You're all set" }
+                        p { class: "onboarding-desc", "Your vault \"{vault_name}\" is ready." }
                         button {
                             class: "btn btn-primary",
                             onclick: move |_| {
@@ -358,12 +383,10 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                         if let Some(ref err) = *error_msg.read() {
                             p { class: "onboarding-error", "{err}" }
                         }
-                        div { class: "onboarding-actions",
-                            button {
-                                class: "btn btn-primary",
-                                onclick: move |_| *step.write() = Step::Welcome,
-                                "Start over"
-                            }
+                        button {
+                            class: "btn btn-primary",
+                            onclick: move |_| *step.write() = Step::Welcome,
+                            "Start over"
                         }
                     }
                 },
