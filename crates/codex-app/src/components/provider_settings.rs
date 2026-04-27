@@ -1,6 +1,6 @@
 use crate::bootstrap::AppContext;
 use codex_core::providers::{
-    self, AuthMethod, CredentialStatus, ProviderInfo, PROVIDERS,
+    self, AuthMethod, CredentialStatus, ProviderInfo,
 };
 use dioxus::prelude::*;
 

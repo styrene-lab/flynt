@@ -1,4 +1,4 @@
-use codex_core::manifest::{ManifestVault, VaultManifest};
+use codex_core::manifest::VaultManifest;
 use dioxus::prelude::*;
 use std::path::PathBuf;
 

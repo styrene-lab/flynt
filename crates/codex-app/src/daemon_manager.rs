@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::process::Child;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::bootstrap::OmegonRuntimeContext;
 

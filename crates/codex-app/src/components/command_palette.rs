@@ -10,7 +10,6 @@ use crate::state::{Route, TabState};
 use codex_core::store::VaultStore;
 use dioxus::prelude::*;
 use std::rc::Rc;
-use comrak::{markdown_to_html, Options};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PaletteMode {
