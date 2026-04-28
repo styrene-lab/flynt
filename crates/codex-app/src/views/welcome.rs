@@ -12,7 +12,10 @@ pub fn WelcomeView(
 ) -> Element {
     let mut show_advanced = use_signal(|| false);
     let mut show_sync_options = use_signal(|| false);
-    let mut show_git_options = use_signal(|| false);
+    let cloud_providers = codex_store::sync::cloud::detect_providers();
+    let has_cloud = !cloud_providers.is_empty();
+    // Auto-expand git section if no cloud providers available
+    let mut show_git_options = use_signal(move || !has_cloud);
     let has_existing_vault = launcher_profile.last_vault_root.is_some()
         || !launcher_profile.known_vaults.is_empty();
 
@@ -75,7 +78,7 @@ pub fn WelcomeView(
                                 if !providers.is_empty() {
                                     rsx! {
                                         div { class: "welcome-sync-group",
-                                            span { class: "welcome-sync-group-label", "Cloud storage" }
+                                            span { class: "welcome-sync-group-label", "Your cloud storage" }
                                             div { class: "welcome-cloud-grid",
                                                 for provider in providers {
                                                     {
@@ -85,9 +88,15 @@ pub fn WelcomeView(
                                                             button {
                                                                 class: "welcome-cloud-btn",
                                                                 onclick: move |_| {
-                                                                    match codex_store::sync::cloud::create_cloud_vault(&provider, "Codex") {
-                                                                        Ok(root) => on_cloud_vault.call(root),
-                                                                        Err(e) => tracing::error!("Cloud vault failed: {e}"),
+                                                                    let vault_path = codex_store::sync::cloud::vault_path_for_provider(&provider, "Codex");
+                                                                    if vault_path.join(".codex").exists() {
+                                                                        // Already exists — just open it
+                                                                        on_cloud_vault.call(vault_path);
+                                                                    } else {
+                                                                        match codex_store::sync::cloud::create_cloud_vault(&provider, "Codex") {
+                                                                            Ok(root) => on_cloud_vault.call(root),
+                                                                            Err(e) => tracing::error!("Cloud vault failed: {e}"),
+                                                                        }
                                                                     }
                                                                 },
                                                                 span { class: "welcome-cloud-label", "{label}" }
@@ -106,16 +115,19 @@ pub fn WelcomeView(
 
                             // ── Git hosting (tier 1 + 2) ────────────────
                             div { class: "welcome-sync-group",
-                                button {
-                                    class: "welcome-sync-group-toggle",
-                                    onclick: move |_| {
-                                        let v = *show_git_options.read();
-                                        *show_git_options.write() = !v;
-                                    },
-                                    span { class: "welcome-sync-group-label", "Git hosting" }
-                                    span { class: "welcome-sync-group-arrow",
-                                        if *show_git_options.read() { "\u{25B4}" } else { "\u{25BE}" }
+                                if has_cloud {
+                                    button {
+                                        class: "welcome-sync-group-toggle",
+                                        onclick: move |_| {
+                                            let v = *show_git_options.read();
+                                            *show_git_options.write() = !v;
+                                        },
+                                        span { class: "welcome-sync-group-label",
+                                            if *show_git_options.read() { "More options \u{25B4}" } else { "More options \u{25BE}" }
+                                        }
                                     }
+                                } else {
+                                    span { class: "welcome-sync-group-label", "Online sync" }
                                 }
 
                                 if *show_git_options.read() {
@@ -126,37 +138,38 @@ pub fn WelcomeView(
                                             onclick: move |_| on_clone_remote.call(()),
                                             span { class: "welcome-option-title", "Connect a notebook" }
                                             span { class: "welcome-option-desc",
-                                                "I have an account and a repository URL"
+                                                "I have an account and a notebook URL"
                                             }
                                         }
 
                                         // Education + signup for people who don't
                                         div { class: "welcome-git-explainer",
                                             p { class: "welcome-git-what",
-                                                "Git is a version control system that keeps a complete history of your notes. "
-                                                "It's the most reliable way to sync and back up your work. "
-                                                "You need a free account on a hosting service to get started:"
+                                                "Don't have an account? Git hosting keeps a complete history of your notes "
+                                                "and is the most reliable way to sync across all your devices. "
+                                                "Create a free account to get started:"
                                             }
                                             div { class: "welcome-git-providers",
                                                 button {
                                                     class: "welcome-git-btn",
                                                     onclick: move |_| {
-                                                        let _ = open::that("https://codeberg.org");
+                                                        let _ = open::that("https://codeberg.org/repo/create");
                                                     },
                                                     span { class: "welcome-git-label", "Codeberg" }
-                                                    span { class: "welcome-git-hint", "Open source, community-run, free" }
+                                                    span { class: "welcome-git-hint", "Open source, community-run" }
                                                 }
                                                 button {
                                                     class: "welcome-git-btn",
                                                     onclick: move |_| {
-                                                        let _ = open::that("https://github.com/signup");
+                                                        let _ = open::that("https://github.com/new");
                                                     },
                                                     span { class: "welcome-git-label", "GitHub" }
                                                     span { class: "welcome-git-hint", "Largest platform, free for personal use" }
                                                 }
                                             }
                                             p { class: "welcome-git-after",
-                                                "After creating an account, make a new repository, then come back and click \"Connect a notebook\" above."
+                                                "Create an account (or sign in), then create a new repository. "
+                                                "Copy the URL and click \"Connect a notebook\" above."
                                             }
                                         }
                                     }

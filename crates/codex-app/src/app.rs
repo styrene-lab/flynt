@@ -612,7 +612,7 @@ pub fn App() -> Element {
                                 input {
                                     r#type: "text",
                                     value: "{clone_url}",
-                                    placeholder: "https://github.com/you/my-notebook.git",
+                                    placeholder: "https://codeberg.org/you/notebook.git",
                                     oninput: move |e| *clone_url.write() = e.value(),
                                 }
                             }
