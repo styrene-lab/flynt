@@ -521,30 +521,33 @@ pub fn App() -> Element {
                                 *clone_dialog_open.write() = true;
                                 *clone_error.write() = None;
                             };
-                            let icloud_ctx = ctx.clone();
-                            let on_icloud = move |_| {
+                            let cloud_ctx = ctx.clone();
+                            let on_cloud_vault = move |root: PathBuf| {
                                 *welcome_error.write() = None;
-                                match codex_store::sync::icloud::create_icloud_vault("Codex") {
-                                    Ok(root) => {
+                                let name = root.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("Codex")
+                                    .to_string();
+                                // Initialize the vault at the cloud location
+                                match OmegonRuntimeContext::initialize_vault(&root, &name, codex_core::models::SyncConfig::None) {
+                                    Ok(vault) => {
+                                        let welcome_path = std::path::PathBuf::from("Welcome.md");
+                                        let welcome_content = include_str!("../assets/welcome-note.md");
+                                        let _ = vault.save_document_content(&welcome_path, welcome_content);
+                                        let _ = vault.reindex();
+
                                         let mut profile = launcher_profile();
                                         profile.last_vault_root = Some(root.clone());
                                         profile.wizard_completed = true;
-                                        OmegonRuntimeContext::register_known_vault(&mut profile, &root, "Codex");
+                                        OmegonRuntimeContext::register_known_vault(&mut profile, &root, &name);
                                         let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                         launcher_profile.set(profile);
-                                        let mut c = icloud_ctx.clone();
+                                        let mut c = cloud_ctx.clone();
                                         c.set_runtime(runtime_state_for_vault_root(root));
                                         *active_route.write() = Route::Notes;
                                     }
                                     Err(e) => {
-                                        let msg = format!("{e}");
-                                        if msg.contains("not available") {
-                                            *welcome_error.write() = Some(
-                                                "iCloud Drive is not enabled on this Mac. Turn it on in System Settings > Apple ID > iCloud > iCloud Drive, then try again.".into()
-                                            );
-                                        } else {
-                                            *welcome_error.write() = Some(format!("Could not create iCloud vault: {e}"));
-                                        }
+                                        *welcome_error.write() = Some(format!("Could not create vault: {e}"));
                                     }
                                 }
                             };
@@ -583,7 +586,7 @@ pub fn App() -> Element {
                                     on_choose_existing,
                                     on_clone_remote,
                                     on_import_markdown,
-                                    on_icloud,
+                                    on_cloud_vault,
                                 }
                             }
                         },
@@ -602,7 +605,7 @@ pub fn App() -> Element {
                         div { class: "modal-dialog",
                             onclick: move |e| e.stop_propagation(),
                             h2 { "Connect a notebook" }
-                            p { class: "modal-hint", "Enter the URL for your notebook. This is usually a link from GitHub, a Styrene Hub, or another hosting service." }
+                            p { class: "modal-hint", "Enter the URL for your notebook from GitHub, Codeberg, Forgejo, or any git hosting service." }
 
                             div { class: "modal-field",
                                 label { "Notebook URL" }

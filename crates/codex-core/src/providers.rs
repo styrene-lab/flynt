@@ -105,6 +105,22 @@ pub const PROVIDERS: &[ProviderInfo] = &[
         oauth_url: None,
         oauth_port: None,
     },
+    ProviderInfo {
+        id: "forgejo",
+        label: "Forgejo / Codeberg",
+        auth_method: AuthMethod::ApiKey,
+        env_vars: &["FORGEJO_TOKEN", "CODEBERG_TOKEN"],
+        oauth_url: None,
+        oauth_port: None,
+    },
+    ProviderInfo {
+        id: "gitlab",
+        label: "GitLab",
+        auth_method: AuthMethod::ApiKey,
+        env_vars: &["GITLAB_TOKEN"],
+        oauth_url: None,
+        oauth_port: None,
+    },
 ];
 
 // ── Credential status ───────────────────────────────────────────────────────

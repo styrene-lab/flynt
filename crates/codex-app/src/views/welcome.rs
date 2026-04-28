@@ -8,7 +8,7 @@ pub fn WelcomeView(
     on_choose_existing: EventHandler<()>,
     on_clone_remote: EventHandler<()>,
     on_import_markdown: EventHandler<()>,
-    on_icloud: EventHandler<()>,
+    on_cloud_vault: EventHandler<std::path::PathBuf>,
 ) -> Element {
     let mut show_advanced = use_signal(|| false);
     let mut show_sync_options = use_signal(|| false);
@@ -67,20 +67,32 @@ pub fn WelcomeView(
 
                     if *show_sync_options.read() {
                         div { class: "welcome-sync-options",
-                            button {
-                                class: "welcome-option",
-                                onclick: move |_| on_icloud.call(()),
-                                span { class: "welcome-option-title", "iCloud" }
-                                span { class: "welcome-option-desc",
-                                    "Syncs automatically between Apple devices. No account setup needed."
+                            // Auto-detected cloud providers — zero config
+                            for provider in codex_store::sync::cloud::detect_providers() {
+                                {
+                                    let label = provider.label.to_string();
+                                    let desc = provider.description.to_string();
+                                    rsx! {
+                                        button {
+                                            class: "welcome-option",
+                                            onclick: move |_| {
+                                                match codex_store::sync::cloud::create_cloud_vault(&provider, "Codex") {
+                                                    Ok(root) => on_cloud_vault.call(root),
+                                                    Err(e) => tracing::error!("Cloud vault failed: {e}"),
+                                                }
+                                            },
+                                            span { class: "welcome-option-title", "{label}" }
+                                            span { class: "welcome-option-desc", "{desc}" }
+                                        }
+                                    }
                                 }
                             }
                             button {
                                 class: "welcome-option",
                                 onclick: move |_| on_clone_remote.call(()),
-                                span { class: "welcome-option-title", "Online account" }
+                                span { class: "welcome-option-title", "Git hosting" }
                                 span { class: "welcome-option-desc",
-                                    "Sync via GitHub, a Styrene Hub, or any compatible service. Works across all platforms."
+                                    "Sync via GitHub, Codeberg, Forgejo, or any git service."
                                 }
                             }
                         }

@@ -1,4 +1,5 @@
 pub mod auto;
+pub mod cloud;
 pub mod git;
 pub mod icloud;
 pub mod project_git;
