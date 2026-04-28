@@ -315,6 +315,57 @@
   color:      var(--muted-foreground);
 }
 
+/* ── Identity ────────────────────────────────────────────────────────────── */
+.identity-status-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+.identity-dot {
+  width:         8px;
+  height:        8px;
+  border-radius: var(--radius-full);
+  background:    var(--muted-foreground);
+  opacity:       0.3;
+}
+.identity-dot.active {
+  background:    rgb(34, 197, 94);
+  opacity:       1;
+}
+.identity-status-text {
+  font-size:   var(--font-size-sm);
+  color:       var(--muted-foreground);
+}
+.identity-form {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  max-width:      400px;
+}
+.identity-fingerprint {
+  font-size:      var(--font-size-sm);
+  font-family:    var(--font-mono);
+  color:          var(--primary);
+  user-select:    all;
+}
+.identity-ssh-key {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+}
+.identity-key-text {
+  font-size:      11px;
+  font-family:    var(--font-mono);
+  color:          var(--foreground);
+  word-break:     break-all;
+  background:     var(--surface);
+  padding:        var(--space-2);
+  border-radius:  var(--radius-sm);
+  user-select:    all;
+  max-height:     60px;
+  overflow-y:     auto;
+}
+
 /* ── Provider status ─────────────────────────────────────────────────────── */
 .provider-row {
   min-height: 40px;

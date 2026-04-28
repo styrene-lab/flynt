@@ -9,6 +9,7 @@ pub mod store;
 pub mod sync;
 pub mod templates;
 pub mod conflict;
+pub mod identity;
 pub mod manifest;
 pub mod parser;
 pub mod providers;

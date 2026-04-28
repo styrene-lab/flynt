@@ -1,6 +1,7 @@
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
     components::daemon_settings::DaemonSettingsSection,
+    components::identity_settings::IdentitySettingsSection,
     components::provider_settings::ProviderSettingsSection,
     state::ThemeName,
     views::PublicationRulesEditor,
@@ -708,6 +709,9 @@ pub fn SettingsView() -> Element {
                 }
 
                 // ── Operator ─────────────────────────────────────────────────
+                // ── Identity ─────────────────────────────────────────────────
+                IdentitySettingsSection {}
+
                 // ── Providers ────────────────────────────────────────────────
                 ProviderSettingsSection {}
 
