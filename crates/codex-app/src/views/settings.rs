@@ -308,6 +308,39 @@ pub fn SettingsView() -> Element {
             agent_daemon: daemon_config.read().clone(),
         };
 
+        // Check if sync backend changed — trigger vault migration
+        let old_sync = &vault.config.sync;
+        let new_sync = &config.sync;
+        if old_sync != new_sync {
+            let vault_name = config.vault_name.clone();
+            let current_root = vault.root.clone();
+            let sync_for_migrate = new_sync.clone();
+            match codex_store::migrate::migrate_vault(
+                &current_root, &vault_name, &sync_for_migrate, false,
+            ) {
+                Ok(result) => {
+                    if result.new_root != current_root {
+                        // Vault moved — update launcher profile and switch runtime
+                        let mut profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
+                        crate::bootstrap::OmegonRuntimeContext::register_known_vault(
+                            &mut profile, &result.new_root, &vault_name,
+                        );
+                        let _ = crate::bootstrap::OmegonRuntimeContext::save_launcher_profile(&profile);
+                        let mut migrate_ctx = ctx;
+                        migrate_ctx.set_runtime(crate::bootstrap::runtime_state_for_vault_root(result.new_root));
+                        *save_msg.write() = Some(("ok", "Vault migrated and sync updated."));
+                        return; // config already written by migrate
+                    }
+                    // Same location — migration updated config in place, continue to save other settings
+                }
+                Err(e) => {
+                    tracing::error!("Migration failed: {e}");
+                    *save_msg.write() = Some(("err", "Migration failed — check logs."));
+                    return;
+                }
+            }
+        }
+
         match vault.save_config(&config) {
             Ok(()) => {}
             Err(e) => {

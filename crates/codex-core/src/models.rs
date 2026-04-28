@@ -306,9 +306,11 @@ pub struct SearchResult {
 // ── Vault config ──────────────────────────────────────────────────────────────
 
 /// Persisted configuration stored in `<vault_root>/.codex/config.toml`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct VaultConfig {
+    #[serde(default)]
     pub vault_name: String,
+    #[serde(default)]
     pub sync: SyncConfig,
     #[serde(default)]
     pub appearance: AppearanceConfig,
