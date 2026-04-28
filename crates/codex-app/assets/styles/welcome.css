@@ -189,21 +189,97 @@
   margin-top:     -4px;
 }
 
-/* ── Git hosting section ─────────────────────────────────────────────────── */
-.welcome-git-section {
+/* ── Sync groups ─────────────────────────────────────────────────────────── */
+.welcome-sync-group {
   display:        flex;
   flex-direction: column;
+  gap:            6px;
+}
+.welcome-sync-group-label {
+  font-size:      11px;
+  font-weight:    600;
+  color:          var(--muted-foreground, #607888);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.welcome-sync-group-toggle {
+  display:        flex;
+  align-items:    center;
+  gap:            6px;
+  background:     none;
+  border:         none;
+  cursor:         pointer;
+  padding:        0;
+}
+.welcome-sync-group-toggle:hover .welcome-sync-group-label {
+  color:          var(--foreground, #c4d8e4);
+}
+.welcome-sync-group-arrow {
+  font-size:      10px;
+  color:          var(--muted-foreground, #607888);
+}
+
+/* Cloud provider grid */
+.welcome-cloud-grid {
+  display:        flex;
+  flex-wrap:      wrap;
   gap:            8px;
-  padding:        12px 16px;
+}
+.welcome-cloud-btn {
+  flex:           1 1 45%;
+  display:        flex;
+  flex-direction: column;
+  align-items:    flex-start;
+  gap:            2px;
+  padding:        10px 14px;
   background:     var(--surface, #0c1018);
   border:         1px solid var(--border, #1a2233);
   border-radius:  8px;
+  cursor:         pointer;
+  transition:     border-color 0.15s;
   text-align:     left;
+}
+.welcome-cloud-btn:hover {
+  border-color:   var(--primary, #2ab4c8);
+}
+.welcome-cloud-label {
+  font-size:      14px;
+  font-weight:    600;
+  color:          var(--foreground, #c4d8e4);
+}
+.welcome-cloud-desc {
+  font-size:      11px;
+  color:          var(--muted-foreground, #607888);
+}
+
+/* Git expanded section */
+.welcome-git-expanded {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+  padding-left:   2px;
+}
+.welcome-git-explainer {
+  padding:        12px 14px;
+  background:     var(--surface, #0c1018);
+  border:         1px solid var(--border-dim, #111822);
+  border-radius:  8px;
+}
+.welcome-git-what {
+  font-size:      12px;
+  color:          var(--muted-foreground, #607888);
+  line-height:    1.6;
+  margin:         0 0 10px 0;
+}
+.welcome-git-after {
+  font-size:      12px;
+  color:          var(--muted-foreground, #607888);
+  line-height:    1.6;
+  margin:         10px 0 0 0;
 }
 .welcome-git-providers {
   display:        flex;
   gap:            8px;
-  margin-top:     4px;
 }
 .welcome-git-btn {
   flex:           1;
@@ -229,13 +305,6 @@
 .welcome-git-hint {
   font-size:      11px;
   color:          var(--muted-foreground, #607888);
-}
-.welcome-option.compact {
-  padding:        8px 16px;
-  margin-top:     2px;
-}
-.welcome-option.compact .welcome-option-title {
-  font-size:      13px;
 }
 
 /* Error banner */

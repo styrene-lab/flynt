@@ -12,6 +12,7 @@ pub fn WelcomeView(
 ) -> Element {
     let mut show_advanced = use_signal(|| false);
     let mut show_sync_options = use_signal(|| false);
+    let mut show_git_options = use_signal(|| false);
     let has_existing_vault = launcher_profile.last_vault_root.is_some()
         || !launcher_profile.known_vaults.is_empty();
 
@@ -67,53 +68,98 @@ pub fn WelcomeView(
 
                     if *show_sync_options.read() {
                         div { class: "welcome-sync-options",
-                            // Auto-detected cloud providers — zero config
-                            for provider in codex_store::sync::cloud::detect_providers() {
-                                {
-                                    let label = provider.label.to_string();
-                                    let desc = provider.description.to_string();
+
+                            // ── Cloud providers (Ethel) ─────────────────
+                            {
+                                let providers = codex_store::sync::cloud::detect_providers();
+                                if !providers.is_empty() {
                                     rsx! {
-                                        button {
-                                            class: "welcome-option",
-                                            onclick: move |_| {
-                                                match codex_store::sync::cloud::create_cloud_vault(&provider, "Codex") {
-                                                    Ok(root) => on_cloud_vault.call(root),
-                                                    Err(e) => tracing::error!("Cloud vault failed: {e}"),
+                                        div { class: "welcome-sync-group",
+                                            span { class: "welcome-sync-group-label", "Cloud storage" }
+                                            div { class: "welcome-cloud-grid",
+                                                for provider in providers {
+                                                    {
+                                                        let label = provider.label.to_string();
+                                                        let desc = provider.description.to_string();
+                                                        rsx! {
+                                                            button {
+                                                                class: "welcome-cloud-btn",
+                                                                onclick: move |_| {
+                                                                    match codex_store::sync::cloud::create_cloud_vault(&provider, "Codex") {
+                                                                        Ok(root) => on_cloud_vault.call(root),
+                                                                        Err(e) => tracing::error!("Cloud vault failed: {e}"),
+                                                                    }
+                                                                },
+                                                                span { class: "welcome-cloud-label", "{label}" }
+                                                                span { class: "welcome-cloud-desc", "{desc}" }
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                            },
-                                            span { class: "welcome-option-title", "{label}" }
-                                            span { class: "welcome-option-desc", "{desc}" }
+                                            }
                                         }
                                     }
+                                } else {
+                                    rsx! {}
                                 }
                             }
-                            div { class: "welcome-git-section",
-                                span { class: "welcome-option-title", "Git hosting" }
-                                span { class: "welcome-option-desc",
-                                    "Create a free account, then connect your notebook."
-                                }
-                                div { class: "welcome-git-providers",
-                                    button {
-                                        class: "welcome-git-btn",
-                                        onclick: move |_| {
-                                            let _ = open::that("https://codeberg.org/user/login");
-                                        },
-                                        span { class: "welcome-git-label", "Codeberg" }
-                                        span { class: "welcome-git-hint", "Open source, community-run" }
-                                    }
-                                    button {
-                                        class: "welcome-git-btn",
-                                        onclick: move |_| {
-                                            let _ = open::that("https://github.com/signup");
-                                        },
-                                        span { class: "welcome-git-label", "GitHub" }
-                                        span { class: "welcome-git-hint", "Largest hosting platform" }
-                                    }
-                                }
+
+                            // ── Git hosting (tier 1 + 2) ────────────────
+                            div { class: "welcome-sync-group",
                                 button {
-                                    class: "welcome-option compact",
-                                    onclick: move |_| on_clone_remote.call(()),
-                                    span { class: "welcome-option-title", "I already have an account" }
+                                    class: "welcome-sync-group-toggle",
+                                    onclick: move |_| {
+                                        let v = *show_git_options.read();
+                                        *show_git_options.write() = !v;
+                                    },
+                                    span { class: "welcome-sync-group-label", "Git hosting" }
+                                    span { class: "welcome-sync-group-arrow",
+                                        if *show_git_options.read() { "\u{25B4}" } else { "\u{25BE}" }
+                                    }
+                                }
+
+                                if *show_git_options.read() {
+                                    div { class: "welcome-git-expanded",
+                                        // Clone form for people who already have an account
+                                        button {
+                                            class: "welcome-option",
+                                            onclick: move |_| on_clone_remote.call(()),
+                                            span { class: "welcome-option-title", "Connect a notebook" }
+                                            span { class: "welcome-option-desc",
+                                                "I have an account and a repository URL"
+                                            }
+                                        }
+
+                                        // Education + signup for people who don't
+                                        div { class: "welcome-git-explainer",
+                                            p { class: "welcome-git-what",
+                                                "Git is a version control system that keeps a complete history of your notes. "
+                                                "It's the most reliable way to sync and back up your work. "
+                                                "You need a free account on a hosting service to get started:"
+                                            }
+                                            div { class: "welcome-git-providers",
+                                                button {
+                                                    class: "welcome-git-btn",
+                                                    onclick: move |_| {
+                                                        let _ = open::that("https://codeberg.org");
+                                                    },
+                                                    span { class: "welcome-git-label", "Codeberg" }
+                                                    span { class: "welcome-git-hint", "Open source, community-run, free" }
+                                                }
+                                                button {
+                                                    class: "welcome-git-btn",
+                                                    onclick: move |_| {
+                                                        let _ = open::that("https://github.com/signup");
+                                                    },
+                                                    span { class: "welcome-git-label", "GitHub" }
+                                                    span { class: "welcome-git-hint", "Largest platform, free for personal use" }
+                                                }
+                                            }
+                                            p { class: "welcome-git-after",
+                                                "After creating an account, make a new repository, then come back and click \"Connect a notebook\" above."
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
