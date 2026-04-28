@@ -87,12 +87,33 @@ pub fn WelcomeView(
                                     }
                                 }
                             }
-                            button {
-                                class: "welcome-option",
-                                onclick: move |_| on_clone_remote.call(()),
+                            div { class: "welcome-git-section",
                                 span { class: "welcome-option-title", "Git hosting" }
                                 span { class: "welcome-option-desc",
-                                    "Sync via GitHub, Codeberg, Forgejo, or any git service."
+                                    "Create a free account, then connect your notebook."
+                                }
+                                div { class: "welcome-git-providers",
+                                    button {
+                                        class: "welcome-git-btn",
+                                        onclick: move |_| {
+                                            let _ = open::that("https://codeberg.org/user/login");
+                                        },
+                                        span { class: "welcome-git-label", "Codeberg" }
+                                        span { class: "welcome-git-hint", "Open source, community-run" }
+                                    }
+                                    button {
+                                        class: "welcome-git-btn",
+                                        onclick: move |_| {
+                                            let _ = open::that("https://github.com/signup");
+                                        },
+                                        span { class: "welcome-git-label", "GitHub" }
+                                        span { class: "welcome-git-hint", "Largest hosting platform" }
+                                    }
+                                }
+                                button {
+                                    class: "welcome-option compact",
+                                    onclick: move |_| on_clone_remote.call(()),
+                                    span { class: "welcome-option-title", "I already have an account" }
                                 }
                             }
                         }
