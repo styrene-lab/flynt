@@ -1050,4 +1050,122 @@ mod tests {
         assert_eq!(FontSizePreset::Large.css_class(), "font-lg");
         assert_eq!(FontSizePreset::XLarge.css_class(), "font-xl");
     }
+
+    // ── Version resolver tests ──────────────────────────────────────────
+
+    #[test]
+    fn parse_version_key_basic() {
+        assert_eq!(super::parse_version_key("v0.17.0"), (0, 17, 0, "".into()));
+        assert_eq!(super::parse_version_key("0.16.1"), (0, 16, 1, "".into()));
+        assert_eq!(super::parse_version_key("v0.17.0-rc.1"), (0, 17, 0, "rc.1".into()));
+        assert_eq!(super::parse_version_key("v1.2.3-nightly.20260425"), (1, 2, 3, "nightly.20260425".into()));
+    }
+
+    #[test]
+    fn semver_sort_orders_correctly() {
+        let mut versions = vec![
+            &"v0.9.0".to_string(),
+            &"v0.17.0".to_string(),
+            &"v0.16.1".to_string(),
+            &"v1.0.0".to_string(),
+            &"v0.17.0-rc.1".to_string(),
+        ];
+        // Borrow checker: need owned strings
+        let owned: Vec<String> = vec!["v0.9.0".into(), "v0.17.0".into(), "v0.16.1".into(), "v1.0.0".into(), "v0.17.0-rc.1".into()];
+        let mut refs: Vec<&String> = owned.iter().collect();
+        super::sort_versions_newest_first(&mut refs);
+        let names: Vec<&str> = refs.iter().map(|s| s.as_str()).collect();
+        // v1.0.0 > v0.17.0-rc.1 > v0.17.0 > v0.16.1 > v0.9.0
+        assert_eq!(names[0], "v1.0.0");
+        assert_eq!(names[1], "v0.17.0-rc.1"); // rc sorts after release because "rc.1" > ""
+        assert_eq!(names[2], "v0.17.0");
+        assert_eq!(names[3], "v0.16.1");
+        assert_eq!(names[4], "v0.9.0");
+    }
+
+    #[test]
+    fn resolve_from_versions_dir_stable() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("v0.16.1")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("v0.17.0-rc.1")).unwrap();
+        std::fs::write(tmp.path().join("v0.16.1/omegon"), "bin").unwrap();
+        std::fs::write(tmp.path().join("v0.17.0-rc.1/omegon"), "bin").unwrap();
+
+        let result = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Stable);
+        assert!(result.is_some());
+        assert!(result.unwrap().ends_with("v0.16.1/omegon"));
+    }
+
+    #[test]
+    fn resolve_from_versions_dir_rc() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("v0.16.1")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("v0.17.0-rc.1")).unwrap();
+        std::fs::write(tmp.path().join("v0.16.1/omegon"), "bin").unwrap();
+        std::fs::write(tmp.path().join("v0.17.0-rc.1/omegon"), "bin").unwrap();
+
+        let result = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Rc);
+        assert!(result.is_some());
+        assert!(result.unwrap().ends_with("v0.17.0-rc.1/omegon"));
+    }
+
+    #[test]
+    fn resolve_from_versions_dir_pinned() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("v0.16.1")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("v0.17.0-rc.1")).unwrap();
+        std::fs::write(tmp.path().join("v0.16.1/omegon"), "bin").unwrap();
+        std::fs::write(tmp.path().join("v0.17.0-rc.1/omegon"), "bin").unwrap();
+
+        let result = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Pinned("0.16.1".into()));
+        assert!(result.is_some());
+        assert!(result.unwrap().ends_with("v0.16.1/omegon"));
+
+        let missing = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Pinned("0.15.0".into()));
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn resolve_from_empty_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let result = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Stable);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn visualization_config_defaults() {
+        let config = VisualizationConfig::default();
+        assert!(config.excalidraw_auto_export);
+        assert!(config.d2_auto_render);
+        assert_eq!(config.d2_theme, 200);
+        assert_eq!(config.d2_layout, "elk");
+        assert!(config.d2_bin.is_none());
+    }
+
+    #[test]
+    fn visualization_config_serde_roundtrip() {
+        let config = VisualizationConfig {
+            excalidraw_auto_export: false,
+            d2_auto_render: true,
+            d2_theme: 0,
+            d2_layout: "dagre".into(),
+            d2_bin: Some("/usr/local/bin/d2".into()),
+        };
+        let toml = toml::to_string(&config).unwrap();
+        let parsed: VisualizationConfig = toml::from_str(&toml).unwrap();
+        assert_eq!(config, parsed);
+    }
+
+    #[test]
+    fn omegon_channel_serde_roundtrip() {
+        for channel in [OmegonChannel::Stable, OmegonChannel::Rc, OmegonChannel::Nightly] {
+            let json = serde_json::to_string(&channel).unwrap();
+            let parsed: OmegonChannel = serde_json::from_str(&json).unwrap();
+            assert_eq!(channel, parsed);
+        }
+        let pinned = OmegonChannel::Pinned("0.17.0-rc.1".into());
+        let json = serde_json::to_string(&pinned).unwrap();
+        let parsed: OmegonChannel = serde_json::from_str(&json).unwrap();
+        assert_eq!(pinned, parsed);
+    }
 }

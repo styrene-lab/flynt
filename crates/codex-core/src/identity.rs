@@ -216,4 +216,30 @@ mod tests {
         let status = probe_identity();
         assert!(!status.tier.is_empty());
     }
+
+    #[test]
+    fn git_signing_config_requires_git_repo() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        // No .git directory
+        let result = configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn git_signing_config_writes_to_git_config() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let git_dir = tmp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("config"), "").unwrap();
+
+        configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test@host").unwrap();
+
+        let config = std::fs::read_to_string(git_dir.join("config")).unwrap();
+        assert!(config.contains("gpgsign = true"));
+        assert!(config.contains("format = ssh"));
+        assert!(config.contains("signingkey"));
+
+        // Key file should exist
+        assert!(git_dir.join("styrene-signing-key.pub").exists());
+    }
 }

@@ -367,3 +367,58 @@ impl GitSync {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tag_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn setup_repo() -> (TempDir, PathBuf) {
+        let tmp = TempDir::new().unwrap();
+        let repo_path = tmp.path().join("repo");
+        let repo = git2::Repository::init(&repo_path).unwrap();
+
+        // Create initial commit
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
+
+        (tmp, repo_path)
+    }
+
+    #[test]
+    fn create_and_list_tags() {
+        let (_tmp, repo_path) = setup_repo();
+        let git = GitSync::new(repo_path, "origin", "main");
+
+        git.create_tag("v1.0.0", Some("release")).unwrap();
+        git.create_tag("v1.0.1", None).unwrap();
+
+        let tags = git.list_tags().unwrap();
+        let names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"v1.0.0"));
+        assert!(names.contains(&"v1.0.1"));
+    }
+
+    #[test]
+    fn delete_tag() {
+        let (_tmp, repo_path) = setup_repo();
+        let git = GitSync::new(repo_path, "origin", "main");
+
+        git.create_tag("deleteme", None).unwrap();
+        assert!(git.list_tags().unwrap().iter().any(|t| t.name == "deleteme"));
+
+        git.delete_tag("deleteme").unwrap();
+        assert!(!git.list_tags().unwrap().iter().any(|t| t.name == "deleteme"));
+    }
+
+    #[test]
+    fn duplicate_tag_fails() {
+        let (_tmp, repo_path) = setup_repo();
+        let git = GitSync::new(repo_path, "origin", "main");
+
+        git.create_tag("unique", None).unwrap();
+        assert!(git.create_tag("unique", None).is_err());
+    }
+}

@@ -195,3 +195,62 @@ fn detect_onedrive() -> Option<CloudProvider> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vault_path_for_provider_appends_name() {
+        let provider = CloudProvider {
+            id: "test",
+            label: "Test",
+            description: "test provider",
+            sync_root: PathBuf::from("/cloud/sync"),
+        };
+        let path = vault_path_for_provider(&provider, "MyVault");
+        assert_eq!(path, PathBuf::from("/cloud/sync/MyVault"));
+    }
+
+    #[test]
+    fn create_cloud_vault_creates_directory_and_config() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let provider = CloudProvider {
+            id: "test",
+            label: "Test Cloud",
+            description: "test",
+            sync_root: tmp.path().to_path_buf(),
+        };
+
+        let result = create_cloud_vault(&provider, "TestVault").unwrap();
+        assert!(result.exists());
+        assert!(result.join(".codex/config.toml").exists());
+
+        let config = std::fs::read_to_string(result.join(".codex/config.toml")).unwrap();
+        assert!(config.contains("TestVault"));
+    }
+
+    #[test]
+    fn create_cloud_vault_rejects_existing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let provider = CloudProvider {
+            id: "test",
+            label: "Test",
+            description: "test",
+            sync_root: tmp.path().to_path_buf(),
+        };
+
+        create_cloud_vault(&provider, "Existing").unwrap();
+        let result = create_cloud_vault(&provider, "Existing");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn detect_providers_does_not_panic() {
+        let providers = detect_providers();
+        for p in &providers {
+            assert!(!p.id.is_empty());
+            assert!(!p.label.is_empty());
+        }
+    }
+}

@@ -313,3 +313,108 @@ pub fn oauth_login_command(config: &crate::models::LocalRuntimeConfig, provider_
     let binary = crate::models::resolve_omegon_binary(config);
     (binary.to_string_lossy().into_owned(), vec!["auth".into(), "login".into(), provider_id.into()])
 }
+
+// ── Path-parameterized helpers (for testing) ────────────────────────────────
+
+/// Load auth store from a specific path.
+pub fn load_auth_store_from(path: &std::path::Path) -> AuthStore {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Save auth store to a specific path.
+pub fn save_auth_store_to(path: &std::path::Path, store: &AuthStore) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    with_auth_json_lock(path, || {
+        atomic_write_auth_json(path, store)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_store_round_trip() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("auth.json");
+
+        let mut store = AuthStore::default();
+        store.providers.insert("github".into(), StoredCredential::ApiKey {
+            key: "ghp_test123".into(),
+        });
+        store.providers.insert("anthropic".into(), StoredCredential::Oauth {
+            access: "sk-ant-test".into(),
+            refresh: Some("refresh-tok".into()),
+            expires: Some(9999999999999),
+        });
+
+        save_auth_store_to(&path, &store).unwrap();
+
+        let loaded = load_auth_store_from(&path);
+        assert_eq!(loaded.providers.len(), 2);
+        assert!(matches!(loaded.providers.get("github"), Some(StoredCredential::ApiKey { key }) if key == "ghp_test123"));
+    }
+
+    #[test]
+    fn auth_store_atomic_write_creates_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("new_auth.json");
+
+        assert!(!path.exists());
+        let store = AuthStore::default();
+        save_auth_store_to(&path, &store).unwrap();
+        assert!(path.exists());
+
+        // No leftover .tmp or .lock files
+        assert!(!path.with_extension("json.tmp").exists());
+        assert!(!tmp.path().join("new_auth.json.lock").exists());
+    }
+
+    #[test]
+    fn auth_store_permissions_600_on_unix() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let tmp = tempfile::TempDir::new().unwrap();
+            let path = tmp.path().join("auth.json");
+            save_auth_store_to(&path, &AuthStore::default()).unwrap();
+            let perms = std::fs::metadata(&path).unwrap().permissions();
+            assert_eq!(perms.mode() & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn probe_provider_env_override() {
+        // Provider with a matching env var should be Authenticated
+        let info = &PROVIDERS[0]; // anthropic
+        // We can't set ANTHROPIC_API_KEY in tests without affecting other tests,
+        // so just verify the probe logic doesn't panic
+        let status = probe_provider(info);
+        // Should be either Authenticated (if env var set) or Missing
+        assert!(matches!(status, CredentialStatus::Authenticated { .. } | CredentialStatus::Missing));
+    }
+
+    #[test]
+    fn provider_catalogue_has_expected_entries() {
+        let ids: Vec<&str> = PROVIDERS.iter().map(|p| p.id).collect();
+        assert!(ids.contains(&"anthropic"));
+        assert!(ids.contains(&"openai"));
+        assert!(ids.contains(&"github"));
+        assert!(ids.contains(&"forgejo"));
+        assert!(ids.contains(&"gitlab"));
+    }
+
+    #[test]
+    fn oauth_providers_have_urls() {
+        for p in PROVIDERS {
+            if p.auth_method == AuthMethod::OAuth {
+                assert!(p.oauth_url.is_some(), "{} is OAuth but has no URL", p.id);
+            }
+        }
+    }
+}
