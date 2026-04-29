@@ -190,7 +190,7 @@ impl GitSync {
         let repo = self.open_repo()?;
         let head = repo.head()?.peel_to_commit()?;
         if let Some(msg) = message {
-            let sig = repo.signature()?;
+            let sig = util::codex_signature()?;
             repo.tag(name, head.as_object(), &sig, msg, false)?;
         } else {
             repo.tag_lightweight(name, head.as_object(), false)?;
