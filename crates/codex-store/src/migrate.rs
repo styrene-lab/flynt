@@ -147,28 +147,36 @@ fn copy_vault(src: &Path, dst: &Path) -> Result<usize> {
     Ok(count)
 }
 
-/// Update the sync field in the vault's config.toml.
+/// Update the sync field in the vault's config.toml, preserving all other fields.
 fn update_config_sync(vault_root: &Path, sync: &SyncConfig) -> Result<()> {
     let config_path = vault_root.join(".codex/config.toml");
-    let mut config: VaultConfig = if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path)?;
-        toml::from_str(&content).context("Failed to parse config.toml")?
+    std::fs::create_dir_all(vault_root.join(".codex"))?;
+
+    if config_path.exists() {
+        // Preserve existing config — only replace [sync] section
+        let existing = std::fs::read_to_string(&config_path)?;
+        let mut doc: toml_edit::DocumentMut = existing.parse()
+            .context("Failed to parse config.toml")?;
+
+        // Serialize just the sync value and merge it in
+        let sync_toml = toml::to_string(sync)?;
+        let sync_value: toml_edit::DocumentMut = sync_toml.parse()?;
+        doc["sync"] = sync_value.as_item().clone();
+
+        std::fs::write(&config_path, doc.to_string())?;
     } else {
-        VaultConfig {
+        // No existing config — create from scratch
+        let config = VaultConfig {
             vault_name: vault_root
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or("Codex")
+                .unwrap_or("Codyx")
                 .to_string(),
-            sync: SyncConfig::None,
+            sync: sync.clone(),
             ..Default::default()
-        }
-    };
-
-    config.sync = sync.clone();
-
-    std::fs::create_dir_all(vault_root.join(".codex"))?;
-    std::fs::write(&config_path, toml::to_string_pretty(&config)?)?;
+        };
+        std::fs::write(&config_path, toml::to_string_pretty(&config)?)?;
+    }
     Ok(())
 }
 

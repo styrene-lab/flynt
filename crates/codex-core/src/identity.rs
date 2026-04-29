@@ -12,11 +12,9 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use styrene_identity::derive::{KeyDeriver, KeyPurpose};
 
-/// Default identity file location.
+/// Default identity file location — delegates to the styrene-identity crate.
 pub fn identity_path() -> PathBuf {
-    std::env::var("HOME")
-        .map(|h| PathBuf::from(h).join(".styrene/identity.key"))
-        .unwrap_or_else(|_| PathBuf::from(".styrene/identity.key"))
+    styrene_identity::file_signer::FileSigner::default_path()
 }
 
 /// Check if an identity file exists.
@@ -85,23 +83,32 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
     let pp = passphrase.as_bytes().to_vec();
     let provider = ClosurePassphraseProvider::new(move || Ok(pp.clone()));
     let signer = FileSigner::new(&path, Box::new(provider));
-    let root_secret = signer.load(passphrase.as_bytes())
-        .map_err(|e| anyhow::anyhow!("Failed to unlock identity: {e}"))?;
+    let root_secret = match signer.load(passphrase.as_bytes()) {
+        Ok(secret) => secret,
+        Err(_) => {
+            // Deliberate delay on failure to slow brute-force attempts
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            return Err(anyhow::anyhow!("Failed to unlock identity — wrong passphrase?"));
+        }
+    };
 
     let deriver = KeyDeriver::new(root_secret.as_bytes());
 
-    // Derive git signing key
+    // Derive git signing key (for commit signatures)
     let git_signing_bytes = deriver.derive(KeyPurpose::GitSigning);
+    let git_signing_pubkey = format_ssh_ed25519_pubkey(&git_signing_bytes, "codyx-signing");
 
-    // Fingerprint: hex of first 16 bytes of git signing key
+    // Derive SSH auth key (for git remote authentication)
+    let ssh_auth_bytes = deriver.derive(KeyPurpose::SshHost);
+    let ssh_auth_pubkey = format_ssh_ed25519_pubkey(&ssh_auth_bytes, "codyx@styrene");
+
+    // Fingerprint: hex of first 8 bytes of signing key
     let fingerprint = hex_fingerprint(&git_signing_bytes);
-
-    // SSH public key for display
-    let ssh_pubkey = format_ssh_ed25519_pubkey(&git_signing_bytes, "codyx@styrene");
 
     Ok(UnlockedIdentity {
         fingerprint,
-        ssh_pubkey,
+        ssh_auth_pubkey,
+        git_signing_pubkey,
         git_signing_key: git_signing_bytes,
         deriver,
     })
@@ -110,7 +117,10 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
 /// An unlocked identity with derived keys.
 pub struct UnlockedIdentity {
     pub fingerprint: String,
-    pub ssh_pubkey: String,
+    /// SSH public key for git remote authentication (add to hosting profile).
+    pub ssh_auth_pubkey: String,
+    /// SSH public key for git commit signing.
+    pub git_signing_pubkey: String,
     pub git_signing_key: [u8; 32],
     deriver: KeyDeriver,
 }

@@ -36,6 +36,13 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
             })
             .await
             .unwrap_or_default();
+            // Filter out internal files (delegations, agent comms, memory facts)
+            list.retain(|doc| {
+                let path = doc.path.to_string_lossy();
+                !path.starts_with("ai/delegations/")
+                    && !path.starts_with("ai/memory/")
+                    && !path.starts_with("references/comms/")
+            });
             // Sort alphabetically for a clean sidebar
             list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
             list

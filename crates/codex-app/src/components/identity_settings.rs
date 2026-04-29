@@ -60,7 +60,8 @@ pub fn IdentitySettingsSection() -> Element {
                                                         Ok(Ok(id)) => {
                                                             *unlocked.write() = Some(UnlockedDisplay {
                                                                 fingerprint: id.fingerprint,
-                                                                ssh_pubkey: id.ssh_pubkey,
+                                                                ssh_auth_pubkey: id.ssh_auth_pubkey,
+                                                                git_signing_pubkey: id.git_signing_pubkey,
                                                             });
                                                         }
                                                         Ok(Err(e)) => *error_msg.write() = Some(format!("{e}")),
@@ -84,7 +85,8 @@ pub fn IdentitySettingsSection() -> Element {
                                                     Ok(Ok(id)) => {
                                                         *unlocked.write() = Some(UnlockedDisplay {
                                                             fingerprint: id.fingerprint,
-                                                            ssh_pubkey: id.ssh_pubkey,
+                                                            ssh_auth_pubkey: id.ssh_auth_pubkey,
+                                                            git_signing_pubkey: id.git_signing_pubkey,
                                                         });
                                                     }
                                                     Ok(Err(e)) => *error_msg.write() = Some(format!("{e}")),
@@ -110,14 +112,14 @@ pub fn IdentitySettingsSection() -> Element {
                             }
                         }
                         div { class: "settings-row",
-                            span { class: "settings-label", "SSH public key" }
+                            span { class: "settings-label", "SSH auth key" }
                             div { class: "settings-control",
                                 div { class: "identity-ssh-key",
-                                    code { class: "identity-key-text", "{id.ssh_pubkey}" }
+                                    code { class: "identity-key-text", "{id.ssh_auth_pubkey}" }
                                     button {
                                         class: "btn btn-ghost btn-xs",
                                         onclick: {
-                                            let key = id.ssh_pubkey.clone();
+                                            let key = id.ssh_auth_pubkey.clone();
                                             move |_| {
                                                 let js = format!(
                                                     "navigator.clipboard.writeText({})",
@@ -135,12 +137,15 @@ pub fn IdentitySettingsSection() -> Element {
                             }
                         }
                         div { class: "settings-row",
-                            span { class: "settings-label", "Git signing" }
+                            span { class: "settings-label", "Git signing key" }
                             div { class: "settings-control",
+                                div { class: "identity-ssh-key",
+                                    code { class: "identity-key-text", "{id.git_signing_pubkey}" }
+                                }
                                 button {
                                     class: "btn btn-ghost btn-sm",
                                     onclick: {
-                                        let ssh_key = id.ssh_pubkey.clone();
+                                        let ssh_key = id.git_signing_pubkey.clone();
                                         move |_| {
                                             let vault_root = ctx.vault_root();
                                             let key = ssh_key.clone();
@@ -228,5 +233,6 @@ pub fn IdentitySettingsSection() -> Element {
 #[derive(Clone)]
 struct UnlockedDisplay {
     fingerprint: String,
-    ssh_pubkey: String,
+    ssh_auth_pubkey: String,
+    git_signing_pubkey: String,
 }

@@ -96,9 +96,7 @@
           cargoBuildFlags = [ "-p" "codex-app" ];
           cargoTestFlags = [ "-p" "codex-core" "-p" "codex-store" ];
 
-          postInstall = ''
-            mv $out/bin/codex-app $out/bin/codyx 2>/dev/null || true
-          '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+          postInstall = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
             mkdir -p $out/share/applications
             cat > $out/share/applications/codex.desktop <<DESKTOP
             [Desktop Entry]

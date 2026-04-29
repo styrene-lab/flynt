@@ -6,7 +6,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en_US</string>
     <key>CFBundleDisplayName</key>
-    <string>Codex</string>
+    <string>Codyx</string>
     <key>CFBundleExecutable</key>
     <string>codex-mobile</string>
     <key>CFBundleIconName</key>
@@ -36,7 +36,7 @@
     <key>CFBundleIdentifier</key>
     <string>io.styrene.codex</string>
     <key>CFBundleName</key>
-    <string>Codex</string>
+    <string>Codyx</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

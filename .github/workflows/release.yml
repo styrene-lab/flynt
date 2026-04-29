@@ -65,7 +65,7 @@ jobs:
 
       - name: Prepare archive
         run: |
-          DIST="codex-${{ env.RELEASE_TAG }}-linux-${{ matrix.arch }}"
+          DIST="codyx-${{ env.RELEASE_TAG }}-linux-${{ matrix.arch }}"
           mkdir -p "$DIST"
 
           # Find the built binary — dx output path varies by version
