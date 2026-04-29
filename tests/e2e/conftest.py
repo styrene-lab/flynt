@@ -12,10 +12,15 @@ from playwright.sync_api import sync_playwright
 
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-BINARY = REPO_ROOT / "target" / "debug" / "codyx"
-# Fallback for release builds
-if not BINARY.exists():
+
+# Resolve binary: env override → release → debug
+_env_bin = os.environ.get("CODYX_BINARY")
+if _env_bin:
+    BINARY = Path(_env_bin)
+elif (REPO_ROOT / "target" / "release" / "codyx").exists():
     BINARY = REPO_ROOT / "target" / "release" / "codyx"
+else:
+    BINARY = REPO_ROOT / "target" / "debug" / "codyx"
 
 
 def wait_for_port(port: int, timeout: float = 15.0) -> bool:
