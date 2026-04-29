@@ -99,8 +99,14 @@
             cd ../..
           '';
 
+          # Pass DIOXUS_PRODUCT_NAME through the GApps wrapper so
+          # get_asset_root() resolves to lib/codyx/ at runtime
+          preFixup = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+            gappsWrapperArgs+=(--set DIOXUS_PRODUCT_NAME codyx)
+          '';
+
           installPhase = ''
-            mkdir -p $out/bin
+            mkdir -p $out/bin $out/lib/codyx
 
             # Find the dx output directory
             DX_OUT=""
@@ -115,7 +121,7 @@
 
             if [ -z "$DX_OUT" ]; then
               echo "ERROR: dx build output not found"
-              find target/dx/ -type f -name "codyx" -o -name "codex-app" 2>/dev/null
+              find target/dx/ -type f \( -name "codyx" -o -name "codex-app" \) 2>/dev/null
               exit 1
             fi
 
@@ -125,9 +131,10 @@
             cp "$BIN" $out/bin/codyx
             chmod +x $out/bin/codyx
 
-            # Copy assets alongside binary (Dioxus resolves from exe parent dir)
+            # Copy hashed assets to lib/codyx/ — Dioxus get_asset_root() on Linux
+            # checks bin/../lib/$DIOXUS_PRODUCT_NAME/ which survives wrapGAppsHook
             if [ -d "$DX_OUT/assets" ]; then
-              cp -r "$DX_OUT/assets" $out/bin/assets
+              cp -r "$DX_OUT/assets" $out/lib/codyx/assets
             fi
           '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
             mkdir -p $out/share/applications
