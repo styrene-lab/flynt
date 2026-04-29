@@ -68,27 +68,16 @@
           '';
         };
 
-        packages.default = pkgs.rustPlatform.buildRustPackage {
+        packages.default = pkgs.stdenv.mkDerivation {
           pname = "codyx";
-          version = "0.6.0";
+          version = "0.6.2";
           src = ./.;
 
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            outputHashes = {
-              "omegon-extension-0.17.0-rc.1" = "sha256-i1YkXkv2fEsbK8dPjN2FQDmZVBJ7cColT8Kas0MSfZM=";
-            };
-          };
-
-          # The git_sync integration tests currently depend on mutable git
-          # default-branch/global-config behavior that is not stable inside the
-          # Nix sandbox. Keep installable package builds hermetic by validating
-          # the code separately with cargo check/tests during development.
-          doCheck = false;
-
           nativeBuildInputs = [
+            rust
             pkgs.pkg-config
             pkgs.cmake
+            pkgs.dioxus-cli
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
             pkgs.wrapGAppsHook3
           ];
@@ -103,13 +92,46 @@
             Security
           ]);
 
-          # Only build the desktop app
-          cargoBuildFlags = [ "-p" "codex-app" ];
-          cargoTestFlags = [ "-p" "codex-core" "-p" "codex-store" ];
+          buildPhase = ''
+            # dx build handles asset hashing + bundling
+            cd crates/codex-app
+            dx build --platform desktop --release
+            cd ../..
+          '';
 
-          postInstall = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+          installPhase = ''
+            mkdir -p $out/bin
+
+            # Find the dx output directory
+            DX_OUT=""
+            for candidate in \
+              target/dx/codyx/release/linux/app \
+              target/dx/codex-app/release/linux/app; do
+              if [ -d "$candidate" ]; then
+                DX_OUT="$candidate"
+                break
+              fi
+            done
+
+            if [ -z "$DX_OUT" ]; then
+              echo "ERROR: dx build output not found"
+              find target/dx/ -type f -name "codyx" -o -name "codex-app" 2>/dev/null
+              exit 1
+            fi
+
+            # Copy binary
+            BIN="$DX_OUT/codyx"
+            [ -f "$BIN" ] || BIN="$DX_OUT/codex-app"
+            cp "$BIN" $out/bin/codyx
+            chmod +x $out/bin/codyx
+
+            # Copy assets alongside binary (Dioxus resolves from exe parent dir)
+            if [ -d "$DX_OUT/assets" ]; then
+              cp -r "$DX_OUT/assets" $out/bin/assets
+            fi
+          '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
             mkdir -p $out/share/applications
-            cat > $out/share/applications/codex.desktop <<DESKTOP
+            cat > $out/share/applications/codyx.desktop <<DESKTOP
             [Desktop Entry]
             Name=Codyx
             Comment=Markdown notes, kanban, and knowledge graph

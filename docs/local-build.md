@@ -1,48 +1,48 @@
 # Local Codyx Build Notes
 
-## Current build path
-
-On Nix/NixOS, build the desktop package with:
+## Nix/NixOS build
 
 ```sh
 NIXPKGS_ALLOW_UNFREE=1 nix build .#default --impure --print-build-logs
-```
-
-The built binary is available at:
-
-```text
 ./result/bin/codyx
 ```
 
-## What the Nix package currently handles
+The Nix package uses `dx build` (Dioxus CLI) internally, which handles
+asset hashing and bundling. The output binary and its `assets/` directory
+are installed to `$out/bin/`.
 
-The package definition in `flake.nix` includes:
+## What the Nix package handles
 
-- `cargoLock.outputHashes` for the git dependency `omegon-extension-0.17.0-rc.1`.
-- `doCheck = false` for the installable package build.
+- `dioxus-cli` for proper asset bundling (CSS, JS, themes get hashed filenames)
+- WebKitGTK + GTK3 runtime dependencies via `wrapGAppsHook3`
+- Desktop entry + icon installation
+- `omegon-extension` git dependency hash
 
-Package-time tests are disabled because the `codex-store` git integration tests currently depend on mutable git default-branch/global-config behavior that is not stable inside the Nix sandbox. Run validation separately during development.
+## Known issues
 
-## Validation commands
+- **doCheck is disabled** — git integration tests need mutable git config
+  which isn't available in the Nix sandbox. Run `cargo test` separately.
+- The package uses `stdenv.mkDerivation` with `dioxus-cli` instead of
+  `rustPlatform.buildRustPackage` because the `asset!()` macro requires
+  the dx build asset pipeline for hashed filenames.
 
-Useful checks while iterating:
+## Development commands
 
 ```sh
-cargo check -p codex-store
+# Enter dev shell with all deps
+nix develop
+
+# Check compilation
+cargo check -p codex-app
+
+# Run tests
 cargo test -p codex-core -p codex-store
+
+# Build + run locally (outside Nix)
+cargo run --package codex-app --bin codyx
 ```
 
-## Known packaging issue
+## Annotated git tags
 
-The Nix package builds and launches, but the UI currently renders without styling. The likely cause is that `packages.default` builds the Dioxus desktop app through raw Cargo, while the application references CSS/theme assets through Dioxus asset paths such as `asset!("/assets/...")`.
-
-The package output currently contains the binary, desktop file, and icon, but not the full Dioxus asset bundle in the runtime location expected by the app.
-
-The next packaging fix should either:
-
-1. Build/bundle the desktop app through Dioxus (`dx build` / `dx bundle`) in the Nix package, or
-2. Keep the Cargo build but explicitly install the CSS/theme/vendor assets where the Dioxus runtime expects them.
-
-## Related runtime fix
-
-Annotated git tag creation uses Codex's local signature helper instead of `repo.signature()`, so creating tags does not require global git `user.name` / `user.email` to be configured.
+Tag creation uses a local signature fallback, so it works without
+global `user.name` / `user.email` git config.
