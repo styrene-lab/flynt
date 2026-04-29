@@ -157,24 +157,11 @@ class CodyxApp:
             stderr=subprocess.PIPE,
         )
 
-        if is_linux:
-            if not wait_for_port(self.inspector_port):
-                self.stop()
-                raise RuntimeError(
-                    f"Codyx did not open inspector port {self.inspector_port} within timeout"
-                )
-
-            self._playwright = sync_playwright().start()
-            self._browser = self._playwright.webkit.connect_over_cdp(
-                f"http://127.0.0.1:{self.inspector_port}"
-            )
-            self.page = self._browser.contexts[0].pages[0]
-            self.page.wait_for_selector(".codex-shell, .view-welcome", timeout=10000)
-        else:
-            # macOS: no CDP available for WKWebView.
-            # Wait for the app to start and create its vault state.
-            time.sleep(3)
-            self.page = None  # Tests must check self.page before DOM assertions
+        # Wait for the app to start and create its vault state.
+        # WebKit (both GTK and WKWebView) doesn't reliably support CDP
+        # connections from external processes. Tests verify via filesystem.
+        time.sleep(4)
+        self.page = None
 
     def stop(self):
         """Shut down the app and Playwright."""

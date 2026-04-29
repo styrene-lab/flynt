@@ -50,9 +50,15 @@ const features = [
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Codex — Local-First Knowledge Management</title>
   <meta name="description" content="Markdown-native knowledge management with integrated AI, kanban boards, and a knowledge graph. Built in Rust. Local-first, no account required." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  {import.meta.env.PUBLIC_I2P_BUILD ? (
+    <link href="/fonts/fonts.css" rel="stylesheet" />
+  ) : (
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link href="https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    </>
+  )}
 </head>
 <body>
   <nav class="topnav">

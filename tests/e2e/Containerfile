@@ -11,7 +11,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
-RUN cargo build --package codex-app --bin codyx --release
+RUN cargo build --package codex-app --bin codyx --release \
+    && strip /build/target/release/codyx \
+    && rm -rf /build/target/release/.fingerprint /build/target/release/deps /build/target/release/build /build/target/release/incremental
 
 # Stage 2: Test runner with Playwright
 FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
