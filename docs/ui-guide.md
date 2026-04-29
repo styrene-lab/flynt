@@ -14,149 +14,182 @@
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
 | **Start writing** | Click | Creates vault at `~/Documents/Codyx/`, writes Welcome.md, switches to Notes view |
-| **Start writing** (vault exists) | Click | Label changes to "Open your notebook", switches to existing vault |
-| **Sync across devices** | Click | Expands sync options panel below |
+| **Open your notebook** (vault exists) | Click | Switches to last used vault, navigates to Notes |
+| **Sync across devices** | Click | Expands sync options panel |
 | **Join a shared vault** | Click | Opens clone dialog modal |
 
 ### Sync Options (expanded)
 
+#### Cloud Storage (auto-detected, only shows installed providers)
+
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **Cloud storage grid** | Auto-detected | Shows only installed providers (iCloud/Google Drive/Dropbox/OneDrive) |
-| Cloud provider button | Click | Creates vault in provider's sync folder, switches to Notes. If vault exists, opens it. |
-| **More options ▾** | Click | Expands git hosting section (auto-expanded if no cloud providers detected) |
+| **iCloud Drive** | Click | Creates vault in `~/Library/Mobile Documents/com~apple~CloudDocs/Codyx/`. If already exists, opens it. |
+| **Google Drive** | Click | Creates vault in Google Drive's local sync folder |
+| **Dropbox** | Click | Creates vault in `~/Dropbox/Codyx/` |
+| **OneDrive** | Click | Creates vault in OneDrive's local sync folder |
+| No providers detected | | Cloud section hidden entirely. Git section auto-expands with label "Online sync". |
+
+**Error case:** Provider folder missing or permission denied → error logged but no UI feedback. **Known gap.**
+
+#### Git Hosting (collapsed when cloud providers exist, auto-expanded otherwise)
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Toggle label | "More options ▾" (with cloud) or "Online sync" (without cloud) | Expands/collapses git section |
 | **Connect a notebook** | Click | Opens clone dialog |
-| **Codeberg** button | Click | Opens `codeberg.org/repo/create` in browser |
-| **GitHub** button | Click | Opens `github.com/new` in browser |
+| **Codeberg** button | Click | Opens `codeberg.org/repo/create` in default browser |
+| **GitHub** button | Click | Opens `github.com/new` in default browser |
+| Explainer text | Display | "Don't have an account? Git hosting keeps a complete history..." |
 
 ### Clone Dialog (modal)
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Notebook URL | Text input | Accepts any git URL (HTTPS or SSH) |
-| Branch | Text input, default "main" | Sets the branch to clone |
-| Access token | Password input, optional | Used for HTTPS auth if provided |
-| Clone button | Click | Async clone with spinner ("Cloning..."), switches to Notes on success |
+| Notebook URL | Text input | Placeholder: `https://codeberg.org/you/notebook.git` |
+| Branch | Text input, default "main" | |
+| Access token | Password input, optional | "Only needed for private notebooks" |
+| Clone button | Click | Async (`spawn_blocking`), button shows "Cloning..." while working |
+| Clone success | | Vault opened, navigate to Notes, launcher profile updated |
+| Clone failure | | Error inline in dialog: network error, auth failure, path conflict |
 | Cancel button | Click | Closes dialog |
 | Overlay click | Click | Closes dialog |
-| Error | Clone failure | Error message shown inline in dialog |
+| Folder already exists | | Error: "Folder already exists: /path" |
 
 ### Advanced Options (collapsed)
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **Open an existing folder** | Click | File picker → opens folder as vault (no frontmatter writing) |
+| **Open an existing folder** | Click | File picker → vault opened with `write_frontmatter: false` |
 | **Clone from Git** | Click | Opens clone dialog |
-| **Import markdown files** | Click | File picker → copies files into vault |
+| **Import markdown files** | Click | File picker → copies files into current vault |
 
 ---
 
 ## 2. Notes View
 
-**Route:** `Notes` | **Hotkey:** Sidebar "Notes" button
+**Route:** `Notes` | **Sidebar:** Notes icon
 
 ### Note List (Sidebar)
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Note item | Click | Opens note in main pane, adds to tab bar |
+| Note item | Click | Opens in main pane, adds to tab bar |
 | Note item | Right-click | Context menu: Rename, Delete |
-| Folder group | Click header | Expand/collapse folder |
-| `+` button | Click | Opens inline new-note input |
+| Folder group | Click header | Expand/collapse |
+| `+` button | Click | Inline new-note input |
 | New note input | Enter | Creates `<name>.md`, opens in tab |
 | New note input | Escape | Cancels |
-| **Filtered out:** | | `ai/delegations/`, `ai/memory/`, `references/comms/` not shown |
+
+**Filtered from sidebar:** `ai/delegations/`, `ai/memory/`, `references/comms/` — these are agent-internal documents, searchable but not shown in the note list.
 
 ### Note Editor
 
-| Mode | Description |
-|------|-------------|
-| **Live** (default) | Rendered markdown with CodeMirror inline editing. Click text to edit, changes auto-save. |
-| **Source** | Raw markdown editor with syntax highlighting. Full frontmatter visible. |
+| Mode | Description | Limitations |
+|------|-------------|-------------|
+| **Live** (default) | Rendered markdown with CodeMirror overlay for inline editing | Code blocks, tables, and embeds are not directly editable in-place — click triggers their specific action (open drawing, navigate wikilink). Switch to Source for full editing. |
+| **Source** | Raw markdown with syntax highlighting | Full frontmatter visible and editable |
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Mode toggle (top bar) | Click | Switches between Live and Source |
-| Title (top bar) | Double-click | Inline rename |
-| Auto-save | 2s debounce | Saves to disk, re-renders |
+| Mode toggle | Click | Switches between Live and Source |
+| Title (top bar) | Double-click | Inline rename, Enter saves, Escape cancels |
+| Auto-save | 2s debounce | Saves to disk via JS bridge, re-renders |
 | `Cmd+S` | Keydown | Immediate save |
-| `![[file.excalidraw]]` | Rendered | Inline SVG from sidecar, clickable to open editor |
-| `![[diagram.d2]]` | Rendered | Inline SVG from D2 render, placeholder if d2 CLI unavailable |
-| `![[image.png]]` | Rendered | Inline image via `vault://` protocol |
-| `[[wikilink]]` | Click | Navigates to linked note |
-| Conflict markers | Detected | Yellow banner: "Keep mine" / "Keep theirs" / "Edit manually" |
+| `![[file.excalidraw]]` | Rendered | Inline SVG from `.svg` sidecar. Click opens Excalidraw editor. If no SVG: "[Drawing: file — open to render]" placeholder, click opens editor. |
+| `![[diagram.d2]]` | Rendered | Inline SVG from D2 render. If d2 CLI unavailable: "[Diagram: file — rendering not available]" placeholder. |
+| `![[image.png]]` | Rendered | Inline image via `vault://localhost/` protocol. Searches root, `assets/`, `images/`, `drawings/`. |
+| `[[wikilink]]` | Click | Navigates to linked note, opens in new tab |
 
 ### Conflict Resolution Banner
 
+**Trigger:** Document content contains `<<<<<<<` + `=======` + `>>>>>>>` markers (git merge conflict).
+
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Keep mine | Click | Resolves all conflicts with local changes, saves, re-renders |
-| Keep theirs | Click | Resolves all conflicts with remote changes, saves, re-renders |
-| Edit manually | Click | Switches to Source mode for manual editing |
+| Banner | Display | Yellow bar: "⚠ This file has merge conflicts." |
+| Keep mine | Click | Resolves all regions with local ("ours") content, auto-saves, re-renders |
+| Keep theirs | Click | Resolves all regions with remote ("theirs") content, auto-saves, re-renders |
+| Edit manually | Click | Switches to Source mode — operator edits conflict markers by hand |
+
+**Note:** Resolution operates on the loaded `edit_body` signal. If the file has been modified by sync since loading, the resolution may apply to stale content. Switching to Source mode and back re-reads from disk.
 
 ---
 
 ## 3. Excalidraw Drawing
 
-**Trigger:** Open a `.excalidraw` wrapper document, or `Cmd+Shift+D`
+**Trigger:** Open a `.excalidraw` wrapper document via sidebar, or `Cmd+Shift+D` (new drawing via menu)
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Canvas | Draw | Full Excalidraw editor, dark theme |
+| Canvas | Full Excalidraw editor | Dark theme, transparent background |
 | Auto-save | 2s interval | Saves `.excalidraw` JSON to disk |
-| SVG auto-export | After save | Writes `.svg` sidecar for inline embedding |
-| Export SVG button | Click | Exports SVG, opens in Finder |
-| Export PNG button | Click | Exports 2x PNG via canvas, opens in Finder |
-| Tab bar | Hidden | Reclaimed for canvas space during drawing |
-| Navigate away | | Tab bar restored, React root unmounted |
+| SVG auto-export | After each save | Writes `.svg` sidecar next to `.excalidraw` file |
+| Export SVG button | Click | Manual SVG export, opens parent folder in Finder (macOS) |
+| Export PNG button | Click | 2x retina PNG via canvas→blob, opens in Finder |
+| Tab bar | Hidden during drawing | Reclaimed for canvas space |
+| Navigate away | Close tab or switch view | Tab bar restored, React root unmounted, JS state cleaned up |
+
+**Headless SVG export:** When the agent creates a `.excalidraw` file via MCP tool, the desktop watcher detects the file change and triggers SVG export via the webview's Excalidraw bundle — no editor needs to be open. Concurrent exports are serialized via a JS promise queue.
 
 ---
 
 ## 4. Kanban Board
 
-**Route:** `Kanban` | **Hotkey:** Sidebar "Kanban" button
+**Route:** `Kanban` | **Sidebar:** Kanban icon
 
 ### Board Tabs
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Board tab | Click | Switches to that board |
-| `+ New board` | Click | Inline name input, Enter creates board |
-| Delete button (×) | Click | "Delete this board and its tasks? This cannot be undone." Confirm/Cancel |
+| Board tab | Click | Switches active board |
+| `+ New board` | Click | Inline name input, Enter creates with default columns (Backlog/In Progress/Review/Done) |
+| Delete button (×) | Click | Confirmation: "Delete this board and its tasks? This cannot be undone." Confirm deletes board + all tasks. Cancel dismisses. |
 
 ### Columns
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Column header | Double-click | Inline rename, Enter saves, Escape cancels |
-| Column × button | Hover to show, click | Removes column (only if empty) |
-| `+ Add column` | Click | Inline name input at end of board |
-| WIP counter | Display | Shows `count/limit`, turns orange when over |
+| Column name | Double-click | Inline rename. Enter saves (renames column + updates all tasks). Escape cancels. |
+| Column × button | Hover header to reveal | Removes column. **Only visible on empty columns.** |
+| `+ Add column` | Click (end of board) | Inline name input. Enter creates, Escape cancels. |
+| WIP counter | Display | `count/limit` badge. Turns orange when over limit. |
+| Drop zone | Drag card over | Column border highlights with primary color + shadow |
 
 ### Task Cards
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Card | Drag | Drag between columns, drop zone highlights |
-| Card `+` button | Hover to show, click | Expands detail editor |
-| Detail editor | Fields | Title, Description, Priority (dropdown), Due date (date picker) |
-| Save | Click | Persists changes |
-| Archive | Click | Moves to archived status, hidden from column |
-| `+ Add task` | Click per column | Inline title input, Enter creates task |
+| Card | Drag | Drag between columns. Drop updates task's column. |
+| Priority dot | Display | Colored circle: green (low), amber (medium), red (high), purple (critical) |
+| Tags | Display | Small badges below title |
+| `+` button | Hover to reveal, click | Expands inline detail editor |
+| Detail: Title | Text input | |
+| Detail: Description | Textarea | Markdown body |
+| Detail: Priority | Select dropdown | Low/Medium/High/Critical |
+| Detail: Due date | Date input | |
+| Save | Click | Persists all changes |
+| Archive | Click | Sets status to Archived, card hidden from column |
+| `+ Add task` | Per-column button | Inline title input, Enter creates, Escape cancels |
+
+**Error case:** Empty column name on rename → saves empty string. **Known gap** — no validation.
 
 ---
 
 ## 5. Graph View
 
-**Route:** `Graph` | **Hotkey:** Sidebar "Graph" button
+**Route:** `Graph` | **Sidebar:** Graph icon
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Graph canvas | Display | Force-directed SVG layout of all vault nodes |
-| Node | Hover | Shows title label |
-| Filter buttons | Click | Filter by kind: Document, Task, Board, Repo, etc. |
-| Node colors | | Document (teal), Task (amber), Board (blue), Repo (violet), etc. |
-| Design nodes | | Status icon overlay (seed ◌, implementing ⚙, implemented ✓) |
+| Graph | Static SVG | Force-directed layout rendered in pure Rust, displayed as inline SVG |
+| Node labels | Always visible | Truncated to 20 chars with ellipsis |
+| Filter row | Button per kind | Document, Task, Board, Repo, Link, Communication, Memory, Design Node |
+| Node colors | By kind | Document (teal), Task (amber), Board (blue), Repo (violet), Link (gray), Design Node (green), Workspace Lease (purple) |
+| Design node status | Icon overlay | seed ◌, exploring ◐, resolved ◉, decided ●, implementing ⚙, implemented ✓ |
+| Edge opacity | By kind | Wikilinks 0.4, Tasks 0.3, Semantic 0.2, Dependencies 0.5, Parent-Child 0.6 |
+
+**Note:** The graph is a static render — no hover tooltips, no click-to-navigate, no drag-to-rearrange. It's a structural overview, not an interactive explorer.
 
 ---
 
@@ -166,78 +199,121 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Input | Type | Fuzzy-searches commands + note titles |
-| Arrow keys | Navigate | Highlight moves through results |
-| Enter | Select | Executes command or opens note |
-| Escape | Close | Closes palette |
-| Categories | Display | Navigate, Create, Template, Tag, Open, Action |
+| Input | Type | Fuzzy-searches all commands + note titles |
+| Arrow keys | Up/Down | Moves selection highlight, wraps around |
+| Enter | Executes selected | Opens note or runs command |
+| Escape | Closes palette | |
 
-### Key Commands
+#### Available Commands
 
 | Command | Category | Action |
 |---------|----------|--------|
-| Notes / Board / Graph / Settings / Welcome | Navigate | Switch route |
-| New Note | Create | Timestamped note |
-| New Drawing | Create | Excalidraw + wrapper |
-| Insert Drawing Here | Create | Embeds `![[drawing.excalidraw]]` at cursor |
-| Today's Note | Create | Daily note from template |
-| New from: `<template>` | Template | Creates note from template |
-| Create Snapshot | Action | Auto-commits + git tags HEAD |
-| Sync Now | Action | Manual git commit + push/pull |
-| `<note title>` | Open | Opens note in tab |
+| Notes / Board / Graph / Settings / Welcome | Navigate | Switch view |
+| New Note | Create | Timestamped note, opens in tab |
+| New Drawing | Create | Excalidraw `.excalidraw` + wrapper `.md` |
+| Insert Drawing Here | Create | Inserts `![[drawing.excalidraw]]` at cursor (Notes view only, requires open note) |
+| Today's Note | Create | Daily note from template, or opens existing |
+| New from: `<template>` | Template | Creates timestamped note from vault template |
+| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags. **Silently no-ops on non-Git vaults.** |
+| Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
+| Create Vault in iCloud | Create | Creates iCloud vault + opens new instance |
+| `<note title>` | Open | Opens matching note in tab |
 
 ### Agent Mode (`Cmd+K`)
 
-**Only available when agent is connected (agent panel has been opened).**
+**Only available when the agent panel has been opened and an ACP session is active.** If no session exists, `Cmd+K` is silently ignored and the Agent tab is hidden.
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Agent tab | Hidden | Not shown until ACP session exists |
-| Input | Type | Natural language delegation prompt |
-| Enter | Submit | Fire-and-forget: submits to shared ACP session, shows green "Delegated" for 400ms, closes |
-| Context injection | Automatic | Active note title + current view prepended to prompt |
-| Audit trail | Automatic | Delegation saved to `ai/delegations/<timestamp>.md` |
+| Input | Type | Natural language prompt |
+| Enter | Submit | Submits to shared ACP session (fire-and-forget). Shows green "✓ Delegated" for 400ms, then closes palette. |
+| Context | Automatic | Active note title + current view injected as prefix: `[Currently viewing: "Title"] [On: Board view]` |
+| Audit trail | Automatic | Prompt saved to `ai/delegations/<YYYYMMDD-HHMMSS>.md` |
+| No session | | Placeholder: "Agent not connected — open the agent panel first" (input disabled) |
 
 ---
 
 ## 7. Settings
 
-**Route:** `Settings` | **Hotkey:** Sidebar "Settings" button
+**Route:** `Settings` | **Sidebar:** Settings icon
 
 ### Basic (always visible)
 
-| Section | Fields |
-|---------|--------|
-| **Appearance** | Theme (Alpharius), Font size (S/M/L/XL) |
-| **Vault** | Name (editable), Location (read-only) |
-| **Sync** | Backend dropdown (None/iCloud/Git/S3/Forge), Git: remote + branch + auto-commit interval |
+| Section | Field | Type | Notes |
+|---------|-------|------|-------|
+| **Appearance** | Theme | Card grid | Currently: Alpharius only |
+| | Font size | Button group | Small / Medium / Large / XLarge |
+| **Vault** | Name | Text input | |
+| | Location | Read-only path | |
+| **Sync** | Backend | Radio group | None / iCloud / Git |
+| | Remote (Git) | Text input | Only shown for Git backend |
+| | Branch (Git) | Text input | |
+| | Auto-commit (Git) | Number input | Seconds, minimum 30, 0 = manual only |
 
-**Sync backend change** triggers vault migration:
-- None → iCloud: copies vault to iCloud Drive, switches runtime
-- None → Git: inits git repo at current location
-- iCloud → Git: adds git to iCloud location
+**Sync backend change on Save:** Triggers vault migration.
+- **None → iCloud:** Copies all vault files to iCloud Drive folder, updates config, switches runtime. **Synchronous — UI blocks during copy, no progress indicator.** Large vaults may appear to freeze.
+- **None → Git:** Stays in current location, initializes git repo + adds remote.
+- **Any → None:** Copies to `~/Documents/<vault_name>/`, iCloud/git copy remains (not deleted).
 
-### Advanced (collapsed, "Show advanced settings ▾")
+### Advanced ("Show advanced settings ▾")
 
-| Section | Fields |
-|---------|--------|
-| **Visualization** | Excalidraw auto-export toggle, D2 auto-render toggle, D2 theme (number), D2 layout (ELK/Dagre/TALA), D2 binary path |
-| **Indexing** | Write frontmatter toggle (disable for shared repos) |
-| **Publication** | Default visibility (Private/Public/Unlisted), rules editor |
-| **Local Runtime** | State root, Index DB, Omegon runtime root, Omegon mind DB, Styrene Identity profile, Omegon channel (Stable/RC/Nightly), Omegon binary override |
-| **Omegon Profile** | Model provider, Model ID, Thinking level (None/Low/Medium/High), Max turns |
-| **Identity** | Status (active/none), Create (passphrase + confirm), Unlock (passphrase), SSH auth key (copy), Git signing key (copy), Enable git signing button |
-| **Providers** | Status per provider (Anthropic, OpenAI, OpenRouter, Groq, xAI, Mistral, Google, GitHub, Forgejo/Codeberg, GitLab). API key entry or OAuth login. Remove credentials. |
-| **Operator** | Active persona (Off/Scribe/Omegon), Rail extension (None/Vox/Codex), Vox enabled, Vox TTS, Vox voice |
-| **Agent Daemon** | Status indicator, Enable/Auto-start, Start/Stop/Restart, Model, Posture (Default/Fabricator/Architect/Explorator/Devastator), Persona, Port, Capabilities (8 checkboxes), Vox channels (Signal/Email/Webhook enable + detail) |
+| Section | Field | Type | Notes |
+|---------|-------|------|-------|
+| **Visualization** | Excalidraw auto-export | Checkbox | SVG sidecar on save |
+| | D2 auto-render | Checkbox | SVG via `d2` CLI on change |
+| | D2 theme | Number | 200 = dark (Alpharius), 0 = default |
+| | D2 layout | Radio | ELK / Dagre / TALA |
+| | D2 binary | Text input | Override path if not on PATH |
+| **Indexing** | Write frontmatter | Checkbox | Disable for shared repos |
+| **Publication** | Default visibility | Radio | Private / Public / Unlisted |
+| | Rules | Editor component | Tag/path matching |
+| **Local Runtime** | State root | Text path | Must be absolute |
+| | Index DB | Text path | |
+| | Omegon runtime root | Text path | |
+| | Omegon mind DB | Text path | |
+| | Styrene Identity profile | Text | |
+| | Omegon channel | Radio | Stable / RC / Nightly |
+| | Omegon binary | Text | Override path, bypasses channel resolution |
+| **Omegon Profile** | Model provider | Text input | e.g. "anthropic" |
+| | Model ID | Text input | e.g. "claude-sonnet-4-6" |
+| | Thinking level | Select | None / Low / Medium / High |
+| | Max turns | Number input | |
+| **Identity** | Status | Indicator | Green dot = active, gray = none |
+| | Create | Passphrase + confirm | Async (argon2id is slow), "Creating..." state |
+| | Unlock | Passphrase | Async, 2s deliberate delay on failure |
+| | SSH auth key | Code + copy | For adding to git hosting SSH keys |
+| | Git signing key | Code display | Separate key from auth key |
+| | Enable git signing | Button | Configures `.git/config` for SSH signing |
+| **Providers** | Per-provider row | Status + action | 11 providers: Anthropic, OpenAI API, OpenAI ChatGPT, OpenRouter, Groq, xAI, Mistral, Google, GitHub, Forgejo/Codeberg, GitLab |
+| | API key providers | "Add key" → masked input | |
+| | OAuth providers | "Login" button | Spawns `omegon auth login <provider>` |
+| | All providers | "Remove" button | Clears from auth.json |
+| **Operator** | Active persona | Select | Off / Scribe / Omegon |
+| | Rail extension | Select | None / Vox / Codex |
+| | Vox enabled | Checkbox | |
+| | Vox TTS | Checkbox | |
+| | Vox voice | Text input | System TTS voice name |
+| **Agent Daemon** | Status | Indicator + text | Disabled (gray) / Stopped / Starting (yellow) / Running (green, port) / Unhealthy (red) |
+| | Enable | Checkbox | |
+| | Auto-start | Checkbox | Start on app launch |
+| | Controls | Buttons | Start / Stop / Restart (disabled based on state) |
+| | Model | Text input | |
+| | Posture | Radio | Default / Fabricator / Architect / Explorator / Devastator |
+| | Persona | Text input | |
+| | Port | Number | Default 7842 |
+| | Capabilities | Checkbox grid (2-col) | 8 capabilities |
+| | Signal | Enable + phone | |
+| | Email | Enable + address | |
+| | Webhook | Enable + path | |
 
 ### Save Bar
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Save changes | Click | Persists all config to `.codex/config.toml` + operator settings. If sync changed, triggers migration. |
-| Export local preview | Click (advanced only) | Exports publication to local directory |
-| Success/error message | Inline | Green "ok" or red error text |
+| Save changes | Click | Persists to `.codex/config.toml` + `.codex/operator-settings.json` + `.omegon/profile.json` |
+| Export local preview | Advanced only | Exports publication HTML |
+| Success message | Inline green text | "Settings saved" or "Vault migrated and sync updated." |
+| Error message | Inline red text | Validation failures, save errors |
 
 ---
 
@@ -245,12 +321,15 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Vault name | Display | Shows current vault name |
-| Build hash | Display | Tiny monospace hash for version identification |
-| Sync badge | Display | ✓ green (synced), ↻ spinning (syncing), ⚠ amber (conflict with count) |
-| Search input | Type | Live search across vault, results grouped by folder |
+| Vault name | Display | Current vault name |
+| Build hash | Display | Tiny monospace, click-to-copy version hash |
+| Sync badge | ✓ (green) | Synced — Git auto-sync idle |
+| | ↻ (spinning blue) | Syncing — committing, pulling, or pushing |
+| | ⚠ (amber) | Conflict — count shown, tooltip describes resolution |
+| | Not shown | No Git sync configured |
+| Search input | Type | Live full-text search, results grouped by folder |
 | Search result | Click | Opens note in tab |
-| Agent toggle | Click | Shows/hides agent rail panel |
+| Agent toggle | Click | Shows/hides agent rail |
 
 ---
 
@@ -259,41 +338,53 @@
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
 | Current vault | Display | Name + path |
-| Other vaults | Click | Switches runtime to that vault |
-| Vault × button | Hover to show | "Your notes are not deleted" + Remove/Cancel |
-| Uncloned manifest vaults | Click (⤓ icon) | Clones vault to device |
-| Add vault | Click | Inline form: name + repo URL, creates in manifest + clones |
-| Open folder | Click | File picker → opens folder as vault |
-| Error banner | Display | Shows clone/add errors with dismiss button |
+| Other cloned vaults | Click | Switches runtime, navigates to Notes |
+| Vault × button | Hover to reveal | Confirmation with "Your notes are not deleted" hint |
+| Uncloned manifest vaults | ⤓ icon + role badge | Click clones to device (async) |
+| Add vault | Click | Inline form: name + repo URL, Enter adds to manifest + clones |
+| Open folder | Click | File picker → opens as vault |
+| Error banner | Red inline | Shows clone/add errors with × dismiss |
+
+**Error case:** "Add vault" when no manifest configured → error: "No manifest configured. Connect a manifest first."
 
 ---
 
 ## 10. Agent Rail (sidebar panel)
 
-**Trigger:** Toolbar agent toggle, or `View > Agent` menu
+**Trigger:** Toolbar agent toggle
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Status badge | Display | connected (green), connecting (yellow), thinking/tool running (blue pulsing) |
-| Chat messages | Display | User prompts + assistant responses (markdown rendered) |
-| Tool calls | Display | Kind badge + title + status |
-| Slash commands | Type `/` | Popup menu of available commands |
-| Config options | Dropdown | Model, thinking level, posture — persisted to operator settings |
-| Input | Enter | Sends prompt to agent via ACP |
+| Status badge | connected (green) | ACP session active |
+| | connecting (yellow) | Establishing connection |
+| | thinking (blue pulsing) | Processing prompt |
+| | tool running (blue pulsing) | Executing a tool |
+| Omegon not found | Banner | "Omegon binary not found. Install Omegon or set the runtime path in Settings." |
+| Chat messages | User: plain text | Assistant: markdown rendered with smart URL badges |
+| Tool calls | Inline blocks | Kind badge + title + status (InProgress/Complete) |
+| Slash commands | Type `/` | Popup menu — only shows if agent advertises commands |
+| Config bar | If agent provides options | Model/thinking/posture dropdowns — **only shown when advertised by the ACP session** |
+| Input | Enter | Sends prompt |
+| Input | Shift+Enter | Newline |
 | Input | Up/Down arrows | Navigate input history |
+| `/login` | Special command | Triggers OAuth login, reconnects session |
 
 ---
 
 ## 11. Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+P` | Command palette (command mode) |
-| `Cmd+K` | Command palette (agent mode, if connected) |
-| `Cmd+N` | New note |
-| `Cmd+Shift+D` | New drawing |
-| `Cmd+S` | Save current note |
-| `Cmd+W` | Close current tab |
+| Shortcut | Action | Context |
+|----------|--------|---------|
+| `Cmd+P` | Command palette (command mode) | Global |
+| `Cmd+K` | Command palette (agent mode) | Global, only if agent connected |
+| `Cmd+N` | New note | Menu |
+| `Cmd+Shift+D` | New drawing | Menu |
+| `Cmd+S` | Save current note | Notes view |
+| `Cmd+W` | Close current tab | Notes view |
+| `Escape` | Close palette / dialog / cancel edit | Context-dependent |
+| Up/Down arrows | Navigate palette results / input history | Palette, agent rail |
+| Enter | Execute / submit / confirm | Palette, forms |
+| Double-click | Rename column header / note title | Kanban, Notes |
 
 ---
 
@@ -301,53 +392,64 @@
 
 ### Onboarding
 
-| Screen | Elements |
-|--------|----------|
-| Welcome | "Start writing" / "Sync across devices" / "Join a shared vault" |
-| Sync choice | "Connect a notebook" / "Connect all my notebooks" |
-| Manifest input | URL + token → discovers vaults |
-| Vault list | Select vault from manifest → clone |
-| Single vault | URL + branch + token → clone |
-| Cloning | Spinner |
-| Done | "Open vault" |
+| Screen | Elements | Notes |
+|--------|----------|-------|
+| Welcome | "Start writing" / "Sync across devices" / "Join a shared vault" | Same tier-based design as desktop |
+| Sync choice | "Connect a notebook" / "Connect all my notebooks" | Single vault vs manifest |
+| Manifest input | URL + token → clone manifest repo | Discovers all vaults |
+| Vault list | Select vault → clone | Shows name + role badge |
+| Single vault | URL + branch + token → clone | |
+| Cloning | Spinner: "Setting up..." | Async |
+| Done | "You're all set" → "Open vault" | |
+| Error | Error message + "Start over" | |
 
 ### Tab Bar
 
-| Tab | View |
-|-----|------|
-| Notes | Note list + detail view |
-| Board | Kanban board |
-| Graph | Force-directed graph (JS-rendered) |
-| Omegon | Agent chat |
-| Settings | Vault name, sync status, path (read-only) |
+| Tab | View | Notes |
+|-----|------|-------|
+| Notes | Note list → tap to view detail, back button | |
+| Board | Kanban board (same layout as desktop) | |
+| Graph | Force-directed SVG graph (Rust-rendered, same as desktop) | |
+| Omegon | Agent chat view | |
+| Settings | Vault name, sync status, path | **Read-only** — no editable settings on mobile yet |
 
 ### Share Extension
 
-| Trigger | Behavior |
-|---------|----------|
-| Share from any app | Opens share sheet with title field |
-| Save | Writes `.md` to App Group inbox |
-| Main app | Drains inbox every 5 seconds, indexes new notes |
+| Trigger | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Share from any app | SwiftUI sheet: edit title | |
+| Save | Writes `.md` to App Group inbox (`group.io.styrene.codex`) | |
+| Main app polls | Every 5 seconds | `drain_inbox()` moves `.md` files + assets into vault, indexes |
+
+### First Vault
+
+| Condition | Behavior |
+|-----------|----------|
+| Fresh install | Vault created at `Documents/Codyx/` |
+| No notes (reindex = 0) | Welcome.md auto-created with getting-started content |
 
 ---
 
 ## 13. File Formats
 
-| File | Format | Location |
-|------|--------|----------|
-| Vault config | TOML | `.codex/config.toml` |
-| Operator settings | JSON | `.codex/operator-settings.json` |
-| Omegon profile | JSON | `.omegon/profile.json` |
-| Notes | Markdown + TOML frontmatter (`+++`) | `*.md` anywhere in vault |
-| Tasks | Markdown + TOML frontmatter (`kind = "task"`) | Project subdirectories |
-| Drawings | JSON | `drawings/*.excalidraw` + `drawings/*.md` wrapper |
-| D2 diagrams | D2 source | `diagrams/*.d2` + `diagrams/*.md` wrapper |
-| Vault manifest | TOML | `vaults.toml` in manifest repo |
-| Local manifest sidecar | TOML | `vaults.local.toml` (gitignored) |
-| Launcher profile | JSON | `~/Library/Application Support/codex/launcher-profile.json` |
-| Auth tokens | JSON | `~/.config/omegon/auth.json` (0600 permissions) |
-| Identity | Binary (argon2id + ChaCha20Poly1305) | `~/.styrene/identity.key` |
-| SQLite index | SQLite WAL | `.codex-local/codex/codex-index.db` |
+| File | Format | Location | Notes |
+|------|--------|----------|-------|
+| Vault config | TOML | `.codex/config.toml` | Survives TestFlight upgrades (inside vault) |
+| Operator settings | JSON | `.codex/operator-settings.json` | Daemon config, persona, vox |
+| Omegon profile | JSON | `.omegon/profile.json` | Model, thinking level |
+| Notes | Markdown + TOML frontmatter (`+++`) | `*.md` anywhere in vault | |
+| Tasks | Markdown + TOML frontmatter (`kind = "task"`) | Project subdirectories | |
+| Drawings | JSON (Excalidraw scene) | `drawings/*.excalidraw` | `.md` wrapper for indexing, `.svg` sidecar for embedding |
+| D2 diagrams | D2 source language | `diagrams/*.d2` | `.md` wrapper, `.svg` sidecar |
+| Delegations | Markdown | `ai/delegations/*.md` | Hidden from sidebar, searchable |
+| Memory facts | Markdown | `ai/memory/**/*.md` | Hidden from sidebar |
+| Communications | Markdown | `references/comms/**/*.md` | Hidden from sidebar |
+| Vault manifest | TOML | `vaults.toml` in manifest repo | |
+| Local manifest sidecar | TOML | `vaults.local.toml` (gitignored) | Device-specific clone paths |
+| Launcher profile | JSON | `~/Library/Application Support/codex/launcher-profile.json` | Known vaults, recent, wizard state |
+| Auth tokens | JSON | `~/.config/omegon/auth.json` | 0600 permissions, atomic write + lock file |
+| Identity | Binary (argon2id + ChaCha20Poly1305) | `~/.config/styrene/identity.key` | 97 bytes, STID magic header |
+| SQLite index | SQLite WAL | `.codex-local/codex/codex-index.db` | Ephemeral — rebuilt from vault files on reindex |
 
 ---
 
@@ -355,30 +457,76 @@
 
 | Backend | Mechanism | Conflict handling |
 |---------|-----------|-------------------|
-| None | Local only | N/A |
-| iCloud | Filesystem (macOS handles sync) | iCloud conflict copies |
-| Git | Auto-commit + push/pull on interval | Merge conflict markers → resolution banner |
-| Google Drive / Dropbox / OneDrive | Filesystem (provider client handles sync) | Provider's conflict handling |
+| **None** | Local only | N/A |
+| **iCloud** | macOS filesystem sync | iCloud creates "conflicted copy" files — **Codyx does not detect or resolve these.** Operator must manually reconcile. |
+| **Git** | Auto-commit + push/pull on configurable interval (min 30s) | Git merge conflicts produce markers → resolution banner in note view |
+| **Google Drive / Dropbox / OneDrive** | Provider's desktop client handles filesystem sync | Provider-specific conflict handling — Codyx treats the folder as local |
 
 ### Vault Snapshots (Git only)
 
 | Action | Trigger | Result |
 |--------|---------|--------|
-| Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits all changes, creates `snapshot-YYYYMMDD-HHMMSS` tag, pushes tag |
+| Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags |
+| **Non-Git vault** | Same command | **Silently no-ops. No error, no feedback.** |
+
+### Vault Migration
+
+| Transition | What happens |
+|-----------|-------------|
+| None → iCloud | Copies all files (excluding `.codex-local/`, `.git/`) to iCloud Drive. Updates config. Switches runtime. Old copy remains. |
+| None → Git | Stays in place. Inits git repo + adds remote. Creates `.gitignore`. |
+| iCloud → Git | Stays in iCloud location. Adds git repo on top. |
+| Any → None | Copies to `~/Documents/<name>/`. Old location not deleted. |
+
+**Known limitation:** Migration is synchronous in the save handler. No progress indicator. Large vaults may freeze the UI for several seconds.
 
 ---
 
 ## 15. Visualization Pipeline
 
-| Source | Render trigger | Output | Inline embed |
-|--------|---------------|--------|--------------|
-| `.excalidraw` | File change detected by watcher | SVG via webview Excalidraw bundle | `![[name.excalidraw]]` |
-| `.d2` | File change detected by watcher | SVG via `d2` CLI (30s timeout) | `![[name.d2]]` |
-| Graph | On-demand | Pure Rust force-directed SVG | Graph view |
+| Source | Trigger | Renderer | Output | Timeout |
+|--------|---------|----------|--------|---------|
+| `.excalidraw` | File watcher (create/modify) | Webview Excalidraw bundle (`renderSceneToSvg`) | `.svg` sidecar | None (JS async) |
+| `.d2` | File watcher (create/modify) | `d2` CLI with configured theme + layout | `.svg` sidecar | 30 seconds |
+| Graph | On-demand (view opened) | Pure Rust force-directed layout | Inline SVG | None |
 
-### Agent-Created Visuals
+**D2 CLI not found:** Logs debug message, no user-visible error. Placeholder shown in note embed.
 
-| MCP Tool | Input | Output |
-|----------|-------|--------|
-| `create_drawing` | Name + optional scene JSON | `.excalidraw` + `.md` wrapper (refuses overwrite) |
-| `create_d2_diagram` | Name + D2 source | `.d2` + `.md` wrapper (refuses overwrite) |
+**Concurrent Excalidraw exports:** Serialized via JS promise queue — safe for git pulls that modify multiple `.excalidraw` files simultaneously.
+
+**D2 PATH enrichment:** The render pipeline prepends `/opt/homebrew/bin`, `/usr/local/bin`, Nix paths, `~/.local/bin` to PATH before invoking `d2`, handling GUI apps that inherit a stripped environment.
+
+### Agent-Created Visuals (MCP Tools)
+
+| Tool | Input | Output | Guard |
+|------|-------|--------|-------|
+| `create_drawing` | Name + optional scene JSON | `drawings/<name>.excalidraw` + `drawings/<name>.md` | Refuses if file exists |
+| `create_d2_diagram` | Name + D2 source + optional directory | `<dir>/<name>.d2` + `<dir>/<name>.md` | Refuses if file exists |
+
+---
+
+## 16. Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `CODEX_VAULT` | Override vault root directory | `~/Documents/Codyx` |
+| `OMEGON_BIN` | Override Omegon binary path | Channel-resolved from `~/.omegon/versions/` |
+| `OMEGON_HOME` | Override Omegon home directory | Derived from vault config |
+| `CODEX_LAUNCHER_PROFILE` | Override launcher profile path | `~/Library/Application Support/codex/launcher-profile.json` |
+| `OMEGON_AUTH_JSON` | Override auth.json path | `~/.config/omegon/auth.json` |
+| `CODEX_LOCAL_STATE` | Override local state root | `~/.local/share/codex/` |
+
+---
+
+## 17. Known Gaps
+
+| Area | Gap | Severity |
+|------|-----|----------|
+| Cloud vault creation | No UI error feedback on failure | Low — error logged |
+| iCloud conflicts | "Conflicted copy" files not detected | Medium — manual reconciliation needed |
+| Vault migration | Synchronous, blocks UI, no progress | Medium — large vaults freeze |
+| Column rename | No empty-name validation | Low — cosmetic |
+| Create Snapshot | Silent no-op on non-Git vaults | Low — confusing but harmless |
+| Mobile settings | Read-only, no editing | Medium — must use desktop for config |
+| Delegation files | Accumulate without cleanup | Low — searchable, hidden from sidebar |
+| Sync status | Only for Git backend | Low — cloud providers handle their own |
