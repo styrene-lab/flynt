@@ -9,26 +9,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 IMAGE="codyx-e2e"
-BINARY="$REPO_ROOT/target/release/codyx"
 
-# Build the binary if needed
-if [ ! -f "$BINARY" ]; then
-    echo "Building codyx (release)..."
-    cargo build --package codex-app --bin codyx --release --manifest-path "$REPO_ROOT/Cargo.toml"
-fi
+echo "Building test container (includes Rust build — first run is slow)..."
+podman build -t "$IMAGE" -f "$REPO_ROOT/tests/e2e/Containerfile" "$REPO_ROOT"
 
-# Build the test container
-echo "Building test container..."
-podman build -t "$IMAGE" -f "$REPO_ROOT/tests/e2e/Containerfile" "$REPO_ROOT/tests/e2e"
-
-# Run tests
-# - Mount the binary into the container
-# - Create a tmpdir for vault fixtures
-# - Pass through any pytest args
 echo "Running tests..."
 podman run --rm \
-    -v "$BINARY:/usr/local/bin/codyx:ro" \
-    -v "$REPO_ROOT/tests/e2e:/tests:ro" \
-    -e CODYX_BINARY=/usr/local/bin/codyx \
     --tmpfs /tmp \
     "$IMAGE" "$@"
