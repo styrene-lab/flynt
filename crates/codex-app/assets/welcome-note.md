@@ -1,9 +1,9 @@
 +++
-title = "Welcome to Codex"
+title = "Welcome to Codyx"
 tags = ["getting-started"]
 +++
 
-# Welcome to Codex
+# Welcome to Codyx
 
 This is your first note. Everything you write here is saved as a plain file on your computer.
 

@@ -18,7 +18,7 @@ fn vault_root() -> PathBuf {
         .unwrap_or_else(|| {
             dirs::document_dir()
                 .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-                .join("Codex")
+                .join("Codyx")
         })
 }
 
@@ -32,7 +32,7 @@ fn main() {
                 .with_disable_context_menu(false)
                 .with_window(
                     WindowBuilder::new()
-                        .with_title("Codex")
+                        .with_title("Codyx")
                         .with_inner_size(LogicalSize::new(1280.0f64, 860.0f64))
                         .with_min_inner_size(LogicalSize::new(800.0f64, 500.0f64))
                         .with_always_on_top(false)

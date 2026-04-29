@@ -1,5 +1,5 @@
 {
-  description = "Codex — markdown-native notes, kanban, and knowledge graph";
+  description = "Codyx — markdown-native notes, kanban, and knowledge graph";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -63,7 +63,7 @@
           ] ++ linuxBuildInputs;
 
           shellHook = ''
-            echo "Codex dev environment ready ($(rustc --version))"
+            echo "Codyx dev environment ready ($(rustc --version))"
             ${linuxShellHook}
           '';
         };
@@ -102,7 +102,7 @@
             mkdir -p $out/share/applications
             cat > $out/share/applications/codex.desktop <<DESKTOP
             [Desktop Entry]
-            Name=Codex
+            Name=Codyx
             Comment=Markdown notes, kanban, and knowledge graph
             Exec=$out/bin/codyx
             Icon=$out/share/icons/hicolor/512x512/apps/codyx.png

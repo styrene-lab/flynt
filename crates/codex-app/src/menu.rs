@@ -36,7 +36,7 @@ pub fn build_menu_bar() -> Menu {
     let menu = Menu::new();
 
     // ── Codex (app menu on macOS) ────────────────────────────────────────
-    let app_menu = Submenu::new("Codex", true);
+    let app_menu = Submenu::new("Codyx", true);
     app_menu
         .append_items(&[
             &PredefinedMenuItem::about(None, None),

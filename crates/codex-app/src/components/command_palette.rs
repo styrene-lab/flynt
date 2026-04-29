@@ -74,7 +74,7 @@ fn execute_command(
             });
         }
         "icloud-vault" => {
-            match codex_store::sync::icloud::create_icloud_vault("Codex") {
+            match codex_store::sync::icloud::create_icloud_vault("Codyx") {
                 Ok(root) => {
                     let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_vault(&root);
                 }

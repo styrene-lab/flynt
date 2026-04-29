@@ -325,7 +325,7 @@ impl OmegonRuntimeContext {
         let name = local_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("Codex")
+            .unwrap_or("Codyx")
             .to_string();
 
         let remote_name = repo
@@ -918,7 +918,7 @@ pub fn bootstrap_from_env() -> RuntimeState {
         dirs::document_dir()
             .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("Codex")
+            .join("Codyx")
     };
 
     // CODEX_VAULT env var takes priority (explicit override), then launcher

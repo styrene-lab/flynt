@@ -437,10 +437,10 @@ pub fn App() -> Element {
 
                                 let vault_root = dirs::document_dir()
                                     .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-                                    .join("Codex");
+                                    .join("Codyx");
                                 match OmegonRuntimeContext::initialize_vault(
                                     &vault_root,
-                                    "Codex",
+                                    "Codyx",
                                     codex_core::models::SyncConfig::None,
                                 ) {
                                     Ok(vault) => {
@@ -488,7 +488,7 @@ pub fn App() -> Element {
                                     selected_root
                                         .file_name()
                                         .and_then(|name| name.to_str())
-                                        .unwrap_or("Codex"),
+                                        .unwrap_or("Codyx"),
                                     codex_core::models::SyncConfig::None,
                                     codex_core::models::IndexingConfig { write_frontmatter: false },
                                 ) {
@@ -526,7 +526,7 @@ pub fn App() -> Element {
                                 *welcome_error.write() = None;
                                 let name = root.file_name()
                                     .and_then(|n| n.to_str())
-                                    .unwrap_or("Codex")
+                                    .unwrap_or("Codyx")
                                     .to_string();
                                 // Initialize the vault at the cloud location
                                 match OmegonRuntimeContext::initialize_vault(&root, &name, codex_core::models::SyncConfig::None) {

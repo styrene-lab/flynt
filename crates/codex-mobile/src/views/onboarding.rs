@@ -34,7 +34,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 // ── Welcome: use-case driven ────────────────────────
                 Step::Welcome => rsx! {
                     div { class: "onboarding-card",
-                        h1 { class: "onboarding-title", "Codex" }
+                        h1 { class: "onboarding-title", "Codyx" }
                         p { class: "onboarding-desc",
                             "Your notes, ideas, and projects — always yours."
                         }

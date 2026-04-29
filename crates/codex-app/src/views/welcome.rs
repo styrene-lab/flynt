@@ -23,7 +23,7 @@ pub fn WelcomeView(
         div { class: "view-welcome",
             div { class: "welcome-shell",
                 div { class: "welcome-hero",
-                    h1 { class: "welcome-title", "Codex" }
+                    h1 { class: "welcome-title", "Codyx" }
                     p {
                         class: "welcome-subtitle",
                         "Your notes, ideas, and projects — stored as plain files, always yours."
@@ -88,12 +88,12 @@ pub fn WelcomeView(
                                                             button {
                                                                 class: "welcome-cloud-btn",
                                                                 onclick: move |_| {
-                                                                    let vault_path = codex_store::sync::cloud::vault_path_for_provider(&provider, "Codex");
+                                                                    let vault_path = codex_store::sync::cloud::vault_path_for_provider(&provider, "Codyx");
                                                                     if vault_path.join(".codex").exists() {
                                                                         // Already exists — just open it
                                                                         on_cloud_vault.call(vault_path);
                                                                     } else {
-                                                                        match codex_store::sync::cloud::create_cloud_vault(&provider, "Codex") {
+                                                                        match codex_store::sync::cloud::create_cloud_vault(&provider, "Codyx") {
                                                                             Ok(root) => on_cloud_vault.call(root),
                                                                             Err(e) => tracing::error!("Cloud vault failed: {e}"),
                                                                         }

@@ -406,7 +406,7 @@ fn VaultSwitcher() -> Element {
         let name = selected_root
             .file_name()
             .and_then(|value| value.to_str())
-            .unwrap_or("Codex")
+            .unwrap_or("Codyx")
             .to_string();
         if OmegonRuntimeContext::initialize_vault(
             &selected_root,
@@ -648,7 +648,7 @@ pub fn initial_note_id_for_vault(vault_root: &PathBuf) -> Option<String> {
         vault_root
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("Codex"),
+            .unwrap_or("Codyx"),
         codex_core::models::SyncConfig::None,
     ).ok()?;
     vault

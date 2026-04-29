@@ -8,7 +8,7 @@ use tracing::{info, warn};
 pub fn vault_root() -> PathBuf {
     dirs::document_dir()
         .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")))
-        .join("Codex")
+        .join("Codyx")
 }
 
 /// Alias for use from onboarding view.
@@ -44,7 +44,7 @@ pub fn bootstrap() -> Result<MobileRuntime> {
             // Create a welcome note for fresh vaults
             if n == 0 {
                 let welcome = std::path::PathBuf::from("Welcome.md");
-                let content = "+++\ntitle = \"Welcome\"\ntags = []\n+++\n\n# Welcome to Codex\n\nThis is your first note. Start writing, or explore the app.\n\n- **Notes** — write and organize your thoughts\n- **Board** — track tasks with kanban boards\n- **Graph** — see how your notes connect\n";
+                let content = "+++\ntitle = \"Welcome\"\ntags = []\n+++\n\n# Welcome to Codyx\n\nThis is your first note. Start writing, or explore the app.\n\n- **Notes** — write and organize your thoughts\n- **Board** — track tasks with kanban boards\n- **Graph** — see how your notes connect\n";
                 let _ = vault.save_document_content(&welcome, content);
                 let _ = vault.reindex();
             }

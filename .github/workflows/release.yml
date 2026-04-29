@@ -103,7 +103,7 @@ jobs:
 
           cat > "$DIST/codyx.desktop" << 'DESKTOP'
           [Desktop Entry]
-          Name=Codex
+          Name=Codyx
           Comment=Local-first knowledge management
           Exec=codyx
           Icon=codyx

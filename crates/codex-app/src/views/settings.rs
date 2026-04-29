@@ -734,7 +734,7 @@ pub fn SettingsView() -> Element {
                             onchange: move |e| *rail_extension.write() = e.value(),
                             option { value: "", "None" }
                             option { value: "vox", "Vox" }
-                            option { value: "codex", "Codex" }
+                            option { value: "codex", "Codyx" }
                         }
                     }
                     SettingsRow { label: "Vox enabled",
