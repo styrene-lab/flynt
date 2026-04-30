@@ -70,7 +70,7 @@ pub fn start_auto_sync(
 
             // Auto-commit
             let _ = status_tx.send(AutoSyncStatus::Committing);
-            if let Err(e) = git.auto_commit("[codex] auto-sync") {
+            if let Err(e) = git.auto_commit("[codyx] auto-sync") {
                 consecutive_failures += 1;
                 warn!("auto-commit failed (attempt {consecutive_failures}): {e}");
                 let _ = status_tx.send(AutoSyncStatus::Error(format!("commit: {e}")));

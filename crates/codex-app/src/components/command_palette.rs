@@ -59,7 +59,7 @@ fn execute_command(
             spawn(async move {
                 let vault = c.vault();
                 // Generate unique filename to avoid collisions
-                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let title = format!("Untitled {ts_suffix}");
                 let filename = format!("{title}.md");
                 let path = std::path::PathBuf::from(&filename);
@@ -87,7 +87,7 @@ fn execute_command(
             if let Some(tmpl_name) = other.strip_prefix("template:") {
                 let templates = codex_core::templates::list_templates(&ctx.vault().root);
                 if let Some(tmpl) = templates.iter().find(|t| t.name == tmpl_name) {
-                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let title = format!("{} {ts_suffix}", tmpl.name);
                     let vault_name = ctx.vault().config.vault_name.clone();
                     let content = codex_core::templates::expand(&tmpl.content, &title, &vault_name);
@@ -115,7 +115,7 @@ fn execute_command(
                 return; // Not on notes view
             }
             let vault = ctx.vault();
-            let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
             let name = format!("Drawing {ts_suffix}");
             if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
                 let embed = format!("![[{name}.excalidraw]]");
@@ -132,7 +132,7 @@ fn execute_command(
             let mut ar = *active_route;
             spawn(async move {
                 let vault = c.vault();
-                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let name = format!("Drawing {ts_suffix}");
                 if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
                     let _ = vault.reindex();
@@ -178,7 +178,7 @@ fn execute_command(
                         remote.clone(),
                         branch.clone(),
                     );
-                    if let Err(e) = git.auto_commit("[codex] manual sync") {
+                    if let Err(e) = git.auto_commit("[codyx] manual sync") {
                         tracing::warn!("sync commit failed: {e}");
                     }
                     if let Err(e) = codex_core::sync::SyncBackend::sync(&git) {
@@ -196,8 +196,8 @@ fn execute_command(
                         vault.root.clone(), remote.clone(), branch.clone(),
                     );
                     // Auto-commit first so the tag captures current state
-                    let _ = git.auto_commit("[codex] snapshot");
-                    let tag_name = format!("snapshot-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                    let _ = git.auto_commit("[codyx] snapshot");
+                    let tag_name = format!("snapshot-{}", chrono::Local::now().format("%Y%m%d-%H%M%S%3f"));
                     match git.create_tag(&tag_name, Some("Codex vault snapshot")) {
                         Ok(()) => {
                             let _ = git.push_tags();
@@ -444,7 +444,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                         let ts = chrono::Local::now();
                                         let del_path = format!(
                                             "ai/delegations/{}.md",
-                                            ts.format("%Y%m%d-%H%M%S")
+                                            ts.format("%Y%m%d-%H%M%S%3f")
                                         );
                                         let del_content = format!(
                                             "+++\ntitle = \"Delegation {}\"\ntags = [\"delegation\"]\n+++\n\n{}\n",

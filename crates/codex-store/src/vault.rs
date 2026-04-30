@@ -118,7 +118,7 @@ impl Vault {
             let default_name = root
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "codex".to_string());
+                .unwrap_or_else(|| "Codyx".to_string());
             let cfg = VaultConfig {
                 vault_name: default_name,
                 sync: SyncConfig::None,
@@ -132,6 +132,12 @@ impl Vault {
             fs::write(&config_path, toml::to_string(&cfg)?)?;
             cfg
         };
+
+        // Ensure .gitignore exists so local state is never committed
+        let gitignore = root.join(".gitignore");
+        if !gitignore.exists() {
+            let _ = fs::write(&gitignore, ".codex-local/\n.DS_Store\n*.swp\n*~\n");
+        }
 
         let db_path = resolve_index_db_path(root, &config.local_runtime);
         if let Some(parent) = db_path.parent() {
@@ -885,7 +891,7 @@ impl Vault {
         if !backing.is_vault_repo() && (report.tasks_flushed > 0 || report.files_removed > 0) {
             let pg = ProjectGit::open(&backing, &self.root)?;
             let prefix = commit_config.message_prefix
-                .unwrap_or_else(|| "[codex]".into());
+                .unwrap_or_else(|| "[codyx]".into());
             let msg = format!("{prefix} flush {}", report.summary());
             if let Some(oid) = pg.commit(&msg)? {
                 report.commit_oid = Some(oid.to_string());

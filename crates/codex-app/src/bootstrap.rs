@@ -778,10 +778,12 @@ fn publication_output_path(vault: &Vault) -> PathBuf {
 
 pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState {
     if let Err(e) = std::fs::create_dir_all(&vault_root) {
-        // Fatal but non-panic: log clearly so the user can see what happened
         tracing::error!("Cannot create vault directory at {}: {e}", vault_root.display());
-        tracing::error!("Check that the path exists and you have write permission.");
-        panic!("Cannot create vault directory at {}: {e}", vault_root.display());
+        // Fall back to a temporary vault so the app doesn't crash
+        let fallback = std::env::temp_dir().join("codyx-fallback-vault");
+        let _ = std::fs::create_dir_all(&fallback);
+        tracing::warn!("Using fallback vault at {}", fallback.display());
+        return runtime_state_for_vault_root(fallback);
     }
 
     let vault = match Vault::open(&vault_root) {
@@ -789,7 +791,11 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
         Err(e) => {
             tracing::error!("Failed to open vault at {}: {e}", vault_root.display());
             tracing::error!("The vault directory may be corrupted. Try removing .codex/ and reopening.");
-            panic!("Failed to open vault at {}: {e}", vault_root.display());
+            // Fall back to a temporary vault
+            let fallback = std::env::temp_dir().join("codyx-fallback-vault");
+            let _ = std::fs::create_dir_all(&fallback);
+            tracing::warn!("Using fallback vault at {}", fallback.display());
+            return runtime_state_for_vault_root(fallback);
         }
     };
 

@@ -107,7 +107,7 @@ pub fn App() -> Element {
                 let c = ctx_menu_handler;
                 spawn(async move {
                     let vault = c.vault();
-                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let title = format!("Untitled {ts_suffix}");
                     let filename = format!("{title}.md");
                     let path = std::path::PathBuf::from(&filename);
@@ -157,7 +157,7 @@ pub fn App() -> Element {
                 let mut ar = active_route;
                 spawn(async move {
                     let vault = c.vault();
-                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let name = format!("Drawing {ts_suffix}");
                     if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
                         let _ = vault.reindex();

@@ -18,7 +18,7 @@ pub fn discover_repo(path: &Path) -> Result<Repository> {
         .with_context(|| format!("no git repository found containing {}", path.display()))
 }
 
-/// Default commit signature for Codex-generated commits.
+/// Default commit signature for Codyx-generated commits.
 pub fn codex_signature() -> Result<Signature<'static>> {
-    Ok(Signature::now("Codex", "codex@local")?)
+    Ok(Signature::now("Codyx", "codyx@local")?)
 }
