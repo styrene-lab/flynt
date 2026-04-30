@@ -89,7 +89,7 @@ class ShareViewController: UIViewController {
         do {
             try writer.write(items: items, title: title.isEmpty ? nil : title)
         } catch {
-            NSLog("[CodexShare] Failed to write to inbox: \(error)")
+            NSLog("[CodyxShare] Failed to write to inbox: \(error)")
         }
         extensionContext?.completeRequest(returningItems: nil)
     }
@@ -127,7 +127,7 @@ struct ShareSheetView: View {
                     }
                 }
             }
-            .navigationTitle("Save to Codex")
+            .navigationTitle("Save to Codyx")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

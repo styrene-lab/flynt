@@ -239,11 +239,11 @@ jobs:
           APP="target/dx/codyx/release/macos/Codyx.app"
           VERSION="${RELEASE_TAG#v}"
           STAGING=$(mktemp -d)
-          cp -r "$APP" "$STAGING/Codex.app"
+          cp -r "$APP" "$STAGING/Codyx.app"
           ln -s /Applications "$STAGING/Applications"
-          hdiutil create -volname "Codex" -srcfolder "$STAGING" -ov -format UDZO "Codex-$VERSION-macos.dmg"
+          hdiutil create -volname "Codyx" -srcfolder "$STAGING" -ov -format UDZO "Codyx-$VERSION-macos.dmg"
           rm -rf "$STAGING"
-          echo "DMG=Codex-$VERSION-macos.dmg" >> "$GITHUB_ENV"
+          echo "DMG=Codyx-$VERSION-macos.dmg" >> "$GITHUB_ENV"
 
       - name: Notarize DMG
         if: env.APPLE_API_KEY_P8_B64 != ''
@@ -268,8 +268,8 @@ jobs:
           MACOS_DIST_PROFILE_B64: ${{ secrets.MACOS_DIST_PROFILE_B64 }}
         run: |
           APP="target/dx/codyx/release/macos/Codyx.app"
-          DIST_APP="dist/Codex.app"
-          rm -rf dist/Codex.app
+          DIST_APP="dist/Codyx.app"
+          rm -rf dist/Codyx.app
           mkdir -p dist
           cp -R "$APP" "$DIST_APP"
 
@@ -291,9 +291,9 @@ jobs:
           # Package .pkg
           INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "3rd Party Mac Developer Installer" | head -1 | sed 's/.*"\(.*\)"/\1/')
           if [ -n "$INSTALLER_IDENTITY" ]; then
-            productbuild --component "$DIST_APP" /Applications --sign "$INSTALLER_IDENTITY" dist/Codex.pkg
+            productbuild --component "$DIST_APP" /Applications --sign "$INSTALLER_IDENTITY" dist/Codyx.pkg
           else
-            productbuild --component "$DIST_APP" /Applications dist/Codex.pkg
+            productbuild --component "$DIST_APP" /Applications dist/Codyx.pkg
           fi
 
       - name: Upload to TestFlight (macOS)
@@ -306,7 +306,7 @@ jobs:
         run: |
           mkdir -p private_keys
           echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
-          xcrun altool --upload-app --type osx --file dist/Codex.pkg \
+          xcrun altool --upload-app --type osx --file dist/Codyx.pkg \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
 
       - name: Upload DMG artifact
@@ -402,7 +402,7 @@ jobs:
           $PB -c "Add :DTXcodeBuild string $XCODE_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTXcodeBuild $XCODE_BUILD" "$PLIST"
           $PB -c "Add :DTSDKBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTSDKBuild $SDK_BUILD" "$PLIST"
           $PB -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || true
-          $PB -c "Set :CFBundleDisplayName Codex" "$PLIST"
+          $PB -c "Set :CFBundleDisplayName Codyx" "$PLIST"
           $PB -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
           $PB -c "Set :CFBundleVersion $VERSION" "$PLIST"
           $PB -c "Delete :CFBundleSupportedPlatforms" "$PLIST" 2>/dev/null || true
@@ -477,7 +477,7 @@ jobs:
           mkdir -p target/ipa/Payload
           cp -R "$APP" target/ipa/Payload/Codex.app
           cd target/ipa
-          zip -qr "Codex-${VERSION}.ipa" Payload
+          zip -qr "Codyx-${VERSION}.ipa" Payload
           rm -rf Payload
           cd ../..
           echo "IPA=target/ipa/Codex-${VERSION}.ipa" >> "$GITHUB_ENV"
@@ -521,7 +521,7 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Codex $VERSION" \
+            --title "Codyx $VERSION" \
             --generate-notes \
             artifacts/**/*
 
@@ -572,7 +572,7 @@ jobs:
             end
 
             on_macos do
-              odie "Codex for macOS is available via DMG or TestFlight. See: https://github.com/styrene-lab/codex/releases"
+              odie "Codyx for macOS is available via DMG or TestFlight. See: https://github.com/styrene-lab/codex/releases"
             end
 
             def install
@@ -596,13 +596,13 @@ jobs:
           if [ -n "$EXISTING_SHA" ]; then
             gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb \
               -X PUT \
-              -f message="Update Codex to $VERSION" \
+              -f message="Update Codyx to $VERSION" \
               -f content="$CONTENT" \
               -f sha="$EXISTING_SHA" > /dev/null
           else
             gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb \
               -X PUT \
-              -f message="Add Codex $VERSION" \
+              -f message="Add Codyx $VERSION" \
               -f content="$CONTENT" > /dev/null
           fi
           echo "Homebrew formula updated to $VERSION"

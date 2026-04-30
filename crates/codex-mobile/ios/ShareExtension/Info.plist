@@ -6,15 +6,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Save to Codex</string>
+    <string>Save to Codyx</string>
     <key>CFBundleExecutable</key>
-    <string>CodexShare</string>
+    <string>CodyxShare</string>
     <key>CFBundleIdentifier</key>
     <string>io.styrene.codex.share-extension</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>CodexShare</string>
+    <string>CodyxShare</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
@@ -47,7 +47,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.share-services</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>CodexShare.ShareViewController</string>
+        <string>CodyxShare.ShareViewController</string>
         <key>NSExtensionAttributes</key>
         <dict>
             <key>NSExtensionActivationRule</key>

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Writes shared items as Codex-compatible .md files into the App Group inbox.
-/// The main Codex app drains this inbox on launch and periodically.
+/// Writes shared items as Codyx-compatible .md files into the App Group inbox.
+/// The main Codyx app drains this inbox on launch and periodically.
 struct InboxWriter {
 
     private static let appGroupID = "group.io.styrene.codex"

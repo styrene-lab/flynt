@@ -1,7 +1,7 @@
 # OpenSpec Integration — Auditability from Design to Test
 
 Design document for connecting design nodes, tasks, and OpenSpec scenarios
-into an auditable chain within Codex vaults.
+into an auditable chain within Codyx vaults.
 
 ## The Audit Chain
 

@@ -289,7 +289,7 @@
 | | OAuth providers | "Login" button | Spawns `omegon auth login <provider>` |
 | | All providers | "Remove" button | Clears from auth.json |
 | **Operator** | Active persona | Select | Off / Scribe / Omegon |
-| | Rail extension | Select | None / Vox / Codex |
+| | Rail extension | Select | None / Vox / Codyx |
 | | Vox enabled | Checkbox | |
 | | Vox TTS | Checkbox | |
 | | Vox voice | Text input | System TTS voice name |

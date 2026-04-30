@@ -1,17 +1,17 @@
-# Codex Architecture
+# Codyx Architecture
 
 ## Product Identity
 
-Codex is a **single-user** knowledge management and task tracking desktop application for macOS, built in Rust with Dioxus 0.7. It combines Obsidian-style markdown note-taking with kanban project boards and a typed entity system.
+Codyx is a **single-user** knowledge management and task tracking desktop application for macOS, built in Rust with Dioxus 0.7. It combines Obsidian-style markdown note-taking with kanban project boards and a typed entity system.
 
 - **Markdown vault** as the canonical source of truth
 - **SQLite** as a hot read index (disposable — rebuilt from markdown on launch)
-- **Omegon** is an embedded AI capability that enhances Codex, not the other way around
+- **Omegon** is an embedded AI capability that enhances Codyx, not the other way around
 - **Publication** system for read-only external visibility when needed
 
 ## Boundaries
 
-### What Codex Is
+### What Codyx Is
 
 - Single-user thick client (Dioxus macOS desktop, `aarch64-apple-darwin`)
 - Markdown-first knowledge store with TOML frontmatter
@@ -21,12 +21,12 @@ Codex is a **single-user** knowledge management and task tracking desktop applic
 - MCP tool surface so Omegon can read/write vault data
 - Publication pipeline for static read-only output (markdown + HTML)
 
-### What Codex Is Not
+### What Codyx Is Not
 
 - A collaboration platform — no shared boards, no real-time sync, no multi-user
 - A web application — no server component for end users
 - A team git-sync tool — git backing serves the single user's durability
-- An Omegon dependency — Codex is fully functional without Omegon installed
+- An Omegon dependency — Codyx is fully functional without Omegon installed
 
 ## Workspace Crates
 
@@ -117,13 +117,13 @@ Visibility is layered: vault-wide default policy, per-tag/per-path rules, per-do
 
 ## Omegon Integration
 
-Codex is the primary product. Omegon is an embedded AI capability.
+Codyx is the primary product. Omegon is an embedded AI capability.
 
 - `codex-agent` exposes 14 MCP tools via stdio transport
 - Omegon can search, read, create, and link documents
 - Omegon stores durable memory facts (`ai/memory/`) and archives communications (`references/comms/`)
 - Agent rail sidebar in the UI shows Omegon status and interaction
-- Codex launches and runs fully without Omegon installed
+- Codyx launches and runs fully without Omegon installed
 
 ## Resolved Decisions
 
@@ -140,7 +140,7 @@ Codex is the primary product. Omegon is an embedded AI capability.
 | iCloud sync | Passive — vault root in iCloud Drive folder; no API calls |
 | Git sync | Auto-commit (debounced 30s), manual push; `git2` crate |
 | MCP transport | stdio; Omegon connects via `command` transport |
-| Omegon relationship | Omegon serves Codex (embedded capability, not dependency) |
+| Omegon relationship | Omegon serves Codyx (embedded capability, not dependency) |
 
 ## Open Questions
 

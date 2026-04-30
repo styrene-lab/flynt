@@ -1,6 +1,6 @@
 # Vault Sealing (Encryption at Rest)
 
-Design document for Codex vault encryption. Two modes: full vault seal and selective per-note seal.
+Design document for Codyx vault encryption. Two modes: full vault seal and selective per-note seal.
 
 ## Key Derivation
 
@@ -240,7 +240,7 @@ Argon2id + ChaCha20-Poly1305 pipeline for identity file encryption.
 
 StyreneIdentity already provides:
 
-| Capability | StyreneIdentity API | Codex usage |
+| Capability | StyreneIdentity API | Codyx usage |
 |-----------|-------------------|-------------|
 | Key derivation | `KeyDeriver::age_secret()` → 32-byte X25519 | Vault encryption key |
 | Passphrase stretching | `FileSigner` (Argon2id, 64 MiB, 3 iterations) | Identity unlock |
@@ -250,13 +250,13 @@ StyreneIdentity already provides:
 | Memory safety | `zeroize` on all key material | Key cleanup on lock |
 | Backup | `IdentityVault::backup()` | Before key rotation |
 
-**Codex does NOT:**
+**Codyx does NOT:**
 - Implement its own HKDF hierarchy
 - Store passphrases or keys
 - Implement its own AEAD cipher
 - Manage signer tiers
 
-**Codex DOES:**
+**Codyx DOES:**
 - Call `IdentityVault::unlock()` → `KeyDeriver::age_secret()`
 - Pass the age secret to the `age` crate for file encryption
 - Manage which files are sealed vs open
