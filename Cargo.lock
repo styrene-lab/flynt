@@ -758,12 +758,9 @@ dependencies = [
  "chrono",
  "codex-models",
  "comrak",
- "ed25519-dalek",
  "git2",
- "hex",
  "serde",
  "serde_json",
- "sha2",
  "styrene-identity",
  "tempfile",
  "thiserror 2.0.18",
@@ -5088,17 +5085,20 @@ dependencies = [
 
 [[package]]
 name = "styrene-identity"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4e2bbfd52d3d80e6c008cace947f0c43df52bdf5b6b2912a6ccf92142d09d8d"
+checksum = "86a31c9b7f3572aed5b9ffc47f4b6c354e01866faa29b3c176e0e0304c75008b"
 dependencies = [
  "argon2",
  "async-trait",
+ "base64",
  "chacha20poly1305",
  "ed25519-dalek",
+ "hex",
  "hkdf",
  "rand_core 0.6.4",
  "sha2",
+ "subtle",
  "thiserror 2.0.18",
  "x25519-dalek",
  "zeroize",

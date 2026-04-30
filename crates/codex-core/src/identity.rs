@@ -1,8 +1,5 @@
-//! Styrene Identity integration.
-//!
-//! Currently uses styrene-identity 0.1.x. When 0.3.0 is published,
-//! this module should switch to the upstream `discover`, `format`,
-//! `AllPublicKeys`, and `identity_hash` APIs.
+//! Styrene Identity integration — uses the upstream 0.3.0 APIs for
+//! discovery, key derivation, formatting, and git signing.
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -18,27 +15,27 @@ pub struct IdentityStatus {
     pub path: String,
 }
 
+/// Probe the machine for an existing identity (no passphrase needed).
 pub fn probe_identity() -> IdentityStatus {
-    let path = styrene_identity::file_signer::FileSigner::default_path();
-    if path.exists() {
-        IdentityStatus {
+    match styrene_identity::discover::discover() {
+        Some(found) => IdentityStatus {
             available: true,
-            tier: "Tier D (encrypted file)".into(),
-            label: "Styrene Identity".into(),
-            path: path.display().to_string(),
-        }
-    } else {
-        IdentityStatus {
+            tier: format!("{:?}", found.tier),
+            label: found.label,
+            path: found.path.display().to_string(),
+        },
+        None => IdentityStatus {
             available: false,
             tier: "None".into(),
             label: "No identity configured".into(),
-            path: path.display().to_string(),
-        }
+            path: styrene_identity::file_signer::FileSigner::default_path()
+                .display().to_string(),
+        },
     }
 }
 
 pub fn has_identity() -> bool {
-    styrene_identity::file_signer::FileSigner::default_path().exists()
+    styrene_identity::discover::discover().is_some()
 }
 
 // ── Creation ────────────────────────────────────────────────────────────────
@@ -65,11 +62,11 @@ pub fn create_identity(passphrase: &str) -> Result<PathBuf> {
 // ── Unlock ──────────────────────────────────────────────────────────────────
 
 pub struct UnlockedIdentity {
-    /// Canonical identity hash (hex). TODO: use identity_hash() from 0.3.0.
+    /// Canonical 32-char hex identity hash.
     pub identity_hash: String,
-    /// SSH public key for git remote auth.
+    /// SSH public key for git remote auth (OpenSSH format).
     pub ssh_auth_pubkey: String,
-    /// SSH fingerprint.
+    /// SSH fingerprint (SHA256:... format).
     pub ssh_fingerprint: String,
     /// SSH public key for git commit signing.
     pub git_signing_pubkey: String,
@@ -93,28 +90,20 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
         }
     };
 
+    // Use upstream APIs for canonical derivation + formatting
+    let identity_hash = styrene_identity::identity_hash(&root_secret);
+
     let deriver = KeyDeriver::new(root_secret.as_bytes());
 
-    // Git signing key
-    let git_seed = deriver.derive(KeyPurpose::GitSigning);
-    let git_signing_pubkey = format_ssh_pubkey(&git_seed, "codyx-signing");
+    // Git/identity signing key (unified Signing purpose in 0.3.0)
+    let git_seed = deriver.derive(KeyPurpose::Signing);
+    let git_signing_pubkey = styrene_identity::format::ssh_pubkey(&git_seed, "codyx-signing");
 
-    // SSH auth key (user key, not host key)
+    // SSH auth key for git remotes (user key, not host)
     let auth_seed = deriver.derive_ssh_user_key("git-auth")
         .map_err(|e| anyhow::anyhow!("SSH key derivation failed: {e}"))?;
-    let ssh_auth_pubkey = format_ssh_pubkey(&auth_seed, "codyx@styrene");
-
-    // Identity hash: SHA-256 of git signing verifying key, truncated to 16 bytes hex
-    let identity_hash = {
-        use ed25519_dalek::SigningKey;
-        use sha2::{Sha256, Digest};
-        let vk = SigningKey::from_bytes(&git_seed).verifying_key();
-        let digest = Sha256::digest(vk.as_bytes());
-        hex::encode(&digest[..16])
-    };
-
-    // SSH fingerprint
-    let ssh_fingerprint = ssh_pubkey_fingerprint(&auth_seed);
+    let ssh_auth_pubkey = styrene_identity::format::ssh_pubkey(&auth_seed, "codyx@styrene");
+    let ssh_fingerprint = styrene_identity::format::ssh_pubkey_fingerprint(&auth_seed);
 
     Ok(UnlockedIdentity {
         identity_hash,
@@ -154,42 +143,6 @@ pub fn configure_git_signing(
     Ok(())
 }
 
-// ── Formatting helpers (replaced by styrene_identity::format in 0.3.0) ─────
-
-fn format_ssh_pubkey(seed: &[u8; 32], comment: &str) -> String {
-    use ed25519_dalek::SigningKey;
-    let vk = SigningKey::from_bytes(seed).verifying_key();
-    let pubkey_bytes = vk.as_bytes();
-
-    let key_type = b"ssh-ed25519";
-    let mut wire = Vec::with_capacity(4 + key_type.len() + 4 + pubkey_bytes.len());
-    wire.extend_from_slice(&(key_type.len() as u32).to_be_bytes());
-    wire.extend_from_slice(key_type);
-    wire.extend_from_slice(&(pubkey_bytes.len() as u32).to_be_bytes());
-    wire.extend_from_slice(pubkey_bytes);
-
-    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &wire);
-    format!("ssh-ed25519 {b64} {comment}")
-}
-
-fn ssh_pubkey_fingerprint(seed: &[u8; 32]) -> String {
-    use ed25519_dalek::SigningKey;
-    use sha2::{Sha256, Digest};
-    let vk = SigningKey::from_bytes(seed).verifying_key();
-    let pubkey_bytes = vk.as_bytes();
-
-    let key_type = b"ssh-ed25519";
-    let mut wire = Vec::with_capacity(4 + key_type.len() + 4 + pubkey_bytes.len());
-    wire.extend_from_slice(&(key_type.len() as u32).to_be_bytes());
-    wire.extend_from_slice(key_type);
-    wire.extend_from_slice(&(pubkey_bytes.len() as u32).to_be_bytes());
-    wire.extend_from_slice(pubkey_bytes);
-
-    let hash = Sha256::digest(&wire);
-    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, &hash);
-    format!("SHA256:{b64}")
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -203,38 +156,9 @@ mod tests {
     }
 
     #[test]
-    fn ssh_pubkey_format() {
-        let key = [42u8; 32];
-        let result = format_ssh_pubkey(&key, "test");
-        assert!(result.starts_with("ssh-ed25519 "));
-        assert!(result.ends_with(" test"));
-    }
-
-    #[test]
-    fn ssh_fingerprint_format() {
-        let key = [42u8; 32];
-        let fp = ssh_pubkey_fingerprint(&key);
-        assert!(fp.starts_with("SHA256:"));
-    }
-
-    #[test]
-    fn identity_hash_format() {
-        // Verify hash is 32 hex chars
-        use ed25519_dalek::SigningKey;
-        use sha2::{Sha256, Digest};
-        let seed = [42u8; 32];
-        let vk = SigningKey::from_bytes(&seed).verifying_key();
-        let digest = Sha256::digest(vk.as_bytes());
-        let hash = hex::encode(&digest[..16]);
-        assert_eq!(hash.len(), 32);
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    #[test]
     fn git_signing_config_requires_git_repo() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let result = configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test", None, None);
-        assert!(result.is_err());
+        assert!(configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test", None, None).is_err());
     }
 
     #[test]
