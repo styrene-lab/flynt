@@ -137,16 +137,31 @@ stored in Keychain under the old scheme key would need migration.
 |-------|------|-----------|------|
 | 1. Crate rename | 1.0.0-rc.1 | Yes (internal only) | Low — no external consumers |
 | 2. Vault config dir | 1.0.0 | No (fallback) | Low — auto-migration |
-| 3. Bundle ID | Never | N/A | Keep as-is |
-| 4. Env vars | 1.0.0 | No (fallback) | Low — deprecation warnings |
-| 5. CSS classes | 1.0.0 | No | None |
-| 6. OAuth scheme | 1.0.0 | Minor | Low — re-auth required |
+| 3. Bundle ID | Pre-1.0.0 | Yes (new TestFlight app) | Medium — loses beta history |
+| 4. Env vars | Pre-1.0.0 | No (fallback) | Low — deprecation warnings |
+| 5. CSS classes | Pre-1.0.0 | No | None |
+| 6. OAuth scheme | Pre-1.0.0 | Minor | Low — re-auth required |
+
+## Open Questions
+
+- **Final product name:** "Codyx" is a deconfliction name. The product may
+  get a full rename before 1.0.0. All internal infrastructure should be
+  ready to pivot to whatever the final name is — the migration plan above
+  applies regardless of whether the target is `codyx` or something else.
+- **Bundle ID:** `io.styrene.codyx` is possible and should be done before
+  1.0.0 while the beta user base is small. Losing TestFlight history
+  during beta is acceptable. Doing it after GA is not.
+- **Timing:** Everything in this doc should be completed before 1.0.0.
+  There are no beta users relying on stability of internal names. The
+  current split exists purely to avoid churn during active development.
 
 ## Decision Record
 
 - **2026-04-28:** Product renamed from Codex to Codyx to avoid collision
   with OpenAI's `codex` CLI. User-facing surfaces updated immediately.
-  Internal infrastructure deferred to 1.0.0 to avoid breaking existing
-  vaults and Apple provisioning.
-- **Bundle ID stays `io.styrene.codex`:** Apple doesn't expose this to
-  users, and changing it loses TestFlight history. Not worth the churn.
+  Internal infrastructure deferred to pre-1.0.0 to avoid churn during
+  active beta development.
+- **Bundle ID:** Will change to match final product name before 1.0.0.
+  Acceptable to lose TestFlight history during beta.
+- **Final name TBD:** Codyx may not be the shipping name. Everything
+  is designed to be renamed once more if needed.
