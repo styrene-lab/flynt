@@ -3,7 +3,7 @@
 ## 0.5.0 — 2026-04-23
 
 ### Added
-- **iOS Share Extension** — save links, text, and images from any iOS app into your Codex vault via the system Share Sheet
+- **iOS Share Extension** — save links, text, and images from any iOS app into your Codyx vault via the system Share Sheet
 - **Obsidian-style live preview** — CM6 editor now hides markdown syntax (headings, bold, links, tables) and reveals on cursor focus, using the Lezer syntax tree instead of regex
 - **Table widget rendering** — markdown tables render as styled HTML tables; click into them to edit raw markdown
 - **Frontmatter hiding** — TOML frontmatter is collapsed when cursor is outside it

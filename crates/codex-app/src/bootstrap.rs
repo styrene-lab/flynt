@@ -67,11 +67,16 @@ impl OmegonRuntimeContext {
             .map(PathBuf::from)
             .ok()
             .filter(|path| path.is_absolute())
-            .or_else(|| dirs::config_local_dir().map(|dir| dir.join("codex/launcher-profile.json")))
+            .or_else(|| dirs::config_local_dir().map(|dir| {
+                // Prefer codyx/ for new installs, fall back to codex/ for backwards compat
+                let new_path = dir.join("codyx/launcher-profile.json");
+                let old_path = dir.join("codex/launcher-profile.json");
+                if new_path.exists() || !old_path.exists() { new_path } else { old_path }
+            }))
             .unwrap_or_else(|| {
                 dirs::home_dir()
                     .unwrap_or_else(|| PathBuf::from("."))
-                    .join(".codex-launcher-profile.json")
+                    .join(".codyx-launcher-profile.json")
             })
     }
 

@@ -1,8 +1,8 @@
 ---
-id: codex-storage
+id: codyx-storage
 title: "Storage Layer"
 status: seed
-parent: codex-root
+parent: codyx-root
 tags: []
 open_questions: []
 dependencies: []

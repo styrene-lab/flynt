@@ -120,7 +120,7 @@ For users who chose "Create local vault" or "Open existing vault" and want to ad
 
 ### How sync works
 - Background loop every N seconds (configurable, default 60)
-- Stages all changes > commits as "Codyx <codex@local>" > pulls (fast-forward or merge) > pushes
+- Stages all changes > commits as "Codyx <codyx@local>" > pulls (fast-forward or merge) > pushes
 - Conflicts detected and reported in the sync status bar
 - Exponential backoff on failures (up to 10 minutes)
 - Mobile enforces minimum 30-second interval
@@ -200,7 +200,7 @@ Future flow (with StyreneIdentity):
 5. **SSH keys must be in ssh-agent** — passphrase-protected keys need `ssh-add` first; no in-app passphrase prompt
 6. **Single theme** — "alpharius" is the only theme
 7. **No Vim mode** — CodeMirror 6 without Vim extension
-8. **Commit author is "Codyx <codex@local>"** — not yet linked to user identity (StyreneIdentity planned)
+8. **Commit author is "Codyx <codyx@local>"** — not yet linked to user identity (StyreneIdentity planned)
 9. **iOS is read-heavy** — editing works but is basic (no CM6 on mobile, plain textarea)
 10. **Omegon agent requires separate install** — `omegon` binary must be available at `~/.local/share/omegon/bin/omegon`
 

@@ -1,6 +1,6 @@
 ---
-id: codex-root
-title: "Codex — Knowledge & Task Tracker"
+id: codyx-root
+title: "Codyx — Knowledge & Task Tracker"
 status: active
 tags: [dioxus, macos, mcp, notes, kanban, single-user]
 open_questions: []
@@ -8,7 +8,7 @@ dependencies: []
 related: []
 ---
 
-# Codex — Knowledge & Task Tracker
+# Codyx — Knowledge & Task Tracker
 
 ## Overview
 
@@ -48,14 +48,14 @@ Workspace: codex-core (models + entities + traits) · codex-store (SQLite + file
 
 **Rationale:** Git backing serves durability, portability, and audit trail for the single user. Multi-user git sync was evaluated and rejected — it breaks down beyond a handful of developers, and a coordination server is premature. Projects can back to the vault repo (VaultRepo) or an external repo (ExternalRepo).
 
-### Agent integration: Codex exposes MCP tools; Omegon is an embedded capability
+### Agent integration: Codyx exposes MCP tools; Omegon is an embedded capability
 
 **Status:** accepted
 
-**Rationale:** Codex is the primary product. Omegon enhances it via 14 MCP tools (stdio transport). Codex functions fully without Omegon. The codex-agent binary runs as a standalone MCP server that Omegon connects to.
+**Rationale:** Codyx is the primary product. Omegon enhances it via 14 MCP tools (stdio transport). Codyx functions fully without Omegon. The codex-agent binary runs as a standalone MCP server that Omegon connects to.
 
 ### Scope: single-user, no collaboration
 
 **Status:** accepted
 
-**Rationale:** Collaboration requires either git merge semantics that break with concurrent edits, or a coordination server that is premature to build. Codex stays single-user. External visibility is served by the publication pipeline (static markdown + HTML output).
+**Rationale:** Collaboration requires either git merge semantics that break with concurrent edits, or a coordination server that is premature to build. Codyx stays single-user. External visibility is served by the publication pipeline (static markdown + HTML output).

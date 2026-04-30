@@ -1,18 +1,18 @@
-# Codex
+# Codyx
 
 **Local-first knowledge management. Markdown is the source of truth.**
 
 A desktop + mobile app for notes, tasks, drawings, and knowledge graphs — built in Rust, synced with Git, powered by an AI agent. No cloud account, no subscription, no vendor lock-in.
 
-[![docs](https://img.shields.io/badge/docs-codex.styrene.io-2ab4c8)](https://codex.styrene.io)
-[![demo](https://img.shields.io/badge/demo-demo.codex.styrene.io-1ab878)](https://demo.codex.styrene.io)
+[![docs](https://img.shields.io/badge/docs-codyx.styrene.io-2ab4c8)](https://codyx.styrene.io)
+[![demo](https://img.shields.io/badge/demo-demo.codyx.styrene.io-1ab878)](https://demo.codyx.styrene.io)
 [![license](https://img.shields.io/badge/license-BSL%201.1-344858)](LICENSE)
 
 ---
 
 ## What it does
 
-Your vault is a folder of `.md` files. Codex indexes them, links them, and gets out of the way.
+Your vault is a folder of `.md` files. Codyx indexes them, links them, and gets out of the way.
 
 - **Wikilinks & backlinks** — `[[note]]` creates connections. The knowledge graph shows how ideas relate.
 - **Live markdown preview** — Obsidian-style live editing with CodeMirror 6. Headings, tables, bold, links render inline; click to reveal raw syntax.
@@ -63,7 +63,7 @@ cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform io
 
 ## Quick start
 
-1. Open Codex
+1. Open Codyx
 2. Choose **Clone remote vault**
 3. Enter `git@github.com:styrene-lab/codyx-demo-vault.git`, branch `main`
 4. The demo vault opens with documentation and a live knowledge graph
@@ -110,7 +110,7 @@ my-vault/
 
 ### Frontmatter
 
-Codex uses TOML frontmatter (enclosed in `+++`). YAML (`---`) is also read.
+Codyx uses TOML frontmatter (enclosed in `+++`). YAML (`---`) is also read.
 
 ```toml
 +++
@@ -130,7 +130,7 @@ branch = "main"
 auto_commit_seconds = 60
 ```
 
-Codex auto-commits, pulls, and pushes on a timer. Merge conflicts are detected and reported. SSH keys and Git credential helpers are supported.
+Codyx auto-commits, pulls, and pushes on a timer. Merge conflicts are detected and reported. SSH keys and Git credential helpers are supported.
 
 ---
 
@@ -148,9 +148,9 @@ cargo test -p codex-core -p codex-store
 
 | URL | What |
 |-----|------|
-| [codex.styrene.io](https://codex.styrene.io) | Landing page |
-| [demo.codex.styrene.io](https://demo.codex.styrene.io) | Demo vault (clone this to get started) |
-| [demo.codex.styrene.io/graph](https://demo.codex.styrene.io/graph/) | Interactive knowledge graph |
+| [codyx.styrene.io](https://codyx.styrene.io) | Landing page |
+| [demo.codyx.styrene.io](https://demo.codyx.styrene.io) | Demo vault (clone this to get started) |
+| [demo.codyx.styrene.io/graph](https://demo.codyx.styrene.io/graph/) | Interactive knowledge graph |
 
 ---
 
