@@ -17,6 +17,7 @@ comrak = { workspace = true }
 base64 = "0.22"
 styrene-identity = { version = "0.1", features = ["file-signer"] }
 ed25519-dalek = "2"
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 
 [dev-dependencies]
 tempfile = "3"

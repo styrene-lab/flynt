@@ -136,7 +136,9 @@ impl Vault {
         // Ensure .gitignore exists so local state is never committed
         let gitignore = root.join(".gitignore");
         if !gitignore.exists() {
-            let _ = fs::write(&gitignore, ".codex-local/\n.DS_Store\n*.swp\n*~\n");
+            if let Err(e) = fs::write(&gitignore, ".codex-local/\n.DS_Store\n*.swp\n*~\n") {
+                tracing::warn!("Could not create .gitignore at {}: {e} — local state may be committed if git sync is enabled", gitignore.display());
+            }
         }
 
         let db_path = resolve_index_db_path(root, &config.local_runtime);

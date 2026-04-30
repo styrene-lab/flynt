@@ -125,7 +125,7 @@ impl ProjectGit {
 
         let tree_oid = index.write_tree()?;
         let tree = repo.find_tree(tree_oid)?;
-        let sig = util::codex_signature()?;
+        let sig = util::repo_signature(&repo)?;
 
         let is_empty = repo.head().is_err();
         if !is_empty {

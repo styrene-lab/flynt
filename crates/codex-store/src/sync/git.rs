@@ -347,11 +347,9 @@ impl GitSync {
     pub fn auto_commit(&self, message: &str) -> Result<()> {
         let repo = self.open_repo()?;
         let mut index = repo.index()?;
-        // Stage all changes but respect .gitignore (which excludes .codex-local/)
+        // Stage all changes. IndexAddOption::DEFAULT respects .gitignore.
+        // The .gitignore (created by Vault::open) excludes .codex-local/.
         index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
-        // Explicitly remove any accidentally staged local state
-        let _ = index.remove_all([".codex-local/*"].iter(), None);
-        let _ = index.remove_all([".codex-local"].iter(), None);
         index.write()?;
         let tree_oid = index.write_tree()?;
         let tree = repo.find_tree(tree_oid)?;

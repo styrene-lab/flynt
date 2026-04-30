@@ -18,39 +18,37 @@ pub fn discover_repo(path: &Path) -> Result<Repository> {
         .with_context(|| format!("no git repository found containing {}", path.display()))
 }
 
-/// Commit signature resolution order:
-/// 1. Git repo config (user.name + user.email) — set by `configure_git_signing`
-/// 2. Vault manifest identity (name + email from vaults.toml)
-/// 3. Default: "Codyx <codyx@local>"
-pub fn codex_signature() -> Result<Signature<'static>> {
-    // Try git global/local config first (includes StyreneIdentity-configured signing)
-    if let Ok(config) = git2::Config::open_default() {
-        let name = config.get_string("user.name");
-        let email = config.get_string("user.email");
-        if let (Ok(name), Ok(email)) = (name, email) {
-            if !name.is_empty() && !email.is_empty() {
-                return Ok(Signature::now(&name, &email)?);
-            }
-        }
-    }
-
-    // Fallback
+/// Default commit signature. Used when no repo-local identity is configured.
+fn default_signature() -> Result<Signature<'static>> {
     Ok(Signature::now("Codyx", "codyx@local")?)
 }
 
-/// Signature for a specific repository (checks repo-local config first).
+/// Signature for a specific repository.
+///
+/// Resolution order (intentional — never leak global gitconfig into vault commits):
+///   1. Repo-local .git/config (set by StyreneIdentity configure_git_signing)
+///   2. Codyx default ("Codyx <codyx@local>")
+///
+/// Global ~/.gitconfig is NOT consulted. The operator's personal git
+/// identity for other repos should not bleed into vault auto-commits.
 pub fn repo_signature(repo: &Repository) -> Result<Signature<'static>> {
-    // Try repo-local config
     if let Ok(config) = repo.config() {
-        let name = config.get_string("user.name");
-        let email = config.get_string("user.email");
-        if let (Ok(name), Ok(email)) = (name, email) {
-            if !name.is_empty() && !email.is_empty() {
-                return Ok(Signature::now(&name, &email)?);
+        // Only read repo-local level, not global
+        if let Ok(local) = config.open_level(git2::ConfigLevel::Local) {
+            let name = local.get_string("user.name");
+            let email = local.get_string("user.email");
+            if let (Ok(name), Ok(email)) = (name, email) {
+                if !name.is_empty() && !email.is_empty() {
+                    return Ok(Signature::now(&name, &email)?);
+                }
             }
         }
     }
 
-    // Fall back to global resolution
-    codex_signature()
+    default_signature()
+}
+
+/// Backward-compat alias — prefer repo_signature() when a repo is available.
+pub fn codex_signature() -> Result<Signature<'static>> {
+    default_signature()
 }

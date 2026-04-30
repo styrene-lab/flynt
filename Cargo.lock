@@ -759,6 +759,7 @@ dependencies = [
  "codex-models",
  "comrak",
  "ed25519-dalek",
+ "git2",
  "serde",
  "serde_json",
  "styrene-identity",

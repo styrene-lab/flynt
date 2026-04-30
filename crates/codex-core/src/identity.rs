@@ -99,7 +99,9 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
     let git_signing_pubkey = format_ssh_ed25519_pubkey(&git_signing_bytes, "codyx-signing");
 
     // Derive SSH auth key (for git remote authentication)
-    let ssh_auth_bytes = deriver.derive(KeyPurpose::SshHost);
+    // Uses the SSH user key hierarchy, not the host key (which is for server identity)
+    let ssh_auth_bytes = deriver.derive_ssh_user_key("git-auth")
+        .map_err(|e| anyhow::anyhow!("SSH key derivation failed: {e}"))?;
     let ssh_auth_pubkey = format_ssh_ed25519_pubkey(&ssh_auth_bytes, "codyx@styrene");
 
     // Fingerprint: hex of first 8 bytes of signing key
@@ -152,47 +154,20 @@ pub fn configure_git_signing(
     let key_path = git_dir.join("styrene-signing-key.pub");
     std::fs::write(&key_path, ssh_pubkey)?;
 
-    // Append git config for SSH signing
-    let config_path = git_dir.join("config");
-    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    // Configure git via the git2 Config API (idempotent, no duplicate sections)
+    let repo = git2::Repository::open(vault_root)
+        .map_err(|e| anyhow::anyhow!("Failed to open git repo: {e}"))?;
+    let mut config = repo.config()
+        .map_err(|e| anyhow::anyhow!("Failed to open git config: {e}"))?;
 
-    let mut additions = String::new();
-    if !existing.contains("[commit]") {
-        additions.push_str("[commit]\n\tgpgsign = true\n");
-    }
-    if !existing.contains("gpg.format") {
-        additions.push_str("[gpg]\n\tformat = ssh\n");
-    }
-    // Set signing key + user identity in one [user] section
-    if !existing.contains("[user]") {
-        let user_name = name.unwrap_or("Codyx");
-        let user_email = email.unwrap_or("codyx@local");
-        additions.push_str(&format!(
-            "[user]\n\tname = {user_name}\n\temail = {user_email}\n\tsigningkey = {}\n",
-            key_path.display()
-        ));
-    } else {
-        if !existing.contains("user.signingkey") {
-            additions.push_str(&format!("\tsigningkey = {}\n", key_path.display()));
-        }
-        if !existing.contains("user.name") {
-            if let Some(n) = name {
-                additions.push_str(&format!("\tname = {n}\n"));
-            }
-        }
-        if !existing.contains("user.email") {
-            if let Some(e) = email {
-                additions.push_str(&format!("\temail = {e}\n"));
-            }
-        }
-    }
+    config.set_str("commit.gpgsign", "true")?;
+    config.set_str("gpg.format", "ssh")?;
+    config.set_str("user.signingkey", &key_path.display().to_string())?;
 
-    if !additions.is_empty() {
-        let mut config = existing;
-        config.push('\n');
-        config.push_str(&additions);
-        std::fs::write(&config_path, config)?;
-    }
+    let user_name = name.unwrap_or("Codyx");
+    let user_email = email.unwrap_or("codyx@local");
+    config.set_str("user.name", user_name)?;
+    config.set_str("user.email", user_email)?;
 
     Ok(())
 }
@@ -265,18 +240,19 @@ mod tests {
     #[test]
     fn git_signing_config_writes_to_git_config() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let git_dir = tmp.path().join(".git");
-        std::fs::create_dir_all(&git_dir).unwrap();
-        std::fs::write(git_dir.join("config"), "").unwrap();
+        // Init a real git repo (git2::Repository::open requires one)
+        git2::Repository::init(tmp.path()).unwrap();
 
         configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test@host", Some("Test User"), Some("test@example.com")).unwrap();
 
-        let config = std::fs::read_to_string(git_dir.join("config")).unwrap();
-        assert!(config.contains("gpgsign = true"));
-        assert!(config.contains("format = ssh"));
+        let config = std::fs::read_to_string(tmp.path().join(".git/config")).unwrap();
+        assert!(config.contains("gpgsign"));
+        assert!(config.contains("ssh"));
         assert!(config.contains("signingkey"));
+        assert!(config.contains("Test User"));
+        assert!(config.contains("test@example.com"));
 
         // Key file should exist
-        assert!(git_dir.join("styrene-signing-key.pub").exists());
+        assert!(tmp.path().join(".git/styrene-signing-key.pub").exists());
     }
 }

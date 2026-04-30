@@ -142,6 +142,7 @@ pub fn IdentitySettingsSection() -> Element {
                                 div { class: "identity-ssh-key",
                                     code { class: "identity-key-text", "{id.git_signing_pubkey}" }
                                 }
+                                if ctx.vault_root().join(".git").exists() {
                                 button {
                                     class: "btn btn-ghost btn-sm",
                                     onclick: {
@@ -169,6 +170,9 @@ pub fn IdentitySettingsSection() -> Element {
                                         }
                                     },
                                     "Enable git signing for this vault"
+                                }
+                                } else {
+                                    span { class: "settings-hint", "Enable git sync first to use commit signing" }
                                 }
                             }
                         }
