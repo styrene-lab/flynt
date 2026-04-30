@@ -324,17 +324,17 @@ mod tests {
 
     #[test]
     fn github_issue() {
-        let r = parse_ref("https://github.com/styrene-lab/codex/issues/42");
+        let r = parse_ref("https://github.com/styrene-lab/codyx/issues/42");
         assert_eq!(r.provider, Provider::GitHub);
-        assert_eq!(r.label, "styrene-lab/codex#42");
+        assert_eq!(r.label, "styrene-lab/codyx#42");
         assert!(r.badge_url.is_some());
     }
 
     #[test]
     fn github_pr() {
-        let r = parse_ref("https://github.com/styrene-lab/codex/pull/1");
+        let r = parse_ref("https://github.com/styrene-lab/codyx/pull/1");
         assert_eq!(r.provider, Provider::GitHub);
-        assert_eq!(r.label, "styrene-lab/codex#1");
+        assert_eq!(r.label, "styrene-lab/codyx#1");
         assert!(r.badge_url.is_some());
     }
 
@@ -389,12 +389,12 @@ mod tests {
 
     #[test]
     fn render_github_badge() {
-        let r = parse_ref("https://github.com/styrene-lab/codex/issues/1");
+        let r = parse_ref("https://github.com/styrene-lab/codyx/issues/1");
         let html = render_html(&r);
         assert!(html.contains("external-ref"));
         assert!(html.contains("ref-github"));
         assert!(html.contains("img.shields.io"));
-        assert!(html.contains("styrene-lab/codex#1"));
+        assert!(html.contains("styrene-lab/codyx#1"));
     }
 
     #[test]

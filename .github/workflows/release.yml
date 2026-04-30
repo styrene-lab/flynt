@@ -552,7 +552,7 @@ jobs:
 
           class Codyx < Formula
             desc "Local-first knowledge vault — notes, tasks, diagrams, and agent integration"
-            homepage "https://github.com/styrene-lab/codex"
+            homepage "https://github.com/styrene-lab/codyx"
             license "BUSL-1.1"
             version "$VERSION"
 
@@ -561,18 +561,18 @@ jobs:
               depends_on "gtk+3"
 
               on_arm do
-                url "https://github.com/styrene-lab/codex/releases/download/v#{version}/codex-v#{version}-linux-arm64.tar.gz"
+                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codex-v#{version}-linux-arm64.tar.gz"
                 sha256 "$ARM64_SHA"
               end
 
               on_intel do
-                url "https://github.com/styrene-lab/codex/releases/download/v#{version}/codex-v#{version}-linux-amd64.tar.gz"
+                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codex-v#{version}-linux-amd64.tar.gz"
                 sha256 "$AMD64_SHA"
               end
             end
 
             on_macos do
-              odie "Codyx for macOS is available via DMG or TestFlight. See: https://github.com/styrene-lab/codex/releases"
+              odie "Codyx for macOS is available via DMG or TestFlight. See: https://github.com/styrene-lab/codyx/releases"
             end
 
             def install

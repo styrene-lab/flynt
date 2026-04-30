@@ -94,7 +94,7 @@ sub_path = "projects/my-project"
 Each project is optionally backed 1:1 by a git repository. Two modes:
 
 - **VaultRepo**: project data lives inside the vault's own git repo at a sub-path. Vault-level auto-commit handles git operations.
-- **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/codex-projects`). `ProjectGit` handles its own commit cycle.
+- **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/codyx-projects`). `ProjectGit` handles its own commit cycle.
 
 ### Task lifecycle
 
