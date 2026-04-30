@@ -59,8 +59,9 @@ pub fn IdentitySettingsSection() -> Element {
                                                     match tokio::task::spawn_blocking(move || identity::unlock_identity(&pp)).await {
                                                         Ok(Ok(id)) => {
                                                             *unlocked.write() = Some(UnlockedDisplay {
-                                                                fingerprint: id.fingerprint,
+                                                                identity_hash: id.identity_hash,
                                                                 ssh_auth_pubkey: id.ssh_auth_pubkey,
+                                                                ssh_fingerprint: id.ssh_fingerprint,
                                                                 git_signing_pubkey: id.git_signing_pubkey,
                                                             });
                                                         }
@@ -84,8 +85,9 @@ pub fn IdentitySettingsSection() -> Element {
                                                 match tokio::task::spawn_blocking(move || identity::unlock_identity(&pp)).await {
                                                     Ok(Ok(id)) => {
                                                         *unlocked.write() = Some(UnlockedDisplay {
-                                                            fingerprint: id.fingerprint,
+                                                            identity_hash: id.identity_hash,
                                                             ssh_auth_pubkey: id.ssh_auth_pubkey,
+                                                            ssh_fingerprint: id.ssh_fingerprint,
                                                             git_signing_pubkey: id.git_signing_pubkey,
                                                         });
                                                     }
@@ -106,9 +108,10 @@ pub fn IdentitySettingsSection() -> Element {
                     // ── Show unlocked identity details ──────────
                     if let Some(ref id) = *unlocked.read() {
                         div { class: "settings-row",
-                            span { class: "settings-label", "Fingerprint" }
+                            span { class: "settings-label", "Identity" }
                             div { class: "settings-control",
-                                code { class: "identity-fingerprint", "{id.fingerprint}" }
+                                code { class: "identity-fingerprint", "{id.identity_hash}" }
+                                span { class: "settings-hint", "{id.ssh_fingerprint}" }
                             }
                         }
                         div { class: "settings-row",
@@ -249,7 +252,8 @@ pub fn IdentitySettingsSection() -> Element {
 
 #[derive(Clone)]
 struct UnlockedDisplay {
-    fingerprint: String,
+    identity_hash: String,
     ssh_auth_pubkey: String,
+    ssh_fingerprint: String,
     git_signing_pubkey: String,
 }
