@@ -190,7 +190,7 @@ impl GitSync {
         let repo = self.open_repo()?;
         let head = repo.head()?.peel_to_commit()?;
         if let Some(msg) = message {
-            let sig = util::codex_signature()?;
+            let sig = util::repo_signature(&repo)?;
             repo.tag(name, head.as_object(), &sig, msg, false)?;
         } else {
             repo.tag_lightweight(name, head.as_object(), false)?;
@@ -355,7 +355,7 @@ impl GitSync {
         index.write()?;
         let tree_oid = index.write_tree()?;
         let tree = repo.find_tree(tree_oid)?;
-        let sig = util::codex_signature()?;
+        let sig = util::repo_signature(&repo)?;
 
         // Check for empty commit (nothing staged)
         let is_empty = repo.head().is_err(); // no commits yet

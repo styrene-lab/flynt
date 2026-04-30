@@ -149,7 +149,20 @@ pub fn IdentitySettingsSection() -> Element {
                                         move |_| {
                                             let vault_root = ctx.vault_root();
                                             let key = ssh_key.clone();
-                                            match identity::configure_git_signing(&vault_root, &key) {
+                                            // Pull name/email from manifest identity if available
+                                            let profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
+                                            let manifest_id = profile.manifest_dir.as_ref()
+                                                .and_then(|d| codex_core::manifest::load_manifest(d).ok())
+                                                .map(|m| m.identity);
+                                            let git_name = manifest_id.as_ref()
+                                                .filter(|i| !i.name.is_empty())
+                                                .map(|i| i.name.as_str());
+                                            let git_email = manifest_id.as_ref()
+                                                .filter(|i| !i.email.is_empty())
+                                                .map(|i| i.email.as_str());
+                                            match identity::configure_git_signing(
+                                                &vault_root, &key, git_name, git_email,
+                                            ) {
                                                 Ok(()) => *error_msg.write() = Some("Git signing enabled for this vault".into()),
                                                 Err(e) => *error_msg.write() = Some(format!("Failed: {e}")),
                                             }

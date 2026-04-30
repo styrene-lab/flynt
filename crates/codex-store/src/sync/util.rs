@@ -18,7 +18,39 @@ pub fn discover_repo(path: &Path) -> Result<Repository> {
         .with_context(|| format!("no git repository found containing {}", path.display()))
 }
 
-/// Default commit signature for Codyx-generated commits.
+/// Commit signature resolution order:
+/// 1. Git repo config (user.name + user.email) — set by `configure_git_signing`
+/// 2. Vault manifest identity (name + email from vaults.toml)
+/// 3. Default: "Codyx <codyx@local>"
 pub fn codex_signature() -> Result<Signature<'static>> {
+    // Try git global/local config first (includes StyreneIdentity-configured signing)
+    if let Ok(config) = git2::Config::open_default() {
+        let name = config.get_string("user.name");
+        let email = config.get_string("user.email");
+        if let (Ok(name), Ok(email)) = (name, email) {
+            if !name.is_empty() && !email.is_empty() {
+                return Ok(Signature::now(&name, &email)?);
+            }
+        }
+    }
+
+    // Fallback
     Ok(Signature::now("Codyx", "codyx@local")?)
+}
+
+/// Signature for a specific repository (checks repo-local config first).
+pub fn repo_signature(repo: &Repository) -> Result<Signature<'static>> {
+    // Try repo-local config
+    if let Ok(config) = repo.config() {
+        let name = config.get_string("user.name");
+        let email = config.get_string("user.email");
+        if let (Ok(name), Ok(email)) = (name, email) {
+            if !name.is_empty() && !email.is_empty() {
+                return Ok(Signature::now(&name, &email)?);
+            }
+        }
+    }
+
+    // Fall back to global resolution
+    codex_signature()
 }

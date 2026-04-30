@@ -134,8 +134,15 @@ impl UnlockedIdentity {
     }
 }
 
-/// Configure git commit signing for a vault.
-pub fn configure_git_signing(vault_root: &Path, ssh_pubkey: &str) -> Result<()> {
+/// Configure git commit signing and author identity for a vault.
+/// Sets both the SSH signing key and the user.name/user.email from
+/// the provided identity, so auto-commits are attributed correctly.
+pub fn configure_git_signing(
+    vault_root: &Path,
+    ssh_pubkey: &str,
+    name: Option<&str>,
+    email: Option<&str>,
+) -> Result<()> {
     let git_dir = vault_root.join(".git");
     if !git_dir.exists() {
         anyhow::bail!("Not a git repository: {}", vault_root.display());
@@ -156,8 +163,28 @@ pub fn configure_git_signing(vault_root: &Path, ssh_pubkey: &str) -> Result<()> 
     if !existing.contains("gpg.format") {
         additions.push_str("[gpg]\n\tformat = ssh\n");
     }
-    if !existing.contains("user.signingkey") {
-        additions.push_str(&format!("[user]\n\tsigningkey = {}\n", key_path.display()));
+    // Set signing key + user identity in one [user] section
+    if !existing.contains("[user]") {
+        let user_name = name.unwrap_or("Codyx");
+        let user_email = email.unwrap_or("codyx@local");
+        additions.push_str(&format!(
+            "[user]\n\tname = {user_name}\n\temail = {user_email}\n\tsigningkey = {}\n",
+            key_path.display()
+        ));
+    } else {
+        if !existing.contains("user.signingkey") {
+            additions.push_str(&format!("\tsigningkey = {}\n", key_path.display()));
+        }
+        if !existing.contains("user.name") {
+            if let Some(n) = name {
+                additions.push_str(&format!("\tname = {n}\n"));
+            }
+        }
+        if !existing.contains("user.email") {
+            if let Some(e) = email {
+                additions.push_str(&format!("\temail = {e}\n"));
+            }
+        }
     }
 
     if !additions.is_empty() {
@@ -231,7 +258,7 @@ mod tests {
     fn git_signing_config_requires_git_repo() {
         let tmp = tempfile::TempDir::new().unwrap();
         // No .git directory
-        let result = configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test");
+        let result = configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test", None, None);
         assert!(result.is_err());
     }
 
@@ -242,7 +269,7 @@ mod tests {
         std::fs::create_dir_all(&git_dir).unwrap();
         std::fs::write(git_dir.join("config"), "").unwrap();
 
-        configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test@host").unwrap();
+        configure_git_signing(tmp.path(), "ssh-ed25519 AAAA test@host", Some("Test User"), Some("test@example.com")).unwrap();
 
         let config = std::fs::read_to_string(git_dir.join("config")).unwrap();
         assert!(config.contains("gpgsign = true"));
