@@ -759,6 +759,7 @@ dependencies = [
  "codex-models",
  "comrak",
  "git2",
+ "security-framework",
  "serde",
  "serde_json",
  "styrene-identity",
@@ -5085,9 +5086,9 @@ dependencies = [
 
 [[package]]
 name = "styrene-identity"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86a31c9b7f3572aed5b9ffc47f4b6c354e01866faa29b3c176e0e0304c75008b"
+checksum = "ebe24b322ff5d7b5d4aec64424668100e0cc839fef412d791d8849fb182d2796"
 dependencies = [
  "argon2",
  "async-trait",
@@ -5097,6 +5098,7 @@ dependencies = [
  "hex",
  "hkdf",
  "rand_core 0.6.4",
+ "security-framework",
  "sha2",
  "subtle",
  "thiserror 2.0.18",

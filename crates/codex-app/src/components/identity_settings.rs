@@ -13,6 +13,9 @@ pub fn IdentitySettingsSection() -> Element {
     let mut creating = use_signal(|| false);
     let mut unlocking = use_signal(|| false);
 
+    let biometrics_available = identity::keychain_available();
+    let is_keychain_identity = status.read().tier == "DeviceHsm";
+
     rsx! {
         section { class: "settings-section",
             h2 { class: "settings-heading", "Identity" }
@@ -28,7 +31,11 @@ pub fn IdentitySettingsSection() -> Element {
                             }
                             span { class: "identity-status-text",
                                 if status.read().available {
-                                    "{status.read().tier}"
+                                    if is_keychain_identity {
+                                        "Keychain (biometric)"
+                                    } else {
+                                        "{status.read().tier}"
+                                    }
                                 } else {
                                     "No identity"
                                 }
@@ -40,18 +47,82 @@ pub fn IdentitySettingsSection() -> Element {
                 if status.read().available {
                     // ── Unlock existing identity ────────────────
                     if unlocked.read().is_none() {
-                        div { class: "settings-row",
-                            span { class: "settings-label", "Unlock" }
-                            div { class: "settings-control",
-                                div { class: "identity-form",
-                                    input {
-                                        class: "input settings-input",
-                                        r#type: "password",
-                                        value: "{passphrase}",
-                                        placeholder: "Passphrase",
-                                        oninput: move |e| *passphrase.write() = e.value(),
-                                        onkeydown: move |e| {
-                                            if e.key() == Key::Enter {
+                        if is_keychain_identity {
+                            // Biometric unlock — no passphrase needed
+                            div { class: "settings-row",
+                                span { class: "settings-label", "Unlock" }
+                                div { class: "settings-control",
+                                    div { class: "identity-form",
+                                        button {
+                                            class: "btn btn-primary btn-sm",
+                                            disabled: *unlocking.read(),
+                                            onclick: move |_| {
+                                                *unlocking.write() = true;
+                                                *error_msg.write() = None;
+                                                spawn(async move {
+                                                    match tokio::task::spawn_blocking(identity::unlock_keychain_identity).await {
+                                                        Ok(Ok(id)) => {
+                                                            *unlocked.write() = Some(UnlockedDisplay {
+                                                                identity_hash: id.identity_hash,
+                                                                ssh_auth_pubkey: id.ssh_auth_pubkey,
+                                                                ssh_fingerprint: id.ssh_fingerprint,
+                                                                git_signing_pubkey: id.git_signing_pubkey,
+                                                            });
+                                                        }
+                                                        Ok(Err(e)) => *error_msg.write() = Some(format!("{e}")),
+                                                        Err(e) => *error_msg.write() = Some(format!("{e}")),
+                                                    }
+                                                    *unlocking.write() = false;
+                                                });
+                                            },
+                                            if *unlocking.read() { "Authenticating…" } else { "Authenticate with biometrics" }
+                                        }
+                                    }
+                                    span { class: "settings-hint",
+                                        "Your identity is protected by Face ID or Touch ID"
+                                    }
+                                }
+                            }
+                        } else {
+                            // Passphrase unlock
+                            div { class: "settings-row",
+                                span { class: "settings-label", "Unlock" }
+                                div { class: "settings-control",
+                                    div { class: "identity-form",
+                                        input {
+                                            class: "input settings-input",
+                                            r#type: "password",
+                                            value: "{passphrase}",
+                                            placeholder: "Passphrase",
+                                            oninput: move |e| *passphrase.write() = e.value(),
+                                            onkeydown: move |e| {
+                                                if e.key() == Key::Enter {
+                                                    let pp = passphrase.read().clone();
+                                                    *unlocking.write() = true;
+                                                    *error_msg.write() = None;
+                                                    spawn(async move {
+                                                        match tokio::task::spawn_blocking(move || identity::unlock_identity(&pp)).await {
+                                                            Ok(Ok(id)) => {
+                                                                *unlocked.write() = Some(UnlockedDisplay {
+                                                                    identity_hash: id.identity_hash,
+                                                                    ssh_auth_pubkey: id.ssh_auth_pubkey,
+                                                                    ssh_fingerprint: id.ssh_fingerprint,
+                                                                    git_signing_pubkey: id.git_signing_pubkey,
+                                                                });
+                                                            }
+                                                            Ok(Err(e)) => *error_msg.write() = Some(format!("{e}")),
+                                                            Err(e) => *error_msg.write() = Some(format!("{e}")),
+                                                        }
+                                                        *unlocking.write() = false;
+                                                        *passphrase.write() = String::new();
+                                                    });
+                                                }
+                                            },
+                                        }
+                                        button {
+                                            class: "btn btn-primary btn-sm",
+                                            disabled: passphrase.read().is_empty() || *unlocking.read(),
+                                            onclick: move |_| {
                                                 let pp = passphrase.read().clone();
                                                 *unlocking.write() = true;
                                                 *error_msg.write() = None;
@@ -71,34 +142,9 @@ pub fn IdentitySettingsSection() -> Element {
                                                     *unlocking.write() = false;
                                                     *passphrase.write() = String::new();
                                                 });
-                                            }
-                                        },
-                                    }
-                                    button {
-                                        class: "btn btn-primary btn-sm",
-                                        disabled: passphrase.read().is_empty() || *unlocking.read(),
-                                        onclick: move |_| {
-                                            let pp = passphrase.read().clone();
-                                            *unlocking.write() = true;
-                                            *error_msg.write() = None;
-                                            spawn(async move {
-                                                match tokio::task::spawn_blocking(move || identity::unlock_identity(&pp)).await {
-                                                    Ok(Ok(id)) => {
-                                                        *unlocked.write() = Some(UnlockedDisplay {
-                                                            identity_hash: id.identity_hash,
-                                                            ssh_auth_pubkey: id.ssh_auth_pubkey,
-                                                            ssh_fingerprint: id.ssh_fingerprint,
-                                                            git_signing_pubkey: id.git_signing_pubkey,
-                                                        });
-                                                    }
-                                                    Ok(Err(e)) => *error_msg.write() = Some(format!("{e}")),
-                                                    Err(e) => *error_msg.write() = Some(format!("{e}")),
-                                                }
-                                                *unlocking.write() = false;
-                                                *passphrase.write() = String::new();
-                                            });
-                                        },
-                                        if *unlocking.read() { "Unlocking…" } else { "Unlock" }
+                                            },
+                                            if *unlocking.read() { "Unlocking…" } else { "Unlock" }
+                                        }
                                     }
                                 }
                             }
@@ -153,7 +199,6 @@ pub fn IdentitySettingsSection() -> Element {
                                         move |_| {
                                             let vault_root = ctx.vault_root();
                                             let key = ssh_key.clone();
-                                            // Pull name/email from manifest identity if available
                                             let profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
                                             let manifest_id = profile.manifest_dir.as_ref()
                                                 .and_then(|d| codex_core::manifest::load_manifest(d).ok())
@@ -182,8 +227,45 @@ pub fn IdentitySettingsSection() -> Element {
                     }
                 } else {
                     // ── Create new identity ─────────────────────
+                    if biometrics_available {
+                        // Biometric creation (Tier B) — primary option on Apple devices
+                        div { class: "settings-row",
+                            span { class: "settings-label", "Create" }
+                            div { class: "settings-control",
+                                div { class: "identity-form",
+                                    button {
+                                        class: "btn btn-primary btn-sm",
+                                        disabled: *creating.read(),
+                                        onclick: move |_| {
+                                            *creating.write() = true;
+                                            *error_msg.write() = None;
+                                            spawn(async move {
+                                                match tokio::task::spawn_blocking(identity::create_keychain_identity).await {
+                                                    Ok(Ok(())) => {
+                                                        *status.write() = identity::probe_identity();
+                                                        *error_msg.write() = Some("Identity created with biometric protection. Authenticate to see your keys.".into());
+                                                    }
+                                                    Ok(Err(e)) => *error_msg.write() = Some(format!("{e}")),
+                                                    Err(e) => *error_msg.write() = Some(format!("{e}")),
+                                                }
+                                                *creating.write() = false;
+                                            });
+                                        },
+                                        if *creating.read() { "Creating…" } else { "Protect with biometrics" }
+                                    }
+                                }
+                                span { class: "settings-hint",
+                                    "Your identity will be protected by Face ID or Touch ID. No passphrase needed."
+                                }
+                            }
+                        }
+                    }
+
+                    // Passphrase creation (Tier D) — always available as fallback
                     div { class: "settings-row",
-                        span { class: "settings-label", "Create" }
+                        span { class: "settings-label",
+                            if biometrics_available { "Or create with passphrase" } else { "Create" }
+                        }
                         div { class: "settings-control",
                             div { class: "identity-form",
                                 input {
@@ -239,7 +321,7 @@ pub fn IdentitySettingsSection() -> Element {
                         span { class: "settings-label", "" }
                         div { class: "settings-control",
                             span {
-                                class: if msg.contains("created") || msg.contains("enabled") { "save-msg ok" } else { "save-msg err" },
+                                class: if msg.contains("created") || msg.contains("enabled") || msg.contains("Created") { "save-msg ok" } else { "save-msg err" },
                                 "{msg}"
                             }
                         }

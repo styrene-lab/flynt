@@ -15,8 +15,12 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 comrak = { workspace = true }
 base64 = "0.22"
-styrene-identity = { version = "0.3", features = ["file-signer"] }
+styrene-identity = { version = "0.3.2", features = ["file-signer"] }
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+styrene-identity = { version = "0.3.2", features = ["file-signer", "keychain"] }
+security-framework = "3.7"
 
 [dev-dependencies]
 tempfile = "3"

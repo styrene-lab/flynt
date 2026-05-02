@@ -1,4 +1,4 @@
-//! Styrene Identity integration — uses the upstream 0.3.0 APIs for
+//! Styrene Identity integration — uses the upstream 0.3.x APIs for
 //! discovery, key derivation, formatting, and git signing.
 
 use anyhow::Result;
@@ -38,6 +38,98 @@ pub fn has_identity() -> bool {
     styrene_identity::discover::discover().is_some()
 }
 
+// ── Keychain (Tier B) ──────────────────────────────────────────────────────
+
+/// Check if the platform supports Keychain biometric identity.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn keychain_available() -> bool {
+    true
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn keychain_available() -> bool {
+    false
+}
+
+/// Check if a biometric identity already exists in the Keychain.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn has_keychain_identity() -> bool {
+    styrene_identity::keychain_signer::KeychainSigner::default().exists()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn has_keychain_identity() -> bool {
+    false
+}
+
+/// Create a new biometric-protected identity in the Keychain.
+/// Triggers a Face ID / Touch ID prompt immediately.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn create_keychain_identity() -> Result<()> {
+    use styrene_identity::keychain_signer::KeychainSigner;
+    let signer = KeychainSigner::default();
+    signer.create()
+        .map_err(|e| anyhow::anyhow!("Keychain identity creation failed: {e}"))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn create_keychain_identity() -> Result<()> {
+    anyhow::bail!("Keychain identity is only available on macOS and iOS")
+}
+
+/// Unlock a Keychain identity via biometrics and return derived keys.
+/// Triggers Face ID / Touch ID.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn unlock_keychain_identity() -> Result<UnlockedIdentity> {
+    use security_framework::passwords::{generic_password, PasswordOptions};
+    use styrene_identity::keychain_signer;
+
+    let data = generic_password(
+        PasswordOptions::new_generic_password(
+            keychain_signer::SERVICE,
+            keychain_signer::ACCOUNT,
+        ),
+    ).map_err(|e| {
+        let code = e.code();
+        if code == -25293 || code == -128 {
+            anyhow::anyhow!("Biometric authentication cancelled")
+        } else if code == -25308 {
+            anyhow::anyhow!("Biometric authentication required but not available in this context")
+        } else if code == -25300 {
+            anyhow::anyhow!("No identity in Keychain")
+        } else {
+            anyhow::anyhow!("Keychain read failed (OSStatus {code})")
+        }
+    })?;
+
+    if data.len() != 32 {
+        anyhow::bail!("Invalid root secret length: {} (expected 32)", data.len());
+    }
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&data);
+    let root_secret = styrene_identity::signer::RootSecret::new(bytes);
+
+    derive_unlocked_identity(&root_secret)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn unlock_keychain_identity() -> Result<UnlockedIdentity> {
+    anyhow::bail!("Keychain identity is only available on macOS and iOS")
+}
+
+/// Delete the Keychain identity.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn delete_keychain_identity() -> Result<()> {
+    use styrene_identity::keychain_signer::KeychainSigner;
+    KeychainSigner::default().delete()
+        .map_err(|e| anyhow::anyhow!("Keychain identity deletion failed: {e}"))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn delete_keychain_identity() -> Result<()> {
+    anyhow::bail!("Keychain identity is only available on macOS and iOS")
+}
+
 // ── Creation ────────────────────────────────────────────────────────────────
 
 pub fn create_identity(passphrase: &str) -> Result<PathBuf> {
@@ -72,6 +164,27 @@ pub struct UnlockedIdentity {
     pub git_signing_pubkey: String,
 }
 
+/// Derive all public keys from a root secret.
+fn derive_unlocked_identity(root_secret: &styrene_identity::signer::RootSecret) -> Result<UnlockedIdentity> {
+    let identity_hash = styrene_identity::identity_hash(root_secret);
+    let deriver = KeyDeriver::new(root_secret.as_bytes());
+
+    let git_seed = deriver.derive(KeyPurpose::Signing);
+    let git_signing_pubkey = styrene_identity::format::ssh_pubkey(&git_seed, "codyx-signing");
+
+    let auth_seed = deriver.derive_ssh_user_key("git-auth")
+        .map_err(|e| anyhow::anyhow!("SSH key derivation failed: {e}"))?;
+    let ssh_auth_pubkey = styrene_identity::format::ssh_pubkey(&auth_seed, "codyx@styrene");
+    let ssh_fingerprint = styrene_identity::format::ssh_pubkey_fingerprint(&auth_seed);
+
+    Ok(UnlockedIdentity {
+        identity_hash,
+        ssh_auth_pubkey,
+        ssh_fingerprint,
+        git_signing_pubkey,
+    })
+}
+
 pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
     let path = styrene_identity::file_signer::FileSigner::default_path();
     if !path.exists() {
@@ -90,27 +203,7 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
         }
     };
 
-    // Use upstream APIs for canonical derivation + formatting
-    let identity_hash = styrene_identity::identity_hash(&root_secret);
-
-    let deriver = KeyDeriver::new(root_secret.as_bytes());
-
-    // Git/identity signing key (unified Signing purpose in 0.3.0)
-    let git_seed = deriver.derive(KeyPurpose::Signing);
-    let git_signing_pubkey = styrene_identity::format::ssh_pubkey(&git_seed, "codyx-signing");
-
-    // SSH auth key for git remotes (user key, not host)
-    let auth_seed = deriver.derive_ssh_user_key("git-auth")
-        .map_err(|e| anyhow::anyhow!("SSH key derivation failed: {e}"))?;
-    let ssh_auth_pubkey = styrene_identity::format::ssh_pubkey(&auth_seed, "codyx@styrene");
-    let ssh_fingerprint = styrene_identity::format::ssh_pubkey_fingerprint(&auth_seed);
-
-    Ok(UnlockedIdentity {
-        identity_hash,
-        ssh_auth_pubkey,
-        ssh_fingerprint,
-        git_signing_pubkey,
-    })
+    derive_unlocked_identity(&root_secret)
 }
 
 // ── Git signing config ──────────────────────────────────────────────────────
@@ -178,5 +271,23 @@ mod tests {
         assert!(config.contains("Test User"));
         assert!(config.contains("test@example.com"));
         assert!(tmp.path().join(".git/styrene-signing-key.pub").exists());
+    }
+
+    #[test]
+    fn keychain_available_returns_expected_value() {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        assert!(keychain_available());
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        assert!(!keychain_available());
+    }
+
+    #[test]
+    fn non_apple_keychain_stubs_return_error() {
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+        {
+            assert!(create_keychain_identity().is_err());
+            assert!(unlock_keychain_identity().is_err());
+            assert!(delete_keychain_identity().is_err());
+        }
     }
 }
