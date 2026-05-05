@@ -528,7 +528,7 @@ jobs:
       - name: Update Homebrew formula
         if: ${{ !contains(env.RELEASE_TAG, '-rc.') && !contains(env.RELEASE_TAG, '-nightly.') }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}
         run: |
           VERSION="${RELEASE_TAG#v}"
 
@@ -561,12 +561,12 @@ jobs:
               depends_on "gtk+3"
 
               on_arm do
-                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codex-v#{version}-linux-arm64.tar.gz"
+                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codyx-v#{version}-linux-arm64.tar.gz"
                 sha256 "$ARM64_SHA"
               end
 
               on_intel do
-                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codex-v#{version}-linux-amd64.tar.gz"
+                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codyx-v#{version}-linux-amd64.tar.gz"
                 sha256 "$AMD64_SHA"
               end
             end
@@ -585,7 +585,7 @@ jobs:
             end
 
             test do
-              assert_match "codex", shell_output("#{bin}/codex --version 2>&1", 1)
+              assert_match "codyx", shell_output("#{bin}/codyx --version")
             end
           end
           FORMULA
