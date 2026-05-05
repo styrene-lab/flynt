@@ -115,11 +115,31 @@ jobs:
           tar czf "$DIST.tar.gz" "$DIST"
           echo "ARCHIVE=$DIST.tar.gz" >> "$GITHUB_ENV"
 
+      - name: Build codex-agent
+        run: cargo build --release -p codex-agent --target ${{ matrix.target }}
+
+      - name: Package codex-agent
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          AGENT_DIST="codex-agent-${VERSION}-${{ matrix.target }}"
+          mkdir -p "$AGENT_DIST"
+          cp "target/${{ matrix.target }}/release/codex-agent" "$AGENT_DIST/codex-agent"
+          chmod +x "$AGENT_DIST/codex-agent"
+          cp crates/codex-agent/manifest.toml "$AGENT_DIST/manifest.toml"
+          tar czf "$AGENT_DIST.tar.gz" "$AGENT_DIST"
+          echo "AGENT_ARCHIVE=$AGENT_DIST.tar.gz" >> "$GITHUB_ENV"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: codex-linux-${{ matrix.arch }}
           path: ${{ env.ARCHIVE }}
+
+      - name: Upload codex-agent artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-agent-linux-${{ matrix.arch }}
+          path: ${{ env.AGENT_ARCHIVE }}
 
   # ─── Apple Signing Setup (shared) ─────────────────────────
   # Required GitHub Secrets:
@@ -309,11 +329,38 @@ jobs:
           xcrun altool --upload-app --type osx --file dist/Codyx.pkg \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
 
+      - name: Build codex-agent (universal)
+        run: |
+          cargo build --release -p codex-agent --target aarch64-apple-darwin
+          cargo build --release -p codex-agent --target x86_64-apple-darwin
+          mkdir -p target/universal-release
+          lipo -create \
+            target/aarch64-apple-darwin/release/codex-agent \
+            target/x86_64-apple-darwin/release/codex-agent \
+            -output target/universal-release/codex-agent
+
+      - name: Package codex-agent (universal)
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          AGENT_DIST="codex-agent-${VERSION}-universal-apple-darwin"
+          mkdir -p "$AGENT_DIST"
+          cp target/universal-release/codex-agent "$AGENT_DIST/codex-agent"
+          chmod +x "$AGENT_DIST/codex-agent"
+          cp crates/codex-agent/manifest.toml "$AGENT_DIST/manifest.toml"
+          tar czf "$AGENT_DIST.tar.gz" "$AGENT_DIST"
+          echo "AGENT_ARCHIVE=$AGENT_DIST.tar.gz" >> "$GITHUB_ENV"
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: codex-macos
           path: ${{ env.DMG }}
+
+      - name: Upload codex-agent artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-agent-macos-universal
+          path: ${{ env.AGENT_ARCHIVE }}
 
   build-ios:
     name: Build iOS + TestFlight
