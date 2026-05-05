@@ -1,4 +1,4 @@
-# Contributing to Codex
+# Contributing to Flynt
 
 Guidelines for building, testing, branching, and collaborating.
 
@@ -57,10 +57,10 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 cargo check --workspace
 
 # Desktop release
-cd crates/codex-app && dx build --platform desktop --release
+cd crates/flynt-app && dx build --platform desktop --release
 
 # iOS release
-cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
+cd crates/flynt-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
 
 # Full release (macOS DMG + iOS IPA)
 ./scripts/build-release.sh 0.3.0
@@ -70,14 +70,14 @@ cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform io
 
 ```sh
 # All tests
-cargo test -p codex-core -p codex-store
+cargo test -p flynt-core -p flynt-store
 
 # Specific test file
-cargo test -p codex-store --test git_sync
-cargo test -p codex-store --test sandbox
+cargo test -p flynt-store --test git_sync
+cargo test -p flynt-store --test sandbox
 
 # Single test
-cargo test -p codex-core -- decay_rate_none
+cargo test -p flynt-core -- decay_rate_none
 ```
 
 ### Test coverage expectations
@@ -87,7 +87,7 @@ Every PR should:
 - Add tests for new public functions
 - Add regression tests for bug fixes
 
-Current coverage: 212 tests across `codex-core` (110) and `codex-store` (102).
+Current coverage: 212 tests across `flynt-core` (110) and `flynt-store` (102).
 
 ## Commits
 
@@ -107,7 +107,7 @@ Commit messages explain *why*, not just *what*. Include the motivation in the bo
 
 ### No Node.js
 
-All JavaScript (CodeMirror 6, Excalidraw) is vendored as pre-built static bundles in `crates/codex-app/assets/vendor/`. No `npm`, no `node_modules`, no `package.json` in the app crates. The `site/` directory is the only place npm is used (for the Astro landing page).
+All JavaScript (CodeMirror 6, Excalidraw) is vendored as pre-built static bundles in `crates/flynt-app/assets/vendor/`. No `npm`, no `node_modules`, no `package.json` in the app crates. The `site/` directory is the only place npm is used (for the Astro landing page).
 
 ### Markdown is canonical
 
@@ -135,8 +135,8 @@ The agent extension uses ACP (Agent Client Protocol) over stdio, not MCP. Don't 
 # 1. Bump version in Cargo.toml
 # 2. Build + sign + notarize
 ./scripts/build-release.sh X.Y.Z
-xcrun notarytool submit dist/Codex-X.Y.Z.dmg --apple-id "..." --team-id "..." --password "..." --wait
-xcrun stapler staple dist/Codex-X.Y.Z.dmg
+xcrun notarytool submit dist/Flynt-X.Y.Z.dmg --apple-id "..." --team-id "..." --password "..." --wait
+xcrun stapler staple dist/Flynt-X.Y.Z.dmg
 
 # 3. Tag + push
 git tag vX.Y.Z && git push origin vX.Y.Z
@@ -149,12 +149,12 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 Cargo.toml                  Workspace root
 crates/
-  codex-core/               Models, parser, query engine, templates, graph
-  codex-store/              Vault I/O, SQLite, git/iCloud sync, file watching
-  codex-app/                Desktop UI (Dioxus desktop)
-  codex-mobile/             iOS UI (Dioxus mobile)
-  codex-agent/              MCP extension binary for Omegon
-site/                       codex.styrene.io landing page (Astro)
+  flynt-core/               Models, parser, query engine, templates, graph
+  flynt-store/              Vault I/O, SQLite, git/iCloud sync, file watching
+  flynt-app/                Desktop UI (Dioxus desktop)
+  flynt-mobile/             iOS UI (Dioxus mobile)
+  flynt-agent/              MCP extension binary for Omegon
+site/                       flynt.styrene.io landing page (Astro)
 scripts/
   build-release.sh          macOS DMG + iOS IPA build pipeline
 docs/

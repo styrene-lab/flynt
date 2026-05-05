@@ -1,0 +1,27 @@
+[package]
+name = "flynt-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+flynt-models = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+comrak = { workspace = true }
+base64 = "0.22"
+styrene-identity = { version = "0.3.2", features = ["file-signer"] }
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+styrene-identity = { version = "0.3.2", features = ["file-signer", "keychain"] }
+security-framework = "3.7"
+
+[dev-dependencies]
+tempfile = "3"

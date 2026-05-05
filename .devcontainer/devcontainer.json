@@ -1,5 +1,5 @@
 {
-  "name": "Codex",
+  "name": "Flynt",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
@@ -27,10 +27,10 @@
     }
   },
   "forwardPorts": [],
-  "postCreateCommand": "cargo fetch && cargo build -p codex-agent --release",
-  "postStartCommand": "echo 'Codex dev ready. Run: cargo test -p codex-core -p codex-store'",
+  "postCreateCommand": "cargo fetch && cargo build -p flynt-agent --release",
+  "postStartCommand": "echo 'Flynt dev ready. Run: cargo test -p flynt-core -p flynt-store'",
   "remoteEnv": {
-    "CODEX_VAULT": "${containerWorkspaceFolder}/.vault",
+    "FLYNT_VAULT": "${containerWorkspaceFolder}/.vault",
     "RUST_LOG": "info"
   },
   "mounts": [

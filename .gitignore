@@ -25,6 +25,6 @@ result
 *.mobileprovision
 *.provisionprofile
 private_keys/
-crates/codex-mobile/ios/keys/
-crates/codex-mobile/ios/profiles/
-crates/codex-app/profiles/
+crates/flynt-mobile/ios/keys/
+crates/flynt-mobile/ios/profiles/
+crates/flynt-app/profiles/

@@ -2,14 +2,14 @@
 out_dir = "dist"
 
 [bundle]
-identifier = "io.styrene.codex"
+identifier = "io.styrene.flynt"
 publisher = "Styrene Labs"
 icon = ["assets/icon.icns", "assets/icon.png"]
 copyright = "© 2026 Styrene Labs"
 category = "public.app-category.productivity"
 short_description = "Notes and task tracker with Omegon agent surface."
 long_description = """
-Codex is a markdown-native notes and kanban task manager.
+Flynt is a markdown-native notes and kanban task manager.
 It exposes a full ACP tool surface to the Omegon AI harness, enabling
 the embedded agent sidebar to read, write, and search your vault.
 """

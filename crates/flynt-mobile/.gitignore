@@ -1,0 +1,5 @@
+
+# Build artifacts
+crates/flynt-agent/flynt-agent
+*/.omegon/
+.omegon/

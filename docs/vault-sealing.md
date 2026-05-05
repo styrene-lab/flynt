@@ -1,6 +1,6 @@
 # Vault Sealing (Encryption at Rest)
 
-Design document for Codyx vault encryption. Two modes: full vault seal and selective per-note seal.
+Design document for Flynt vault encryption. Two modes: full vault seal and selective per-note seal.
 
 ## Key Derivation
 
@@ -13,7 +13,7 @@ RootSecret (from IdentityVault / SignerChain)
        └─ note_seal_key(note_id: &str) — per-note key for selective mode
 ```
 
-The vault ID is the `id` field from `.codex/config.toml` (a UUID assigned at vault creation). Per-note keys are derived from `vault_seal_key + note_id` so each note has a unique key but all keys trace back to the same root secret.
+The vault ID is the `id` field from `.flynt/config.toml` (a UUID assigned at vault creation). Per-note keys are derived from `vault_seal_key + note_id` so each note has a unique key but all keys trace back to the same root secret.
 
 ### No Passphrase Stored
 
@@ -75,12 +75,12 @@ The `.sealed` file format:
 - Git tracks `.sealed` files (binary blobs)
 - No meaningful diffs — commits show binary changes
 - Merge conflicts: last-write-wins (acceptable for single-user)
-- `.codex/config.toml` remains unencrypted (contains vault name, sync config, seal mode flag — no sensitive data)
+- `.flynt/config.toml` remains unencrypted (contains vault name, sync config, seal mode flag — no sensitive data)
 
 ### Config
 
 ```toml
-# .codex/config.toml
+# .flynt/config.toml
 [security]
 mode = "sealed"          # "open" | "sealed" | "selective"
 algorithm = "chacha20"   # "chacha20" | "aes256gcm"
@@ -143,7 +143,7 @@ The body below `+++` is replaced with a single line containing the encrypted pay
 ### Config
 
 ```toml
-# .codex/config.toml
+# .flynt/config.toml
 [security]
 mode = "selective"
 algorithm = "chacha20"
@@ -153,9 +153,9 @@ vault_id = "a1b2c3..."
 
 ## Implementation Plan
 
-### Phase 1: Core (codex-core)
+### Phase 1: Core (flynt-core)
 
-New module: `codex-core/src/seal.rs`
+New module: `flynt-core/src/seal.rs`
 
 ```rust
 pub enum SealMode {
@@ -197,7 +197,7 @@ impl SealedBody {
 }
 ```
 
-### Phase 2: Store (codex-store)
+### Phase 2: Store (flynt-store)
 
 - `Vault::open()` checks `security.mode` in config
 - `Vault::seal_note()` / `Vault::unseal_note()` — per-note operations
@@ -205,7 +205,7 @@ impl SealedBody {
 - `index_file()` skips body indexing for sealed notes (indexes frontmatter only)
 - `save_document_content()` encrypts body if note is sealed
 
-### Phase 3: UI (codex-app)
+### Phase 3: UI (flynt-app)
 
 - Lock screen component (shown when vault is locked)
 - Unlock dialog (passphrase input or biometric prompt)
@@ -226,7 +226,7 @@ impl SealedBody {
 ## Dependencies
 
 ```toml
-# codex-core/Cargo.toml
+# flynt-core/Cargo.toml
 age = "0.10"     # audited file encryption (X25519 + ChaCha20-Poly1305 internally)
 base64 = "0.22"  # for inline encoding
 zeroize = "1"    # for key memory cleanup
@@ -240,7 +240,7 @@ Argon2id + ChaCha20-Poly1305 pipeline for identity file encryption.
 
 StyreneIdentity already provides:
 
-| Capability | StyreneIdentity API | Codyx usage |
+| Capability | StyreneIdentity API | Flynt usage |
 |-----------|-------------------|-------------|
 | Key derivation | `KeyDeriver::age_secret()` → 32-byte X25519 | Vault encryption key |
 | Passphrase stretching | `FileSigner` (Argon2id, 64 MiB, 3 iterations) | Identity unlock |
@@ -250,13 +250,13 @@ StyreneIdentity already provides:
 | Memory safety | `zeroize` on all key material | Key cleanup on lock |
 | Backup | `IdentityVault::backup()` | Before key rotation |
 
-**Codyx does NOT:**
+**Flynt does NOT:**
 - Implement its own HKDF hierarchy
 - Store passphrases or keys
 - Implement its own AEAD cipher
 - Manage signer tiers
 
-**Codyx DOES:**
+**Flynt DOES:**
 - Call `IdentityVault::unlock()` → `KeyDeriver::age_secret()`
 - Pass the age secret to the `age` crate for file encryption
 - Manage which files are sealed vs open

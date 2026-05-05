@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Codyx E2E tests via Podman.
+# Run Flynt E2E tests via Podman.
 #
 # Usage:
 #   ./tests/e2e/run.sh              # build + run all tests
@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-IMAGE="codyx-e2e"
+IMAGE="flynt-e2e"
 
 echo "Building test container (includes Rust build — first run is slow)..."
 podman build -t "$IMAGE" -f "$REPO_ROOT/tests/e2e/Containerfile" "$REPO_ROOT"

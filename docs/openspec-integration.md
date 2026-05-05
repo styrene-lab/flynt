@@ -1,7 +1,7 @@
 # OpenSpec Integration — Auditability from Design to Test
 
 Design document for connecting design nodes, tasks, and OpenSpec scenarios
-into an auditable chain within Codyx vaults.
+into an auditable chain within Flynt vaults.
 
 ## The Audit Chain
 
@@ -53,7 +53,7 @@ Verified by: `tests/auth/test_token_expiry.rs::test_expired_token_rejected`
 Stored as entries in a test results log (not individual files):
 
 ```toml
-# .codex/test-results.toml
+# .flynt/test-results.toml
 [[results]]
 scenario_id = "uuid"
 timestamp = "2026-04-21T12:00:00Z"
@@ -139,7 +139,7 @@ Scenarios appear as graph nodes with edges:
 
 ## Implementation Plan
 
-### Phase 1: Data Model (codex-core)
+### Phase 1: Data Model (flynt-core)
 
 - Add `EntityKind::OpenSpecScenario` to datum.rs
 - Add `OpenSpecScenarioView` with typed accessors
@@ -147,14 +147,14 @@ Scenarios appear as graph nodes with edges:
 - Add `GraphNodeKind::Scenario` + `GraphEdgeKind::Validates`
 - Test result storage model
 
-### Phase 2: Storage (codex-store)
+### Phase 2: Storage (flynt-store)
 
 - Index scenarios from vault (reindex picks up `kind = "openspec_scenario"`)
-- `vault.record_test_result()` writes to `.codex/test-results.toml`
+- `vault.record_test_result()` writes to `.flynt/test-results.toml`
 - `vault.scenario_health(design_node_id)` aggregates scenario statuses
 - Query engine: support `design_node` filter in WHERE clauses
 
-### Phase 3: Agent Tools (codex-agent)
+### Phase 3: Agent Tools (flynt-agent)
 
 - `create_scenario` tool
 - `list_scenarios` tool
@@ -162,7 +162,7 @@ Scenarios appear as graph nodes with edges:
 - `verify_design_node` tool
 - `promote_task` tool (adds design_node_id to existing task)
 
-### Phase 4: UI (codex-app)
+### Phase 4: UI (flynt-app)
 
 - Graph: scenario nodes with health coloring
 - Board: design-tree badge on tasks linked to design nodes

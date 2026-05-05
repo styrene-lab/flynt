@@ -1,0 +1,13 @@
+[package]
+name = "flynt-models"
+description = "Core data types for Flynt — Task, Board, Priority, and task file serialization. Minimal deps for reuse by scribe, omegon, and other ecosystem crates."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+toml = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }

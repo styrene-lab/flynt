@@ -1,4 +1,4 @@
-"""Shared fixtures for Codyx E2E tests."""
+"""Shared fixtures for Flynt E2E tests."""
 
 import os
 import signal
@@ -14,13 +14,13 @@ from playwright.sync_api import sync_playwright
 REPO_ROOT = Path(__file__).parent.parent.parent
 
 # Resolve binary: env override → release → debug
-_env_bin = os.environ.get("CODYX_BINARY")
+_env_bin = os.environ.get("FLYNT_BINARY")
 if _env_bin:
     BINARY = Path(_env_bin)
-elif (REPO_ROOT / "target" / "release" / "codyx").exists():
-    BINARY = REPO_ROOT / "target" / "release" / "codyx"
+elif (REPO_ROOT / "target" / "release" / "flynt").exists():
+    BINARY = REPO_ROOT / "target" / "release" / "flynt"
 else:
-    BINARY = REPO_ROOT / "target" / "debug" / "codyx"
+    BINARY = REPO_ROOT / "target" / "debug" / "flynt"
 
 
 def wait_for_port(port: int, timeout: float = 15.0) -> bool:
@@ -41,7 +41,7 @@ def binary_path():
     """Ensure the binary is built and return its path."""
     if not BINARY.exists():
         subprocess.run(
-            ["cargo", "build", "--package", "codex-app", "--bin", "codyx"],
+            ["cargo", "build", "--package", "flynt-app", "--bin", "flynt"],
             cwd=REPO_ROOT,
             check=True,
         )
@@ -60,9 +60,9 @@ def vault_dir(tmp_path):
 @pytest.fixture
 def vault_with_notes(vault_dir):
     """Create a vault with some sample notes."""
-    codex_dir = vault_dir / ".codex"
-    codex_dir.mkdir()
-    (codex_dir / "config.toml").write_text(
+    flynt_dir = vault_dir / ".flynt"
+    flynt_dir.mkdir()
+    (flynt_dir / "config.toml").write_text(
         'vault_name = "Test Vault"\n\n[sync]\nbackend = "none"\n\n[appearance]\ntheme = "alpharius"\n'
     )
 
@@ -87,9 +87,9 @@ def vault_with_notes(vault_dir):
 @pytest.fixture
 def vault_with_conflict(vault_dir):
     """Create a vault with a conflicted file."""
-    codex_dir = vault_dir / ".codex"
-    codex_dir.mkdir()
-    (codex_dir / "config.toml").write_text(
+    flynt_dir = vault_dir / ".flynt"
+    flynt_dir.mkdir()
+    (flynt_dir / "config.toml").write_text(
         'vault_name = "Conflict Test"\n\n[sync]\nbackend = "none"\n'
     )
     (vault_dir / "Conflicted.md").write_text(
@@ -108,17 +108,17 @@ def vault_with_conflict(vault_dir):
 @pytest.fixture
 def vault_with_board(vault_dir):
     """Create a vault pre-configured with a kanban board."""
-    codex_dir = vault_dir / ".codex"
-    codex_dir.mkdir()
-    (codex_dir / "config.toml").write_text(
+    flynt_dir = vault_dir / ".flynt"
+    flynt_dir.mkdir()
+    (flynt_dir / "config.toml").write_text(
         'vault_name = "Board Test"\n\n[sync]\nbackend = "none"\n'
     )
     # The board will be created via the UI in tests
     return vault_dir
 
 
-class CodyxApp:
-    """Manages a running Codyx instance for testing."""
+class FlyntApp:
+    """Manages a running Flynt instance for testing."""
 
     def __init__(self, binary: Path, vault_dir: Path, inspector_port: int = 9222):
         self.binary = binary
@@ -143,7 +143,7 @@ class CodyxApp:
         import platform
 
         env = os.environ.copy()
-        env["CODEX_VAULT"] = str(self.vault_dir)
+        env["FLYNT_VAULT"] = str(self.vault_dir)
 
         is_linux = platform.system() == "Linux"
 
@@ -192,20 +192,20 @@ class CodyxApp:
 
 @pytest.fixture
 def app(binary_path, vault_with_notes):
-    """Launch Codyx with a pre-populated vault and return a connected page."""
-    with CodyxApp(binary_path, vault_with_notes, inspector_port=9222) as app:
+    """Launch Flynt with a pre-populated vault and return a connected page."""
+    with FlyntApp(binary_path, vault_with_notes, inspector_port=9222) as app:
         yield app
 
 
 @pytest.fixture
 def fresh_app(binary_path, vault_dir):
-    """Launch Codyx with an empty vault (triggers welcome screen)."""
-    with CodyxApp(binary_path, vault_dir, inspector_port=9223) as app:
+    """Launch Flynt with an empty vault (triggers welcome screen)."""
+    with FlyntApp(binary_path, vault_dir, inspector_port=9223) as app:
         yield app
 
 
 @pytest.fixture
 def conflict_app(binary_path, vault_with_conflict):
-    """Launch Codyx with a conflicted file."""
-    with CodyxApp(binary_path, vault_with_conflict, inspector_port=9224) as app:
+    """Launch Flynt with a conflicted file."""
+    with FlyntApp(binary_path, vault_with_conflict, inspector_port=9224) as app:
         yield app

@@ -39,7 +39,7 @@ jobs:
             cmake
 
       - name: Cargo check (desktop + store + core)
-        run: cargo check -p codex-core -p codex-store -p codex-app
+        run: cargo check -p flynt-core -p flynt-store -p flynt-app
 
   test:
     name: Tests
@@ -61,7 +61,7 @@ jobs:
             cmake
 
       - name: Run tests
-        run: cargo test -p codex-core -p codex-store
+        run: cargo test -p flynt-core -p flynt-store
 
   check-macos:
     name: Check macOS
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Cargo check
-        run: cargo check -p codex-core -p codex-store -p codex-app
+        run: cargo check -p flynt-core -p flynt-store -p flynt-app
 
   lipstyk:
     name: lipstyk

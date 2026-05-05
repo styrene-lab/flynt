@@ -43,7 +43,7 @@ let data = generic_password(
 
 ## Implementation Location
 
-**In styrene-identity crate** (not in Codyx):
+**In styrene-identity crate** (not in Flynt):
 
 ```
 crates/libs/styrene-identity/
@@ -161,7 +161,7 @@ SignerChain::new_sorted(vec![
 ])
 ```
 
-## Codyx Changes
+## Flynt Changes
 
 ### Identity Settings UI
 

@@ -8,7 +8,7 @@ const valueCards = [
   },
   {
     title: "Local-first, sync-optional",
-    body: "Your vault works offline, always. Add Git sync when you're ready — Codex auto-commits and pushes in the background. iCloud sync also supported for zero-config setups.",
+    body: "Your vault works offline, always. Add Git sync when you're ready — Flynt auto-commits and pushes in the background. iCloud sync also supported for zero-config setups.",
   },
   {
     title: "Knowledge graph",
@@ -48,7 +48,7 @@ const features = [
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Codex — Local-First Knowledge Management</title>
+  <title>Flynt — Local-First Knowledge Management</title>
   <meta name="description" content="Markdown-native knowledge management with integrated AI, kanban boards, and a knowledge graph. Built in Rust. Local-first, no account required." />
   {import.meta.env.PUBLIC_I2P_BUILD ? (
     <link href="/fonts/fonts.css" rel="stylesheet" />
@@ -62,12 +62,12 @@ const features = [
 </head>
 <body>
   <nav class="topnav">
-    <a href="/" class="topnav-logo">Codex</a>
+    <a href="/" class="topnav-logo">Flynt</a>
     <div class="topnav-links">
-      <a href="https://demo.codex.styrene.io">Demo Vault</a>
-      <a href="https://demo.codex.styrene.io/graph/">Graph</a>
-      <a href="https://github.com/styrene-lab/codex">GitHub</a>
-      <a href="https://github.com/styrene-lab/codex/releases">Releases</a>
+      <a href="https://demo.flynt.styrene.io">Demo Vault</a>
+      <a href="https://demo.flynt.styrene.io/graph/">Graph</a>
+      <a href="https://github.com/styrene-lab/flynt">GitHub</a>
+      <a href="https://github.com/styrene-lab/flynt/releases">Releases</a>
     </div>
   </nav>
 
@@ -77,14 +77,14 @@ const features = [
         <div class="hero-kicker">Knowledge kernel</div>
         <h1>Your notes. Your filesystem. Your rules.</h1>
         <p class="hero-lead">
-          Codex is a local-first knowledge management app built in Rust. Markdown files, wikilinks, a knowledge graph, kanban boards, and an AI agent — all without a cloud account or subscription.
+          Flynt is a local-first knowledge management app built in Rust. Markdown files, wikilinks, a knowledge graph, kanban boards, and an AI agent — all without a cloud account or subscription.
         </p>
         <p class="hero-body">
           Designed for people who think in text files and want their tools to stay out of the way. Obsidian-compatible, Git-synced, cross-platform.
         </p>
         <div class="hero-cta-row">
-          <a href="https://github.com/styrene-lab/codex/releases/latest" class="btn btn-primary">Download for macOS</a>
-          <a href="https://demo.codex.styrene.io" class="btn btn-secondary">Explore the demo vault</a>
+          <a href="https://github.com/styrene-lab/flynt/releases/latest" class="btn btn-primary">Download for macOS</a>
+          <a href="https://demo.flynt.styrene.io" class="btn btn-secondary">Explore the demo vault</a>
         </div>
         <div class="hero-proof-row">
           <span>Markdown source of truth</span>
@@ -107,11 +107,11 @@ const features = [
           <div class="panel-label">Quick start</div>
           <h2>Clone the demo vault.</h2>
           <p class="panel-copy">
-            Download Codex, open it, and choose <strong>Clone remote vault</strong>. Enter the demo vault URL and you're in — documentation, examples, and a live knowledge graph.
+            Download Flynt, open it, and choose <strong>Clone remote vault</strong>. Enter the demo vault URL and you're in — documentation, examples, and a live knowledge graph.
           </p>
 
           <div class="install-command-wrap">
-            <pre class="install-command"><code id="hero-clone-cmd">git@github.com:styrene-lab/codex-demo-vault.git</code></pre>
+            <pre class="install-command"><code id="hero-clone-cmd">https://github.com/styrene-lab/flynt-demo-vault.git</code></pre>
             <button class="copy-btn" id="copy-btn" aria-label="Copy clone URL" title="Copy">
               <svg class="copy-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
@@ -124,8 +124,8 @@ const features = [
           </div>
 
           <div class="version-row">
-            <span><a href="https://github.com/styrene-lab/codex/releases/tag/v0.5.0">v0.5.0</a> · signed · TestFlight</span>
-            <a href="https://demo.codex.styrene.io/getting-started/">Getting started</a>
+            <span><a href="https://github.com/styrene-lab/flynt/releases/tag/v0.5.0">v0.5.0</a> · signed · TestFlight</span>
+            <a href="https://demo.flynt.styrene.io/getting-started/">Getting started</a>
           </div>
         </section>
       </div>
@@ -140,7 +140,7 @@ const features = [
 
     <section class="value-section">
       <div class="section-heading">
-        <div class="section-kicker">Why Codex</div>
+        <div class="section-kicker">Why Flynt</div>
         <h2>The tools should serve the thinking, not the other way around.</h2>
       </div>
       <div class="value-grid">
@@ -173,24 +173,24 @@ const features = [
       <div class="ecosystem-grid">
         <a href="https://omegon.styrene.io" class="ecosystem-card">
           <h3>Omegon</h3>
-          <p>Terminal-native AI agent harness. The engine behind Codex's agent sidebar.</p>
+          <p>Terminal-native AI agent harness. The engine behind Flynt's agent sidebar.</p>
         </a>
-        <a href="https://demo.codex.styrene.io" class="ecosystem-card">
+        <a href="https://demo.flynt.styrene.io" class="ecosystem-card">
           <h3>Demo Vault</h3>
           <p>Clone-and-go demo vault with documentation, examples, and a live knowledge graph.</p>
         </a>
-        <a href="https://github.com/styrene-lab/codex" class="ecosystem-card">
+        <a href="https://github.com/styrene-lab/flynt" class="ecosystem-card">
           <h3>Source</h3>
-          <p>Rust monorepo: codex-core, codex-store, codex-app, codex-mobile, codex-agent.</p>
+          <p>Rust monorepo: flynt-core, flynt-store, flynt-app, flynt-mobile, flynt-agent.</p>
         </a>
       </div>
     </section>
   </main>
 
   <footer class="docs-footer">
-    <a href="https://github.com/styrene-lab/codex">GitHub</a> ·
-    <a href="https://github.com/styrene-lab/codex/releases">Releases</a> ·
-    <a href="https://demo.codex.styrene.io">Demo</a> ·
+    <a href="https://github.com/styrene-lab/flynt">GitHub</a> ·
+    <a href="https://github.com/styrene-lab/flynt/releases">Releases</a> ·
+    <a href="https://demo.flynt.styrene.io">Demo</a> ·
     © 2024–2026 Black Meridian, LLC
   </footer>
 

@@ -1,4 +1,4 @@
-# Codyx UI Guide
+# Flynt UI Guide
 
 > Interface map for QA, user documentation, and feature verification.
 > Version: 0.6.2
@@ -13,7 +13,7 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **Start writing** | Click | Creates vault at `~/Documents/Codyx/`, writes Welcome.md, switches to Notes view |
+| **Start writing** | Click | Creates vault at `~/Documents/Flynt/`, writes Welcome.md, switches to Notes view |
 | **Open your notebook** (vault exists) | Click | Switches to last used vault, navigates to Notes |
 | **Sync across devices** | Click | Expands sync options panel |
 | **Join a shared vault** | Click | Opens clone dialog modal |
@@ -24,9 +24,9 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **iCloud Drive** | Click | Creates vault in `~/Library/Mobile Documents/com~apple~CloudDocs/Codyx/`. If already exists, opens it. |
+| **iCloud Drive** | Click | Creates vault in `~/Library/Mobile Documents/com~apple~CloudDocs/Flynt/`. If already exists, opens it. |
 | **Google Drive** | Click | Creates vault in Google Drive's local sync folder |
-| **Dropbox** | Click | Creates vault in `~/Dropbox/Codyx/` |
+| **Dropbox** | Click | Creates vault in `~/Dropbox/Flynt/` |
 | **OneDrive** | Click | Creates vault in OneDrive's local sync folder |
 | No providers detected | | Cloud section hidden entirely. Git section auto-expands with label "Online sync". |
 
@@ -46,9 +46,9 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Notebook URL | Text input | Placeholder: `https://codeberg.org/you/notebook.git` |
+| Notebook URL | Text input | Placeholder: `https://github.com/you/your-vault.git`. On blur, auto-fills token from stored credentials if available. |
 | Branch | Text input, default "main" | |
-| Access token | Password input, optional | "Only needed for private notebooks" |
+| Access token | Password input, optional | "Only needed for private notebooks". Token is persisted to `auth.json` on successful clone. |
 | Clone button | Click | Async (`spawn_blocking`), button shows "Cloning..." while working |
 | Clone success | | Vault opened, navigate to Notes, launcher profile updated |
 | Clone failure | | Error inline in dialog: network error, auth failure, path conflict |
@@ -289,7 +289,7 @@
 | | OAuth providers | "Login" button | Spawns `omegon auth login <provider>` |
 | | All providers | "Remove" button | Clears from auth.json |
 | **Operator** | Active persona | Select | Off / Scribe / Omegon |
-| | Rail extension | Select | None / Vox / Codyx |
+| | Rail extension | Select | None / Vox / Flynt |
 | | Vox enabled | Checkbox | |
 | | Vox TTS | Checkbox | |
 | | Vox voice | Text input | System TTS voice name |
@@ -310,7 +310,7 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Save changes | Click | Persists to `.codex/config.toml` + `.codex/operator-settings.json` + `.omegon/profile.json` |
+| Save changes | Click | Persists to `.flynt/config.toml` + `.flynt/operator-settings.json` + `.omegon/profile.json` |
 | Export local preview | Advanced only | Exports publication HTML |
 | Success message | Inline green text | "Settings saved" or "Vault migrated and sync updated." |
 | Error message | Inline red text | Validation failures, save errors |
@@ -418,14 +418,14 @@
 | Trigger | Behavior | Expected Result |
 |---------|----------|-----------------|
 | Share from any app | SwiftUI sheet: edit title | |
-| Save | Writes `.md` to App Group inbox (`group.io.styrene.codex`) | |
+| Save | Writes `.md` to App Group inbox (`group.io.styrene.flynt`) | |
 | Main app polls | Every 5 seconds | `drain_inbox()` moves `.md` files + assets into vault, indexes |
 
 ### First Vault
 
 | Condition | Behavior |
 |-----------|----------|
-| Fresh install | Vault created at `Documents/Codyx/` |
+| Fresh install | Vault created at `Documents/Flynt/` |
 | No notes (reindex = 0) | Welcome.md auto-created with getting-started content |
 
 ---
@@ -434,8 +434,8 @@
 
 | File | Format | Location | Notes |
 |------|--------|----------|-------|
-| Vault config | TOML | `.codex/config.toml` | Survives TestFlight upgrades (inside vault) |
-| Operator settings | JSON | `.codex/operator-settings.json` | Daemon config, persona, vox |
+| Vault config | TOML | `.flynt/config.toml` | Survives TestFlight upgrades (inside vault) |
+| Operator settings | JSON | `.flynt/operator-settings.json` | Daemon config, persona, vox |
 | Omegon profile | JSON | `.omegon/profile.json` | Model, thinking level |
 | Notes | Markdown + TOML frontmatter (`+++`) | `*.md` anywhere in vault | |
 | Tasks | Markdown + TOML frontmatter (`kind = "task"`) | Project subdirectories | |
@@ -446,10 +446,10 @@
 | Communications | Markdown | `references/comms/**/*.md` | Hidden from sidebar |
 | Vault manifest | TOML | `vaults.toml` in manifest repo | |
 | Local manifest sidecar | TOML | `vaults.local.toml` (gitignored) | Device-specific clone paths |
-| Launcher profile | JSON | `~/Library/Application Support/codex/launcher-profile.json` | Known vaults, recent, wizard state |
+| Launcher profile | JSON | `~/Library/Application Support/flynt/launcher-profile.json` | Known vaults, recent, wizard state |
 | Auth tokens | JSON | `~/.config/omegon/auth.json` | 0600 permissions, atomic write + lock file |
 | Identity | Binary (argon2id + ChaCha20Poly1305) | `~/.config/styrene/identity.key` | 97 bytes, STID magic header |
-| SQLite index | SQLite WAL | `.codex-local/codex/codex-index.db` | Ephemeral — rebuilt from vault files on reindex |
+| SQLite index | SQLite WAL | `.flynt-local/flynt/flynt-index.db` | Ephemeral — rebuilt from vault files on reindex |
 
 ---
 
@@ -458,9 +458,9 @@
 | Backend | Mechanism | Conflict handling |
 |---------|-----------|-------------------|
 | **None** | Local only | N/A |
-| **iCloud** | macOS filesystem sync | iCloud creates "conflicted copy" files — **Codyx does not detect or resolve these.** Operator must manually reconcile. |
+| **iCloud** | macOS filesystem sync | iCloud creates "conflicted copy" files — **Flynt does not detect or resolve these.** Operator must manually reconcile. |
 | **Git** | Auto-commit + push/pull on configurable interval (min 30s) | Git merge conflicts produce markers → resolution banner in note view |
-| **Google Drive / Dropbox / OneDrive** | Provider's desktop client handles filesystem sync | Provider-specific conflict handling — Codyx treats the folder as local |
+| **Google Drive / Dropbox / OneDrive** | Provider's desktop client handles filesystem sync | Provider-specific conflict handling — Flynt treats the folder as local |
 
 ### Vault Snapshots (Git only)
 
@@ -473,7 +473,7 @@
 
 | Transition | What happens |
 |-----------|-------------|
-| None → iCloud | Copies all files (excluding `.codex-local/`, `.git/`) to iCloud Drive. Updates config. Switches runtime. Old copy remains. |
+| None → iCloud | Copies all files (excluding `.flynt-local/`, `.git/`) to iCloud Drive. Updates config. Switches runtime. Old copy remains. |
 | None → Git | Stays in place. Inits git repo + adds remote. Creates `.gitignore`. |
 | iCloud → Git | Stays in iCloud location. Adds git repo on top. |
 | Any → None | Copies to `~/Documents/<name>/`. Old location not deleted. |
@@ -509,12 +509,12 @@
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `CODEX_VAULT` | Override vault root directory | `~/Documents/Codyx` |
+| `FLYNT_VAULT` | Override vault root directory | `~/Documents/Flynt` |
 | `OMEGON_BIN` | Override Omegon binary path | Channel-resolved from `~/.omegon/versions/` |
 | `OMEGON_HOME` | Override Omegon home directory | Derived from vault config |
-| `CODEX_LAUNCHER_PROFILE` | Override launcher profile path | `~/Library/Application Support/codex/launcher-profile.json` |
+| `FLYNT_LAUNCHER_PROFILE` | Override launcher profile path | `~/Library/Application Support/flynt/launcher-profile.json` |
 | `OMEGON_AUTH_JSON` | Override auth.json path | `~/.config/omegon/auth.json` |
-| `CODEX_LOCAL_STATE` | Override local state root | `~/.local/share/codex/` |
+| `FLYNT_LOCAL_STATE` | Override local state root | `~/.local/share/flynt/` |
 
 ---
 

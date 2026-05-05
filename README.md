@@ -1,18 +1,18 @@
-# Codyx
+# Flynt
 
 **Local-first knowledge management. Markdown is the source of truth.**
 
 A desktop + mobile app for notes, tasks, drawings, and knowledge graphs — built in Rust, synced with Git, powered by an AI agent. No cloud account, no subscription, no vendor lock-in.
 
-[![docs](https://img.shields.io/badge/docs-codyx.styrene.io-2ab4c8)](https://codyx.styrene.io)
-[![demo](https://img.shields.io/badge/demo-demo.codyx.styrene.io-1ab878)](https://demo.codyx.styrene.io)
+[![docs](https://img.shields.io/badge/docs-flynt.styrene.io-2ab4c8)](https://flynt.styrene.io)
+[![demo](https://img.shields.io/badge/demo-demo.flynt.styrene.io-1ab878)](https://demo.flynt.styrene.io)
 [![license](https://img.shields.io/badge/license-BSL%201.1-344858)](LICENSE)
 
 ---
 
 ## What it does
 
-Your vault is a folder of `.md` files. Codyx indexes them, links them, and gets out of the way.
+Your vault is a folder of `.md` files. Flynt indexes them, links them, and gets out of the way.
 
 - **Wikilinks & backlinks** — `[[note]]` creates connections. The knowledge graph shows how ideas relate.
 - **Live markdown preview** — Obsidian-style live editing with CodeMirror 6. Headings, tables, bold, links render inline; click to reveal raw syntax.
@@ -31,7 +31,7 @@ Your vault is a folder of `.md` files. Codyx indexes them, links them, and gets 
 
 ### macOS
 
-Download the latest DMG from [Releases](https://github.com/styrene-lab/codyx/releases/latest). Open it, drag to Applications.
+Download the latest DMG from [Releases](https://github.com/styrene-lab/flynt/releases/latest). Open it, drag to Applications.
 
 ### iOS
 
@@ -39,7 +39,7 @@ TestFlight beta — contact the team for access. Includes the Share Extension fo
 
 ### Linux
 
-CI builds for `x86_64` and `aarch64` are available from [Releases](https://github.com/styrene-lab/codyx/releases). Requires `webkit2gtk-4.1` and GTK 3.
+CI builds for `x86_64` and `aarch64` are available from [Releases](https://github.com/styrene-lab/flynt/releases). Requires `webkit2gtk-4.1` and GTK 3.
 
 ```sh
 # Ubuntu/Debian
@@ -53,19 +53,19 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 cargo install dioxus-cli
 
 # Desktop
-cd crates/codex-app && dx build --platform desktop --release
+cd crates/flynt-app && dx build --platform desktop --release
 
 # iOS
-cd crates/codex-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
+cd crates/flynt-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform ios --device --release
 ```
 
 ---
 
 ## Quick start
 
-1. Open Codyx
+1. Open Flynt
 2. Choose **Clone remote vault**
-3. Enter `git@github.com:styrene-lab/codyx-demo-vault.git`, branch `main`
+3. Enter `https://github.com/styrene-lab/flynt-demo-vault.git`, branch `main`
 4. The demo vault opens with documentation and a live knowledge graph
 
 Or choose **Create local vault** to start fresh.
@@ -75,14 +75,14 @@ Or choose **Create local vault** to start fresh.
 ## Architecture
 
 ```
-codex-core     Pure Rust models, query engine, parser, templates, graph layout
-codex-store    Vault I/O, SQLite index, git/iCloud sync, file watching
-codex-app      macOS/Linux desktop UI (Dioxus + wry + muda)
-codex-mobile   iOS companion app (Dioxus mobile)
-codex-agent    MCP extension for Omegon (vault tools)
+flynt-core     Pure Rust models, query engine, parser, templates, graph layout
+flynt-store    Vault I/O, SQLite index, git/iCloud sync, file watching
+flynt-app      macOS/Linux desktop UI (Dioxus + wry + muda)
+flynt-mobile   iOS companion app (Dioxus mobile)
+flynt-agent    MCP extension for Omegon (vault tools)
 ```
 
-All crates share a workspace at the repo root. The desktop and mobile apps depend on `codex-core` and `codex-store`. The agent extension is a standalone binary.
+All crates share a workspace at the repo root. The desktop and mobile apps depend on `flynt-core` and `flynt-store`. The agent extension is a standalone binary.
 
 ### Key design decisions
 
@@ -97,11 +97,11 @@ All crates share a workspace at the repo root. The desktop and mobile apps depen
 
 ```
 my-vault/
-  .codex/
+  .flynt/
     config.toml          # vault settings (name, sync, appearance)
     templates/           # note templates (Note.md, Daily.md, Meeting.md)
     notifications/       # git-synced notification queue
-  .codex-local/          # SQLite index (auto-generated, gitignored)
+  .flynt-local/          # SQLite index (auto-generated, gitignored)
   notes.md
   guides/
   daily/
@@ -110,7 +110,7 @@ my-vault/
 
 ### Frontmatter
 
-Codyx uses TOML frontmatter (enclosed in `+++`). YAML (`---`) is also read.
+Flynt uses TOML frontmatter (enclosed in `+++`). YAML (`---`) is also read.
 
 ```toml
 +++
@@ -122,7 +122,7 @@ tags = ["project", "idea"]
 ### Sync
 
 ```toml
-# .codex/config.toml
+# .flynt/config.toml
 [sync]
 backend = "git"
 remote = "origin"
@@ -130,14 +130,14 @@ branch = "main"
 auto_commit_seconds = 60
 ```
 
-Codyx auto-commits, pulls, and pushes on a timer. Merge conflicts are detected and reported. SSH keys and Git credential helpers are supported.
+Flynt auto-commits, pulls, and pushes on a timer. Merge conflicts are detected and reported. SSH keys and Git credential helpers are supported.
 
 ---
 
 ## Tests
 
 ```sh
-cargo test -p codex-core -p codex-store
+cargo test -p flynt-core -p flynt-store
 ```
 
 269 tests covering: document parsing, query DSL, task decay math, vault lifecycle, tag operations, notifications, git sync (status, commit, pull, push, clone, conflicts), and integration tests.
@@ -148,17 +148,17 @@ cargo test -p codex-core -p codex-store
 
 | URL | What |
 |-----|------|
-| [codyx.styrene.io](https://codyx.styrene.io) | Landing page |
-| [demo.codyx.styrene.io](https://demo.codyx.styrene.io) | Demo vault (clone this to get started) |
-| [demo.codyx.styrene.io/graph](https://demo.codyx.styrene.io/graph/) | Interactive knowledge graph |
+| [flynt.styrene.io](https://flynt.styrene.io) | Landing page |
+| [demo.flynt.styrene.io](https://demo.flynt.styrene.io) | Demo vault (clone this to get started) |
+| [demo.flynt.styrene.io/graph](https://demo.flynt.styrene.io/graph/) | Interactive knowledge graph |
 
 ---
 
 ## Ecosystem
 
-Codex is part of the [Styrene](https://styrene.io) stack:
+Flynt is part of the [Styrene](https://styrene.io) stack:
 
-- **[Omegon](https://omegon.styrene.io)** — terminal-native AI agent harness (powers the Codex agent sidebar)
+- **[Omegon](https://omegon.styrene.io)** — terminal-native AI agent harness (powers the Flynt agent sidebar)
 - **[Styrene Identity](https://github.com/styrene-lab/styrene-rs)** — cross-device identity, key derivation, and vault encryption (planned integration)
 
 ---

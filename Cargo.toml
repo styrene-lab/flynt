@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "crates/codex-models",
-    "crates/codex-core",
-    "crates/codex-store",
-    "crates/codex-app",
-    "crates/codex-agent",
-    "crates/codex-mobile",
+    "crates/flynt-models",
+    "crates/flynt-core",
+    "crates/flynt-store",
+    "crates/flynt-app",
+    "crates/flynt-agent",
+    "crates/flynt-mobile",
 ]
 resolver = "2"
 
@@ -65,7 +65,7 @@ dirs = "5"
 dioxus = { version = "0.7", features = ["launch", "devtools", "logger", "lib", "desktop"] }
 
 # Internal crates
-codex-models = { path = "crates/codex-models" }
-codex-core = { path = "crates/codex-core" }
-codex-store = { path = "crates/codex-store" }
-codex-agent = { path = "crates/codex-agent" }
+flynt-models = { path = "crates/flynt-models" }
+flynt-core = { path = "crates/flynt-core" }
+flynt-store = { path = "crates/flynt-store" }
+flynt-agent = { path = "crates/flynt-agent" }

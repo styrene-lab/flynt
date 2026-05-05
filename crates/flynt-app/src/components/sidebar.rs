@@ -1,0 +1,668 @@
+use flynt_core::{models::DocumentMeta, store::VaultStore};
+use dioxus::prelude::*;
+use std::{collections::BTreeMap, path::PathBuf};
+use crate::{
+    bootstrap::{AppContext, OmegonRuntimeContext},
+    state::{Route, TabState},
+};
+use rfd::FileDialog;
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+#[component]
+pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
+    let ctx     = use_context::<AppContext>();
+    let mut refresh = use_context_provider(|| Signal::new(0_u64));
+
+    let vault_events = ctx.vault_events();
+    use_effect(move || {
+        let mut rx = vault_events.subscribe();
+        spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(_)  => *refresh.write() += 1,
+                    Err(_) => break,
+                }
+            }
+        });
+    });
+
+    let docs = use_resource(move || {
+        let _ = refresh();
+        let vault = ctx.vault();
+        async move {
+            let mut list = tokio::task::spawn_blocking(move || {
+                vault.store.list_documents().unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+            // Filter out internal files (delegations, agent comms, memory facts)
+            list.retain(|doc| {
+                let path = doc.path.to_string_lossy();
+                !path.starts_with("ai/delegations/")
+                    && !path.starts_with("ai/memory/")
+                    && !path.starts_with("references/comms/")
+            });
+            // Sort alphabetically for a clean sidebar
+            list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+            list
+        }
+    });
+
+    let mut creating = use_signal(|| false);
+    let mut new_name = use_signal(String::new);
+    let mut create_err = use_signal(|| Option::<String>::None);
+
+    rsx! {
+        nav { class: "sidebar",
+            div { class: "sidebar-section",
+                div { class: "sidebar-section-header",
+                    span { class: "sidebar-heading", "NOTES" }
+                    button {
+                        class: "sidebar-new-btn",
+                        title: "New note",
+                        onclick: move |_| {
+                            let was = *creating.read();
+                            creating.set(!was);
+                            if !was {
+                                new_name.set(String::new());
+                                create_err.set(None);
+                            }
+                        },
+                        if *creating.read() { "×" } else { "+" }
+                    }
+                }
+                if *creating.read() {
+                    NewNoteInput {
+                        new_name,
+                        create_err,
+                        creating,
+                        refresh,
+                        active_route,
+                    }
+                }
+                match &*docs.read() {
+                    None => rsx! { span { class: "sidebar-item muted", "Loading…" } },
+                    Some(list) if list.is_empty() => rsx! {
+                        div { class: "sidebar-empty-state",
+                            p { class: "sidebar-empty-heading", "Your vault is empty" }
+                            p { class: "sidebar-empty-hint", "Press \u{2318}N to create your first note, or \u{2318}P for the command palette." }
+                        }
+                    },
+                    Some(list) => rsx! { { tree_view(list) } },
+                }
+            }
+
+            div { class: "sidebar-nav",
+                button {
+                    class: if *active_route.read() == Route::Notes    { "nav-btn active" } else { "nav-btn" },
+                    title: "Notes",
+                    onclick: move |_| *active_route.write() = Route::Notes,
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
+                }
+                button {
+                    class: if *active_route.read() == Route::Kanban   { "nav-btn active" } else { "nav-btn" },
+                    title: "Kanban",
+                    onclick: move |_| *active_route.write() = Route::Kanban,
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
+                }
+                button {
+                    class: if *active_route.read() == Route::Graph    { "nav-btn active" } else { "nav-btn" },
+                    title: "Graph",
+                    onclick: move |_| *active_route.write() = Route::Graph,
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_GRAPH }
+                }
+                button {
+                    class: if *active_route.read() == Route::Settings { "nav-btn active" } else { "nav-btn" },
+                    title: "Settings",
+                    onclick: move |_| *active_route.write() = Route::Settings,
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
+                }
+            }
+
+            VaultSwitcher {}
+        }
+    }
+}
+
+// ── Tree ─────────────────────────────────────────────────────────────────────
+
+fn tree_view(docs: &[DocumentMeta]) -> Element {
+    let mut folders: BTreeMap<String, Vec<DocumentMeta>> = BTreeMap::new();
+    for doc in docs {
+        let components: Vec<_> = doc.path.components().collect();
+        let folder = if components.len() > 1 {
+            components[0].as_os_str().to_string_lossy().into_owned()
+        } else {
+            String::new()
+        };
+        folders.entry(folder).or_default().push(doc.clone());
+    }
+
+    rsx! {
+        // Folder groups first (sorted alphabetically by BTreeMap)
+        for (folder, folder_docs) in folders.iter().filter(|(k, _)| !k.is_empty()) {
+            FolderGroup { name: folder.clone(), docs: folder_docs.clone() }
+        }
+        // Root-level files after folders, with a separator if folders exist
+        if folders.keys().any(|k| !k.is_empty()) && folders.contains_key("") {
+            div { class: "sidebar-divider" }
+        }
+        for doc in folders.get("").cloned().unwrap_or_default().iter().cloned() {
+            DocItem { meta: doc, indent: 0 }
+        }
+    }
+}
+
+#[component]
+fn FolderGroup(name: String, docs: Vec<DocumentMeta>) -> Element {
+    let mut open = use_signal(|| false);
+    rsx! {
+        div { class: "sidebar-folder",
+            button {
+                class: "sidebar-folder-header",
+                onclick: move |_| { let v = *open.read(); *open.write() = !v; },
+                span { class: "folder-chevron", if *open.read() { "−" } else { "+" } }
+                span { class: "folder-name", "{name}" }
+                span { class: "folder-count", "{docs.len()}" }
+            }
+            if *open.read() {
+                div { class: "sidebar-folder-contents",
+                    for doc in docs.iter().cloned() {
+                        DocItem { meta: doc, indent: 1 }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn DocItem(meta: DocumentMeta, indent: u32) -> Element {
+    let ctx              = use_context::<AppContext>();
+    let mut tab_state    = use_context::<Signal<TabState>>();
+    let mut active_route = use_context::<Signal<Route>>();
+    let mut refresh      = use_context::<Signal<u64>>();
+    let mut rename_trigger = use_context::<Signal<crate::state::RenameTrigger>>();
+
+    let active_id = tab_state.read().active_id().cloned();
+    let is_active = active_id.as_ref() == Some(&meta.id);
+
+    let id    = meta.id.clone();
+    let title = meta.title.clone();
+    let doc_path = meta.path.clone();
+    let doc_title = meta.title.clone();
+
+    let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
+
+    rsx! {
+        button {
+            class: if is_active { "sidebar-doc active" } else { "sidebar-doc" },
+            class: if indent > 0 { "indent" } else { "" },
+            onclick: move |_| {
+                tab_state.write().open(id.clone(), title.clone());
+                *active_route.write() = Route::Notes;
+            },
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                let coords = e.client_coordinates();
+                *ctx_menu.write() = Some((coords.x, coords.y));
+            },
+            span { class: "doc-icon", "◇" }
+            span { class: "doc-title", "{meta.title}" }
+        }
+
+        if let Some((x, y)) = *ctx_menu.read() {
+            {
+                let path_for_delete = doc_path.clone();
+                let _path_for_rename = doc_path.clone();
+                let title_for_tab = doc_title.clone();
+                let id_for_tab = meta.id.clone();
+                let kind_items = {
+                    use flynt_core::datum::EntityKind;
+                    let current_kind = meta.entity_kind.clone();
+                    let mut items = Vec::new();
+                    if !matches!(current_kind, Some(EntityKind::DesignNode)) {
+                        items.push(crate::components::ContextMenuItem::new("kind-design_node", "Convert to Design Node"));
+                    }
+                    if !matches!(current_kind, Some(EntityKind::Project)) {
+                        items.push(crate::components::ContextMenuItem::new("kind-project", "Convert to Project"));
+                    }
+                    if current_kind.is_some() {
+                        items.push(crate::components::ContextMenuItem::new("kind-clear", "Remove Kind"));
+                    }
+                    // Mark first item with separator
+                    if let Some(first) = items.first_mut() { *first = first.clone().sep(); }
+                    items
+                };
+                rsx! {
+                    crate::components::ContextMenu {
+                        x, y,
+                        items: {
+                            let mut all = vec![
+                                crate::components::ContextMenuItem::new("open-tab", "Open in New Tab"),
+                                crate::components::ContextMenuItem::new("rename", "Rename…"),
+                                crate::components::ContextMenuItem::new("reveal", if cfg!(target_os = "macos") { "Reveal in Finder" } else { "Open in File Manager" }),
+                            ];
+                            all.extend(kind_items);
+                            all.push(crate::components::ContextMenuItem::danger("delete", "Move to Trash").sep());
+                            all
+                        },
+                        on_close: move |_| *ctx_menu.write() = None,
+                        on_select: move |action: String| {
+                            *ctx_menu.write() = None;
+                            match action.as_str() {
+                                "open-tab" => {
+                                    tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
+                                    *active_route.write() = Route::Notes;
+                                }
+                                "rename" => {
+                                    tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
+                                    *active_route.write() = Route::Notes;
+                                    rename_trigger.write().0 += 1;
+                                }
+                                "reveal" => {
+                                    let abs = ctx.vault().root.join(&path_for_delete);
+                                    #[cfg(target_os = "macos")]
+                                    { let _ = std::process::Command::new("open").arg("-R").arg(&abs).spawn(); }
+                                    #[cfg(target_os = "linux")]
+                                    { if let Some(dir) = abs.parent() { let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); } }
+                                }
+                                a if a.starts_with("kind-") => {
+                                    let kind_val = &a[5..];
+                                    let p = path_for_delete.clone();
+                                    let kind_opt = if kind_val == "clear" { None } else { Some(kind_val.to_string()) };
+                                    spawn(async move {
+                                        let vault = ctx.vault();
+                                        let _ = tokio::task::spawn_blocking(move || {
+                                            vault.set_document_kind(&p, kind_opt.as_deref())
+                                        }).await;
+                                        *refresh.write() += 1;
+                                    });
+                                }
+                                "delete" => {
+                                    let p = path_for_delete.clone();
+                                    let doc_id = id_for_tab.clone();
+                                    spawn(async move {
+                                        let vault = ctx.vault();
+                                        let abs = vault.root.join(&p);
+                                        if abs.exists() {
+                                            // If this is a drawing wrapper, also delete the .excalidraw file
+                                            if let Ok(content) = std::fs::read_to_string(&abs) {
+                                                if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&content) {
+                                                    let doc_dir = p.parent().unwrap_or(std::path::Path::new(""));
+                                                    let excalidraw_abs = vault.root.join(doc_dir).join(&excalidraw_file);
+                                                    let _ = std::fs::remove_file(&excalidraw_abs);
+                                                }
+                                            }
+                                            let _ = std::fs::remove_file(&abs);
+                                        }
+                                        let _ = vault.store.delete_document(&doc_id);
+                                        // Close the tab if it's open
+                                        let tabs = tab_state.read().tabs.clone();
+                                        if let Some(idx) = tabs.iter().position(|(id, _)| id == &doc_id) {
+                                            tab_state.write().close(idx);
+                                        }
+                                        let _ = vault.reindex();
+                                        *refresh.write() += 1;
+                                    });
+                                }
+                                _ => {}
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NewNoteInput(
+    mut new_name: Signal<String>,
+    mut create_err: Signal<Option<String>>,
+    mut creating: Signal<bool>,
+    mut refresh: Signal<u64>,
+    mut active_route: Signal<Route>,
+) -> Element {
+    let ctx = use_context::<AppContext>();
+    let mut tab_state = use_context::<Signal<TabState>>();
+
+    rsx! {
+        div { class: "sidebar-new-note",
+            input {
+                class: "sidebar-new-note-input",
+                placeholder: "Note name or path/name",
+                value: "{new_name}",
+                oninput: move |e| new_name.set(e.value()),
+                onkeydown: move |e| {
+                    if e.key() == Key::Escape {
+                        creating.set(false);
+                        return;
+                    }
+                    if e.key() != Key::Enter {
+                        return;
+                    }
+                    let raw = new_name.read().trim().to_string();
+                    if raw.is_empty() {
+                        return;
+                    }
+                    let rel = if raw.ends_with(".md") {
+                        std::path::PathBuf::from(&raw)
+                    } else {
+                        std::path::PathBuf::from(format!("{raw}.md"))
+                    };
+                    let title = rel
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| raw.clone());
+                    let vault = ctx.vault();
+                    let ctx2 = ctx.clone();
+                    let title2 = title.clone();
+                    spawn(async move {
+                        match tokio::task::spawn_blocking(move || vault.create_document(&rel, &title)).await {
+                            Ok(Ok(())) => {
+                                *refresh.write() += 1;
+                                creating.set(false);
+                                let vault = ctx2.vault();
+                                if let Ok(Some(meta)) = tokio::task::spawn_blocking(
+                                    move || vault.store.find_document_by_slug(&title2)
+                                ).await.unwrap_or(Ok(None)) {
+                                    tab_state.write().open(meta.id, meta.title);
+                                    *active_route.write() = Route::Notes;
+                                }
+                            }
+                            Ok(Err(e)) => create_err.set(Some(e.to_string())),
+                            Err(e) => create_err.set(Some(e.to_string())),
+                        }
+                    });
+                },
+                autofocus: true,
+            }
+            if let Some(ref err) = *create_err.read() {
+                span { class: "sidebar-new-note-err", "{err}" }
+            }
+        }
+    }
+}
+
+#[component]
+fn VaultSwitcher() -> Element {
+    let mut ctx = use_context::<AppContext>();
+    let mut active_route = use_context::<Signal<Route>>();
+    let mut profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
+    let current_root = ctx.vault_root();
+    let current_name = ctx.vault().config.vault_name.clone();
+
+    let mut do_switch = move |root: std::path::PathBuf| {
+        let new_runtime = crate::bootstrap::runtime_state_for_vault_root(root.clone());
+        ctx.set_runtime(new_runtime);
+
+        let mut updated = OmegonRuntimeContext::load_launcher_profile();
+        updated.last_vault_root = Some(root);
+        let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
+        profile.set(updated);
+
+        *active_route.write() = Route::Notes;
+    };
+
+    let open_folder = move |_| {
+        let Some(selected_root) = FileDialog::new().pick_folder() else {
+            return;
+        };
+        let name = selected_root
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Flynt")
+            .to_string();
+        if OmegonRuntimeContext::initialize_vault(
+            &selected_root,
+            &name,
+            flynt_core::models::SyncConfig::None,
+        )
+        .is_ok()
+        {
+            let mut updated = OmegonRuntimeContext::load_launcher_profile();
+            OmegonRuntimeContext::register_known_vault(&mut updated, &selected_root, &name);
+            let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
+            profile.set(updated);
+            do_switch(selected_root);
+        }
+    };
+
+    // Load manifest vaults (if manifest is configured)
+    let mut vault_error: Signal<Option<String>> = use_signal(|| None);
+
+    let manifest_vaults: Vec<flynt_core::manifest::ManifestVault> = profile.read().manifest_dir
+        .as_ref()
+        .and_then(|dir| flynt_core::manifest::load_manifest_with_local(dir).ok())
+        .map(|m| m.vaults)
+        .unwrap_or_default();
+
+    // Uncloned manifest vaults — available to clone but not on this device yet
+    let uncloned: Vec<&flynt_core::manifest::ManifestVault> = manifest_vaults.iter()
+        .filter(|v| v.local_path.as_ref().map(|p| !p.exists()).unwrap_or(true))
+        .collect();
+
+    let mut adding = use_signal(|| false);
+    let mut new_name = use_signal(String::new);
+    let mut new_repo = use_signal(String::new);
+    let mut remove_confirm: Signal<Option<String>> = use_signal(|| None);
+
+    rsx! {
+        div { class: "sidebar-section vault-switcher",
+            div { class: "sidebar-section-header",
+                span { class: "sidebar-heading", "VAULTS" }
+            }
+
+            // Current vault
+            div { class: "vault-current",
+                span { class: "vault-current-name", "{current_name}" }
+                span { class: "vault-current-path", "{current_root.display()}" }
+            }
+
+            // Other cloned vaults — click to switch
+            for vault in profile.read().known_vaults.iter().filter(|vault| vault.root != current_root).cloned() {
+                {
+                    let root = vault.root.clone();
+                    let vname = vault.name.clone();
+                    let is_confirming = remove_confirm.read().as_ref() == Some(&vname);
+                    rsx! {
+                        div { class: "sidebar-doc-row",
+                            button {
+                                class: "sidebar-doc",
+                                onclick: move |_| do_switch(root.clone()),
+                                span { class: "doc-icon", "\u{25C8}" }
+                                span { class: "doc-title", "{vault.name}" }
+                            }
+                            if is_confirming {
+                                div { class: "vault-remove-confirm",
+                                    span { class: "vault-remove-hint", "Your notes are not deleted" }
+                                    button {
+                                        class: "btn btn-danger btn-xs",
+                                        onclick: {
+                                            let name = vname.clone();
+                                            move |_| {
+                                                let mut p = OmegonRuntimeContext::load_launcher_profile();
+                                                let _ = OmegonRuntimeContext::remove_vault_from_manifest(&mut p, &name, false);
+                                                let _ = OmegonRuntimeContext::save_launcher_profile(&p);
+                                                profile.set(p);
+                                                *remove_confirm.write() = None;
+                                            }
+                                        },
+                                        "Remove"
+                                    }
+                                    button {
+                                        class: "btn btn-ghost btn-xs",
+                                        onclick: move |_| *remove_confirm.write() = None,
+                                        "Cancel"
+                                    }
+                                }
+                            } else {
+                                button {
+                                    class: "vault-remove-btn",
+                                    title: "Remove vault",
+                                    onclick: {
+                                        let name = vname.clone();
+                                        move |_| *remove_confirm.write() = Some(name.clone())
+                                    },
+                                    "\u{2715}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Uncloned manifest vaults — show as available to clone
+            for vault in uncloned.iter() {
+                {
+                    let vname = vault.name.clone();
+                    let vrepo = vault.repo.clone();
+                    let vbranch = vault.branch.clone();
+                    let role = vault.role.label();
+                    rsx! {
+                        div { class: "sidebar-doc-row",
+                            button {
+                                class: "sidebar-doc muted",
+                                title: "Clone this vault to this device",
+                                onclick: move |_| {
+                                    let name = vname.clone();
+                                    let repo = vrepo.clone();
+                                    let branch = vbranch.clone();
+                                    spawn(async move {
+                                        let result = tokio::task::spawn_blocking(move || {
+                                            let mut p = OmegonRuntimeContext::load_launcher_profile();
+                                            OmegonRuntimeContext::add_vault_to_manifest(
+                                                &mut p, &name, &repo, &branch, None,
+                                            )?;
+                                            OmegonRuntimeContext::save_launcher_profile(&p)?;
+                                            Ok::<_, anyhow::Error>(p)
+                                        }).await;
+                                        match result {
+                                            Ok(Ok(p)) => profile.set(p),
+                                            Ok(Err(e)) => *vault_error.write() = Some(format!("Clone failed: {e}")),
+                                            Err(e) => *vault_error.write() = Some(format!("Clone failed: {e}")),
+                                        }
+                                    });
+                                },
+                                span { class: "doc-icon", "\u{2913}" }
+                                span { class: "doc-title", "{vault.name}" }
+                                span { class: "vault-role-badge", "{role}" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add vault inline form
+            if *adding.read() {
+                div { class: "vault-add-form",
+                    input {
+                        class: "input input-sm",
+                        autofocus: true,
+                        value: "{new_name}",
+                        placeholder: "Vault name",
+                        oninput: move |e| *new_name.write() = e.value(),
+                    }
+                    input {
+                        class: "input input-sm",
+                        value: "{new_repo}",
+                        placeholder: "https://github.com/user/vault.git",
+                        oninput: move |e| *new_repo.write() = e.value(),
+                        onkeydown: move |e| {
+                            if e.key() == Key::Escape {
+                                *adding.write() = false;
+                                *new_name.write() = String::new();
+                                *new_repo.write() = String::new();
+                            }
+                        },
+                    }
+                    div { class: "row gap-2",
+                        button {
+                            class: "btn btn-primary btn-xs",
+                            disabled: new_name.read().trim().is_empty() || new_repo.read().trim().is_empty(),
+                            onclick: move |_| {
+                                let name = new_name.read().trim().to_string();
+                                let repo = new_repo.read().trim().to_string();
+                                *adding.write() = false;
+                                *new_name.write() = String::new();
+                                *new_repo.write() = String::new();
+                                spawn(async move {
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        let mut p = OmegonRuntimeContext::load_launcher_profile();
+                                        OmegonRuntimeContext::add_vault_to_manifest(
+                                            &mut p, &name, &repo, "main", None,
+                                        )?;
+                                        OmegonRuntimeContext::save_launcher_profile(&p)?;
+                                        Ok::<_, anyhow::Error>(p)
+                                    }).await;
+                                    match result {
+                                        Ok(Ok(p)) => profile.set(p),
+                                        Ok(Err(e)) => *vault_error.write() = Some(format!("{e}")),
+                                        Err(e) => *vault_error.write() = Some(format!("{e}")),
+                                    }
+                                });
+                            },
+                            "Add"
+                        }
+                        button {
+                            class: "btn btn-ghost btn-xs",
+                            onclick: move |_| {
+                                *adding.write() = false;
+                                *new_name.write() = String::new();
+                                *new_repo.write() = String::new();
+                            },
+                            "Cancel"
+                        }
+                    }
+                }
+            } else {
+                // Error display
+                if let Some(ref err) = *vault_error.read() {
+                    div { class: "vault-error",
+                        span { "{err}" }
+                        button {
+                            class: "vault-error-dismiss",
+                            onclick: move |_| *vault_error.write() = None,
+                            "\u{2715}"
+                        }
+                    }
+                }
+
+                div { class: "vault-actions",
+                    button {
+                        class: "sidebar-doc muted",
+                        onclick: move |_| *adding.write() = true,
+                        span { class: "doc-icon", "+" }
+                        span { class: "doc-title", "Add vault" }
+                    }
+                    button {
+                        class: "sidebar-doc muted",
+                        onclick: open_folder,
+                        span { class: "doc-icon", "\u{1F4C2}" }
+                        span { class: "doc-title", "Open folder…" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn initial_note_id_for_vault(vault_root: &PathBuf) -> Option<String> {
+    let vault = crate::bootstrap::OmegonRuntimeContext::initialize_vault(
+        vault_root,
+        vault_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Flynt"),
+        flynt_core::models::SyncConfig::None,
+    ).ok()?;
+    vault
+        .store
+        .list_documents()
+        .ok()?
+        .into_iter()
+        .next()
+        .map(|doc| doc.id.0.to_string())
+}

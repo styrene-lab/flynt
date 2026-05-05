@@ -37,14 +37,14 @@ html, body {
 ::-webkit-scrollbar-thumb:hover { background: var(--accent-muted); }
 
 /* ── App shell ─────────────────────────────────────────────────────────────── */
-.codex-shell {
+.flynt-shell {
   display: flex;
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
-.codex-body {
+.flynt-body {
   display: flex;
   flex: 1;
   overflow: hidden;

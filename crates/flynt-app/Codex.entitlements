@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Sandbox disabled for Developer ID distribution.
+         Dioxus desktop requires local TCP for its edit socket,
+         and the vault lives at ~/Documents/Flynt which sandboxed
+         apps can't access without user-granted bookmarks.
+         Re-enable when targeting Mac App Store. -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Hardened runtime entitlements (required for notarization) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,436 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Settings view
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.settings-root {
+  height:     100%;
+  overflow-y: auto;
+  background: var(--background);
+}
+
+.settings-scroll {
+  max-width:  780px;
+  margin:     0 auto;
+  padding:    var(--space-8) var(--space-10);
+}
+
+/* ── Section ──────────────────────────────────────────────────────────────── */
+.settings-section {
+  margin-bottom: var(--space-10);
+}
+
+.settings-heading {
+  font-size:     var(--font-size-sm);
+  font-weight:   var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color:         var(--muted-foreground);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-dim);
+}
+
+/* ── Row ──────────────────────────────────────────────────────────────────── */
+.settings-rows {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-5);
+}
+
+.settings-row {
+  display:     grid;
+  grid-template-columns: 160px 1fr;
+  align-items: start;
+  gap:         var(--space-4);
+}
+
+.settings-label {
+  padding-top: 6px;           /* align with input text */
+  font-size:   var(--font-size-sm);
+  color:       var(--muted-foreground);
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-control {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+}
+
+.settings-input {
+  max-width: 360px;
+}
+
+.settings-input-narrow {
+  max-width: 120px;
+}
+
+.settings-path {
+  font-family:    var(--font-mono);
+  font-size:      var(--font-size-sm);
+  padding-top:    6px;
+  overflow:       hidden;
+  text-overflow:  ellipsis;
+  white-space:    nowrap;
+  max-width:      360px;
+  color:          var(--muted-foreground);
+}
+
+.settings-hint {
+  font-size: var(--font-size-xs);
+}
+
+/* ── Theme grid ───────────────────────────────────────────────────────────── */
+.theme-grid {
+  display: flex;
+  gap:     var(--space-3);
+  flex-wrap: wrap;
+}
+
+.theme-card {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  gap:            var(--space-2);
+  padding:        var(--space-2);
+  border-radius:  var(--radius-md);
+  border:         2px solid var(--border);
+  background:     var(--card);
+  cursor:         pointer;
+  transition:     border-color var(--duration-fast) var(--ease),
+                  box-shadow   var(--duration-fast) var(--ease);
+  position:       relative;
+  min-width:      88px;
+}
+
+.theme-card:hover {
+  border-color: var(--primary-muted);
+}
+
+.theme-card.active {
+  border-color: var(--primary);
+  box-shadow:   0 0 0 1px var(--primary);
+}
+
+/* Swatch — uses inline style for raw hex preview (intentional, see comment in Rust) */
+.theme-preview {
+  width:          72px;
+  height:         48px;
+  border-radius:  var(--radius);
+  border:         2px solid;       /* border-color from inline style */
+  position:       relative;
+  overflow:       hidden;
+}
+
+.theme-preview-bar {
+  position: absolute;
+  left:     0;
+  top:      0;
+  width:    30%;
+  height:   100%;
+  opacity:  0.9;
+}
+
+.theme-preview-dot {
+  position:      absolute;
+  right:         8px;
+  top:           8px;
+  width:         10px;
+  height:        10px;
+  border-radius: var(--radius-full);
+}
+
+.theme-preview-text {
+  position:    absolute;
+  bottom:      6px;
+  left:        50%;
+  transform:   translateX(-50%);
+  font-size:   13px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.theme-name {
+  font-size:   var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color:       var(--foreground);
+}
+
+.theme-active-badge {
+  position:      absolute;
+  top:           4px;
+  right:         6px;
+  font-size:     10px;
+  color:         var(--primary);
+  font-weight:   var(--font-weight-bold);
+}
+
+/* ── Font size picker ─────────────────────────────────────────────────────── */
+.font-size-row {
+  display: flex;
+  gap:     var(--space-2);
+}
+
+.font-size-btn {
+  width:         40px;
+  height:        32px;
+  border-radius: var(--radius);
+  border:        1px solid var(--border);
+  background:    var(--card);
+  color:         var(--muted-foreground);
+  font-size:     var(--font-size-sm);
+  font-weight:   var(--font-weight-medium);
+  transition:    border-color var(--duration-fast) var(--ease),
+                 color        var(--duration-fast) var(--ease),
+                 background   var(--duration-fast) var(--ease);
+}
+
+.font-size-btn:hover {
+  border-color: var(--primary-muted);
+  color:        var(--foreground);
+}
+
+.font-size-btn.active {
+  border-color: var(--primary);
+  background:   var(--accent);
+  color:        var(--primary);
+}
+
+/* ── Sync radio ───────────────────────────────────────────────────────────── */
+.radio-group {
+  display: flex;
+  gap:     var(--space-2);
+}
+
+.radio-btn {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-2);
+  padding:       6px var(--space-3);
+  border-radius: var(--radius);
+  border:        1px solid var(--border);
+  background:    var(--card);
+  color:         var(--muted-foreground);
+  font-size:     var(--font-size-sm);
+  transition:    border-color var(--duration-fast) var(--ease),
+                 color        var(--duration-fast) var(--ease);
+}
+
+.radio-btn:hover {
+  border-color: var(--primary-muted);
+  color:        var(--foreground);
+}
+
+.radio-btn.active {
+  border-color: var(--primary);
+  color:        var(--foreground);
+}
+
+.radio-dot {
+  width:         10px;
+  height:        10px;
+  border-radius: var(--radius-full);
+  border:        2px solid var(--border);
+  background:    transparent;
+  transition:    background     var(--duration-fast) var(--ease),
+                 border-color   var(--duration-fast) var(--ease);
+  flex-shrink:   0;
+}
+
+.radio-dot.active {
+  background:   var(--primary);
+  border-color: var(--primary);
+}
+
+/* ── Save bar ─────────────────────────────────────────────────────────────── */
+.settings-save-bar {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-4);
+  padding-top: var(--space-6);
+  border-top:  1px solid var(--border-dim);
+}
+
+.save-msg {
+  font-size: var(--font-size-sm);
+}
+
+.save-msg.ok  { color: var(--success); }
+.save-msg.err { color: var(--error);   }
+
+/* ── Daemon status ───────────────────────────────────────────────────────── */
+.daemon-status-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.daemon-status {
+  width:         8px;
+  height:        8px;
+  border-radius: var(--radius-full);
+  flex-shrink:   0;
+}
+
+.daemon-status.running   { background: rgb(34, 197, 94);  }
+.daemon-status.starting  { background: rgb(234, 179, 8);  }
+.daemon-status.unhealthy { background: rgb(239, 68, 68);  }
+.daemon-status.disabled  { background: var(--muted-foreground); opacity: 0.4; }
+.daemon-status.stopped   { background: var(--muted-foreground); }
+.daemon-status.auspex    { background: rgb(139, 92, 246); }
+
+.daemon-status-text {
+  font-size: var(--font-size-sm);
+  color:     var(--muted-foreground);
+}
+
+.checkbox-label {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  font-size:   var(--font-size-sm);
+  color:       var(--foreground);
+  cursor:      pointer;
+}
+
+.capabilities-grid {
+  display:               grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap:                   var(--space-2);
+}
+
+.settings-input-sm {
+  max-width: 120px;
+}
+
+.settings-label-indent {
+  padding-left: var(--space-4);
+}
+
+.vox-channel-row .row {
+  flex-wrap: wrap;
+}
+
+.settings-hint {
+  font-size:  var(--font-size-xs);
+  color:      var(--muted-foreground);
+}
+
+/* ── Identity ────────────────────────────────────────────────────────────── */
+.identity-status-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+.identity-dot {
+  width:         8px;
+  height:        8px;
+  border-radius: var(--radius-full);
+  background:    var(--muted-foreground);
+  opacity:       0.3;
+}
+.identity-dot.active {
+  background:    rgb(34, 197, 94);
+  opacity:       1;
+}
+.identity-status-text {
+  font-size:   var(--font-size-sm);
+  color:       var(--muted-foreground);
+}
+.identity-form {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  max-width:      400px;
+}
+.identity-fingerprint {
+  font-size:      var(--font-size-sm);
+  font-family:    var(--font-mono);
+  color:          var(--primary);
+  user-select:    all;
+}
+.identity-ssh-key {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+}
+.identity-key-text {
+  font-size:      11px;
+  font-family:    var(--font-mono);
+  color:          var(--foreground);
+  word-break:     break-all;
+  background:     var(--surface);
+  padding:        var(--space-2);
+  border-radius:  var(--radius-sm);
+  user-select:    all;
+  max-height:     60px;
+  overflow-y:     auto;
+}
+
+/* ── Provider status ─────────────────────────────────────────────────────── */
+.provider-row {
+  min-height: 40px;
+}
+
+.provider-status-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.provider-status {
+  width:         6px;
+  height:        6px;
+  border-radius: var(--radius-full);
+  flex-shrink:   0;
+}
+
+.provider-status.authenticated { background: rgb(34, 197, 94);  }
+.provider-status.expired       { background: rgb(234, 179, 8);  }
+.provider-status.missing       { background: var(--muted-foreground); opacity: 0.3; }
+
+.provider-status-text {
+  font-size: var(--font-size-xs);
+  color:     var(--muted-foreground);
+}
+
+.provider-key-form {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  margin-top:     var(--space-1);
+}
+
+.provider-key-form input {
+  max-width: 400px;
+}
+
+.provider-remove-btn:hover {
+  color: var(--error) !important;
+}
+
+/* ── Advanced toggle ─────────────────────────────────────────────────────── */
+.settings-advanced-toggle {
+  display:        flex;
+  justify-content: center;
+  padding:        var(--space-4) 0;
+  border-top:     1px solid var(--border-dim);
+  margin-top:     var(--space-4);
+}
+.settings-toggle-btn {
+  background:     none;
+  border:         none;
+  color:          var(--muted-foreground);
+  font-size:      var(--font-size-sm);
+  cursor:         pointer;
+  padding:        var(--space-2) var(--space-4);
+}
+.settings-toggle-btn:hover {
+  color:          var(--foreground);
+}
+
+/* ── Font scale modifiers (applied to .flynt-shell) ──────────────────────── */
+.font-sm .markdown-body { font-size: var(--font-size-base); }
+.font-md .markdown-body { font-size: var(--font-size-md);   }
+.font-lg .markdown-body { font-size: 17px;                  }
+.font-xl .markdown-body { font-size: 19px;                  }

@@ -3,7 +3,7 @@
 ## 0.5.0 — 2026-04-23
 
 ### Added
-- **iOS Share Extension** — save links, text, and images from any iOS app into your Codyx vault via the system Share Sheet
+- **iOS Share Extension** — save links, text, and images from any iOS app into your Flynt vault via the system Share Sheet
 - **Obsidian-style live preview** — CM6 editor now hides markdown syntax (headings, bold, links, tables) and reveals on cursor focus, using the Lezer syntax tree instead of regex
 - **Table widget rendering** — markdown tables render as styled HTML tables; click into them to edit raw markdown
 - **Frontmatter hiding** — TOML frontmatter is collapsed when cursor is outside it
@@ -14,7 +14,7 @@
 - **App Store Connect integration** — `just testflight` builds and uploads both platforms
 
 ### Changed
-- **Bundle ID** — migrated from `com.black-meridian.codex` to `io.styrene.codex`
+- **Bundle ID** — migrated from `com.black-meridian.flynt` to `io.styrene.flynt`
 - **CM6 bundle** — rebuilt with live preview extensions (Lezer-based syntax hiding, StateField block decorations)
 - **Version** now pulled from `Cargo.toml` automatically in Justfile
 - **macOS TestFlight** builds include App Sandbox, JIT, and network entitlements

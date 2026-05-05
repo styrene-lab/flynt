@@ -1,10 +1,10 @@
-# Local Codyx Build Notes
+# Local Flynt Build Notes
 
 ## Nix/NixOS build
 
 ```sh
 NIXPKGS_ALLOW_UNFREE=1 nix build .#default --impure --print-build-logs
-./result/bin/codyx
+./result/bin/flynt
 ```
 
 The Nix package uses `dx build` (Dioxus CLI) internally, which handles
@@ -33,13 +33,13 @@ are installed to `$out/bin/`.
 nix develop
 
 # Check compilation
-cargo check -p codex-app
+cargo check -p flynt-app
 
 # Run tests
-cargo test -p codex-core -p codex-store
+cargo test -p flynt-core -p flynt-store
 
 # Build + run locally (outside Nix)
-cargo run --package codex-app --bin codyx
+cargo run --package flynt-app --bin flynt
 ```
 
 ## Annotated git tags

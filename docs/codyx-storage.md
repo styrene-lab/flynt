@@ -1,8 +1,8 @@
 ---
-id: codyx-storage
+id: flynt-storage
 title: "Storage Layer"
 status: seed
-parent: codyx-root
+parent: flynt-root
 tags: []
 open_questions: []
 dependencies: []

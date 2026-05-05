@@ -1,17 +1,17 @@
-# Codyx Architecture
+# Flynt Architecture
 
 ## Product Identity
 
-Codyx is a **single-user** knowledge management and task tracking desktop application for macOS, built in Rust with Dioxus 0.7. It combines Obsidian-style markdown note-taking with kanban project boards and a typed entity system.
+Flynt is a **single-user** knowledge management and task tracking desktop application for macOS, built in Rust with Dioxus 0.7. It combines Obsidian-style markdown note-taking with kanban project boards and a typed entity system.
 
 - **Markdown vault** as the canonical source of truth
 - **SQLite** as a hot read index (disposable — rebuilt from markdown on launch)
-- **Omegon** is an embedded AI capability that enhances Codyx, not the other way around
+- **Omegon** is an embedded AI capability that enhances Flynt, not the other way around
 - **Publication** system for read-only external visibility when needed
 
 ## Boundaries
 
-### What Codyx Is
+### What Flynt Is
 
 - Single-user thick client (Dioxus macOS desktop, `aarch64-apple-darwin`)
 - Markdown-first knowledge store with TOML frontmatter
@@ -21,21 +21,21 @@ Codyx is a **single-user** knowledge management and task tracking desktop applic
 - MCP tool surface so Omegon can read/write vault data
 - Publication pipeline for static read-only output (markdown + HTML)
 
-### What Codyx Is Not
+### What Flynt Is Not
 
 - A collaboration platform — no shared boards, no real-time sync, no multi-user
 - A web application — no server component for end users
 - A team git-sync tool — git backing serves the single user's durability
-- An Omegon dependency — Codyx is fully functional without Omegon installed
+- An Omegon dependency — Flynt is fully functional without Omegon installed
 
 ## Workspace Crates
 
 | Crate | Role |
 |---|---|
-| `codex-core` | Domain models, `VaultStore` trait, `SyncBackend` trait, entity/datum type system, markdown/wikilink parser |
-| `codex-store` | `SqliteStore` (FTS5, WAL), `Vault` (filesystem indexer + project flush), `VaultWatcher` (FSEvents), task file serialization, `ProjectGit`, git sync |
-| `codex-agent` | Standalone MCP stdio binary; `omegon-extension` 0.15; 14 tools exposed to Omegon |
-| `codex-app` | Dioxus 0.7 desktop binary; views: notes, graph, kanban, search, settings, publication rules |
+| `flynt-core` | Domain models, `VaultStore` trait, `SyncBackend` trait, entity/datum type system, markdown/wikilink parser |
+| `flynt-store` | `SqliteStore` (FTS5, WAL), `Vault` (filesystem indexer + project flush), `VaultWatcher` (FSEvents), task file serialization, `ProjectGit`, git sync |
+| `flynt-agent` | Standalone MCP stdio binary; `omegon-extension` 0.15; 14 tools exposed to Omegon |
+| `flynt-app` | Dioxus 0.7 desktop binary; views: notes, graph, kanban, search, settings, publication rules |
 
 ## Data Model
 
@@ -94,7 +94,7 @@ sub_path = "projects/my-project"
 Each project is optionally backed 1:1 by a git repository. Two modes:
 
 - **VaultRepo**: project data lives inside the vault's own git repo at a sub-path. Vault-level auto-commit handles git operations.
-- **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/codyx-projects`). `ProjectGit` handles its own commit cycle.
+- **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/flynt-projects`). `ProjectGit` handles its own commit cycle.
 
 ### Task lifecycle
 
@@ -117,13 +117,13 @@ Visibility is layered: vault-wide default policy, per-tag/per-path rules, per-do
 
 ## Omegon Integration
 
-Codyx is the primary product. Omegon is an embedded AI capability.
+Flynt is the primary product. Omegon is an embedded AI capability.
 
-- `codex-agent` exposes 14 MCP tools via stdio transport
+- `flynt-agent` exposes 14 MCP tools via stdio transport
 - Omegon can search, read, create, and link documents
 - Omegon stores durable memory facts (`ai/memory/`) and archives communications (`references/comms/`)
 - Agent rail sidebar in the UI shows Omegon status and interaction
-- Codyx launches and runs fully without Omegon installed
+- Flynt launches and runs fully without Omegon installed
 
 ## Resolved Decisions
 
@@ -140,10 +140,10 @@ Codyx is the primary product. Omegon is an embedded AI capability.
 | iCloud sync | Passive — vault root in iCloud Drive folder; no API calls |
 | Git sync | Auto-commit (debounced 30s), manual push; `git2` crate |
 | MCP transport | stdio; Omegon connects via `command` transport |
-| Omegon relationship | Omegon serves Codyx (embedded capability, not dependency) |
+| Omegon relationship | Omegon serves Flynt (embedded capability, not dependency) |
 
 ## Open Questions
 
-1. **codex-agent discovery**: how does Omegon find the binary? PATH? Explicit config in `~/.config/omegon/mcp.json`?
+1. **flynt-agent discovery**: how does Omegon find the binary? PATH? Explicit config in `~/.config/omegon/mcp.json`?
 2. **Project/board publication**: extend the publication pipeline to render board state as static views (not just documents).
 3. **S3 sync**: `object_store` crate is a dependency but sync backend is not yet implemented.

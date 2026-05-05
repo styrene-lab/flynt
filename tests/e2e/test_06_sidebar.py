@@ -4,8 +4,8 @@
 class TestVaultStructure:
     """Vault directory structure."""
 
-    def test_codex_dir_exists(self, app):
-        assert (app.vault_dir / ".codex").is_dir()
+    def test_flynt_dir_exists(self, app):
+        assert (app.vault_dir / ".flynt").is_dir()
 
     def test_notes_on_disk(self, app):
         notes = list(app.vault_dir.glob("*.md"))

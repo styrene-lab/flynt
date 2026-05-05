@@ -1,0 +1,165 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   App shell layout
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Root shell ───────────────────────────────────────────────────────────── */
+.flynt-shell {
+  display:        flex;
+  flex-direction: column;
+  height:         100vh;
+  width:          100vw;
+  background:     var(--background);
+  color:          var(--foreground);
+  overflow:       hidden;
+  /* Variables are scoped here — apply font explicitly so all children inherit */
+  font-family:    var(--font-sans);
+  font-size:      var(--font-size-base);
+  line-height:    1.45;                  /* UI line-height; prose overrides to 1.7 */
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Body row: sidebar + content + optional agent rail ───────────────────── */
+.flynt-body {
+  display:    flex;
+  flex:       1;
+  min-height: 0; /* allow children to shrink */
+  overflow:   hidden;
+}
+
+/* ── Main content region ─────────────────────────────────────────────────── */
+.main-content {
+  flex:       1;
+  min-width:  0;
+  min-height: 0;
+  overflow:   auto;
+  background: var(--background);
+  display:    flex;
+  flex-direction: column;
+}
+/* When excalidraw is active, don't scroll main-content — let excalidraw fill it */
+.main-content:has(.excalidraw-pane) {
+  overflow:   hidden;
+}
+
+/* ── Generic view wrapper ─────────────────────────────────────────────────── */
+.view-root {
+  height:   100%;
+  overflow: hidden;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────── */
+.toolbar {
+  display:       flex;
+  align-items:   center;
+  height:        var(--toolbar-height);
+  padding:       0 var(--space-3);
+  background:    var(--toolbar-bg);
+  border-bottom: 1px solid var(--toolbar-border);
+  gap:           var(--space-2);
+  flex-shrink:   0;
+  /* Allow the toolbar to serve as the macOS window drag region */
+  -webkit-app-region: drag;
+}
+
+.toolbar-spacer { flex: 1; }
+
+/* Children of toolbar must opt out of dragging to stay clickable */
+.toolbar button,
+.toolbar input,
+.toolbar a {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Toolbar inner elements ───────────────────────────────────────────────── */
+.toolbar-vault-name {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  margin-right: var(--space-2);
+}
+
+.toolbar-search-wrap {
+  flex:      1;
+  max-width: 400px;
+  position:  relative;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-search {
+  width:         100%;
+  background:    var(--surface);
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  padding:       4px var(--space-3);
+  font-size:     var(--font-size-sm);
+  color:         var(--foreground);
+  transition:    border-color var(--duration-fast) var(--ease),
+                 box-shadow   var(--duration-fast) var(--ease);
+}
+
+.toolbar-search:focus {
+  border-color: var(--ring);
+  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  outline:      none;
+}
+
+.toolbar-search::placeholder { color: var(--muted-foreground); }
+
+.search-overlay {
+  position:   absolute;
+  top:        calc(100% + var(--space-1));
+  left:       0;
+  right:      0;
+  background: var(--card);
+  border:     1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index:    100;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  display:    flex;
+  padding:    var(--space-2) var(--space-3);
+  width:      100%;
+  text-align: left;
+  color:      var(--foreground);
+  font-size:  var(--font-size-sm);
+  border-bottom: 1px solid var(--border-dim);
+  transition: background var(--duration-fast) var(--ease);
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover      { background: var(--accent); }
+
+.toolbar-right {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  margin-left: auto;
+}
+
+.sync-badge {
+  font-size: var(--font-size-xs);
+  padding:   1px var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.sync-badge.synced {
+  color:     rgb(34, 197, 94);
+  opacity:   0.6;
+}
+.sync-badge.syncing {
+  color:     var(--primary);
+  animation: spin 1.5s linear infinite;
+}
+.sync-badge.conflict {
+  color:      var(--warning);
+  background: rgba(234, 179, 8, 0.1);
+}
+@keyframes spin { to { transform: rotate(360deg); } }

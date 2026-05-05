@@ -60,23 +60,23 @@ jobs:
 
       - name: Build desktop release
         run: |
-          cd crates/codex-app
+          cd crates/flynt-app
           dx build --platform desktop --release
 
       - name: Prepare archive
         run: |
-          DIST="codyx-${{ env.RELEASE_TAG }}-linux-${{ matrix.arch }}"
+          DIST="flynt-${{ env.RELEASE_TAG }}-linux-${{ matrix.arch }}"
           mkdir -p "$DIST"
 
           # Find the built binary — dx output path varies by version
           BIN=""
           for candidate in \
-            "target/dx/codyx/release/linux/app/codyx" \
-            "target/dx/codyx/release/linux/app/codex-app" \
-            "target/dx/codex-app/release/linux/app/codyx" \
-            "target/dx/codex-app/release/linux/app/codex-app" \
-            "target/release/codyx" \
-            "target/release/codex-app"; do
+            "target/dx/flynt/release/linux/app/flynt" \
+            "target/dx/flynt/release/linux/app/flynt-app" \
+            "target/dx/flynt-app/release/linux/app/flynt" \
+            "target/dx/flynt-app/release/linux/app/flynt-app" \
+            "target/release/flynt" \
+            "target/release/flynt-app"; do
             if [ -f "$candidate" ]; then
               BIN="$candidate"
               break
@@ -85,12 +85,12 @@ jobs:
 
           if [ -z "$BIN" ]; then
             echo "ERROR: Could not find built binary. Contents of target/dx/:"
-            find target/dx/ -type f \( -name "codex*" -o -name "codyx*" \) 2>/dev/null || true
+            find target/dx/ -type f \( -name "flynt-*" -o -name "flynt*" \) 2>/dev/null || true
             exit 1
           fi
 
-          cp "$BIN" "$DIST/codyx"
-          chmod +x "$DIST/codyx"
+          cp "$BIN" "$DIST/flynt"
+          chmod +x "$DIST/flynt"
 
           # Copy assets directory if it exists (dx bundles assets alongside binary)
           ASSETS_DIR="$(dirname "$BIN")/assets"
@@ -99,14 +99,14 @@ jobs:
           fi
 
           # Copy icon + desktop entry
-          cp crates/codex-app/assets/icon.png "$DIST/codyx.png"
+          cp crates/flynt-app/assets/icon.png "$DIST/flynt.png"
 
-          cat > "$DIST/codyx.desktop" << 'DESKTOP'
+          cat > "$DIST/flynt.desktop" << 'DESKTOP'
           [Desktop Entry]
-          Name=Codyx
+          Name=Flynt
           Comment=Local-first knowledge management
-          Exec=codyx
-          Icon=codyx
+          Exec=flynt
+          Icon=flynt
           Type=Application
           Categories=Office;TextEditor;
           MimeType=text/markdown;
@@ -115,17 +115,17 @@ jobs:
           tar czf "$DIST.tar.gz" "$DIST"
           echo "ARCHIVE=$DIST.tar.gz" >> "$GITHUB_ENV"
 
-      - name: Build codex-agent
-        run: cargo build --release -p codex-agent --target ${{ matrix.target }}
+      - name: Build flynt-agent
+        run: cargo build --release -p flynt-agent --target ${{ matrix.target }}
 
-      - name: Package codex-agent
+      - name: Package flynt-agent
         run: |
           VERSION="${RELEASE_TAG#v}"
-          AGENT_DIST="codex-agent-${VERSION}-${{ matrix.target }}"
+          AGENT_DIST="flynt-agent-${VERSION}-${{ matrix.target }}"
           mkdir -p "$AGENT_DIST"
-          cp "target/${{ matrix.target }}/release/codex-agent" "$AGENT_DIST/codex-agent"
-          chmod +x "$AGENT_DIST/codex-agent"
-          cp crates/codex-agent/manifest.toml "$AGENT_DIST/manifest.toml"
+          cp "target/${{ matrix.target }}/release/flynt-agent" "$AGENT_DIST/flynt-agent"
+          chmod +x "$AGENT_DIST/flynt-agent"
+          cp crates/flynt-agent/manifest.toml "$AGENT_DIST/manifest.toml"
           tar czf "$AGENT_DIST.tar.gz" "$AGENT_DIST"
           echo "AGENT_ARCHIVE=$AGENT_DIST.tar.gz" >> "$GITHUB_ENV"
 
@@ -135,10 +135,10 @@ jobs:
           name: codex-linux-${{ matrix.arch }}
           path: ${{ env.ARCHIVE }}
 
-      - name: Upload codex-agent artifact
+      - name: Upload flynt-agent artifact
         uses: actions/upload-artifact@v4
         with:
-          name: codex-agent-linux-${{ matrix.arch }}
+          name: flynt-agent-linux-${{ matrix.arch }}
           path: ${{ env.AGENT_ARCHIVE }}
 
   # ─── Apple Signing Setup (shared) ─────────────────────────
@@ -175,16 +175,16 @@ jobs:
 
       - name: Build desktop release
         run: |
-          cd crates/codex-app
+          cd crates/flynt-app
           MACOSX_DEPLOYMENT_TARGET=12.0 dx build --platform desktop --release
 
       - name: Prepare app bundle
         run: |
-          APP="target/dx/codyx/release/macos/Codyx.app"
+          APP="target/dx/flynt/release/macos/Flynt.app"
           PLIST="$APP/Contents/Info.plist"
           PB=/usr/libexec/PlistBuddy
 
-          cp crates/codex-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
+          cp crates/flynt-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
           $PB -c "Set :CFBundleIconFile AppIcon" "$PLIST" 2>/dev/null || \
             $PB -c "Add :CFBundleIconFile string AppIcon" "$PLIST"
           $PB -c "Set :CFBundleShortVersionString ${RELEASE_TAG#v}" "$PLIST" 2>/dev/null
@@ -195,7 +195,7 @@ jobs:
             $PB -c "Set :LSMinimumSystemVersion 12.0" "$PLIST"
 
           mkdir -p "$APP/Contents/Resources/assets/vendor"
-          cp crates/codex-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
+          cp crates/flynt-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
 
       - name: Import signing certs
         if: env.APPLE_DIST_CERT_P12_B64 != ''
@@ -243,7 +243,7 @@ jobs:
         env:
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
         run: |
-          APP="target/dx/codyx/release/macos/Codyx.app"
+          APP="target/dx/flynt/release/macos/Flynt.app"
 
           find "$APP/Contents" -type f \( -name "*.dylib" -o -perm +111 \) ! -name "Info.plist" ! -name "*.plist" | while read -r bin; do
             codesign -f -s "$APPLE_CODESIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" --options runtime --timestamp "$bin" 2>/dev/null || true
@@ -251,19 +251,19 @@ jobs:
 
           codesign -f -s "$APPLE_CODESIGN_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" --options runtime --timestamp \
-            --entitlements crates/codex-app/Codex.entitlements \
+            --entitlements crates/flynt-app/Codex.entitlements \
             "$APP"
 
       - name: Create DMG
         run: |
-          APP="target/dx/codyx/release/macos/Codyx.app"
+          APP="target/dx/flynt/release/macos/Flynt.app"
           VERSION="${RELEASE_TAG#v}"
           STAGING=$(mktemp -d)
-          cp -r "$APP" "$STAGING/Codyx.app"
+          cp -r "$APP" "$STAGING/Flynt.app"
           ln -s /Applications "$STAGING/Applications"
-          hdiutil create -volname "Codyx" -srcfolder "$STAGING" -ov -format UDZO "Codyx-$VERSION-macos.dmg"
+          hdiutil create -volname "Flynt" -srcfolder "$STAGING" -ov -format UDZO "Flynt-$VERSION-macos.dmg"
           rm -rf "$STAGING"
-          echo "DMG=Codyx-$VERSION-macos.dmg" >> "$GITHUB_ENV"
+          echo "DMG=Flynt-$VERSION-macos.dmg" >> "$GITHUB_ENV"
 
       - name: Notarize DMG
         if: env.APPLE_API_KEY_P8_B64 != ''
@@ -287,9 +287,9 @@ jobs:
           APPLE_DIST_CERT_P12_B64: ${{ secrets.APPLE_DIST_CERT_P12_B64 }}
           MACOS_DIST_PROFILE_B64: ${{ secrets.MACOS_DIST_PROFILE_B64 }}
         run: |
-          APP="target/dx/codyx/release/macos/Codyx.app"
-          DIST_APP="dist/Codyx.app"
-          rm -rf dist/Codyx.app
+          APP="target/dx/flynt/release/macos/Flynt.app"
+          DIST_APP="dist/Flynt.app"
+          rm -rf dist/Flynt.app
           mkdir -p dist
           cp -R "$APP" "$DIST_APP"
 
@@ -304,16 +304,16 @@ jobs:
           # Re-sign with Apple Distribution + sandbox entitlements
           DIST_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution" | head -1 | sed 's/.*"\(.*\)"/\1/')
           codesign --deep --force \
-            --entitlements crates/codex-app/Codex.appstore.entitlements \
+            --entitlements crates/flynt-app/Codex.appstore.entitlements \
             --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
             --options runtime "$DIST_APP"
 
           # Package .pkg
           INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "3rd Party Mac Developer Installer" | head -1 | sed 's/.*"\(.*\)"/\1/')
           if [ -n "$INSTALLER_IDENTITY" ]; then
-            productbuild --component "$DIST_APP" /Applications --sign "$INSTALLER_IDENTITY" dist/Codyx.pkg
+            productbuild --component "$DIST_APP" /Applications --sign "$INSTALLER_IDENTITY" dist/Flynt.pkg
           else
-            productbuild --component "$DIST_APP" /Applications dist/Codyx.pkg
+            productbuild --component "$DIST_APP" /Applications dist/Flynt.pkg
           fi
 
       - name: Upload to TestFlight (macOS)
@@ -326,27 +326,27 @@ jobs:
         run: |
           mkdir -p private_keys
           echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
-          xcrun altool --upload-app --type osx --file dist/Codyx.pkg \
+          xcrun altool --upload-app --type osx --file dist/Flynt.pkg \
             --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
 
-      - name: Build codex-agent (universal)
+      - name: Build flynt-agent (universal)
         run: |
-          cargo build --release -p codex-agent --target aarch64-apple-darwin
-          cargo build --release -p codex-agent --target x86_64-apple-darwin
+          cargo build --release -p flynt-agent --target aarch64-apple-darwin
+          cargo build --release -p flynt-agent --target x86_64-apple-darwin
           mkdir -p target/universal-release
           lipo -create \
-            target/aarch64-apple-darwin/release/codex-agent \
-            target/x86_64-apple-darwin/release/codex-agent \
-            -output target/universal-release/codex-agent
+            target/aarch64-apple-darwin/release/flynt-agent \
+            target/x86_64-apple-darwin/release/flynt-agent \
+            -output target/universal-release/flynt-agent
 
-      - name: Package codex-agent (universal)
+      - name: Package flynt-agent (universal)
         run: |
           VERSION="${RELEASE_TAG#v}"
-          AGENT_DIST="codex-agent-${VERSION}-universal-apple-darwin"
+          AGENT_DIST="flynt-agent-${VERSION}-universal-apple-darwin"
           mkdir -p "$AGENT_DIST"
-          cp target/universal-release/codex-agent "$AGENT_DIST/codex-agent"
-          chmod +x "$AGENT_DIST/codex-agent"
-          cp crates/codex-agent/manifest.toml "$AGENT_DIST/manifest.toml"
+          cp target/universal-release/flynt-agent "$AGENT_DIST/flynt-agent"
+          chmod +x "$AGENT_DIST/flynt-agent"
+          cp crates/flynt-agent/manifest.toml "$AGENT_DIST/manifest.toml"
           tar czf "$AGENT_DIST.tar.gz" "$AGENT_DIST"
           echo "AGENT_ARCHIVE=$AGENT_DIST.tar.gz" >> "$GITHUB_ENV"
 
@@ -356,10 +356,10 @@ jobs:
           name: codex-macos
           path: ${{ env.DMG }}
 
-      - name: Upload codex-agent artifact
+      - name: Upload flynt-agent artifact
         uses: actions/upload-artifact@v4
         with:
-          name: codex-agent-macos-universal
+          name: flynt-agent-macos-universal
           path: ${{ env.AGENT_ARCHIVE }}
 
   build-ios:
@@ -416,7 +416,7 @@ jobs:
 
       - name: Build iOS app
         run: |
-          cd crates/codex-mobile
+          cd crates/flynt-mobile
           # Resolve the Apple Distribution identity from keychain for dx codesign
           if [ -n "$KEYCHAIN_PATH" ]; then
             DIST_ID=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution" | head -1 | sed 's/.*"\(.*\)"/\1/')
@@ -432,7 +432,7 @@ jobs:
 
       - name: Patch Info.plist
         run: |
-          APP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          APP="target/dx/flynt-mobile/release/ios/FlyntMobile.app"
           PLIST="$APP/Info.plist"
           PB=/usr/libexec/PlistBuddy
           VERSION="${RELEASE_TAG#v}"
@@ -449,7 +449,7 @@ jobs:
           $PB -c "Add :DTXcodeBuild string $XCODE_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTXcodeBuild $XCODE_BUILD" "$PLIST"
           $PB -c "Add :DTSDKBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTSDKBuild $SDK_BUILD" "$PLIST"
           $PB -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || true
-          $PB -c "Set :CFBundleDisplayName Codyx" "$PLIST"
+          $PB -c "Set :CFBundleDisplayName Flynt" "$PLIST"
           $PB -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
           $PB -c "Set :CFBundleVersion $VERSION" "$PLIST"
           $PB -c "Delete :CFBundleSupportedPlatforms" "$PLIST" 2>/dev/null || true
@@ -459,7 +459,7 @@ jobs:
 
           # Compile asset catalog and merge actool's partial plist
           PARTIAL_PLIST=$(mktemp)
-          xcrun actool "crates/codex-mobile/assets/Assets.xcassets" \
+          xcrun actool "crates/flynt-mobile/assets/Assets.xcassets" \
             --compile "$APP" --platform iphoneos --minimum-deployment-target 17.0 \
             --app-icon AppIcon --target-device iphone --target-device ipad \
             --compress-pngs --output-format human-readable-text \
@@ -473,18 +473,18 @@ jobs:
         run: |
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           BUILD_DIR="target/share-extension-build"
-          APPEX_DIR="$BUILD_DIR/CodexShare.appex"
+          APPEX_DIR="$BUILD_DIR/FlyntShare.appex"
           rm -rf "$BUILD_DIR"
           mkdir -p "$APPEX_DIR"
           xcrun --sdk iphoneos swiftc \
-            crates/codex-mobile/ios/ShareExtension/Sources/*.swift \
-            -o "$APPEX_DIR/CodexShare" \
-            -target arm64-apple-ios17.0 -module-name CodexShare \
+            crates/flynt-mobile/ios/ShareExtension/Sources/*.swift \
+            -o "$APPEX_DIR/FlyntShare" \
+            -target arm64-apple-ios17.0 -module-name FlyntShare \
             -application-extension \
             -Xlinker -e -Xlinker _NSExtensionMain \
             -framework Foundation -framework UIKit -framework SwiftUI -framework UniformTypeIdentifiers \
             -sdk "$SDK_PATH" -O
-          cp crates/codex-mobile/ios/ShareExtension/Info.plist "$APPEX_DIR/Info.plist"
+          cp crates/flynt-mobile/ios/ShareExtension/Info.plist "$APPEX_DIR/Info.plist"
 
       - name: Assemble bundle + sign
         if: env.KEYCHAIN_PATH != ''
@@ -492,42 +492,42 @@ jobs:
           IOS_DIST_PROFILE_B64: ${{ secrets.IOS_DIST_PROFILE_B64 }}
           IOS_SHARE_DIST_PROFILE_B64: ${{ secrets.IOS_SHARE_DIST_PROFILE_B64 }}
         run: |
-          APP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          APP="target/dx/flynt-mobile/release/ios/FlyntMobile.app"
           PLUGINS="$APP/PlugIns"
           mkdir -p "$PLUGINS"
-          cp -R target/share-extension-build/CodexShare.appex "$PLUGINS/"
+          cp -R target/share-extension-build/FlyntShare.appex "$PLUGINS/"
 
           # Embed distribution provisioning profiles
           echo "$IOS_DIST_PROFILE_B64" | base64 --decode > "$APP/embedded.mobileprovision"
-          echo "$IOS_SHARE_DIST_PROFILE_B64" | base64 --decode > "$PLUGINS/CodexShare.appex/embedded.mobileprovision"
+          echo "$IOS_SHARE_DIST_PROFILE_B64" | base64 --decode > "$PLUGINS/FlyntShare.appex/embedded.mobileprovision"
 
           # Sign (inside-out)
           DIST_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution" | head -1 | sed 's/.*"\(.*\)"/\1/')
           codesign --force \
-            --entitlements crates/codex-mobile/ios/ShareExtension/ShareExtension.entitlements \
+            --entitlements crates/flynt-mobile/ios/ShareExtension/ShareExtension.entitlements \
             --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
-            "$PLUGINS/CodexShare.appex"
+            "$PLUGINS/FlyntShare.appex"
           codesign --force \
-            --entitlements crates/codex-mobile/ios/Codex.entitlements \
+            --entitlements crates/flynt-mobile/ios/Codex.entitlements \
             --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
             "$APP"
 
       - name: Export IPA
         if: env.KEYCHAIN_PATH != ''
         run: |
-          APP="target/dx/codex-mobile/release/ios/CodexMobile.app"
+          APP="target/dx/flynt-mobile/release/ios/FlyntMobile.app"
           VERSION="${RELEASE_TAG#v}"
 
           # Build IPA directly — synthetic xcarchive + xcodebuild is fragile.
           # A signed .app in a Payload/ directory is all an IPA needs.
           rm -rf target/ipa
           mkdir -p target/ipa/Payload
-          cp -R "$APP" target/ipa/Payload/Codex.app
+          cp -R "$APP" target/ipa/Payload/Flynt.app
           cd target/ipa
-          zip -qr "Codyx-${VERSION}.ipa" Payload
+          zip -qr "Flynt-${VERSION}.ipa" Payload
           rm -rf Payload
           cd ../..
-          echo "IPA=target/ipa/Codex-${VERSION}.ipa" >> "$GITHUB_ENV"
+          echo "IPA=target/ipa/Flynt-${VERSION}.ipa" >> "$GITHUB_ENV"
 
       - name: Upload to TestFlight (iOS)
         continue-on-error: true
@@ -547,7 +547,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: codex-ios
+          name: flynt-ios
           path: target/ipa/*.ipa
 
   release:
@@ -568,7 +568,7 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Codyx $VERSION" \
+            --title "Flynt $VERSION" \
             --generate-notes \
             artifacts/**/*
 
@@ -597,9 +597,9 @@ jobs:
           # typed: false
           # frozen_string_literal: true
 
-          class Codyx < Formula
+          class Flynt < Formula
             desc "Local-first knowledge vault — notes, tasks, diagrams, and agent integration"
-            homepage "https://github.com/styrene-lab/codyx"
+            homepage "https://github.com/styrene-lab/flynt"
             license "BUSL-1.1"
             version "$VERSION"
 
@@ -608,48 +608,48 @@ jobs:
               depends_on "gtk+3"
 
               on_arm do
-                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codyx-v#{version}-linux-arm64.tar.gz"
+                url "https://github.com/styrene-lab/flynt/releases/download/v#{version}/flynt-v#{version}-linux-arm64.tar.gz"
                 sha256 "$ARM64_SHA"
               end
 
               on_intel do
-                url "https://github.com/styrene-lab/codyx/releases/download/v#{version}/codyx-v#{version}-linux-amd64.tar.gz"
+                url "https://github.com/styrene-lab/flynt/releases/download/v#{version}/flynt-v#{version}-linux-amd64.tar.gz"
                 sha256 "$AMD64_SHA"
               end
             end
 
             on_macos do
-              odie "Codyx for macOS is available via DMG or TestFlight. See: https://github.com/styrene-lab/codyx/releases"
+              odie "Flynt for macOS is available via DMG or TestFlight. See: https://github.com/styrene-lab/flynt/releases"
             end
 
             def install
-              bin.install "codyx"
-              (share/"codex").install "assets" if File.directory?("assets")
-              (share/"applications").install "codyx.desktop" if File.exist?("codyx.desktop")
-              if File.exist?("codyx.png")
-                (share/"icons/hicolor/256x256/apps").install "codyx.png"
+              bin.install "flynt"
+              (share/"flynt").install "assets" if File.directory?("assets")
+              (share/"applications").install "flynt.desktop" if File.exist?("flynt.desktop")
+              if File.exist?("flynt.png")
+                (share/"icons/hicolor/256x256/apps").install "flynt.png"
               end
             end
 
             test do
-              assert_match "codyx", shell_output("#{bin}/codyx --version")
+              assert_match "flynt", shell_output("#{bin}/flynt --version")
             end
           end
           FORMULA
 
           # Push to tap
           CONTENT=$(base64 -w0 /tmp/codex.rb)
-          EXISTING_SHA=$(gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb --jq '.sha' 2>/dev/null || echo "")
+          EXISTING_SHA=$(gh api repos/styrene-lab/homebrew-tap/contents/Formula/flynt.rb --jq '.sha' 2>/dev/null || echo "")
           if [ -n "$EXISTING_SHA" ]; then
-            gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb \
+            gh api repos/styrene-lab/homebrew-tap/contents/Formula/flynt.rb \
               -X PUT \
-              -f message="Update Codyx to $VERSION" \
+              -f message="Update Flynt to $VERSION" \
               -f content="$CONTENT" \
               -f sha="$EXISTING_SHA" > /dev/null
           else
-            gh api repos/styrene-lab/homebrew-tap/contents/Formula/codyx.rb \
+            gh api repos/styrene-lab/homebrew-tap/contents/Formula/flynt.rb \
               -X PUT \
-              -f message="Add Codyx $VERSION" \
+              -f message="Add Flynt $VERSION" \
               -f content="$CONTENT" > /dev/null
           fi
           echo "Homebrew formula updated to $VERSION"
