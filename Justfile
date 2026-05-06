@@ -42,7 +42,7 @@ bundle:
     # Dioxus outputs to target/dx/; copy to dist/
     rm -rf dist/Flynt.app
     mkdir -p dist
-    cp -R target/dx/flynt-app/release/macos/FlyntApp.app dist/Flynt.app
+    cp -R target/dx/flynt/release/macos/Flynt.app dist/Flynt.app
     PLIST="dist/Flynt.app/Contents/Info.plist"
 
     # Version info
