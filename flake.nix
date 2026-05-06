@@ -154,7 +154,7 @@
 
           meta = with pkgs.lib; {
             description = "Markdown-native notes, kanban, and knowledge graph";
-            homepage = "https://github.com/styrene-lab/codyx";
+            homepage = "https://github.com/styrene-lab/flynt";
             license = licenses.unfree;
             platforms = platforms.linux ++ platforms.darwin;
           };
