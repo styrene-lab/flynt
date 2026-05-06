@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0 — 2026-05-06
+
+First release under the new name. **Codyx is now Flynt.** Binaries, bundle IDs, asset paths, and the project site (https://flynt.styrene.io) all migrated. Existing vaults and configuration continue to work unchanged.
+
+### Added
+- **Embedded Omegon agent configuration GUI** — configure the agent surface (model, tools, vault scope) directly from the desktop app, no separate config file editing
+- **Git login flow** — first-class git authentication for sync, including SSH key selection and credential helper integration
+- **Tracing instrumentation** — structured `tracing` spans across vault, sync, and ACP layers for diagnostics
+
+### Changed
+- **Rebrand: Codyx → Flynt** across crates (`flynt-models`, `flynt-store`, `flynt-app`, `flynt-agent`, `flynt-mobile`), binaries, desktop entries, and asset paths
+- **Bundle ID** remains `io.styrene.flynt` (unchanged from 0.5.0)
+- **Homebrew formula** moved to `Flynt` class on `styrene-lab/homebrew-tap`
+
+### Fixed
+- **ACP** — corrections to the Agent Control Protocol surface uncovered while wiring the embedded Omegon GUI
+
 ## 0.5.0 — 2026-04-23
 
 ### Added
