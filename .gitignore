@@ -28,3 +28,6 @@ private_keys/
 crates/flynt-mobile/ios/keys/
 crates/flynt-mobile/ios/profiles/
 crates/flynt-app/profiles/
+
+# Claude Code local state
+.claude/
