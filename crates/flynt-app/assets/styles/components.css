@@ -1105,56 +1105,75 @@
   font-style:     italic;
 }
 
-/* Tool call blocks */
+/* Thought blocks — streaming agent reasoning */
+.agent-msg.thought .agent-msg-role {
+  color:          var(--muted-foreground);
+  opacity:        0.7;
+}
+.agent-msg.thought .agent-msg-content {
+  font-size:      var(--font-size-xs);
+  color:          var(--muted-foreground);
+  font-style:     italic;
+  border-left:    2px solid var(--border);
+  padding-left:   var(--space-2);
+  white-space:    pre-wrap;
+  line-height:    1.5;
+}
+
+/* Tool call blocks — minimal chrome, metadata over branding. The tool name
+   sits in monospace with no badge; args (e.g. path, query) are the visible
+   payload alongside the name. */
 .agent-tool-call {
-  border:         1px solid var(--border);
-  border-radius:  var(--radius);
-  padding:        var(--space-2) var(--space-3);
-  background:     var(--surface);
+  border:         none;
+  border-left:    2px solid var(--border);
+  border-radius:  0;
+  padding:        2px 0 2px var(--space-2);
+  background:     transparent;
   font-size:      var(--font-size-xs);
 }
 .agent-tool-header {
   display:        flex;
-  align-items:    center;
+  align-items:    baseline;
   gap:            var(--space-2);
+  min-width:      0;
 }
-.agent-tool-kind {
-  background:     rgba(139, 92, 246, 0.15);
-  color:          #8b5cf6;
-  padding:        1px var(--space-2);
-  border-radius:  var(--radius-full);
-  font-weight:    600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-size:      10px;
+.agent-tool-name {
+  color:          var(--muted-foreground);
+  font-family:    var(--font-mono, monospace);
+  font-size:      11px;
+  font-weight:    400;
+  flex-shrink:    0;
 }
-.agent-tool-title {
+.agent-tool-args {
   flex:           1;
+  min-width:      0;
   color:          var(--foreground);
-  font-weight:    500;
+  font-family:    var(--font-mono, monospace);
+  font-size:      11px;
   white-space:    nowrap;
   overflow:       hidden;
   text-overflow:  ellipsis;
+  opacity:        0.85;
 }
 .agent-tool-status {
+  font-size:      10px;
   font-weight:    500;
-  padding:        1px var(--space-2);
-  border-radius:  var(--radius-full);
+  padding:        0 var(--space-1);
+  opacity:        0.6;
+  flex-shrink:    0;
 }
 .agent-tool-status.inprogress {
-  background:     rgba(59, 130, 246, 0.15);
   color:          #3b82f6;
+  opacity:        0.85;
 }
 .agent-tool-status.completed {
-  background:     rgba(34, 197, 94, 0.15);
   color:          #22c55e;
 }
 .agent-tool-status.failed {
-  background:     rgba(239, 68, 68, 0.15);
   color:          #ef4444;
+  opacity:        1;
 }
 .agent-tool-status.pending {
-  background:     rgba(234, 179, 8, 0.15);
   color:          #eab308;
 }
 
@@ -1280,6 +1299,14 @@
 }
 .agent-config-select:focus {
   border-color:   var(--ring);
+}
+.agent-config-select.unavailable {
+  border-color:   #c97a2a;
+  color:          #e8a45e;
+  background-color: rgba(201, 122, 42, 0.08);
+}
+.agent-config-select.unavailable:hover {
+  border-color:   #e8a45e;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════

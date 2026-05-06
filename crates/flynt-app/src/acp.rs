@@ -32,6 +32,9 @@ pub enum AcpEvent {
         id: String,
         title: String,
         kind: String,
+        /// Raw input args from the agent — used to render call metadata
+        /// alongside the tool name (None if the agent didn't supply any).
+        args: Option<serde_json::Value>,
     },
     /// A tool call status changed.
     ToolCallUpdated {
@@ -166,6 +169,7 @@ impl Client for FlyntAcpClient {
                     id: tc.tool_call_id.to_string(),
                     title: tc.title,
                     kind: format!("{:?}", tc.kind),
+                    args: tc.raw_input,
                 });
             }
             SessionUpdate::ToolCallUpdate(update) => {
