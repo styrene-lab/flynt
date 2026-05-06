@@ -91,11 +91,13 @@ impl Extension for FlyntExtension {
                 {
                     "name": "get_document",
                     "label": "Get Document",
-                    "description": "Retrieve full markdown content and metadata for a document by path.",
+                    "description": "Retrieve full markdown content and metadata for a document. Pass either `path` (relative-to-vault, e.g. \"Identity.md\") OR `id` (UUID from get_ui_state / list_documents). At least one must be provided.",
                     "parameters": {
                         "type": "object",
-                        "properties": { "path": { "type": "string" } },
-                        "required": ["path"]
+                        "properties": {
+                            "path": { "type": "string", "description": "Relative path inside the vault." },
+                            "id":   { "type": "string", "description": "Document UUID. Either path or id is required." }
+                        }
                     }
                 },
                 {
@@ -339,6 +341,12 @@ impl Extension for FlyntExtension {
                         },
                         "required": ["provider"]
                     }
+                },
+                {
+                    "name": "get_ui_state",
+                    "label": "Get UI State",
+                    "description": "Return what the user is currently looking at in Flynt: the active document (if any), other open document tabs, and the current view (notes/kanban/graph/settings/search/welcome). Call this BEFORE asking the user clarifying questions about 'what they have open' or 'what they're working on' — Flynt mirrors this state to disk on every tab/view change so the answer is always current. Returns {active_document, open_documents, current_view, vault_root, updated_at}. The active_document.path can be passed straight to get_document.",
+                    "parameters": { "type": "object", "properties": {} }
                 }
             ])),
 
@@ -380,17 +388,43 @@ impl Extension for FlyntExtension {
             }
 
             "execute_get_document" => {
-                let path = params["path"]
-                    .as_str()
-                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path'"))?;
-                let doc = self
-                    .vault
-                    .store
-                    .get_document_by_path(std::path::Path::new(path))
-                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                // Accept either path or id — the agent often reaches for the id
+                // returned by get_ui_state, and rejecting it forces a wasteful
+                // retry on the model's part.
+                let path_arg = params.get("path").and_then(|v| v.as_str());
+                let id_arg = params.get("id").and_then(|v| v.as_str());
+                let doc = match (path_arg, id_arg) {
+                    (Some(p), _) => self
+                        .vault
+                        .store
+                        .get_document_by_path(std::path::Path::new(p))
+                        .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?,
+                    (None, Some(id_str)) => {
+                        let uuid = uuid::Uuid::parse_str(id_str).map_err(|e| {
+                            omegon_extension::Error::invalid_params(format!(
+                                "id is not a UUID: {e}"
+                            ))
+                        })?;
+                        let did = flynt_core::models::DocumentId(uuid);
+                        self.vault
+                            .store
+                            .get_document(&did)
+                            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
+                    }
+                    (None, None) => {
+                        return Err(omegon_extension::Error::invalid_params(
+                            "must provide either 'path' or 'id'",
+                        ));
+                    }
+                };
                 match doc {
                     Some(d) => Ok(serde_json::to_value(d).unwrap_or(json!({}))),
-                    None => Err(omegon_extension::Error::internal_error(format!("not found: {path}"))),
+                    None => {
+                        let key = path_arg.or(id_arg).unwrap_or("?");
+                        Err(omegon_extension::Error::internal_error(format!(
+                            "not found: {key}"
+                        )))
+                    }
                 }
             }
 
@@ -1002,6 +1036,35 @@ impl Extension for FlyntExtension {
                     "status": status_str,
                     "authenticated": authenticated,
                 }))
+            }
+
+            "execute_get_ui_state" => {
+                // Read the live snapshot flynt-app maintains. Returning an empty
+                // shape (instead of an error) when the file is absent matters:
+                // the agent can still answer "no file open" without surfacing
+                // a confusing tool error to the user.
+                let path = self
+                    .vault
+                    .root
+                    .join(".flynt-local")
+                    .join("flynt")
+                    .join("ui-state.json");
+                match std::fs::read_to_string(&path) {
+                    Ok(body) => serde_json::from_str::<Value>(&body).map_err(|e| {
+                        omegon_extension::Error::internal_error(format!(
+                            "ui-state.json malformed: {e}"
+                        ))
+                    }),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({
+                        "active_document": null,
+                        "open_documents": [],
+                        "current_view": null,
+                        "vault_root": self.vault.root.to_string_lossy(),
+                        "updated_at": null,
+                        "note": "ui-state.json not yet written — flynt-app may not be running, or no view has rendered yet"
+                    })),
+                    Err(e) => Err(omegon_extension::Error::internal_error(e.to_string())),
+                }
             }
 
             _ => Err(omegon_extension::Error::method_not_found(method)),

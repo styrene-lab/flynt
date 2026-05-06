@@ -85,6 +85,20 @@ pub fn App() -> Element {
     let mut palette_mode = use_signal(|| crate::components::command_palette::PaletteMode::Command);
     let shared_acp_session = use_context::<Signal<Option<std::rc::Rc<crate::acp::AcpSession>>>>();
 
+    // Mirror tab + view state to <vault>/.flynt-local/flynt/ui-state.json so the
+    // embedded omegon agent can answer "what document am I looking at?" via
+    // its get_ui_state tool. Re-fires whenever Dioxus detects tab_state /
+    // active_route changes.
+    {
+        let ui_ctx = ctx.clone();
+        use_effect(move || {
+            let tabs = tab_state.read().clone();
+            let route = active_route.read().clone();
+            let vault = ui_ctx.vault();
+            crate::ui_state::write_snapshot(&vault, &tabs, &route);
+        });
+    }
+
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
 
