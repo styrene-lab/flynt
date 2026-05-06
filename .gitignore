@@ -31,3 +31,9 @@ crates/flynt-app/profiles/
 
 # Claude Code local state
 .claude/
+
+# Runtime mirrors regenerated on every session — should never be tracked
+ai/lifecycle/state.json
+ai/memory/facts.db
+ai/session/local-launch-status.md
+ai/session/tool-compliance-marker.md
