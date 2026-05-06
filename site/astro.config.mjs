@@ -1,6 +1,6 @@
 import { defineConfig } from "astro/config";
 
 export default defineConfig({
-  site: "https://codex.styrene.io",
+  site: "https://flynt.styrene.io",
   output: "static",
 });

@@ -1,5 +1,5 @@
 {
-  description = "Codyx — markdown-native notes, kanban, and knowledge graph";
+  description = "Flynt — markdown-native notes, kanban, and knowledge graph";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -63,13 +63,13 @@
           ] ++ linuxBuildInputs;
 
           shellHook = ''
-            echo "Codyx dev environment ready ($(rustc --version))"
+            echo "Flynt dev environment ready ($(rustc --version))"
             ${linuxShellHook}
           '';
         };
 
         packages.default = pkgs.stdenv.mkDerivation {
-          pname = "codyx";
+          pname = "flynt";
           version = "0.6.2";
           src = ./.;
 
@@ -100,18 +100,18 @@
           '';
 
           # Pass DIOXUS_PRODUCT_NAME through the GApps wrapper so
-          # get_asset_root() resolves to lib/codyx/ at runtime
+          # get_asset_root() resolves to lib/flynt/ at runtime
           preFixup = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-            gappsWrapperArgs+=(--set DIOXUS_PRODUCT_NAME codyx)
+            gappsWrapperArgs+=(--set DIOXUS_PRODUCT_NAME flynt)
           '';
 
           installPhase = ''
-            mkdir -p $out/bin $out/lib/codyx
+            mkdir -p $out/bin $out/lib/flynt
 
             # Find the dx output directory
             DX_OUT=""
             for candidate in \
-              target/dx/codyx/release/linux/app \
+              target/dx/flynt/release/linux/app \
               target/dx/codex-app/release/linux/app; do
               if [ -d "$candidate" ]; then
                 DX_OUT="$candidate"
@@ -121,35 +121,35 @@
 
             if [ -z "$DX_OUT" ]; then
               echo "ERROR: dx build output not found"
-              find target/dx/ -type f \( -name "codyx" -o -name "codex-app" \) 2>/dev/null
+              find target/dx/ -type f \( -name "flynt" -o -name "codex-app" \) 2>/dev/null
               exit 1
             fi
 
             # Copy binary
-            BIN="$DX_OUT/codyx"
+            BIN="$DX_OUT/flynt"
             [ -f "$BIN" ] || BIN="$DX_OUT/codex-app"
-            cp "$BIN" $out/bin/codyx
-            chmod +x $out/bin/codyx
+            cp "$BIN" $out/bin/flynt
+            chmod +x $out/bin/flynt
 
-            # Copy hashed assets to lib/codyx/ — Dioxus get_asset_root() on Linux
+            # Copy hashed assets to lib/flynt/ — Dioxus get_asset_root() on Linux
             # checks bin/../lib/$DIOXUS_PRODUCT_NAME/ which survives wrapGAppsHook
             if [ -d "$DX_OUT/assets" ]; then
-              cp -r "$DX_OUT/assets" $out/lib/codyx/assets
+              cp -r "$DX_OUT/assets" $out/lib/flynt/assets
             fi
           '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
             mkdir -p $out/share/applications
-            cat > $out/share/applications/codyx.desktop <<DESKTOP
+            cat > $out/share/applications/flynt.desktop <<DESKTOP
             [Desktop Entry]
-            Name=Codyx
+            Name=Flynt
             Comment=Markdown notes, kanban, and knowledge graph
-            Exec=$out/bin/codyx
-            Icon=$out/share/icons/hicolor/512x512/apps/codyx.png
+            Exec=$out/bin/flynt
+            Icon=$out/share/icons/hicolor/512x512/apps/flynt.png
             Type=Application
             Categories=Office;TextEditor;
             DESKTOP
 
             mkdir -p $out/share/icons/hicolor/512x512/apps
-            cp crates/codex-app/assets/icon.png $out/share/icons/hicolor/512x512/apps/codyx.png
+            cp crates/codex-app/assets/icon.png $out/share/icons/hicolor/512x512/apps/flynt.png
           '';
 
           meta = with pkgs.lib; {

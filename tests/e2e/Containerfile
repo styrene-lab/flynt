@@ -1,4 +1,4 @@
-# Stage 1: Build the Codyx binary
+# Stage 1: Build the Flynt binary
 FROM rust:1-bookworm AS builder
 
 RUN apt-get update && apt-get install -y \
@@ -11,27 +11,27 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
-RUN cargo build --package codex-app --bin codyx --release \
-    && strip /build/target/release/codyx \
+RUN cargo build --package codex-app --bin flynt --release \
+    && strip /build/target/release/flynt \
     && rm -rf /build/target/release/.fingerprint /build/target/release/deps /build/target/release/build /build/target/release/incremental
 
 # Stage 2: Test runner with Playwright
 FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
-# Runtime deps for the Codyx binary
+# Runtime deps for the Flynt binary
 RUN apt-get update && apt-get install -y \
     libwebkit2gtk-4.1-0 libgtk-3-0 libglib2.0-0 \
     xvfb dbus-x11 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /build/target/release/codyx /usr/local/bin/codyx
+COPY --from=builder /build/target/release/flynt /usr/local/bin/flynt
 
 WORKDIR /tests
 COPY tests/e2e/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY tests/e2e/ .
 
-ENV CODYX_BINARY=/usr/local/bin/codyx
+ENV FLYNT_BINARY=/usr/local/bin/flynt
 # Virtual display for headless WebKit
 ENV DISPLAY=:99
 
