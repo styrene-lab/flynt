@@ -8,7 +8,7 @@ use crate::{
 };
 use flynt_core::models::{
     AppearanceConfig, FlyntOperatorSettings, FontSizePreset, LocalRuntimeConfig,
-    OmegonProfile, OmegonProfileModel, SyncConfig, VaultConfig, VisualizationConfig,
+    OmegonProfile, SyncConfig, VaultConfig, VisualizationConfig,
 };
 use dioxus::prelude::*;
 
@@ -109,42 +109,8 @@ pub fn SettingsView() -> Element {
         use_signal(|| ctx.vault().config.publication.default_visibility);
     let publication_rules = use_signal(|| ctx.vault().config.publication.rules.clone());
 
-    let mut project_profile_state = use_context::<Signal<OmegonProfile>>();
-    let mut operator_settings_state = use_context::<Signal<FlyntOperatorSettings>>();
-    let initial_profile = project_profile_state.read().clone();
-    let initial_operator = operator_settings_state.read().clone();
-
-    // Omegon-compatible persisted profile.
-    let mut model_provider = use_signal(|| {
-        initial_profile
-            .last_used_model
-            .as_ref()
-            .map(|model| model.provider.clone())
-            .unwrap_or_default()
-    });
-    let mut model_id = use_signal(|| {
-        initial_profile
-            .last_used_model
-            .as_ref()
-            .map(|model| model.model_id.clone())
-            .unwrap_or_default()
-    });
-    let mut thinking_level =
-        use_signal(|| initial_profile.thinking_level.clone().unwrap_or_default());
-    let mut max_turns = use_signal(|| {
-        initial_profile
-            .max_turns
-            .map(|turns| turns.to_string())
-            .unwrap_or_default()
-    });
-
-    // Flynt-owned operator preferences.
-    let mut active_persona = use_signal(|| initial_operator.active_persona.clone());
-    let mut rail_extension = use_signal(|| initial_operator.rail_extension.clone());
-    let mut agent_id_input = use_signal(|| initial_operator.agent_id.clone().unwrap_or_default());
-    let mut vox_enabled = use_signal(|| initial_operator.vox.enabled);
-    let mut vox_tts_enabled = use_signal(|| initial_operator.vox.tts_enabled);
-    let mut vox_voice = use_signal(|| initial_operator.vox.voice.clone());
+    let _project_profile_state = use_context::<Signal<OmegonProfile>>();
+    let _operator_settings_state = use_context::<Signal<FlyntOperatorSettings>>();
 
     // Indexing
     let mut write_frontmatter = use_signal(|| ctx.vault().config.indexing.write_frontmatter);
@@ -157,7 +123,7 @@ pub fn SettingsView() -> Element {
     let mut d2_bin = use_signal(|| ctx.vault().config.visualization.d2_bin.clone().unwrap_or_default());
 
     // Daemon config — managed by DaemonSettingsSection
-    let daemon_config = use_signal(|| initial_operator.agent_daemon.clone());
+    let daemon_config = use_signal(|| ctx.omegon().load_operator_settings().agent_daemon.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
     let mut show_advanced = use_signal(|| false);
@@ -254,66 +220,6 @@ pub fn SettingsView() -> Element {
             },
         };
 
-        let last_used_model = if model_provider.read().trim().is_empty() || model_id.read().trim().is_empty() {
-            None
-        } else {
-            Some(OmegonProfileModel {
-                provider: model_provider.read().trim().to_string(),
-                model_id: model_id.read().trim().to_string(),
-            })
-        };
-
-        let thinking_level_value = {
-            let value = thinking_level.read().clone();
-            let value = value.trim();
-            if value.is_empty() {
-                None
-            } else {
-                Some(value.to_string())
-            }
-        };
-
-        let max_turns_value = {
-            let value = max_turns.read().clone();
-            let value = value.trim();
-            if value.is_empty() {
-                None
-            } else {
-                match value.parse::<u32>() {
-                    Ok(parsed) => Some(parsed),
-                    Err(_) => {
-                        *save_msg.write() = Some(("err", "Max turns must be a whole number."));
-                        return;
-                    }
-                }
-            }
-        };
-
-        let profile = OmegonProfile {
-            last_used_model,
-            thinking_level: thinking_level_value,
-            max_turns: max_turns_value,
-            ..OmegonProfile::default()
-        };
-
-        let operator_settings = FlyntOperatorSettings {
-            active_persona: active_persona.read().trim().to_string(),
-            enabled_skills: initial_operator.enabled_skills.clone(),
-            preferred_extensions: initial_operator.preferred_extensions.clone(),
-            rail_extension: rail_extension.read().trim().to_string(),
-            agent_id: {
-                let v = agent_id_input.read().trim().to_string();
-                if v.is_empty() { None } else { Some(v) }
-            },
-            vox: flynt_core::models::VoxSettings {
-                enabled: *vox_enabled.read(),
-                tts_enabled: *vox_tts_enabled.read(),
-                voice: vox_voice.read().trim().to_string(),
-            },
-            acp_config: initial_operator.acp_config.clone(),
-            agent_daemon: daemon_config.read().clone(),
-        };
-
         // Check if sync backend changed — trigger vault migration
         let old_sync = &vault.config.sync;
         let new_sync = &config.sync;
@@ -356,20 +262,15 @@ pub fn SettingsView() -> Element {
             }
         }
 
-        if let Err(e) = omegon_for_save.save_project_profile(&profile) {
-            tracing::error!("save_project_profile: {e}");
-            *save_msg.write() = Some(("err", "Profile save failed — check logs."));
-            return;
-        }
-
-        if let Err(e) = omegon_for_save.save_operator_settings(&operator_settings) {
+        // Persist daemon config alongside vault config
+        let mut operator = omegon_for_save.load_operator_settings();
+        operator.agent_daemon = daemon_config.read().clone();
+        if let Err(e) = omegon_for_save.save_operator_settings(&operator) {
             tracing::error!("save_operator_settings: {e}");
             *save_msg.write() = Some(("err", "Operator settings save failed — check logs."));
             return;
         }
 
-        *project_profile_state.write() = profile;
-        *operator_settings_state.write() = operator_settings;
         *save_msg.write() = Some(("ok", "Settings saved."));
     };
 
@@ -701,123 +602,36 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                // ── Omegon profile ───────────────────────────────────────────
-                SettingsSection { heading: "Omegon profile",
-                    SettingsRow { label: "Model provider",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{model_provider}",
-                            placeholder: "anthropic",
-                            oninput: move |e| *model_provider.write() = e.value(),
+                // ── Omegon Agent ─────────────────────────────────────────
+                crate::components::omegon::OmegonSettingsSection {}
+
+                // ── Extensions ──────────────────────────────────────────────
+                crate::components::omegon::ExtensionManagerSection {}
+
+                // ── Skills ─────────────────────────────────────────────────
+                {
+                    let omegon_ctx = ctx.omegon();
+                    let current_skills = ctx.omegon().load_operator_settings().enabled_skills;
+                    rsx! {
+                        crate::components::omegon::SkillSettingsSection {
+                            enabled_skills: current_skills,
+                            on_change: move |updated: Vec<String>| {
+                                let omegon = omegon_ctx.clone();
+                                let mut settings = omegon.load_operator_settings();
+                                settings.enabled_skills = updated;
+                                let _ = omegon.save_operator_settings(&settings);
+                            },
+                            extensions_dir: ctx.omegon().extensions_dir.clone(),
+                            skills_dir: ctx.omegon().home_dir.join("skills"),
                         }
-                    }
-                    SettingsRow { label: "Model ID",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{model_id}",
-                            placeholder: "claude-sonnet-4-6",
-                            oninput: move |e| *model_id.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Thinking level",
-                        select {
-                            class: "input settings-input",
-                            value: "{thinking_level}",
-                            onchange: move |e| *thinking_level.write() = e.value(),
-                            option { value: "", "None" }
-                            option { value: "low", "Low" }
-                            option { value: "medium", "Medium" }
-                            option { value: "high", "High" }
-                        }
-                    }
-                    SettingsRow { label: "Max turns",
-                        input {
-                            class: "input settings-input settings-input-narrow",
-                            r#type: "number",
-                            min: "1",
-                            value: "{max_turns}",
-                            placeholder: "24",
-                            oninput: move |e| *max_turns.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Project profile",
-                        span { class: "settings-path muted", "{omegon.project_profile_path.display()}" }
                     }
                 }
 
-                // ── Operator ─────────────────────────────────────────────────
-                // ── Identity ─────────────────────────────────────────────────
+                // ── Identity ────────────────────────────────────────────────
                 IdentitySettingsSection {}
 
-                // ── Providers ────────────────────────────────────────────────
+                // ── Providers ───────────────────────────────────────────────
                 ProviderSettingsSection {}
-
-                // ── Operator ─────────────────────────────────────────────────
-                SettingsSection { heading: "Operator",
-                    SettingsRow { label: "Active persona",
-                        select {
-                            class: "input settings-input",
-                            value: "{active_persona}",
-                            onchange: move |e| *active_persona.write() = e.value(),
-                            option { value: "off", "Off" }
-                            option { value: "scribe", "Scribe" }
-                            option { value: "omegon", "Omegon" }
-                        }
-                    }
-                    SettingsRow { label: "Rail extension",
-                        select {
-                            class: "input settings-input",
-                            value: "{rail_extension}",
-                            onchange: move |e| *rail_extension.write() = e.value(),
-                            option { value: "", "None" }
-                            option { value: "vox", "Vox" }
-                            option { value: "flynt", "Flynt" }
-                        }
-                    }
-                    SettingsRow { label: "Agent profile",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            placeholder: "Default agent",
-                            value: "{agent_id_input}",
-                            oninput: move |e| *agent_id_input.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Vox enabled",
-                        label { class: "checkbox-label",
-                            input {
-                                r#type: "checkbox",
-                                checked: *vox_enabled.read(),
-                                onchange: move |e| *vox_enabled.write() = e.checked(),
-                            }
-                            "Enable Vox communication"
-                        }
-                    }
-                    SettingsRow { label: "Vox TTS",
-                        label { class: "checkbox-label",
-                            input {
-                                r#type: "checkbox",
-                                checked: *vox_tts_enabled.read(),
-                                onchange: move |e| *vox_tts_enabled.write() = e.checked(),
-                            }
-                            "Enable text-to-speech"
-                        }
-                    }
-                    SettingsRow { label: "Vox voice",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{vox_voice}",
-                            placeholder: "System default",
-                            oninput: move |e| *vox_voice.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Operator settings",
-                        span { class: "settings-path muted", "{omegon.operator_settings_path.display()}" }
-                    }
-                }
 
                 // ── Agent Daemon ────────────────────────────────────────────
                 DaemonSettingsSection {

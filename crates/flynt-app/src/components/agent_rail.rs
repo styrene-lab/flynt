@@ -142,7 +142,7 @@ pub fn AgentRail() -> Element {
     let mut session: Signal<Option<Rc<AcpSession>>> = use_signal(|| None);
     let mut shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
     let available_commands: Signal<Vec<SlashCommand>> = use_signal(Vec::new);
-    let config_options: Signal<Vec<ConfigOption>> = use_signal(Vec::new);
+    let config_options = use_context::<Signal<Vec<ConfigOption>>>();
 
     // Input history (up/down arrow)
     let mut history: Signal<Vec<String>> = use_signal(Vec::new);

@@ -3,6 +3,7 @@ pub mod command_palette;
 pub mod context_menu;
 pub mod daemon_settings;
 pub mod identity_settings;
+pub mod omegon;
 pub mod provider_settings;
 pub mod sidebar;
 pub mod tab_bar;

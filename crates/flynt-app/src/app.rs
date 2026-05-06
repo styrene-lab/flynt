@@ -31,6 +31,10 @@ pub fn App() -> Element {
     // Shared ACP session — populated by AgentRail, used by CommandPalette agent mode
     use_context_provider(|| Signal::new(None::<std::rc::Rc<crate::acp::AcpSession>>));
 
+    // Shared ACP config options (model, thinking, posture) — populated by AgentRail,
+    // consumed by OmegonSettingsSection for dropdown options
+    use_context_provider(|| Signal::new(Vec::<crate::acp::ConfigOption>::new()));
+
     // Tab state — provided via context so sidebar, tab bar, and notes share it
     use_context_provider(|| Signal::new(TabState::default()));
 
