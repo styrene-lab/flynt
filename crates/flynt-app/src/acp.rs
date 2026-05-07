@@ -470,4 +470,71 @@ impl AcpSession {
     pub async fn skills_install(&self) -> Result<serde_json::Value> {
         self.ext_call("skills/install", serde_json::json!({})).await
     }
+
+    // ── Control requests (TUI parity) ──────────────────────────
+
+    /// Generic control request — maps to TUI slash commands.
+    async fn control_call(&self, command: &str, args: &str) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({});
+        if !args.is_empty() {
+            params["args"] = serde_json::Value::String(args.into());
+        }
+        self.ext_call(&format!("control/{command}"), params).await
+    }
+
+    /// Session statistics (model, turns, context usage, etc.)
+    pub async fn stats(&self) -> Result<serde_json::Value> {
+        self.control_call("stats", "").await
+    }
+
+    /// Get or set max turns.
+    pub async fn max_turns(&self, value: Option<u32>) -> Result<serde_json::Value> {
+        let args = value.map(|v| v.to_string()).unwrap_or_default();
+        self.control_call("max_turns", &args).await
+    }
+
+    /// List available personas.
+    pub async fn persona_list(&self) -> Result<serde_json::Value> {
+        self.control_call("persona_list", "").await
+    }
+
+    /// Switch persona.
+    pub async fn persona_switch(&self, name: &str) -> Result<serde_json::Value> {
+        self.control_call("persona_switch", name).await
+    }
+
+    /// View current profile (model, thinking, posture, context window).
+    pub async fn profile_view(&self) -> Result<serde_json::Value> {
+        self.control_call("profile_view", "").await
+    }
+
+    /// Context usage status.
+    pub async fn context_status(&self) -> Result<serde_json::Value> {
+        self.control_call("context_status", "").await
+    }
+
+    /// Get or set context class.
+    pub async fn context_class(&self, class: Option<&str>) -> Result<serde_json::Value> {
+        self.control_call("context_class", class.unwrap_or("")).await
+    }
+
+    /// Get or set runtime mode (slim/standard).
+    pub async fn runtime_mode(&self, mode: Option<&str>) -> Result<serde_json::Value> {
+        self.control_call("runtime_mode", mode.unwrap_or("")).await
+    }
+
+    /// View configured secrets (names + recipes, no values).
+    pub async fn secrets_view(&self) -> Result<serde_json::Value> {
+        self.control_call("secrets_view", "").await
+    }
+
+    /// Vault status.
+    pub async fn vault_status(&self) -> Result<serde_json::Value> {
+        self.control_call("vault_status", "").await
+    }
+
+    /// Auth status.
+    pub async fn auth_status(&self) -> Result<serde_json::Value> {
+        self.control_call("auth_status", "").await
+    }
 }
