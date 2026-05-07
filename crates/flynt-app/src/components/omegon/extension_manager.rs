@@ -1,13 +1,14 @@
-//! Extension manager — list, install, remove Omegon extensions.
+//! Extension manager — list extensions, render schema-driven config and secret UIs.
 //!
-//! Scans `~/.omegon/extensions/` for directories containing `manifest.toml`,
-//! displays them with status badges, and provides install/remove controls.
+//! Combines filesystem scanning (for install/remove) with ACP `_extensions/list`
+//! (for config schema + secret status) to provide a unified extensions panel.
 
+use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
-use crate::components::daemon_settings::VoxChannelRow;
+use crate::components::omegon::extension_config::{ExtensionConfigPanel, parse_extensions_list};
 use dioxus::prelude::*;
-use flynt_core::daemon::{AgentDaemonConfig, EmailChannel, SignalChannel, WebhookChannel};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 /// Parsed extension manifest (minimal fields for display).
 #[derive(Debug, Clone)]
@@ -67,6 +68,7 @@ fn discover_extensions(extensions_dir: &std::path::Path) -> Vec<ExtensionInfo> {
 pub fn ExtensionManagerSection() -> Element {
     let ctx = use_context::<AppContext>();
     let mut refresh = use_signal(|| 0u64);
+    let shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
 
     let extensions = use_resource(move || {
         let _ = refresh.read();
@@ -78,6 +80,24 @@ pub fn ExtensionManagerSection() -> Element {
         }
     });
 
+    // Fetch ACP extension data (config schemas + secret status)
+    let acp_data = use_resource(move || {
+        let _ = refresh.read();
+        let sess = shared_session.read().clone();
+        async move {
+            if let Some(s) = sess {
+                s.extensions_list().await.ok()
+            } else {
+                None
+            }
+        }
+    });
+
+    let ext_data_list = acp_data.read().as_ref()
+        .and_then(|opt| opt.as_ref())
+        .map(|v| parse_extensions_list(v))
+        .unwrap_or_default();
+
     let mut remove_error: Signal<Option<String>> = use_signal(|| None);
 
     rsx! {
@@ -85,36 +105,44 @@ pub fn ExtensionManagerSection() -> Element {
             h2 { class: "settings-heading", "Extensions" }
             div { class: "settings-rows",
                 for ext in extensions.read().as_ref().unwrap_or(&vec![]).iter() {
-                    div { class: "settings-row provider-row",
-                        span { class: "settings-label", "{ext.name}" }
-                        div { class: "settings-control",
-                            div { class: "provider-status-row",
-                                span { class: "provider-status authenticated" }
-                                span { class: "provider-status-text", "v{ext.version}" }
-                            }
-                            if !ext.description.is_empty() {
-                                span { class: "settings-hint muted", "{ext.description}" }
-                            }
-                            div { class: "row gap-2",
-                                button {
-                                    class: "btn btn-ghost btn-sm provider-remove-btn",
-                                    onclick: {
-                                        let path = ext.path.clone();
-                                        let name = ext.name.clone();
-                                        move |_| {
-                                            match std::fs::remove_dir_all(&path) {
-                                                Ok(()) => {
-                                                    tracing::info!("Removed extension: {name}");
-                                                    *refresh.write() += 1;
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!("Failed to remove extension {name}: {e}");
-                                                    *remove_error.write() = Some(format!("Failed to remove {name}: {e}"));
+                    {
+                        let ext_data = ext_data_list.iter().find(|d| d.name == ext.name).cloned();
+                        rsx! {
+                            div { class: "extension-card",
+                                div { class: "extension-card-header",
+                                    div { class: "extension-card-identity",
+                                        span { class: "extension-card-name", "{ext.name}" }
+                                        span { class: "provider-status-text", "v{ext.version}" }
+                                    }
+                                    button {
+                                        class: "btn btn-ghost btn-sm provider-remove-btn",
+                                        onclick: {
+                                            let path = ext.path.clone();
+                                            let name = ext.name.clone();
+                                            move |_| {
+                                                match std::fs::remove_dir_all(&path) {
+                                                    Ok(()) => {
+                                                        tracing::info!("Removed extension: {name}");
+                                                        *refresh.write() += 1;
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!("Failed to remove extension {name}: {e}");
+                                                        *remove_error.write() = Some(format!("Failed to remove {name}: {e}"));
+                                                    }
                                                 }
                                             }
-                                        }
-                                    },
-                                    "Remove"
+                                        },
+                                        "Remove"
+                                    }
+                                }
+                                if !ext.description.is_empty() {
+                                    span { class: "settings-hint muted", "{ext.description}" }
+                                }
+                                if let Some(data) = ext_data {
+                                    ExtensionConfigPanel {
+                                        ext: data,
+                                        session: shared_session,
+                                    }
                                 }
                             }
                         }
@@ -128,113 +156,6 @@ pub fn ExtensionManagerSection() -> Element {
             }
             if let Some(ref err) = *remove_error.read() {
                 span { class: "text-error", "{err}" }
-            }
-        }
-    }
-}
-
-/// Vox extension settings — renders as a subsection under Extensions.
-#[component]
-pub fn VoxExtensionSettings(config: Signal<AgentDaemonConfig>) -> Element {
-    rsx! {
-        section { class: "settings-section",
-            h2 { class: "settings-heading", "Vox" }
-            div { class: "settings-rows",
-                div { class: "settings-row",
-                    span { class: "settings-label", "Channels" }
-                    div { class: "settings-control",
-                        span { class: "settings-hint muted", "Inbound communication channels for the agent" }
-                    }
-                }
-
-                VoxChannelRow {
-                    label: "Signal",
-                    enabled: config.read().vox.signal.as_ref().map(|s| s.enabled).unwrap_or(false),
-                    on_toggle: move |enabled: bool| {
-                        let mut cfg = config.write();
-                        if enabled {
-                            if cfg.vox.signal.is_none() {
-                                cfg.vox.signal = Some(SignalChannel {
-                                    enabled: true,
-                                    phone: String::new(),
-                                    allowed_senders: vec![],
-                                });
-                            } else if let Some(ref mut s) = cfg.vox.signal {
-                                s.enabled = true;
-                            }
-                        } else if let Some(ref mut s) = cfg.vox.signal {
-                            s.enabled = false;
-                        }
-                    },
-                    detail: config.read().vox.signal.as_ref().map(|s| s.phone.clone()).unwrap_or_default(),
-                    detail_label: "Phone",
-                    on_detail_change: move |val: String| {
-                        let mut cfg = config.write();
-                        if let Some(ref mut s) = cfg.vox.signal {
-                            s.phone = val;
-                        }
-                    },
-                }
-
-                VoxChannelRow {
-                    label: "Email",
-                    enabled: config.read().vox.email.as_ref().map(|e| e.enabled).unwrap_or(false),
-                    on_toggle: move |enabled: bool| {
-                        let mut cfg = config.write();
-                        if enabled {
-                            if cfg.vox.email.is_none() {
-                                cfg.vox.email = Some(EmailChannel {
-                                    enabled: true,
-                                    server: String::new(),
-                                    address: String::new(),
-                                    folder: "INBOX".into(),
-                                    allowed_senders: vec![],
-                                });
-                            } else if let Some(ref mut e) = cfg.vox.email {
-                                e.enabled = true;
-                            }
-                        } else if let Some(ref mut e) = cfg.vox.email {
-                            e.enabled = false;
-                        }
-                    },
-                    detail: config.read().vox.email.as_ref().map(|e| e.address.clone()).unwrap_or_default(),
-                    detail_label: "Address",
-                    on_detail_change: move |val: String| {
-                        let mut cfg = config.write();
-                        if let Some(ref mut e) = cfg.vox.email {
-                            e.address = val;
-                        }
-                    },
-                }
-
-                VoxChannelRow {
-                    label: "Webhook",
-                    enabled: config.read().vox.webhook.as_ref().map(|w| w.enabled).unwrap_or(false),
-                    on_toggle: move |enabled: bool| {
-                        let mut cfg = config.write();
-                        if enabled {
-                            if cfg.vox.webhook.is_none() {
-                                cfg.vox.webhook = Some(WebhookChannel {
-                                    enabled: true,
-                                    path: "/inbound".into(),
-                                    secret: None,
-                                });
-                            } else if let Some(ref mut w) = cfg.vox.webhook {
-                                w.enabled = true;
-                            }
-                        } else if let Some(ref mut w) = cfg.vox.webhook {
-                            w.enabled = false;
-                        }
-                    },
-                    detail: config.read().vox.webhook.as_ref().map(|w| w.path.clone()).unwrap_or_default(),
-                    detail_label: "Path",
-                    on_detail_change: move |val: String| {
-                        let mut cfg = config.write();
-                        if let Some(ref mut w) = cfg.vox.webhook {
-                            w.path = val;
-                        }
-                    },
-                }
             }
         }
     }

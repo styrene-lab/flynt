@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use agent_client_protocol::{
-    Agent, Client, ClientSideConnection, ContentBlock, InitializeRequest,
+    Agent, Client, ClientSideConnection, ContentBlock, ExtRequest, InitializeRequest,
     NewSessionRequest, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId,
     SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
@@ -379,5 +379,62 @@ impl AcpSession {
         if let Err(e) = self.conn.set_session_config_option(req).await {
             let _ = self.tx.send(AcpEvent::Error(format!("Config change failed: {e}")));
         }
+    }
+
+    // ── Extension management ──────────────────────────────────────────
+
+    async fn ext_call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        let raw_params = serde_json::value::RawValue::from_string(
+            serde_json::to_string(&params)?,
+        )?;
+        let req = ExtRequest::new(method, raw_params.into());
+        let resp = self.conn.ext_method(req).await
+            .map_err(|e| anyhow::anyhow!("ext_method failed: {e}"))?;
+        let value: serde_json::Value = serde_json::from_str(resp.0.get())?;
+        Ok(value)
+    }
+
+    /// List all installed extensions with config schema, current values, and secret status.
+    pub async fn extensions_list(&self) -> Result<serde_json::Value> {
+        self.ext_call("extensions/list", serde_json::json!({})).await
+    }
+
+    /// Set a config value for an extension.
+    pub async fn extensions_config_set(&self, extension: &str, key: &str, value: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/config_set", serde_json::json!({
+            "extension": extension,
+            "key": key,
+            "value": value,
+        })).await
+    }
+
+    /// Store a secret in the OS keychain for an extension.
+    pub async fn extensions_secret_set(&self, extension: &str, name: &str, value: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/secret_set", serde_json::json!({
+            "extension": extension,
+            "name": name,
+            "value": value,
+        })).await
+    }
+
+    /// Delete a secret from the keychain.
+    pub async fn extensions_secret_delete(&self, name: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/secret_delete", serde_json::json!({
+            "name": name,
+        })).await
+    }
+
+    /// Enable an extension.
+    pub async fn extensions_enable(&self, extension: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/enable", serde_json::json!({
+            "extension": extension,
+        })).await
+    }
+
+    /// Disable an extension.
+    pub async fn extensions_disable(&self, extension: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/disable", serde_json::json!({
+            "extension": extension,
+        })).await
     }
 }

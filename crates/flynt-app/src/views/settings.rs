@@ -536,7 +536,6 @@ pub fn SettingsView() -> Element {
 
                 crate::components::omegon::OmegonSettingsSection {}
                 crate::components::omegon::ExtensionManagerSection {}
-                crate::components::omegon::VoxExtensionSettings { config: daemon_config }
 
                 {
                     let omegon_ctx = ctx.omegon();

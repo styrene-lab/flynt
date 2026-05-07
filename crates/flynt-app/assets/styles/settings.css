@@ -597,6 +597,126 @@
   gap:         var(--space-3);
 }
 
+/* ── Extension cards ─────────────────────────────────────────────────── */
+.extension-card {
+  background:    var(--card);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding:       var(--space-4);
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--space-3);
+  transition:    border-color var(--duration-fast) var(--ease);
+}
+
+.extension-card:hover {
+  border-color: var(--primary-muted);
+}
+
+.extension-card-header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+}
+
+.extension-card-identity {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.extension-card-name {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+}
+
+/* ── Extension config panel ─────────────────────────────────────────── */
+.extension-config-panel {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-4);
+  padding-top:    var(--space-2);
+  border-top:     1px solid var(--border-dim);
+  margin-top:     var(--space-1);
+}
+
+.extension-config-section {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+}
+
+.extension-config-heading {
+  font-size:      var(--font-size-xs);
+  font-weight:    var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color:          var(--muted-foreground);
+}
+
+.extension-config-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+}
+
+.extension-config-label {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color:       var(--foreground);
+}
+
+.extension-config-required {
+  color: var(--warning);
+}
+
+.extension-config-input-row {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.extension-config-input-row .input {
+  max-width: 300px;
+}
+
+/* ── Extension secret rows ──────────────────────────────────────────── */
+.extension-secret-row {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  padding:        var(--space-2) 0;
+}
+
+.extension-secret-status {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.extension-secret-name {
+  font-size:   var(--font-size-sm);
+  font-family: var(--font-mono);
+  color:       var(--foreground);
+}
+
+.extension-secret-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.extension-secret-input {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.extension-secret-input .input {
+  max-width: 280px;
+}
+
 /* ── Small button variant ───────────────────────────────────────────────── */
 .btn-sm {
   padding:   2px var(--space-2);
