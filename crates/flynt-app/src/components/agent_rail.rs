@@ -271,7 +271,9 @@ pub fn AgentRail() -> Element {
         .unwrap_or_default();
 
     rsx! {
-        div { class: "agent-rail",
+        div { class: "agent-rail-resize-wrapper",
+            div { class: "agent-rail",
+
             // ── Status bar ───────────────────────────────────────
             div {
                 class: "agent-status-bar agent-status-bar-clickable",
@@ -289,6 +291,11 @@ pub fn AgentRail() -> Element {
                     }
                     span { class: agent_status.read().css_class(), {agent_status.read().label()} }
                 }
+            }
+
+            // ── Inline session status ──────────────────────────────
+            if session.read().is_some() {
+                crate::components::omegon::session_status::InlineSessionStatus {}
             }
 
             // ── Launch/connection error (only if no active session) ──
@@ -603,6 +610,7 @@ pub fn AgentRail() -> Element {
                 }
             }
         }
+        } // agent-rail-resize-wrapper
     }
 }
 

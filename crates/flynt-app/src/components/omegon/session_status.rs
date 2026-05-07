@@ -190,3 +190,100 @@ pub fn SessionStatusPanel() -> Element {
         }
     }
 }
+
+/// Compact inline version for the agent rail — context bar + provider warnings.
+#[component]
+pub fn InlineSessionStatus() -> Element {
+    let shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
+    let mut stats = use_signal(SessionStats::default);
+    let mut providers = use_signal(Vec::<ProviderState>::new);
+    let mut connected = use_signal(|| false);
+    let mut expanded = use_signal(|| false);
+
+    use_future(move || async move {
+        loop {
+            if let Some(sess) = shared_session.read().clone() {
+                if let Ok(resp) = sess.stats().await {
+                    if let Some(text) = resp["text"].as_str() {
+                        *stats.write() = parse_stats(text);
+                        *connected.write() = true;
+                    }
+                }
+                if let Ok(resp) = sess.provider_status().await {
+                    if let Some(text) = resp["text"].as_str() {
+                        *providers.write() = parse_provider_status(text);
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
+
+    let s = stats.read();
+    if !*connected.read() || s.model.is_empty() {
+        return rsx! {};
+    }
+
+    let ctx_pct = s.context_pct.min(100.0);
+    let ctx_color = if ctx_pct > 80.0 { "var(--warning)" }
+        else if ctx_pct > 60.0 { "var(--primary-muted)" }
+        else { "var(--primary)" };
+
+    let active_provider = provider_for_model(&s.model);
+    let warning = providers.read().iter().find(|p| {
+        p.name == active_provider && (p.status == "expired" || p.status == "missing" || p.status == "unavailable")
+    }).map(|p| {
+        if p.status == "expired" {
+            format!("{} token expired — /login {}", p.name, p.name)
+        } else if p.status == "unavailable" && p.name == "ollama" {
+            "Ollama not running".into()
+        } else {
+            format!("{} not configured", p.name)
+        }
+    });
+
+    rsx! {
+        div {
+            class: "rail-session-status",
+            onclick: move |_| { let v = *expanded.read(); *expanded.write() = !v; },
+
+            if let Some(ref warn) = warning {
+                div { class: "rail-provider-warning",
+                    "⚠ {warn}"
+                }
+            }
+
+            div { class: "rail-context-row",
+                span { class: "rail-context-label", "{s.turns}t" }
+                div { class: "rail-context-track",
+                    div {
+                        class: "rail-context-fill",
+                        style: "width: {ctx_pct}%; background: {ctx_color};",
+                    }
+                }
+                span { class: "rail-context-label", "{ctx_pct:.0}%" }
+            }
+
+            if *expanded.read() {
+                div { class: "rail-session-expanded",
+                    div { class: "rail-stat-row",
+                        span { class: "rail-stat-label", "Model" }
+                        span { class: "rail-stat-value", "{s.model}" }
+                    }
+                    div { class: "rail-stat-row",
+                        span { class: "rail-stat-label", "Posture" }
+                        span { class: "rail-stat-value", "{s.posture}" }
+                    }
+                    div { class: "rail-stat-row",
+                        span { class: "rail-stat-label", "Thinking" }
+                        span { class: "rail-stat-value", "{s.thinking}" }
+                    }
+                    div { class: "rail-stat-row",
+                        span { class: "rail-stat-label", "Context" }
+                        span { class: "rail-stat-value", "~{s.context_tokens} / {s.context_window}" }
+                    }
+                }
+            }
+        }
+    }
+}
