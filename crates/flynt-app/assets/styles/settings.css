@@ -760,6 +760,60 @@
   max-width: 280px;
 }
 
+/* ── Session status panel ────────────────────────────────────────────── */
+.session-status-grid {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   var(--space-3) var(--space-6);
+}
+
+.session-stat {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+}
+
+.session-stat-label {
+  font-size:      var(--font-size-xs);
+  font-weight:    var(--font-weight-medium);
+  color:          var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.session-stat-value {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+}
+
+.session-context-bar {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+  margin-top:     var(--space-2);
+}
+
+.context-bar-track {
+  height:        6px;
+  border-radius: var(--radius-full);
+  background:    var(--surface);
+  overflow:      hidden;
+}
+
+.context-bar-fill {
+  height:        100%;
+  border-radius: var(--radius-full);
+  transition:    width var(--duration-slow) var(--ease),
+                 background var(--duration-slow) var(--ease);
+}
+
+.session-stat-detail {
+  font-size:   var(--font-size-xs);
+  color:       var(--muted-foreground);
+  font-family: var(--font-mono);
+}
+
 /* ── Small button variant ───────────────────────────────────────────────── */
 .btn-sm {
   padding:   2px var(--space-2);

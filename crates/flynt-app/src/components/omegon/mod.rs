@@ -3,6 +3,7 @@ pub mod extension_config;
 pub mod extension_manager;
 pub mod omegon_settings;
 pub mod posture_picker;
+pub mod session_status;
 pub mod skill_settings;
 
 pub use extension_config::{ExtensionConfigPanel, ExtensionData, parse_extensions_list};
