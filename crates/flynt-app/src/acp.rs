@@ -540,4 +540,29 @@ impl AcpSession {
     pub async fn auth_status(&self) -> Result<serde_json::Value> {
         self.control_call("auth_status", "").await
     }
+
+    /// Add a session note.
+    pub async fn note_add(&self, text: &str) -> Result<serde_json::Value> {
+        self.control_call("note_add", text).await
+    }
+
+    /// View all notes.
+    pub async fn notes_view(&self) -> Result<serde_json::Value> {
+        self.control_call("notes_view", "").await
+    }
+
+    /// Clear all notes.
+    pub async fn notes_clear(&self) -> Result<serde_json::Value> {
+        self.control_call("notes_clear", "").await
+    }
+
+    /// Workspace status.
+    pub async fn workspace_status(&self) -> Result<serde_json::Value> {
+        self.control_call("workspace_status", "").await
+    }
+
+    /// List all workspaces.
+    pub async fn workspace_list(&self) -> Result<serde_json::Value> {
+        self.control_call("workspace_list", "").await
+    }
 }
