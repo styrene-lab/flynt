@@ -373,7 +373,7 @@ impl IndexingConfig {
     pub fn scope_for_path(&self, rel_path: &Path) -> Option<&IndexScope> {
         self.scopes
             .iter()
-            .filter(|s| rel_path.starts_with(&s.prefix))
+            .filter(|s| !s.prefix.as_os_str().is_empty() && rel_path.starts_with(&s.prefix))
             .max_by_key(|s| s.prefix.as_os_str().len())
     }
 

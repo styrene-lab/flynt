@@ -391,6 +391,9 @@ impl AcpSession {
         let resp = self.conn.ext_method(req).await
             .map_err(|e| anyhow::anyhow!("ext_method failed: {e}"))?;
         let value: serde_json::Value = serde_json::from_str(resp.0.get())?;
+        if let Some(err) = value["error"].as_str() {
+            anyhow::bail!("{err}");
+        }
         Ok(value)
     }
 
