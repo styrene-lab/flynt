@@ -1,7 +1,7 @@
 use crate::{
     bootstrap::{bootstrap_from_env, runtime_state_for_vault_root, AppContext, OmegonRuntimeContext, PendingVaultSetup},
     components::{initial_note_id_for_vault, AgentRail, CommandPalette, Sidebar, Toolbar},
-    state::{Route, SyncStatus, TabState, ThemeName},
+    state::{Route, SettingsTab, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use flynt_core::store::VaultStore;
@@ -43,6 +43,9 @@ pub fn App() -> Element {
 
     // Rename trigger — sidebar bumps this, NotesView watches and opens inline rename
     use_context_provider(|| Signal::new(crate::state::RenameTrigger(0)));
+
+    // Settings tab — which panel is shown in SettingsView
+    use_context_provider(|| Signal::new(SettingsTab::default()));
 
 
     // Route — provided via context so search view can navigate back
@@ -508,7 +511,7 @@ pub fn App() -> Element {
                                         .and_then(|name| name.to_str())
                                         .unwrap_or("Flynt"),
                                     flynt_core::models::SyncConfig::None,
-                                    flynt_core::models::IndexingConfig { write_frontmatter: false },
+                                    flynt_core::models::IndexingConfig { write_frontmatter: false, scopes: Vec::new() },
                                 ) {
                                     *welcome_error.write() = Some(format!("Could not open vault: {e}"));
                                     return;

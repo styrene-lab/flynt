@@ -20,6 +20,31 @@ pub enum Route {
     Settings,
 }
 
+/// Settings view tab — determines which panel is visible.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SettingsTab {
+    #[default]
+    General,
+    Vault,
+    Omegon,
+    Advanced,
+}
+
+impl SettingsTab {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::Vault => "Vault",
+            Self::Omegon => "Omegon",
+            Self::Advanced => "Advanced",
+        }
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[Self::General, Self::Vault, Self::Omegon, Self::Advanced]
+    }
+}
+
 #[derive(Clone, PartialEq, Debug, Default)]
 pub enum SyncStatus {
     #[default]

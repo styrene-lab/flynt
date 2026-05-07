@@ -1,5 +1,6 @@
 pub mod excalidraw;
 pub mod graph;
+pub mod indexing_scopes;
 pub mod kanban;
 pub mod notes;
 pub mod publication_rules;
@@ -9,6 +10,7 @@ pub mod welcome;
 
 pub use excalidraw::ExcalidrawView;
 pub use graph::GraphView;
+pub use indexing_scopes::IndexingScopesEditor;
 pub use kanban::KanbanView;
 pub use notes::NotesView;
 pub use publication_rules::PublicationRulesEditor;

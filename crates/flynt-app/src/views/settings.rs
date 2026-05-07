@@ -3,12 +3,12 @@ use crate::{
     components::daemon_settings::DaemonSettingsSection,
     components::identity_settings::IdentitySettingsSection,
     components::provider_settings::ProviderSettingsSection,
-    state::ThemeName,
-    views::PublicationRulesEditor,
+    state::{SettingsTab, ThemeName},
+    views::{IndexingScopesEditor, PublicationRulesEditor},
 };
 use flynt_core::models::{
-    AppearanceConfig, FlyntOperatorSettings, FontSizePreset, LocalRuntimeConfig,
-    OmegonProfile, SyncConfig, VaultConfig, VisualizationConfig,
+    AppearanceConfig, FlyntOperatorSettings, FontSizePreset, IndexingConfig,
+    LocalRuntimeConfig, OmegonProfile, SyncConfig, VaultConfig, VisualizationConfig,
 };
 use dioxus::prelude::*;
 
@@ -114,6 +114,15 @@ pub fn SettingsView() -> Element {
 
     // Indexing
     let mut write_frontmatter = use_signal(|| ctx.vault().config.indexing.write_frontmatter);
+    let indexing_scopes = use_signal(|| ctx.vault().config.indexing.scopes.clone());
+
+    // Raw config editor
+    let mut show_raw_config = use_signal(|| false);
+    let config_path = ctx.vault_root().join(".flynt/config.toml");
+    let mut raw_config_text = use_signal(|| {
+        std::fs::read_to_string(ctx.vault_root().join(".flynt/config.toml")).unwrap_or_default()
+    });
+    let mut raw_config_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
 
     // Visualization
     let mut excalidraw_auto_export = use_signal(|| ctx.vault().config.visualization.excalidraw_auto_export);
@@ -126,8 +135,9 @@ pub fn SettingsView() -> Element {
     let daemon_config = use_signal(|| ctx.omegon().load_operator_settings().agent_daemon.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
-    let mut show_advanced = use_signal(|| false);
     let publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
+
+    let mut active_tab = use_context::<Signal<SettingsTab>>();
 
     let vault = ctx.vault();
     let omegon = ctx.omegon();
@@ -205,8 +215,9 @@ pub fn SettingsView() -> Element {
                 rules: publication_rules.read().clone(),
             },
             security: ctx.vault().config.security.clone(),
-            indexing: flynt_core::models::IndexingConfig {
+            indexing: IndexingConfig {
                 write_frontmatter: *write_frontmatter.read(),
+                scopes: indexing_scopes.read().clone(),
             },
             visualization: VisualizationConfig {
                 excalidraw_auto_export: *excalidraw_auto_export.read(),
@@ -276,9 +287,24 @@ pub fn SettingsView() -> Element {
 
     rsx! {
         div { class: "settings-root",
+            // ── Tab bar ──────────────────────────────────────────────────
+            div { class: "settings-tab-bar",
+                for tab in SettingsTab::all() {
+                    button {
+                        class: if *active_tab.read() == *tab { "settings-tab active" } else { "settings-tab" },
+                        onclick: move |_| *active_tab.write() = *tab,
+                        "{tab.label()}"
+                    }
+                }
+            }
+
             div { class: "settings-scroll",
 
-                // ── Appearance ───────────────────────────────────────────────
+                // ════════════════════════════════════════════════════════════
+                // General: Appearance, Vault, Sync, Identity, Providers
+                // ════════════════════════════════════════════════════════════
+                if *active_tab.read() == SettingsTab::General {
+
                 SettingsSection { heading: "Appearance",
                     SettingsRow { label: "Theme",
                         div { class: "theme-grid",
@@ -293,17 +319,12 @@ pub fn SettingsView() -> Element {
                             }
                         }
                     }
-
                     SettingsRow { label: "Font size",
                         div { class: "font-size-row",
                             for preset in [FontSizePreset::Small, FontSizePreset::Medium,
                                            FontSizePreset::Large, FontSizePreset::XLarge] {
                                 button {
-                                    class: if *font_sz.read() == preset {
-                                        "font-size-btn active"
-                                    } else {
-                                        "font-size-btn"
-                                    },
+                                    class: if *font_sz.read() == preset { "font-size-btn active" } else { "font-size-btn" },
                                     onclick: move |_| *font_sz.write() = preset,
                                     "{preset.label()}"
                                 }
@@ -312,7 +333,6 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                // ── Vault ────────────────────────────────────────────────────
                 SettingsSection { heading: "Vault",
                     SettingsRow { label: "Name",
                         input {
@@ -323,13 +343,10 @@ pub fn SettingsView() -> Element {
                         }
                     }
                     SettingsRow { label: "Location",
-                        span { class: "settings-path muted",
-                            "{ctx.vault_root().display()}"
-                        }
+                        span { class: "settings-path muted", "{ctx.vault_root().display()}" }
                     }
                 }
 
-                // ── Sync ─────────────────────────────────────────────────────
                 SettingsSection { heading: "Sync",
                     SettingsRow { label: "Backend",
                         div { class: "radio-group",
@@ -354,7 +371,6 @@ pub fn SettingsView() -> Element {
                             }
                         }
                     }
-
                     if let SyncConfig::Git { remote, branch, auto_commit_seconds } = sync_config.read().clone() {
                         SettingsRow { label: "Remote URL",
                             input {
@@ -388,7 +404,6 @@ pub fn SettingsView() -> Element {
                                 value: "{auto_commit_seconds}",
                                 oninput: move |e| {
                                     let secs: u64 = e.value().parse().unwrap_or(0);
-                                    // Enforce minimum 30 seconds (or 0 for manual only)
                                     let secs = if secs > 0 && secs < 30 { 30 } else { secs };
                                     if let SyncConfig::Git { ref mut auto_commit_seconds, .. } = *sync_config.write() {
                                         *auto_commit_seconds = secs;
@@ -397,36 +412,27 @@ pub fn SettingsView() -> Element {
                             }
                             span { class: "settings-hint muted", "(0 = manual only, minimum 30)" }
                         }
-
-                        // Credential status for the configured remote
                         {
                             let provider_id = flynt_core::providers::provider_for_url(&remote);
                             let cred_status = provider_id.and_then(|pid| {
                                 flynt_core::providers::PROVIDERS.iter().find(|p| p.id == pid)
                             }).map(|p| flynt_core::providers::probe_provider(p));
-
                             match (provider_id, cred_status) {
                                 (Some(pid), Some(flynt_core::providers::CredentialStatus::Authenticated { source })) => rsx! {
                                     SettingsRow { label: "Git credentials",
                                         span { class: "provider-status authenticated" }
-                                        span { class: "provider-status-text",
-                                            "Authenticated ({source}) — {pid}"
-                                        }
+                                        span { class: "provider-status-text", "Authenticated ({source}) — {pid}" }
                                     }
                                 },
                                 (Some(pid), _) => rsx! {
                                     SettingsRow { label: "Git credentials",
                                         span { class: "provider-status missing" }
-                                        span { class: "provider-status-text",
-                                            "Not configured — add a token for {pid} in Providers below"
-                                        }
+                                        span { class: "provider-status-text", "Not configured — add a token for {pid} in Providers" }
                                     }
                                 },
                                 _ => rsx! {
                                     SettingsRow { label: "Git credentials",
-                                        span { class: "settings-hint muted",
-                                            "Unknown host — credentials managed by system git"
-                                        }
+                                        span { class: "settings-hint muted", "Unknown host — credentials managed by system git" }
                                     }
                                 },
                             }
@@ -434,25 +440,33 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                // ── Advanced toggle ──────────────────────────────────────────
-                div { class: "settings-advanced-toggle",
-                    button {
-                        class: "settings-toggle-btn",
-                        onclick: move |_| {
-                            let v = *show_advanced.read();
-                            *show_advanced.write() = !v;
-                        },
-                        if *show_advanced.read() {
-                            "Hide advanced settings \u{25B4}"
-                        } else {
-                            "Show advanced settings \u{25BE}"
+                IdentitySettingsSection {}
+                ProviderSettingsSection {}
+
+                } // end General
+
+                // ════════════════════════════════════════════════════════════
+                // Vault: Indexing, Visualization, Publication
+                // ════════════════════════════════════════════════════════════
+                if *active_tab.read() == SettingsTab::Vault {
+
+                SettingsSection { heading: "Indexing",
+                    SettingsRow { label: "Write frontmatter",
+                        label { class: "checkbox-label",
+                            input {
+                                r#type: "checkbox",
+                                checked: *write_frontmatter.read(),
+                                onchange: move |e| *write_frontmatter.write() = e.checked(),
+                            }
+                            "Write stable UUIDs into file frontmatter (vault-wide default)"
                         }
+                        span { class: "settings-hint muted", "Disable for code repos — then use scopes below to opt in specific directories" }
+                    }
+                    SettingsRow { label: "Managed scopes",
+                        IndexingScopesEditor { scopes: indexing_scopes }
                     }
                 }
 
-                if *show_advanced.read() {
-
-                // ── Visualization ────────────────────────────────────────────
                 SettingsSection { heading: "Visualization",
                     SettingsRow { label: "Excalidraw auto-export",
                         label { class: "checkbox-label",
@@ -506,21 +520,6 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                // ── Indexing ────────────────────────────────────────────────────
-                SettingsSection { heading: "Indexing",
-                    SettingsRow { label: "Write frontmatter",
-                        label { class: "checkbox-label",
-                            input {
-                                r#type: "checkbox",
-                                checked: *write_frontmatter.read(),
-                                onchange: move |e| *write_frontmatter.write() = e.checked(),
-                            }
-                            "Write stable UUIDs into file frontmatter"
-                        }
-                        span { class: "settings-hint muted", "Disable for shared repos where files shouldn't be modified" }
-                    }
-                }
-
                 SettingsSection { heading: "Publication",
                     PublicationRulesEditor {
                         default_visibility: publication_default_visibility,
@@ -528,52 +527,38 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                SettingsSection { heading: "Local runtime",
-                    SettingsRow { label: "State root",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{local_state_root}",
-                            placeholder: "optional absolute path",
-                            oninput: move |e| *local_state_root.write() = e.value(),
+                } // end Vault
+
+                // ════════════════════════════════════════════════════════════
+                // Omegon: Agent config, Extensions, Skills, Daemon
+                // ════════════════════════════════════════════════════════════
+                if *active_tab.read() == SettingsTab::Omegon {
+
+                crate::components::omegon::OmegonSettingsSection {}
+                crate::components::omegon::ExtensionManagerSection {}
+                crate::components::omegon::VoxExtensionSettings { config: daemon_config }
+
+                {
+                    let omegon_ctx = ctx.omegon();
+                    let current_skills = ctx.omegon().load_operator_settings().enabled_skills;
+                    rsx! {
+                        crate::components::omegon::SkillSettingsSection {
+                            enabled_skills: current_skills,
+                            on_change: move |updated: Vec<String>| {
+                                let omegon = omegon_ctx.clone();
+                                let mut settings = omegon.load_operator_settings();
+                                settings.enabled_skills = updated;
+                                let _ = omegon.save_operator_settings(&settings);
+                            },
+                            extensions_dir: ctx.omegon().extensions_dir.clone(),
+                            skills_dir: ctx.omegon().home_dir.join("skills"),
                         }
                     }
-                    SettingsRow { label: "Flynt index DB",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{flynt_index_db_path}",
-                            placeholder: "optional absolute path",
-                            oninput: move |e| *flynt_index_db_path.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Omegon runtime root",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{omegon_runtime_root}",
-                            placeholder: "optional absolute path",
-                            oninput: move |e| *omegon_runtime_root.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Omegon mind DB",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{omegon_mind_db_path}",
-                            placeholder: "optional absolute path",
-                            oninput: move |e| *omegon_mind_db_path.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Styrene Identity",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{styrene_identity_profile}",
-                            placeholder: "optional local identity profile",
-                            oninput: move |e| *styrene_identity_profile.write() = e.value(),
-                        }
-                    }
+                }
+
+                DaemonSettingsSection { config: daemon_config }
+
+                SettingsSection { heading: "Runtime",
                     SettingsRow { label: "Omegon channel",
                         div { class: "radio-group",
                             for ch in flynt_core::models::OmegonChannel::all_named() {
@@ -600,50 +585,145 @@ pub fn SettingsView() -> Element {
                             oninput: move |e| *omegon_bin_override.write() = e.value(),
                         }
                     }
-                }
-
-                // ── Omegon Agent ─────────────────────────────────────────
-                crate::components::omegon::OmegonSettingsSection {}
-
-                // ── Extensions ──────────────────────────────────────────────
-                crate::components::omegon::ExtensionManagerSection {}
-
-                // ── Skills ─────────────────────────────────────────────────
-                {
-                    let omegon_ctx = ctx.omegon();
-                    let current_skills = ctx.omegon().load_operator_settings().enabled_skills;
-                    rsx! {
-                        crate::components::omegon::SkillSettingsSection {
-                            enabled_skills: current_skills,
-                            on_change: move |updated: Vec<String>| {
-                                let omegon = omegon_ctx.clone();
-                                let mut settings = omegon.load_operator_settings();
-                                settings.enabled_skills = updated;
-                                let _ = omegon.save_operator_settings(&settings);
-                            },
-                            extensions_dir: ctx.omegon().extensions_dir.clone(),
-                            skills_dir: ctx.omegon().home_dir.join("skills"),
+                    SettingsRow { label: "Omegon runtime root",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{omegon_runtime_root}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *omegon_runtime_root.write() = e.value(),
+                        }
+                    }
+                    SettingsRow { label: "Omegon mind DB",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{omegon_mind_db_path}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *omegon_mind_db_path.write() = e.value(),
                         }
                     }
                 }
 
-                // ── Identity ────────────────────────────────────────────────
-                IdentitySettingsSection {}
+                } // end Omegon
 
-                // ── Providers ───────────────────────────────────────────────
-                ProviderSettingsSection {}
+                // ════════════════════════════════════════════════════════════
+                // Advanced: Local paths, Config file editor
+                // ════════════════════════════════════════════════════════════
+                if *active_tab.read() == SettingsTab::Advanced {
 
-                // ── Agent Daemon ────────────────────────────────────────────
-                DaemonSettingsSection {
-                    config: daemon_config,
+                SettingsSection { heading: "Local paths",
+                    SettingsRow { label: "State root",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{local_state_root}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *local_state_root.write() = e.value(),
+                        }
+                    }
+                    SettingsRow { label: "Flynt index DB",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{flynt_index_db_path}",
+                            placeholder: "optional absolute path",
+                            oninput: move |e| *flynt_index_db_path.write() = e.value(),
+                        }
+                    }
+                    SettingsRow { label: "Styrene Identity",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{styrene_identity_profile}",
+                            placeholder: "optional local identity profile",
+                            oninput: move |e| *styrene_identity_profile.write() = e.value(),
+                        }
+                    }
                 }
 
-                } // end if show_advanced
+                SettingsSection { heading: "Config file",
+                    div { class: "settings-row",
+                        span { class: "settings-label", "config.toml" }
+                        div { class: "settings-control",
+                            button {
+                                class: "btn btn-ghost",
+                                onclick: {
+                                    let cp = config_path.clone();
+                                    move |_| {
+                                        let v = *show_raw_config.read();
+                                        if !v {
+                                            *raw_config_text.write() = std::fs::read_to_string(&cp).unwrap_or_default();
+                                        }
+                                        *show_raw_config.write() = !v;
+                                    }
+                                },
+                                if *show_raw_config.read() { "Close editor" } else { "Edit config.toml" }
+                            }
+                            span { class: "settings-hint muted", "Power user: edit the vault config directly" }
+                        }
+                    }
+                    if *show_raw_config.read() {
+                        div { class: "raw-config-editor",
+                            textarea {
+                                class: "input raw-config-textarea",
+                                value: "{raw_config_text}",
+                                rows: "20",
+                                spellcheck: "false",
+                                oninput: move |e| *raw_config_text.write() = e.value(),
+                            }
+                            div { class: "raw-config-actions",
+                                button {
+                                    class: "btn btn-primary",
+                                    onclick: {
+                                        let cp = config_path.clone();
+                                        move |_| {
+                                            let text = raw_config_text.read().clone();
+                                            match toml::from_str::<VaultConfig>(&text) {
+                                                Ok(_) => {
+                                                    if let Err(e) = std::fs::write(&cp, &text) {
+                                                        *raw_config_msg.write() = Some(("err", "Write failed — check permissions."));
+                                                        tracing::error!("raw config write: {e}");
+                                                    } else {
+                                                        *raw_config_msg.write() = Some(("ok", "Config saved. Restart or re-open vault to apply."));
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    *raw_config_msg.write() = Some(("err", "Invalid TOML — fix syntax before saving."));
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "Save config.toml"
+                                }
+                                button {
+                                    class: "btn btn-ghost",
+                                    onclick: {
+                                        let cp = config_path.clone();
+                                        move |_| {
+                                            *raw_config_text.write() = std::fs::read_to_string(&cp).unwrap_or_default();
+                                            *raw_config_msg.write() = None;
+                                        }
+                                    },
+                                    "Revert"
+                                }
+                                if let Some((kind, msg)) = *raw_config_msg.read() {
+                                    span {
+                                        class: if kind == "ok" { "save-msg ok" } else { "save-msg err" },
+                                        "{msg}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                } // end Advanced
 
                 // ── Save bar ─────────────────────────────────────────────────
                 div { class: "settings-save-bar",
                     button { class: "btn btn-primary", onclick: save, "Save changes" }
-                    if *show_advanced.read() {
+                    if *active_tab.read() == SettingsTab::Vault {
                         button { class: "btn btn-ghost", onclick: publish_preview, "Export local preview" }
                     }
                     if let Some((kind, msg)) = *save_msg.read() {

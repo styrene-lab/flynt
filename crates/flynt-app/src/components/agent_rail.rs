@@ -1,8 +1,9 @@
 use crate::acp::{AcpEvent, AcpSession, ConfigOption, SlashCommand};
 use crate::bootstrap::AppContext;
+use crate::state::{Route, SettingsTab};
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 /// Resolve the Omegon binary using the centralized channel-aware resolver.
@@ -16,6 +17,17 @@ pub fn find_omegon_binary_public() -> Option<PathBuf> {
 fn find_omegon_binary_from_ctx(ctx: &crate::bootstrap::AppContext) -> Option<PathBuf> {
     let path = ctx.omegon().resolve_binary();
     if path.exists() { Some(path) } else { None }
+}
+
+/// Extract version from binary path like `~/.omegon/versions/0.18.5/omegon`.
+fn version_from_binary_path(path: &Path) -> Option<String> {
+    let parent = path.parent()?;
+    let version_dir = parent.file_name()?.to_str()?;
+    if version_dir.chars().next()?.is_ascii_digit() || version_dir.starts_with('v') {
+        Some(version_dir.to_string())
+    } else {
+        None
+    }
 }
 
 fn render_md(content: &str) -> String {
@@ -250,13 +262,31 @@ pub fn AgentRail() -> Element {
     let filter_text = if slash_prefix { input_val.trim_start_matches('/').to_lowercase() } else { String::new() };
 
     let launch_error = use_context::<Signal<Option<String>>>();
+    let mut active_route = use_context::<Signal<Route>>();
+    let mut settings_tab = use_context::<Signal<SettingsTab>>();
+
+    let version_label = omegon_binary
+        .as_ref()
+        .and_then(|p| version_from_binary_path(p))
+        .unwrap_or_default();
 
     rsx! {
         div { class: "agent-rail",
             // ── Status bar ───────────────────────────────────────
-            div { class: "agent-status-bar",
+            div {
+                class: "agent-status-bar agent-status-bar-clickable",
+                onclick: move |_| {
+                    *settings_tab.write() = SettingsTab::Omegon;
+                    *active_route.write() = Route::Settings;
+                },
+                title: "Open Omegon settings",
                 div { class: "agent-status-row",
-                    span { class: "agent-status-label", "Omegon" }
+                    div { class: "agent-status-left",
+                        span { class: "agent-status-label", "Omegon" }
+                        if !version_label.is_empty() {
+                            span { class: "agent-status-version", "{version_label}" }
+                        }
+                    }
                     span { class: agent_status.read().css_class(), {agent_status.read().label()} }
                 }
             }

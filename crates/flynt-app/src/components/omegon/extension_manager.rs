@@ -4,7 +4,9 @@
 //! displays them with status badges, and provides install/remove controls.
 
 use crate::bootstrap::AppContext;
+use crate::components::daemon_settings::VoxChannelRow;
 use dioxus::prelude::*;
+use flynt_core::daemon::{AgentDaemonConfig, EmailChannel, SignalChannel, WebhookChannel};
 use std::path::PathBuf;
 
 /// Parsed extension manifest (minimal fields for display).
@@ -126,6 +128,113 @@ pub fn ExtensionManagerSection() -> Element {
             }
             if let Some(ref err) = *remove_error.read() {
                 span { class: "text-error", "{err}" }
+            }
+        }
+    }
+}
+
+/// Vox extension settings — renders as a subsection under Extensions.
+#[component]
+pub fn VoxExtensionSettings(config: Signal<AgentDaemonConfig>) -> Element {
+    rsx! {
+        section { class: "settings-section",
+            h2 { class: "settings-heading", "Vox" }
+            div { class: "settings-rows",
+                div { class: "settings-row",
+                    span { class: "settings-label", "Channels" }
+                    div { class: "settings-control",
+                        span { class: "settings-hint muted", "Inbound communication channels for the agent" }
+                    }
+                }
+
+                VoxChannelRow {
+                    label: "Signal",
+                    enabled: config.read().vox.signal.as_ref().map(|s| s.enabled).unwrap_or(false),
+                    on_toggle: move |enabled: bool| {
+                        let mut cfg = config.write();
+                        if enabled {
+                            if cfg.vox.signal.is_none() {
+                                cfg.vox.signal = Some(SignalChannel {
+                                    enabled: true,
+                                    phone: String::new(),
+                                    allowed_senders: vec![],
+                                });
+                            } else if let Some(ref mut s) = cfg.vox.signal {
+                                s.enabled = true;
+                            }
+                        } else if let Some(ref mut s) = cfg.vox.signal {
+                            s.enabled = false;
+                        }
+                    },
+                    detail: config.read().vox.signal.as_ref().map(|s| s.phone.clone()).unwrap_or_default(),
+                    detail_label: "Phone",
+                    on_detail_change: move |val: String| {
+                        let mut cfg = config.write();
+                        if let Some(ref mut s) = cfg.vox.signal {
+                            s.phone = val;
+                        }
+                    },
+                }
+
+                VoxChannelRow {
+                    label: "Email",
+                    enabled: config.read().vox.email.as_ref().map(|e| e.enabled).unwrap_or(false),
+                    on_toggle: move |enabled: bool| {
+                        let mut cfg = config.write();
+                        if enabled {
+                            if cfg.vox.email.is_none() {
+                                cfg.vox.email = Some(EmailChannel {
+                                    enabled: true,
+                                    server: String::new(),
+                                    address: String::new(),
+                                    folder: "INBOX".into(),
+                                    allowed_senders: vec![],
+                                });
+                            } else if let Some(ref mut e) = cfg.vox.email {
+                                e.enabled = true;
+                            }
+                        } else if let Some(ref mut e) = cfg.vox.email {
+                            e.enabled = false;
+                        }
+                    },
+                    detail: config.read().vox.email.as_ref().map(|e| e.address.clone()).unwrap_or_default(),
+                    detail_label: "Address",
+                    on_detail_change: move |val: String| {
+                        let mut cfg = config.write();
+                        if let Some(ref mut e) = cfg.vox.email {
+                            e.address = val;
+                        }
+                    },
+                }
+
+                VoxChannelRow {
+                    label: "Webhook",
+                    enabled: config.read().vox.webhook.as_ref().map(|w| w.enabled).unwrap_or(false),
+                    on_toggle: move |enabled: bool| {
+                        let mut cfg = config.write();
+                        if enabled {
+                            if cfg.vox.webhook.is_none() {
+                                cfg.vox.webhook = Some(WebhookChannel {
+                                    enabled: true,
+                                    path: "/inbound".into(),
+                                    secret: None,
+                                });
+                            } else if let Some(ref mut w) = cfg.vox.webhook {
+                                w.enabled = true;
+                            }
+                        } else if let Some(ref mut w) = cfg.vox.webhook {
+                            w.enabled = false;
+                        }
+                    },
+                    detail: config.read().vox.webhook.as_ref().map(|w| w.path.clone()).unwrap_or_default(),
+                    detail_label: "Path",
+                    on_detail_change: move |val: String| {
+                        let mut cfg = config.write();
+                        if let Some(ref mut w) = cfg.vox.webhook {
+                            w.path = val;
+                        }
+                    },
+                }
             }
         }
     }

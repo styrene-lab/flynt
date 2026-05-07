@@ -962,6 +962,28 @@
   50%      { opacity: 0.6; }
 }
 
+.agent-status-bar-clickable {
+  cursor:         pointer;
+  transition:     background var(--duration-fast) var(--ease);
+}
+
+.agent-status-bar-clickable:hover {
+  background:     var(--surface);
+}
+
+.agent-status-left {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+}
+
+.agent-status-version {
+  font-size:      var(--font-size-xs);
+  font-family:    var(--font-mono);
+  color:          var(--muted-foreground);
+  font-weight:    var(--font-weight-normal);
+}
+
 .agent-status-detail {
   font-size:      var(--font-size-xs);
   color:          var(--muted-foreground);

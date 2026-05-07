@@ -334,15 +334,68 @@ pub struct IndexingConfig {
     /// source files are never modified — ideal for existing repos and shared codebases.
     #[serde(default = "IndexingConfig::default_write_frontmatter")]
     pub write_frontmatter: bool,
+
+    /// Opt-in managed paths. Files under a scope can override the vault-wide
+    /// `write_frontmatter` default and be auto-assigned an entity `kind`.
+    /// When empty, all files follow the vault-wide setting.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<IndexScope>,
+}
+
+/// A scoped path prefix that opts a subdirectory into (or out of) full
+/// document management by Flynt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IndexScope {
+    /// Path prefix relative to vault root (e.g. `"design/"`).
+    pub prefix: PathBuf,
+
+    /// Auto-assigned entity kind for files without an existing `kind`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+
+    /// Override the vault-wide `write_frontmatter` for files under this prefix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_frontmatter: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileTier {
+    /// Flynt writes frontmatter, assigns kinds — the file is fully managed.
+    Managed,
+    /// Indexed into SQLite/FTS for search, but the source file is never modified.
+    Discoverable,
 }
 
 impl IndexingConfig {
     fn default_write_frontmatter() -> bool { true }
+
+    /// Returns the longest-prefix-matching scope for `rel_path`, if any.
+    pub fn scope_for_path(&self, rel_path: &Path) -> Option<&IndexScope> {
+        self.scopes
+            .iter()
+            .filter(|s| rel_path.starts_with(&s.prefix))
+            .max_by_key(|s| s.prefix.as_os_str().len())
+    }
+
+    /// Whether the indexer should write frontmatter into a file at `rel_path`.
+    pub fn should_write_frontmatter(&self, rel_path: &Path) -> bool {
+        self.scope_for_path(rel_path)
+            .and_then(|s| s.write_frontmatter)
+            .unwrap_or(self.write_frontmatter)
+    }
+
+    pub fn file_tier(&self, rel_path: &Path) -> FileTier {
+        if self.should_write_frontmatter(rel_path) {
+            FileTier::Managed
+        } else {
+            FileTier::Discoverable
+        }
+    }
 }
 
 impl Default for IndexingConfig {
     fn default() -> Self {
-        Self { write_frontmatter: true }
+        Self { write_frontmatter: true, scopes: Vec::new() }
     }
 }
 
@@ -1172,5 +1225,115 @@ mod tests {
         let json = serde_json::to_string(&pinned).unwrap();
         let parsed: OmegonChannel = serde_json::from_str(&json).unwrap();
         assert_eq!(pinned, parsed);
+    }
+
+    // ── IndexingConfig scoping ─────────────────────────────────────
+
+    #[test]
+    fn no_scopes_uses_vault_wide_default() {
+        let cfg = IndexingConfig { write_frontmatter: true, scopes: vec![] };
+        assert!(cfg.should_write_frontmatter(Path::new("README.md")));
+        assert_eq!(cfg.file_tier(Path::new("README.md")), FileTier::Managed);
+
+        let cfg = IndexingConfig { write_frontmatter: false, scopes: vec![] };
+        assert!(!cfg.should_write_frontmatter(Path::new("README.md")));
+        assert_eq!(cfg.file_tier(Path::new("README.md")), FileTier::Discoverable);
+    }
+
+    #[test]
+    fn scope_overrides_vault_default() {
+        let cfg = IndexingConfig {
+            write_frontmatter: false,
+            scopes: vec![IndexScope {
+                prefix: PathBuf::from("design/"),
+                kind: Some("design_node".into()),
+                write_frontmatter: Some(true),
+            }],
+        };
+        assert!(cfg.should_write_frontmatter(Path::new("design/omega.md")));
+        assert!(!cfg.should_write_frontmatter(Path::new("README.md")));
+        assert!(!cfg.should_write_frontmatter(Path::new("core/README.md")));
+    }
+
+    #[test]
+    fn longest_prefix_wins() {
+        let cfg = IndexingConfig {
+            write_frontmatter: false,
+            scopes: vec![
+                IndexScope {
+                    prefix: PathBuf::from("docs/"),
+                    kind: Some("document".into()),
+                    write_frontmatter: Some(true),
+                },
+                IndexScope {
+                    prefix: PathBuf::from("docs/internal/"),
+                    kind: None,
+                    write_frontmatter: Some(false),
+                },
+            ],
+        };
+        assert!(cfg.should_write_frontmatter(Path::new("docs/guide.md")));
+        assert!(!cfg.should_write_frontmatter(Path::new("docs/internal/notes.md")));
+    }
+
+    #[test]
+    fn scope_without_write_override_falls_through() {
+        let cfg = IndexingConfig {
+            write_frontmatter: true,
+            scopes: vec![IndexScope {
+                prefix: PathBuf::from("design/"),
+                kind: Some("design_node".into()),
+                write_frontmatter: None,
+            }],
+        };
+        assert!(cfg.should_write_frontmatter(Path::new("design/omega.md")));
+
+        let scope = cfg.scope_for_path(Path::new("design/omega.md"));
+        assert!(scope.is_some());
+        assert_eq!(scope.unwrap().kind.as_deref(), Some("design_node"));
+    }
+
+    #[test]
+    fn scope_for_path_returns_none_outside_scopes() {
+        let cfg = IndexingConfig {
+            write_frontmatter: false,
+            scopes: vec![IndexScope {
+                prefix: PathBuf::from("design/"),
+                kind: Some("design_node".into()),
+                write_frontmatter: Some(true),
+            }],
+        };
+        assert!(cfg.scope_for_path(Path::new("README.md")).is_none());
+        assert!(cfg.scope_for_path(Path::new("core/src/main.rs")).is_none());
+    }
+
+    #[test]
+    fn indexing_config_serde_roundtrip_with_scopes() {
+        let cfg = IndexingConfig {
+            write_frontmatter: false,
+            scopes: vec![
+                IndexScope {
+                    prefix: PathBuf::from("design/"),
+                    kind: Some("design_node".into()),
+                    write_frontmatter: Some(true),
+                },
+                IndexScope {
+                    prefix: PathBuf::from("docs/"),
+                    kind: Some("document".into()),
+                    write_frontmatter: None,
+                },
+            ],
+        };
+        let toml_str = toml::to_string(&cfg).unwrap();
+        let parsed: IndexingConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(cfg, parsed);
+    }
+
+    #[test]
+    fn indexing_config_serde_backwards_compat() {
+        let old_toml = "write_frontmatter = true\n";
+        let parsed: IndexingConfig = toml::from_str(old_toml).unwrap();
+        assert!(parsed.write_frontmatter);
+        assert!(parsed.scopes.is_empty());
     }
 }

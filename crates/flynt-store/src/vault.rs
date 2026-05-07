@@ -137,6 +137,14 @@ impl Vault {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Flynt".to_string());
+
+            let indexing = if looks_like_code_repo(root) {
+                info!("Code repo detected at {:?} — defaulting write_frontmatter to false", root);
+                IndexingConfig { write_frontmatter: false, scopes: Vec::new() }
+            } else {
+                IndexingConfig::default()
+            };
+
             let cfg = VaultConfig {
                 vault_name: default_name,
                 sync: SyncConfig::None,
@@ -144,7 +152,7 @@ impl Vault {
                 local_runtime: Default::default(),
                 publication: Default::default(),
                 security: Default::default(),
-                indexing: Default::default(),
+                indexing,
                 visualization: Default::default(),
             };
             fs::write(&config_path, toml::to_string(&cfg)?)?;
@@ -258,10 +266,18 @@ impl Vault {
             .unwrap_or_else(DocumentId::new);
 
         // If the file has no id in frontmatter, write it back so it survives a DB wipe.
-        // When write_frontmatter is false (e.g. existing repos), skip file mutation.
+        // Scope-aware: only write when the file's path is in a managed scope
+        // (or the vault-wide default allows it).
         if frontmatter.id.is_none() {
             frontmatter.id = Some(id.0);
-            if self.config.indexing.write_frontmatter {
+            if self.config.indexing.should_write_frontmatter(&rel_path) {
+                if frontmatter.kind.is_none() {
+                    if let Some(scope) = self.config.indexing.scope_for_path(&rel_path) {
+                        if let Some(ref k) = scope.kind {
+                            frontmatter.kind = Some(k.clone());
+                        }
+                    }
+                }
                 let new_fm = toml::to_string(&frontmatter).unwrap_or_default();
                 let new_raw = format!("+++\n{new_fm}+++\n\n{body}");
                 std::fs::write(path, &new_raw)?;
@@ -301,7 +317,14 @@ impl Vault {
 
     /// Set or clear the `kind` field in a document's TOML frontmatter.
     /// Pass `None` to remove the kind (revert to plain document).
+    /// Refuses to modify Discoverable files (not in a managed scope).
     pub fn set_document_kind(&self, rel_path: &Path, kind: Option<&str>) -> Result<()> {
+        if !self.config.indexing.should_write_frontmatter(rel_path) {
+            anyhow::bail!(
+                "Cannot set kind on discoverable file {:?} — configure an indexing scope to manage this path",
+                rel_path,
+            );
+        }
         let abs_path = self.root.join(rel_path);
         let raw = fs::read_to_string(&abs_path)?;
 
@@ -1735,6 +1758,28 @@ fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
     entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false)
+}
+
+/// Heuristic: directory has `.git` plus at least one build manifest → code repo.
+fn looks_like_code_repo(root: &Path) -> bool {
+    if !root.join(".git").exists() {
+        return false;
+    }
+    const BUILD_MANIFESTS: &[&str] = &[
+        "Cargo.toml",
+        "package.json",
+        "go.mod",
+        "pyproject.toml",
+        "Makefile",
+        "CMakeLists.txt",
+        "pom.xml",
+        "build.gradle",
+        "Gemfile",
+        "mix.exs",
+        "flake.nix",
+        "deno.json",
+    ];
+    BUILD_MANIFESTS.iter().any(|m| root.join(m).exists())
 }
 
 /// Replace the tags array in a TOML frontmatter document.

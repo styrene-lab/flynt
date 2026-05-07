@@ -14,6 +14,41 @@
   padding:    var(--space-8) var(--space-10);
 }
 
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+.settings-tab-bar {
+  display:         flex;
+  gap:             0;
+  padding:         0 var(--space-10);
+  background:      var(--background);
+  border-bottom:   1px solid var(--border);
+  flex-shrink:     0;
+  max-width:       780px;
+  margin:          0 auto;
+  padding-top:     var(--space-4);
+}
+
+.settings-tab {
+  padding:         var(--space-2) var(--space-4);
+  font-size:       var(--font-size-sm);
+  font-weight:     var(--font-weight-medium);
+  color:           var(--muted-foreground);
+  background:      transparent;
+  border:          none;
+  border-bottom:   2px solid transparent;
+  cursor:          pointer;
+  transition:      color var(--duration-fast) var(--ease),
+                   border-color var(--duration-fast) var(--ease);
+}
+
+.settings-tab:hover {
+  color:           var(--foreground);
+}
+
+.settings-tab.active {
+  color:           var(--primary);
+  border-bottom-color: var(--primary);
+}
+
 /* ── Section ──────────────────────────────────────────────────────────────── */
 .settings-section {
   margin-bottom: var(--space-10);
@@ -427,6 +462,145 @@
 }
 .settings-toggle-btn:hover {
   color:          var(--foreground);
+}
+
+/* ── Indexing scopes editor ──────────────────────────────────────────────── */
+.indexing-scopes-editor {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.indexing-scope-card {
+  background:    var(--card);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding:       var(--space-3) var(--space-4);
+  transition:    border-color var(--duration-fast) var(--ease);
+}
+
+.indexing-scope-card:hover {
+  border-color: var(--primary-muted);
+}
+
+.indexing-scope-header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  margin-bottom:   var(--space-3);
+}
+
+.indexing-scope-title {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+}
+
+.indexing-scope-fields {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.indexing-scope-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-1);
+}
+
+.indexing-scope-label {
+  font-size:   var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color:       var(--muted-foreground);
+}
+
+.indexing-scope-field .input {
+  max-width: 320px;
+}
+
+.indexing-scope-field select.input {
+  max-width:  200px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23607888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  padding-right: var(--space-8);
+}
+
+/* ── Publication rule cards (shared pattern with scope cards) ────────────── */
+.publication-rules-editor {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.publication-rule-card {
+  background:    var(--card);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding:       var(--space-3) var(--space-4);
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--space-3);
+  transition:    border-color var(--duration-fast) var(--ease);
+}
+
+.publication-rule-card:hover {
+  border-color: var(--primary-muted);
+}
+
+.publication-rule-title {
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--foreground);
+}
+
+.publication-rule-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+/* ── Raw config editor ──────────────────────────────────────────────────── */
+.raw-config-editor {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+  margin-top:     var(--space-2);
+}
+
+.raw-config-textarea {
+  width:          100% !important;
+  max-width:      100% !important;
+  min-height:     320px;
+  font-family:    var(--font-mono);
+  font-size:      var(--font-size-sm);
+  line-height:    var(--line-height);
+  resize:         vertical;
+  tab-size:       2;
+  background:     var(--surface);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  padding:        var(--space-3);
+  color:          var(--foreground);
+}
+
+.raw-config-textarea:focus {
+  border-color: var(--ring);
+  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  outline:      none;
+}
+
+.raw-config-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+}
+
+/* ── Small button variant ───────────────────────────────────────────────── */
+.btn-sm {
+  padding:   2px var(--space-2);
+  font-size: var(--font-size-xs);
 }
 
 /* ── Font scale modifiers (applied to .flynt-shell) ──────────────────────── */
