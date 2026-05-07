@@ -1,8 +1,7 @@
-//! Drag divider for resizing panels.
+//! Drag dividers for resizing panels.
 //!
-//! Uses document-level pointer events via eval() so the drag continues
-//! even when the cursor leaves the divider element.
-//! Persists widths to localStorage so they survive restarts.
+//! Entire drag lifecycle runs in JS via document-level pointer events.
+//! Persists widths to localStorage across restarts.
 
 use dioxus::prelude::*;
 
@@ -21,39 +20,42 @@ pub fn PanelDivider() -> Element {
         });
     });
 
-    rsx! {
-        div {
-            class: "panel-divider",
-            onmousedown: move |_| {
-                spawn(async move {
-                    dioxus::prelude::document::eval(r#"
-                        (function() {
-                            var rail = document.querySelector('.agent-rail');
-                            if (!rail) return;
-                            document.body.style.cursor = 'col-resize';
-                            document.body.style.userSelect = 'none';
-                            var d = document.querySelector('.panel-divider');
-                            if (d) d.classList.add('active');
-                            function onMove(e) {
-                                var w = window.innerWidth - e.clientX;
-                                rail.style.width = Math.max(280, Math.min(700, w)) + 'px';
-                            }
-                            function onUp() {
-                                document.removeEventListener('pointermove', onMove);
-                                document.removeEventListener('pointerup', onUp);
-                                document.body.style.cursor = '';
-                                document.body.style.userSelect = '';
-                                if (d) d.classList.remove('active');
-                                localStorage.setItem('flynt-rail-width', parseInt(rail.style.width));
-                            }
-                            document.addEventListener('pointermove', onMove);
-                            document.addEventListener('pointerup', onUp);
-                        })()
-                    "#);
-                });
-            },
-        }
-    }
+    // Set up drag entirely in JS — no Dioxus event → JS race
+    use_effect(move || {
+        spawn(async {
+            dioxus::prelude::document::eval(r#"
+                (function() {
+                    var d = document.querySelector('.panel-divider:not(.sidebar-divider-handle)');
+                    if (!d || d._dragBound) return;
+                    d._dragBound = true;
+                    d.addEventListener('pointerdown', function(e) {
+                        e.preventDefault();
+                        var rail = document.querySelector('.agent-rail');
+                        if (!rail) return;
+                        document.body.style.cursor = 'col-resize';
+                        document.body.style.userSelect = 'none';
+                        d.classList.add('active');
+                        function onMove(ev) {
+                            var w = window.innerWidth - ev.clientX;
+                            rail.style.width = Math.max(280, Math.min(700, w)) + 'px';
+                        }
+                        function onUp() {
+                            document.removeEventListener('pointermove', onMove);
+                            document.removeEventListener('pointerup', onUp);
+                            document.body.style.cursor = '';
+                            document.body.style.userSelect = '';
+                            d.classList.remove('active');
+                            localStorage.setItem('flynt-rail-width', parseInt(rail.style.width));
+                        }
+                        document.addEventListener('pointermove', onMove);
+                        document.addEventListener('pointerup', onUp);
+                    });
+                })()
+            "#);
+        });
+    });
+
+    rsx! { div { class: "panel-divider" } }
 }
 
 /// Left-side divider — placed to the RIGHT of the sidebar.
@@ -70,37 +72,39 @@ pub fn SidebarDivider() -> Element {
         });
     });
 
-    rsx! {
-        div {
-            class: "panel-divider sidebar-divider-handle",
-            onmousedown: move |_| {
-                spawn(async move {
-                    dioxus::prelude::document::eval(r#"
-                        (function() {
-                            var sidebar = document.querySelector('.sidebar');
-                            if (!sidebar) return;
-                            document.body.style.cursor = 'col-resize';
-                            document.body.style.userSelect = 'none';
-                            var d = document.querySelector('.sidebar-divider-handle');
-                            if (d) d.classList.add('active');
-                            function onMove(e) {
-                                var w = e.clientX;
-                                sidebar.style.width = Math.max(180, Math.min(450, w)) + 'px';
-                            }
-                            function onUp() {
-                                document.removeEventListener('pointermove', onMove);
-                                document.removeEventListener('pointerup', onUp);
-                                document.body.style.cursor = '';
-                                document.body.style.userSelect = '';
-                                if (d) d.classList.remove('active');
-                                localStorage.setItem('flynt-sidebar-width', parseInt(sidebar.style.width));
-                            }
-                            document.addEventListener('pointermove', onMove);
-                            document.addEventListener('pointerup', onUp);
-                        })()
-                    "#);
-                });
-            },
-        }
-    }
+    use_effect(move || {
+        spawn(async {
+            dioxus::prelude::document::eval(r#"
+                (function() {
+                    var d = document.querySelector('.sidebar-divider-handle');
+                    if (!d || d._dragBound) return;
+                    d._dragBound = true;
+                    d.addEventListener('pointerdown', function(e) {
+                        e.preventDefault();
+                        var sidebar = document.querySelector('.sidebar');
+                        if (!sidebar) return;
+                        document.body.style.cursor = 'col-resize';
+                        document.body.style.userSelect = 'none';
+                        d.classList.add('active');
+                        function onMove(ev) {
+                            var w = ev.clientX;
+                            sidebar.style.width = Math.max(180, Math.min(450, w)) + 'px';
+                        }
+                        function onUp() {
+                            document.removeEventListener('pointermove', onMove);
+                            document.removeEventListener('pointerup', onUp);
+                            document.body.style.cursor = '';
+                            document.body.style.userSelect = '';
+                            d.classList.remove('active');
+                            localStorage.setItem('flynt-sidebar-width', parseInt(sidebar.style.width));
+                        }
+                        document.addEventListener('pointermove', onMove);
+                        document.addEventListener('pointerup', onUp);
+                    });
+                })()
+            "#);
+        });
+    });
+
+    rsx! { div { class: "panel-divider sidebar-divider-handle" } }
 }

@@ -105,14 +105,19 @@ pub fn GraphView() -> Element {
         graph_to_json(&nodes, &edges, &s)
     });
 
+    let mut graph_task: Signal<Option<dioxus_core::Task>> = use_signal(|| None);
     use_effect(move || {
+        // Cancel previous graph listener task before starting a new one
+        if let Some(old) = graph_task.write().take() {
+            old.cancel();
+        }
         let json = graph_json.read().clone();
         if json.is_empty() { return; }
         let js = format!("{GRAPH_JS}\nflyntGraph({json});");
         let mut eval = document::eval(&js);
         let click_ctx = ctx_click.clone();
 
-        spawn(async move {
+        let task = spawn(async move {
             loop {
                 match eval.recv::<String>().await {
                     Ok(node_id) => {
@@ -133,6 +138,7 @@ pub fn GraphView() -> Element {
                 }
             }
         });
+        *graph_task.write() = Some(task);
     });
 
     let is_panel_open = *panel_open.read();
@@ -596,10 +602,10 @@ fn graph_to_json(
 }
 
 fn escape_json(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
+    // Use serde_json for correct escaping of all control chars, unicode, etc.
+    // Returns a quoted string — strip the outer quotes since callers add their own.
+    let quoted = serde_json::to_string(s).unwrap_or_else(|_| format!("\"{}\"", s));
+    quoted[1..quoted.len() - 1].to_string()
 }
 
 fn format_node_kind(kind: &GraphNodeKind) -> &'static str {
