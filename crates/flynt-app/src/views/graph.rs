@@ -909,6 +909,38 @@ function flyntGraph(data) {
 
 const MAX_VISIBLE_ITEMS: usize = 12;
 
+/// Fuzzy subsequence match — returns a score (lower = tighter match) or None.
+/// "arch" matches "architecture" (score = distance between first and last matched char).
+/// Prefers substring matches (exact contains) over fuzzy.
+fn fuzzy_match(haystack: &str, needle: &str) -> Option<usize> {
+    if haystack.contains(needle) {
+        return Some(0);
+    }
+    let hay: Vec<char> = haystack.chars().collect();
+    let need: Vec<char> = needle.chars().collect();
+    if need.is_empty() { return Some(0); }
+    if need.len() > hay.len() { return None; }
+
+    let mut hi = 0;
+    let mut first_match = None;
+    let mut last_match = 0;
+    for &nc in &need {
+        let mut found = false;
+        while hi < hay.len() {
+            if hay[hi] == nc {
+                if first_match.is_none() { first_match = Some(hi); }
+                last_match = hi;
+                hi += 1;
+                found = true;
+                break;
+            }
+            hi += 1;
+        }
+        if !found { return None; }
+    }
+    Some(last_match - first_match.unwrap_or(0))
+}
+
 /// Collapsible filter section with search and "show more".
 #[component]
 fn CollapsibleFilterSection(
@@ -927,7 +959,11 @@ fn CollapsibleFilterSection(
     let filtered: Vec<&String> = if search_val.is_empty() {
         items.iter().collect()
     } else {
-        items.iter().filter(|t| t.to_lowercase().contains(&search_val)).collect()
+        let mut scored: Vec<(&String, usize)> = items.iter()
+            .filter_map(|t| fuzzy_match(&t.to_lowercase(), &search_val).map(|score| (t, score)))
+            .collect();
+        scored.sort_by_key(|(_, score)| *score);
+        scored.into_iter().map(|(t, _)| t).collect()
     };
 
     let visible_count = if *show_all.read() { filtered.len() } else { filtered.len().min(MAX_VISIBLE_ITEMS) };

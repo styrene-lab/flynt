@@ -126,7 +126,26 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
 
 // ── File tree builder ─────────────────────────────────────────────────────────
 
-/// Build a nested tree from flat document list using path components.
+/// Recursive tree node — folders contain sub-folders and files.
+#[derive(Clone, PartialEq)]
+enum TreeNode {
+    Folder {
+        name: String,
+        children: BTreeMap<String, TreeNode>,
+    },
+    File(DocumentMeta),
+}
+
+impl TreeNode {
+    fn file_count(&self) -> usize {
+        match self {
+            Self::File(_) => 1,
+            Self::Folder { children, .. } => children.values().map(|c| c.file_count()).sum(),
+        }
+    }
+}
+
+/// Build a fully nested tree from flat document list using all path components.
 fn build_tree(docs: &[DocumentMeta]) -> Element {
     let mut root: BTreeMap<String, TreeNode> = BTreeMap::new();
 
@@ -135,43 +154,58 @@ fn build_tree(docs: &[DocumentMeta]) -> Element {
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect();
 
-        if components.len() == 1 {
-            root.entry(doc.title.clone())
+        if components.len() <= 1 {
+            // Root-level file — use title as sort key
+            root.entry(format!("\x7F{}", doc.title))
                 .or_insert(TreeNode::File(doc.clone()));
         } else {
-            let folder = &components[0];
-            let entry = root.entry(folder.clone())
-                .or_insert(TreeNode::Folder { name: folder.clone(), children: Vec::new() });
-            if let TreeNode::Folder { children, .. } = entry {
-                children.push(doc.clone());
+            // Walk/create nested folder path
+            let folder_parts = &components[..components.len() - 1];
+            let mut current = &mut root;
+
+            for part in folder_parts {
+                let entry = current.entry(part.clone()).or_insert_with(|| TreeNode::Folder {
+                    name: part.clone(),
+                    children: BTreeMap::new(),
+                });
+                current = match entry {
+                    TreeNode::Folder { children, .. } => children,
+                    _ => unreachable!(),
+                };
             }
+            current.entry(format!("\x7F{}", doc.title))
+                .or_insert(TreeNode::File(doc.clone()));
         }
     }
+
+    rsx! { { render_tree_level(&root, 0) } }
+}
+
+/// Recursively render a tree level. Not a #[component] — just a function
+/// that returns Element, avoiding Dioxus Props derive issues with complex types.
+fn render_tree_level(nodes: &BTreeMap<String, TreeNode>, depth: u32) -> Element {
+    let entries: Vec<_> = nodes.iter().collect();
 
     rsx! {
-        for (_key, node) in root.iter() {
-            match node {
-                TreeNode::Folder { name, children } => rsx! {
-                    TreeFolder { name: name.clone(), docs: children.clone(), depth: 0 }
+        for (_key, node) in entries.iter() {
+            match *node {
+                TreeNode::Folder { name, children } => {
+                    { render_folder(name, children, depth) }
                 },
                 TreeNode::File(doc) => rsx! {
-                    TreeFile { meta: doc.clone(), depth: 0 }
+                    TreeFile { meta: doc.clone(), depth }
                 },
             }
         }
     }
 }
 
-enum TreeNode {
-    Folder { name: String, children: Vec<DocumentMeta> },
-    File(DocumentMeta),
-}
-
-#[component]
-fn TreeFolder(name: String, docs: Vec<DocumentMeta>, depth: u32) -> Element {
+fn render_folder(name: &str, children: &BTreeMap<String, TreeNode>, depth: u32) -> Element {
+    let name = name.to_string();
+    let children = children.clone();
+    let count: usize = children.values().map(|c| c.file_count()).sum();
     let mut open = use_signal(|| false);
     let indent = depth as f32 * 12.0;
-    let count = docs.len();
 
     rsx! {
         button {
@@ -183,9 +217,7 @@ fn TreeFolder(name: String, docs: Vec<DocumentMeta>, depth: u32) -> Element {
             span { class: "tree-count", "{count}" }
         }
         if *open.read() {
-            for doc in docs.iter().cloned() {
-                TreeFile { meta: doc, depth: depth + 1 }
-            }
+            { render_tree_level(&children, depth + 1) }
         }
     }
 }
