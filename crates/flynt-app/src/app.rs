@@ -764,6 +764,7 @@ pub fn App() -> Element {
                 }
 
                 if show_agent() {
+                    crate::components::PanelDivider {}
                     AgentRail {}
                 }
             }

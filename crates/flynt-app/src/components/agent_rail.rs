@@ -271,8 +271,7 @@ pub fn AgentRail() -> Element {
         .unwrap_or_default();
 
     rsx! {
-        div { class: "agent-rail-resize-wrapper",
-            div { class: "agent-rail",
+        div { class: "agent-rail",
 
             // ── Status bar ───────────────────────────────────────
             div {
@@ -610,7 +609,6 @@ pub fn AgentRail() -> Element {
                 }
             }
         }
-        } // agent-rail-resize-wrapper
     }
 }
 
