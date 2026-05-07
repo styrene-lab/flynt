@@ -591,4 +591,49 @@ impl AcpSession {
     pub async fn catalog_install(&self, offline: bool) -> Result<serde_json::Value> {
         self.ext_call("catalog/install", serde_json::json!({ "offline": offline })).await
     }
+
+    // ── Persona CRUD ───────────────────────────────────────────
+
+    /// Create a new persona.
+    pub async fn persona_create(
+        &self,
+        name: &str,
+        directive: &str,
+        description: &str,
+        badge: Option<&str>,
+        disabled_tools: &[String],
+    ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({
+            "name": name,
+            "directive": directive,
+            "description": description,
+            "disabled_tools": disabled_tools,
+        });
+        if let Some(b) = badge {
+            params["badge"] = serde_json::Value::String(b.into());
+        }
+        self.ext_call("personas/create", params).await
+    }
+
+    /// Delete a persona by ID.
+    pub async fn persona_delete(&self, id: &str) -> Result<serde_json::Value> {
+        self.ext_call("personas/delete", serde_json::json!({ "id": id })).await
+    }
+
+    // ── Skill CRUD ─────────────────────────────────────────────
+
+    /// Create a custom skill.
+    pub async fn skill_create(&self, name: &str, content: &str) -> Result<serde_json::Value> {
+        self.ext_call("skills/create", serde_json::json!({
+            "name": name,
+            "content": content,
+        })).await
+    }
+
+    /// Delete a skill by name.
+    pub async fn skill_delete(&self, name: &str) -> Result<serde_json::Value> {
+        self.ext_call("skills/delete", serde_json::json!({
+            "name": name,
+        })).await
+    }
 }
