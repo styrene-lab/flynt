@@ -1,7 +1,7 @@
 //! Live session status panel — shows agent state at a glance.
 //!
-//! Polls control/stats via ACP every few seconds and renders:
-//! model, posture, thinking, turns, context usage bar, persona.
+//! Polls control/stats and control/provider_status via ACP every few seconds.
+//! Renders model, posture, thinking, turns, context bar, and provider warnings.
 
 use crate::acp::AcpSession;
 use dioxus::prelude::*;
@@ -19,6 +19,13 @@ struct SessionStats {
     max_turns: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+struct ProviderState {
+    name: String,
+    status: String,
+    detail: String,
+}
+
 fn parse_stats(text: &str) -> SessionStats {
     let mut stats = SessionStats::default();
     for line in text.lines() {
@@ -31,7 +38,6 @@ fn parse_stats(text: &str) -> SessionStats {
                 "Turns" => stats.turns = val.to_string(),
                 "Max turns" => stats.max_turns = val.to_string(),
                 "Context" => {
-                    // Format: "~1234 tokens (45% of 128000)"
                     if let Some(tok) = val.strip_prefix('~') {
                         if let Some(idx) = tok.find(" tokens") {
                             stats.context_tokens = tok[..idx].to_string();
@@ -45,8 +51,7 @@ fn parse_stats(text: &str) -> SessionStats {
                         }
                         if let Some(of_idx) = val.find("of ") {
                             let rest = &val[of_idx+3..];
-                            let window = rest.trim_end_matches(')').trim();
-                            stats.context_window = window.to_string();
+                            stats.context_window = rest.trim_end_matches(')').trim().to_string();
                         }
                     }
                 }
@@ -57,24 +62,53 @@ fn parse_stats(text: &str) -> SessionStats {
     stats
 }
 
+fn parse_provider_status(text: &str) -> Vec<ProviderState> {
+    text.lines().filter_map(|line| {
+        let parts: Vec<&str> = line.splitn(3, ':').collect();
+        if parts.len() >= 3 {
+            Some(ProviderState {
+                name: parts[0].to_string(),
+                status: parts[1].to_string(),
+                detail: parts[2].to_string(),
+            })
+        } else {
+            None
+        }
+    }).collect()
+}
+
+fn provider_for_model(model: &str) -> &str {
+    if model.starts_with("ollama:") || model.contains("llama") || model.contains("qwen") || model.contains("mistral") || model.contains("gemma") || model.contains("phi") {
+        "ollama"
+    } else if model.contains("claude") || model.starts_with("anthropic:") {
+        "anthropic"
+    } else if model.contains("gpt") || model.starts_with("openai:") || model.contains("o1") || model.contains("o3") || model.contains("o4") {
+        "openai"
+    } else {
+        "unknown"
+    }
+}
+
 #[component]
 pub fn SessionStatusPanel() -> Element {
     let shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
     let mut stats = use_signal(SessionStats::default);
+    let mut providers = use_signal(Vec::<ProviderState>::new);
     let mut connected = use_signal(|| false);
 
-    // Poll stats every 5 seconds
     use_future(move || async move {
         loop {
             if let Some(sess) = shared_session.read().clone() {
-                match sess.stats().await {
-                    Ok(resp) => {
-                        if let Some(text) = resp["text"].as_str() {
-                            *stats.write() = parse_stats(text);
-                            *connected.write() = true;
-                        }
+                if let Ok(resp) = sess.stats().await {
+                    if let Some(text) = resp["text"].as_str() {
+                        *stats.write() = parse_stats(text);
+                        *connected.write() = true;
                     }
-                    Err(_) => *connected.write() = false,
+                }
+                if let Ok(resp) = sess.provider_status().await {
+                    if let Some(text) = resp["text"].as_str() {
+                        *providers.write() = parse_provider_status(text);
+                    }
                 }
             }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -92,9 +126,37 @@ pub fn SessionStatusPanel() -> Element {
         else if ctx_pct > 60.0 { "var(--primary-muted)" }
         else { "var(--primary)" };
 
+    // Check if the active model's provider has issues
+    let active_provider = provider_for_model(&s.model);
+    let provider_warning = providers.read().iter().find(|p| {
+        p.name == active_provider && (p.status == "expired" || p.status == "missing" || p.status == "unavailable")
+    }).map(|p| {
+        let action = if p.status == "expired" {
+            format!("Token expired — use /login {} in the agent panel to refresh.", p.name)
+        } else if p.status == "unavailable" && p.name == "ollama" {
+            "Ollama is not running. Start it with: ollama serve".into()
+        } else {
+            format!("Not configured — use /login {} or set an API key.", p.name)
+        };
+        (p.status.clone(), p.name.clone(), action)
+    });
+
     rsx! {
         section { class: "settings-section",
             h2 { class: "settings-heading", "Session" }
+
+            if let Some((status, name, action)) = &provider_warning {
+                div { class: "session-warning",
+                    span { class: "session-warning-icon",
+                        if status == "expired" { "⚠" } else { "✗" }
+                    }
+                    span { class: "session-warning-text",
+                        strong { "{name}" }
+                        " — {action}"
+                    }
+                }
+            }
+
             div { class: "session-status-grid",
                 div { class: "session-stat",
                     span { class: "session-stat-label", "Model" }

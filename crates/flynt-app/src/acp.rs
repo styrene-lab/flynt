@@ -541,6 +541,11 @@ impl AcpSession {
         self.control_call("auth_status", "").await
     }
 
+    /// Provider status — per-provider auth state (authenticated/expired/missing).
+    pub async fn provider_status(&self) -> Result<serde_json::Value> {
+        self.control_call("provider_status", "").await
+    }
+
     /// Add a session note.
     pub async fn note_add(&self, text: &str) -> Result<serde_json::Value> {
         self.control_call("note_add", text).await
