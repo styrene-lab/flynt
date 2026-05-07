@@ -570,4 +570,25 @@ impl AcpSession {
     pub async fn tree_view(&self, args: &str) -> Result<serde_json::Value> {
         self.control_call("tree_view", args).await
     }
+
+    // ── Discovery ──────────────────────────────────────────────
+
+    /// Search the armory registry for available extensions.
+    pub async fn extensions_search(&self, query: Option<&str>) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({});
+        if let Some(q) = query {
+            params["query"] = serde_json::Value::String(q.into());
+        }
+        self.ext_call("extensions/search", params).await
+    }
+
+    /// List agent catalog (bundled + installed agents).
+    pub async fn catalog_list(&self) -> Result<serde_json::Value> {
+        self.ext_call("catalog/list", serde_json::json!({})).await
+    }
+
+    /// Install agents from the armory (or bundled fallback).
+    pub async fn catalog_install(&self, offline: bool) -> Result<serde_json::Value> {
+        self.ext_call("catalog/install", serde_json::json!({ "offline": offline })).await
+    }
 }
