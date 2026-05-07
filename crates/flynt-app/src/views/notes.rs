@@ -1182,12 +1182,35 @@ pub fn NotesView() -> Element {
     let mut render_ver = use_signal(|| 0u32);
     let mut conflict_detected = use_signal(|| false);
 
+    // Render cache — avoids re-rendering when switching between tabs
+    let mut render_cache: Signal<std::collections::HashMap<
+        flynt_core::models::DocumentId,
+        (std::path::PathBuf, String, String, String, bool),
+    >> = use_signal(std::collections::HashMap::new);
+
+    // Invalidate render cache when content changes (save, conflict resolve, etc.)
+    use_effect(move || {
+        let _ver = *render_ver.read();
+        if _ver > 0 {
+            if let Some(id) = tab_state.read().active_id().cloned() {
+                render_cache.write().remove(&id);
+            }
+        }
+    });
+
     let rendered: Resource<Option<(std::path::PathBuf, String, String, String, bool)>> = use_resource(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
         let vault = ctx_res.vault();
         async move {
             let Some(doc_id) = selected_id else { return None; };
+
+            // Check cache — instant tab switching for already-rendered docs.
+            if let Some(cached) = render_cache.read().get(&doc_id) {
+                return Some(cached.clone());
+            }
+
+            let cache_id = doc_id.clone();
             let result = tokio::task::spawn_blocking(move || {
                 vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
                     let html = render_html_with_store(&doc.content, Some(&*vault.store), Some(&vault.root));
@@ -1196,8 +1219,10 @@ pub fn NotesView() -> Element {
                 })
             })
             .await.ok().flatten();
+
             if let Some(ref r) = result {
                 *conflict_detected.write() = r.4;
+                render_cache.write().insert(cache_id, r.clone());
             }
             result
         }
