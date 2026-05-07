@@ -7,6 +7,8 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 .sidebar {
   width:          var(--sidebar-width);
+  min-width:      180px;
+  max-width:      450px;
   display:        flex;
   flex-direction: column;
   background:     var(--sidebar-bg);
@@ -14,6 +16,22 @@
   flex-shrink:    0;
   overflow:       hidden;
   user-select:    none;
+}
+
+.vault-toggle {
+  cursor:      pointer;
+  display:     flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vault-toggle:hover {
+  background: var(--sidebar-item-hover);
+}
+
+.vault-toggle-arrow {
+  font-size: var(--font-size-xs);
+  color:     var(--muted-foreground);
 }
 
 /* Section: fills remaining space, scrollable */
@@ -799,10 +817,9 @@
 
 /* ── Vault switcher (bottom of sidebar) ──────────────────────────────────── */
 .vault-switcher {
-  border-top:     1px solid var(--sidebar-border);
+  border-bottom:  1px solid var(--sidebar-border);
   flex-shrink:    0;
   padding:        var(--space-1) 0 var(--space-2);
-  max-height:     160px;
   overflow-y:     auto;
 }
 

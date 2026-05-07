@@ -55,6 +55,8 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
 
     rsx! {
         nav { class: "sidebar",
+            VaultSwitcher {}
+
             div { class: "sidebar-section",
                 div { class: "sidebar-section-header",
                     span { class: "sidebar-heading", "NOTES" }
@@ -119,8 +121,6 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
                 }
             }
-
-            VaultSwitcher {}
         }
     }
 }
@@ -449,18 +449,28 @@ fn VaultSwitcher() -> Element {
     let mut new_repo = use_signal(String::new);
     let mut remove_confirm: Signal<Option<String>> = use_signal(|| None);
 
+    let mut collapsed = use_signal(|| true);
+
     rsx! {
         div { class: "sidebar-section vault-switcher",
-            div { class: "sidebar-section-header",
+            div {
+                class: "sidebar-section-header vault-toggle",
+                onclick: move |_| { let v = *collapsed.read(); *collapsed.write() = !v; },
                 span { class: "sidebar-heading", "VAULTS" }
+                span { class: "vault-toggle-arrow",
+                    if *collapsed.read() { "\u{25B8}" } else { "\u{25BE}" }
+                }
             }
 
-            // Current vault
+            // Current vault (always visible)
             div { class: "vault-current",
                 span { class: "vault-current-name", "{current_name}" }
-                span { class: "vault-current-path", "{current_root.display()}" }
+                if !*collapsed.read() {
+                    span { class: "vault-current-path", "{current_root.display()}" }
+                }
             }
 
+            if !*collapsed.read() {
             // Other cloned vaults — click to switch
             for vault in profile.read().known_vaults.iter().filter(|vault| vault.root != current_root).cloned() {
                 {
@@ -645,6 +655,7 @@ fn VaultSwitcher() -> Element {
                     }
                 }
             }
+            } // end if !collapsed
         }
     }
 }

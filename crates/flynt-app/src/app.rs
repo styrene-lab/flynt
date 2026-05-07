@@ -434,6 +434,7 @@ pub fn App() -> Element {
             }
             div { class: "flynt-body",
                 Sidebar { active_route: active_route }
+                crate::components::SidebarDivider {}
                 div { class: "main-content",
                     // Tab bar rendered inside NotesView to avoid race with is_drawing signal
                     match *active_route.read() {
