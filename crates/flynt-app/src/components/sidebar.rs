@@ -155,8 +155,9 @@ fn build_tree(docs: &[DocumentMeta]) -> Element {
             .collect();
 
         if components.len() <= 1 {
-            // Root-level file — use title as sort key
-            root.entry(format!("\x7F{}", doc.title))
+            // Root-level file — use filename for unique identity, prefixed to sort after folders
+            let filename = components.last().cloned().unwrap_or_else(|| doc.title.clone());
+            root.entry(format!("~{filename}"))
                 .or_insert(TreeNode::File(doc.clone()));
         } else {
             // Walk/create nested folder path
@@ -173,35 +174,51 @@ fn build_tree(docs: &[DocumentMeta]) -> Element {
                     _ => unreachable!(),
                 };
             }
-            current.entry(format!("\x7F{}", doc.title))
+            let filename = components.last().cloned().unwrap_or_else(|| doc.title.clone());
+            current.entry(format!("~{filename}"))
                 .or_insert(TreeNode::File(doc.clone()));
         }
     }
 
-    rsx! { { render_tree_level(&root, 0) } }
+    rsx! { { render_tree_level(&root, 0, "") } }
 }
 
-/// Recursively render a tree level. Not a #[component] — just a function
-/// that returns Element, avoiding Dioxus Props derive issues with complex types.
-fn render_tree_level(nodes: &BTreeMap<String, TreeNode>, depth: u32) -> Element {
+/// Recursively render a tree level using keyed components for stable hook identity.
+fn render_tree_level(nodes: &BTreeMap<String, TreeNode>, depth: u32, path_prefix: &str) -> Element {
     let entries: Vec<_> = nodes.iter().collect();
 
     rsx! {
-        for (_key, node) in entries.iter() {
+        for (key, node) in entries.iter() {
             match *node {
                 TreeNode::Folder { name, children } => {
-                    { render_folder(name, children, depth) }
+                    let full_path = if path_prefix.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{path_prefix}/{name}")
+                    };
+                    rsx! {
+                        div { key: "{full_path}",
+                            { render_folder_keyed(name, &full_path, children, depth) }
+                        }
+                    }
                 },
-                TreeNode::File(doc) => rsx! {
-                    TreeFile { meta: doc.clone(), depth }
+                TreeNode::File(doc) => {
+                    let doc_key = doc.id.0.to_string();
+                    rsx! {
+                        TreeFile { key: "{doc_key}", meta: doc.clone(), depth }
+                    }
                 },
             }
         }
     }
 }
 
-fn render_folder(name: &str, children: &BTreeMap<String, TreeNode>, depth: u32) -> Element {
+/// Folder wrapper — uses a keyed div so Dioxus allocates a stable hook scope
+/// per folder identity. The actual hook (`use_signal`) lives inside this
+/// keyed scope and survives folder list changes.
+fn render_folder_keyed(name: &str, path: &str, children: &BTreeMap<String, TreeNode>, depth: u32) -> Element {
     let name = name.to_string();
+    let path = path.to_string();
     let children = children.clone();
     let count: usize = children.values().map(|c| c.file_count()).sum();
     let mut open = use_signal(|| false);
@@ -217,7 +234,7 @@ fn render_folder(name: &str, children: &BTreeMap<String, TreeNode>, depth: u32) 
             span { class: "tree-count", "{count}" }
         }
         if *open.read() {
-            { render_tree_level(&children, depth + 1) }
+            { render_tree_level(&children, depth + 1, &path) }
         }
     }
 }
@@ -289,7 +306,7 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                                 crate::components::ContextMenuItem::new("reveal", if cfg!(target_os = "macos") { "Reveal in Finder" } else { "Open in File Manager" }),
                             ];
                             all.extend(kind_items);
-                            all.push(crate::components::ContextMenuItem::danger("delete", "Move to Trash").sep());
+                            all.push(crate::components::ContextMenuItem::danger("delete", "Delete").sep());
                             all
                         },
                         on_close: move |_| *ctx_menu.write() = None,

@@ -534,7 +534,6 @@ pub fn SettingsView() -> Element {
                 // ════════════════════════════════════════════════════════════
                 if *active_tab.read() == SettingsTab::Omegon {
 
-                crate::components::omegon::session_status::SessionStatusPanel {}
                 crate::components::omegon::OmegonSettingsSection {}
                 crate::components::omegon::ExtensionManagerSection {}
 

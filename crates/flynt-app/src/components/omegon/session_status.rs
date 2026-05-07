@@ -78,15 +78,20 @@ fn parse_provider_status(text: &str) -> Vec<ProviderState> {
 }
 
 fn provider_for_model(model: &str) -> &str {
-    if model.starts_with("ollama:") || model.contains("llama") || model.contains("qwen") || model.contains("mistral") || model.contains("gemma") || model.contains("phi") {
-        "ollama"
-    } else if model.contains("claude") || model.starts_with("anthropic:") {
-        "anthropic"
-    } else if model.contains("gpt") || model.starts_with("openai:") || model.contains("o1") || model.contains("o3") || model.contains("o4") {
-        "openai"
-    } else {
-        "unknown"
+    // Explicit prefix takes priority — no heuristics needed
+    if model.starts_with("anthropic:") { return "anthropic"; }
+    if model.starts_with("openai:") { return "openai"; }
+    if model.starts_with("ollama:") { return "ollama"; }
+    if model.starts_with("openrouter:") { return "openrouter"; }
+
+    // Heuristic fallback for unprefixed model names
+    if model.starts_with("claude") { return "anthropic"; }
+    if model.starts_with("gpt-") || model.starts_with("o1-") || model.starts_with("o3-") || model.starts_with("o4-") {
+        return "openai";
     }
+
+    // If none of the above matched, assume local/ollama
+    "ollama"
 }
 
 #[component]
