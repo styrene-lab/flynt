@@ -194,7 +194,7 @@ pub fn GraphView() -> Element {
                                 }
                                 // Filters
                                 div { class: "panel-section",
-                                    div { class: "panel-heading", "Filters" }
+                                    div { class: "panel-heading", "Type" }
                                     div { class: "panel-row",
                                         button {
                                             class: if s.kind.is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
@@ -216,47 +216,23 @@ pub fn GraphView() -> Element {
                                         }
                                     }
                                     if payload.groups.len() > 1 {
-                                        div { class: "panel-row",
-                                            button {
-                                                class: if s.group.is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
-                                                onclick: move |_| settings.write().group = None,
-                                                "All groups"
-                                            }
-                                            for group in &payload.groups {
-                                                button {
-                                                    class: if s.group.as_ref() == Some(group) { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
-                                                    onclick: {
-                                                        let group = group.clone();
-                                                        move |_| {
-                                                            let mut s = settings.write();
-                                                            if s.group.as_ref() == Some(&group) { s.group = None; } else { s.group = Some(group.clone()); }
-                                                        }
-                                                    },
-                                                    "{group}"
-                                                }
-                                            }
+                                        CollapsibleFilterSection {
+                                            label: "Groups",
+                                            count: payload.groups.len(),
+                                            active: s.group.clone(),
+                                            items: payload.groups.clone(),
+                                            on_select: move |group: Option<String>| settings.write().group = group,
+                                            prefix: "",
                                         }
                                     }
                                     if !payload.all_tags.is_empty() {
-                                        div { class: "panel-row",
-                                            button {
-                                                class: if s.tag.is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
-                                                onclick: move |_| settings.write().tag = None,
-                                                "all tags"
-                                            }
-                                            for tag in &payload.all_tags {
-                                                button {
-                                                    class: if s.tag.as_ref() == Some(tag) { "btn btn-primary btn-xs tag-chip" } else { "btn btn-ghost btn-xs tag-chip" },
-                                                    onclick: {
-                                                        let tag = tag.clone();
-                                                        move |_| {
-                                                            let mut s = settings.write();
-                                                            if s.tag.as_ref() == Some(&tag) { s.tag = None; } else { s.tag = Some(tag.clone()); }
-                                                        }
-                                                    },
-                                                    "#{tag}"
-                                                }
-                                            }
+                                        CollapsibleFilterSection {
+                                            label: "Tags",
+                                            count: payload.all_tags.len(),
+                                            active: s.tag.clone(),
+                                            items: payload.all_tags.clone(),
+                                            on_select: move |tag: Option<String>| settings.write().tag = tag,
+                                            prefix: "#",
                                         }
                                     }
                                     div { class: "panel-toggle",
@@ -930,3 +906,99 @@ function flyntGraph(data) {
   render();
 }
 "#;
+
+const MAX_VISIBLE_ITEMS: usize = 12;
+
+/// Collapsible filter section with search and "show more".
+#[component]
+fn CollapsibleFilterSection(
+    label: &'static str,
+    count: usize,
+    active: Option<String>,
+    items: Vec<String>,
+    on_select: EventHandler<Option<String>>,
+    prefix: &'static str,
+) -> Element {
+    let mut expanded = use_signal(|| false);
+    let mut search = use_signal(String::new);
+    let mut show_all = use_signal(|| false);
+
+    let search_val = search.read().to_lowercase();
+    let filtered: Vec<&String> = if search_val.is_empty() {
+        items.iter().collect()
+    } else {
+        items.iter().filter(|t| t.to_lowercase().contains(&search_val)).collect()
+    };
+
+    let visible_count = if *show_all.read() { filtered.len() } else { filtered.len().min(MAX_VISIBLE_ITEMS) };
+    let has_more = filtered.len() > MAX_VISIBLE_ITEMS && !*show_all.read();
+
+    rsx! {
+        div { class: "filter-section",
+            button {
+                class: "filter-section-header",
+                onclick: move |_| { let v = *expanded.read(); *expanded.write() = !v; },
+                span { class: "filter-section-chevron",
+                    if *expanded.read() { "\u{25BE}" } else { "\u{25B8}" }
+                }
+                span { class: "filter-section-label", "{label}" }
+                span { class: "filter-section-count", "{count}" }
+                if active.is_some() {
+                    span { class: "filter-section-active", "\u{25CF}" }
+                }
+            }
+            if *expanded.read() {
+                div { class: "filter-section-body",
+                    if count > MAX_VISIBLE_ITEMS {
+                        input {
+                            class: "filter-search",
+                            placeholder: "Filter {label}\u{2026}",
+                            value: "{search}",
+                            oninput: move |e| {
+                                *search.write() = e.value();
+                                *show_all.write() = false;
+                            },
+                        }
+                    }
+                    div { class: "filter-chips",
+                        button {
+                            class: if active.is_none() { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
+                            onclick: move |_| on_select.call(None),
+                            "All"
+                        }
+                        for item in filtered.iter().take(visible_count) {
+                            {
+                                let item_val = (*item).clone();
+                                let is_active = active.as_ref() == Some(&item_val);
+                                rsx! {
+                                    button {
+                                        class: if is_active { "btn btn-primary btn-xs" } else { "btn btn-ghost btn-xs" },
+                                        onclick: {
+                                            let item_val = item_val.clone();
+                                            let was_active = is_active;
+                                            move |_| {
+                                                if was_active {
+                                                    on_select.call(None);
+                                                } else {
+                                                    on_select.call(Some(item_val.clone()));
+                                                }
+                                            }
+                                        },
+                                        "{prefix}{item_val}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if has_more {
+                        button {
+                            class: "filter-show-more",
+                            onclick: move |_| *show_all.write() = true,
+                            "+ {filtered.len() - MAX_VISIBLE_ITEMS} more"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

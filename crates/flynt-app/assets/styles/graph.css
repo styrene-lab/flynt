@@ -181,6 +181,85 @@
   opacity:   0.8;
 }
 
+/* ── Collapsible filter section ─────────────────────────────────────────── */
+.filter-section {
+  margin-top: var(--space-2);
+}
+
+.filter-section-header {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-1);
+  width:       100%;
+  text-align:  left;
+  padding:     var(--space-1) 0;
+  cursor:      pointer;
+  font-size:   var(--font-size-xs);
+  color:       var(--muted-foreground);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.filter-section-header:hover {
+  color: var(--foreground);
+}
+
+.filter-section-chevron {
+  font-size:  8px;
+  width:      10px;
+  flex-shrink: 0;
+}
+
+.filter-section-label {
+  flex: 1;
+}
+
+.filter-section-count {
+  font-size:   9px;
+  font-weight: normal;
+  color:       var(--dim);
+}
+
+.filter-section-active {
+  font-size: 6px;
+  color:     var(--primary);
+}
+
+.filter-section-body {
+  padding-top: var(--space-1);
+}
+
+.filter-search {
+  width:         100%;
+  background:    var(--surface);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding:       2px var(--space-2);
+  font-size:     var(--font-size-xs);
+  color:         var(--foreground);
+  outline:       none;
+  margin-bottom: var(--space-1);
+}
+.filter-search:focus { border-color: var(--ring); }
+.filter-search::placeholder { color: var(--muted-foreground); }
+
+.filter-chips {
+  display:  flex;
+  flex-wrap: wrap;
+  gap:      3px;
+}
+
+.filter-show-more {
+  font-size: var(--font-size-xs);
+  color:     var(--primary-muted);
+  cursor:    pointer;
+  padding:   var(--space-1) 0;
+  width:     100%;
+  text-align: left;
+}
+.filter-show-more:hover { color: var(--primary); }
+
 /* ── Toggle row (label + pill buttons) ──────────────────────────────────── */
 .panel-toggle {
   display:     flex;

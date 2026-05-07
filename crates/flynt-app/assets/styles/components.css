@@ -18,128 +18,141 @@
   user-select:    none;
 }
 
-.vault-toggle {
-  cursor:      pointer;
+/* ── Vault selector (compact top bar) ──────────────────────────────── */
+.vault-selector {
+  flex-shrink:   0;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.vault-selector-btn {
   display:     flex;
   align-items: center;
   justify-content: space-between;
+  width:       100%;
+  padding:     var(--space-2) var(--space-3);
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color:       var(--primary-bright);
+  cursor:      pointer;
+  transition:  background var(--duration-fast) var(--ease);
 }
 
-.vault-toggle:hover {
+.vault-selector-btn:hover {
   background: var(--sidebar-item-hover);
 }
 
-.vault-toggle-arrow {
-  font-size: var(--font-size-xs);
-  color:     var(--muted-foreground);
+.vault-selector-name {
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
 }
 
-/* Section: fills remaining space, scrollable */
-.sidebar-section {
+.vault-selector-arrow {
+  font-size: var(--font-size-xs);
+  color:     var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.vault-dropdown {
+  border-top:  1px solid var(--sidebar-border);
+  max-height:  200px;
+  overflow-y:  auto;
+}
+
+.vault-dropdown-item {
+  display:    block;
+  width:      100%;
+  text-align: left;
+  padding:    var(--space-1) var(--space-3);
+  font-size:  var(--font-size-xs);
+  color:      var(--sidebar-fg);
+  cursor:     pointer;
+  transition: background var(--duration-fast) var(--ease);
+}
+
+.vault-dropdown-item:hover {
+  background: var(--sidebar-item-hover);
+}
+
+.vault-dropdown-item.muted {
+  color: var(--muted-foreground);
+}
+
+/* ── File tree ──────────────────────────────────────────────────────── */
+.file-tree {
   flex:           1;
   display:        flex;
   flex-direction: column;
-  gap:            0;
-  padding:        var(--space-1) 0;
   overflow-y:     auto;
   min-height:     0;
 }
 
-.sidebar-heading {
-  font-size:       10px;
-  font-weight:     var(--font-weight-semibold);
-  color:           var(--muted-foreground);
-  padding:         var(--space-2) var(--space-3) var(--space-1);
-  letter-spacing:  0.08em;
+.file-tree-header {
+  display:         flex;
+  justify-content: flex-end;
+  padding:         var(--space-1) var(--space-2);
+  flex-shrink:     0;
 }
 
-/* Legacy sidebar-item — used by loading/empty states */
-.sidebar-item {
+.file-tree-new-btn {
+  width:         20px;
+  height:        20px;
+  border-radius: var(--radius);
+  font-size:     14px;
+  color:         var(--muted-foreground);
   display:       flex;
   align-items:   center;
-  gap:           var(--space-2);
-  padding:       3px var(--space-3);
+  justify-content: center;
+  cursor:        pointer;
+  transition:    color var(--duration-fast), background var(--duration-fast);
+}
+.file-tree-new-btn:hover { color: var(--primary); background: var(--accent); }
+
+/* Tree item — shared base for folders and files */
+.tree-item {
+  display:       flex;
+  align-items:   center;
+  gap:           4px;
+  height:        22px;
+  padding-right: var(--space-2);
   font-size:     var(--font-size-xs);
   color:         var(--sidebar-fg);
   cursor:        pointer;
-  text-align:    left;
   width:         100%;
-}
-
-.sidebar-item.muted {
-  color:  var(--muted-foreground);
-  cursor: default;
-}
-.sidebar-empty-state {
-  padding:      16px 14px;
-  text-align:   center;
-}
-.sidebar-empty-heading {
-  font-size:    13px;
-  font-weight:  600;
-  color:        var(--muted-foreground);
-  margin:       0 0 6px 0;
-}
-.sidebar-empty-hint {
-  font-size:    11px;
-  color:        var(--muted-foreground);
-  opacity:      0.7;
-  line-height:  1.5;
-  margin:       0;
-  padding: var(--space-2) var(--space-3);
-}
-
-/* ── Document item — the core sidebar element ────────────────────────────── */
-.sidebar-doc {
-  display:       flex;
-  align-items:   center;
-  gap:           var(--space-1);
-  padding:       3px var(--space-3) 3px var(--space-3);
-  border-radius: 0;
-  font-size:     var(--font-size-xs);
-  color:         var(--sidebar-fg);
-  cursor:        pointer;
   text-align:    left;
-  width:         100%;
-  transition:    background var(--duration-fast) var(--ease),
-                 color      var(--duration-fast) var(--ease);
+  white-space:   nowrap;
+  transition:    background var(--duration-fast) var(--ease);
 }
 
-.sidebar-doc:hover {
+.tree-item:hover {
   background: var(--sidebar-item-hover);
 }
 
-.sidebar-doc.active {
-  background:  var(--sidebar-item-active);
-  color:       var(--sidebar-item-active-fg);
-  box-shadow:  inset 2px 0 0 var(--primary);
+.tree-item.active {
+  background: var(--sidebar-item-active);
+  color:      var(--sidebar-item-active-fg);
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
-.sidebar-doc.indent {
-  padding-left: calc(var(--space-3) + 16px);
-}
-
-.sidebar-doc.muted {
-  color: var(--muted-foreground);
-}
-.sidebar-doc.muted:hover {
-  color: var(--foreground);
-}
-
-.doc-icon {
-  font-size:   8px;
-  color:       var(--dim);
+.tree-chevron {
+  font-size:  8px;
+  width:      8px;
   flex-shrink: 0;
-  width:       12px;
-  text-align:  center;
-  line-height: 1;
+  color:      var(--muted-foreground);
 }
 
-.sidebar-doc.active .doc-icon {
+.tree-file-icon {
+  font-size:  7px;
+  width:      8px;
+  flex-shrink: 0;
+  color:      var(--dim);
+}
+
+.tree-item.active .tree-file-icon {
   color: var(--primary-muted);
 }
 
-.doc-title {
+.tree-name {
   overflow:      hidden;
   text-overflow: ellipsis;
   white-space:   nowrap;
@@ -147,12 +160,74 @@
   min-width:     0;
 }
 
-/* Divider between folder groups and root files */
-.sidebar-divider {
-  height:     1px;
-  background: var(--sidebar-border);
-  margin:     var(--space-2) var(--space-3);
+.tree-folder .tree-name {
+  font-weight: var(--font-weight-medium);
+  color:       var(--muted-foreground);
+}
+
+.tree-count {
+  font-size:  9px;
+  color:      var(--dim);
   flex-shrink: 0;
+}
+
+.tree-empty {
+  padding:    var(--space-4) var(--space-3);
+  font-size:  var(--font-size-xs);
+  color:      var(--muted-foreground);
+  text-align: center;
+}
+
+.tree-item.muted {
+  color:  var(--muted-foreground);
+  cursor: default;
+}
+
+.tree-new-note {
+  padding: var(--space-1) var(--space-2);
+}
+
+.tree-new-note-input {
+  width:         100%;
+  background:    var(--surface);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding:       2px var(--space-2);
+  font-size:     var(--font-size-xs);
+  color:         var(--foreground);
+  outline:       none;
+}
+.tree-new-note-input:focus { border-color: var(--ring); }
+.tree-new-note-input::placeholder { color: var(--muted-foreground); }
+
+.tree-new-note-err {
+  font-size: 10px;
+  color:     var(--error);
+  padding:   2px var(--space-2);
+}
+
+/* Legacy sidebar-doc — still used by vault dropdown items */
+.sidebar-doc {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--space-1);
+  padding:       3px var(--space-3);
+  font-size:     var(--font-size-xs);
+  color:         var(--sidebar-fg);
+  cursor:        pointer;
+  width:         100%;
+  text-align:    left;
+  transition:    background var(--duration-fast) var(--ease);
+}
+.sidebar-doc:hover { background: var(--sidebar-item-hover); }
+.sidebar-doc.muted { color: var(--muted-foreground); }
+.sidebar-doc.muted:hover { color: var(--foreground); }
+
+.doc-icon {
+  font-size: 8px; color: var(--dim); flex-shrink: 0; width: 12px; text-align: center;
+}
+.doc-title {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
 }
 
 /* Bottom nav strip */
@@ -721,128 +796,7 @@
 }
 
 /* ── Sidebar folder tree ──────────────────────────────────────────────────── */
-.sidebar-section-header {
-  display:         flex;
-  align-items:     center;
-  justify-content: space-between;
-  padding:         var(--space-2) var(--space-3) var(--space-1);
-}
-
-.sidebar-new-btn {
-  font-size:     14px;
-  color:         var(--muted-foreground);
-  width:         18px;
-  height:        18px;
-  border-radius: var(--radius-sm);
-  line-height:   1;
-  display:       flex;
-  align-items:   center;
-  justify-content: center;
-  transition:    color var(--duration-fast), background var(--duration-fast);
-}
-.sidebar-new-btn:hover { color: var(--primary); background: var(--accent); }
-
-.sidebar-folder {
-  display:        flex;
-  flex-direction: column;
-  margin-top:     var(--space-1);
-}
-
-.sidebar-folder-header {
-  display:       flex;
-  align-items:   center;
-  gap:           var(--space-1);
-  padding:       4px var(--space-3);
-  width:         100%;
-  text-align:    left;
-  border-radius: 0;
-  font-size:     var(--font-size-xs);
-  color:         var(--muted-foreground);
-  font-weight:   var(--font-weight-semibold);
-  transition:    background var(--duration-fast), color var(--duration-fast);
-}
-.sidebar-folder-header:hover { background: var(--sidebar-item-hover); color: var(--foreground); }
-
-.folder-chevron {
-  font-size:   9px;
-  flex-shrink: 0;
-  width:       10px;
-  transition:  transform var(--duration-fast) var(--ease);
-  display:     inline-block;
-}
-.folder-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.folder-count {
-  font-size:   10px;
-  font-weight: normal;
-  color:       var(--dim);
-}
-
-.sidebar-folder-contents {
-  display:        flex;
-  flex-direction: column;
-  gap:            0;
-}
-
-/* ── New note inline input ───────────────────────────────────────────────── */
-.sidebar-new-note {
-  padding:    var(--space-1) var(--space-2);
-  display:    flex;
-  flex-direction: column;
-  gap:        var(--space-1);
-}
-
-.sidebar-new-note-input {
-  width:         100%;
-  background:    var(--surface);
-  border:        1px solid var(--ring);
-  border-radius: var(--radius-sm);
-  padding:       4px var(--space-2);
-  font-size:     var(--font-size-sm);
-  color:         var(--foreground);
-  outline:       none;
-  box-shadow:    0 0 0 2px rgba(42, 180, 200, 0.2);
-}
-
-.sidebar-new-note-input::placeholder { color: var(--muted-foreground); }
-
-.sidebar-new-note-err {
-  font-size: var(--font-size-xs);
-  color:     var(--error);
-}
-
-/* ── Vault switcher (bottom of sidebar) ──────────────────────────────────── */
-.vault-switcher {
-  border-bottom:  1px solid var(--sidebar-border);
-  flex-shrink:    0;
-  padding:        var(--space-1) 0 var(--space-2);
-  overflow-y:     auto;
-}
-
-.vault-current {
-  display:        flex;
-  flex-direction: column;
-  gap:            1px;
-  padding:        var(--space-1) var(--space-3);
-}
-
-.vault-current-name {
-  font-size:   var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color:       var(--primary-bright);
-}
-
-.vault-current-path {
-  font-size:      10px;
-  color:          var(--dim);
-  overflow:       hidden;
-  text-overflow:  ellipsis;
-  white-space:    nowrap;
-}
+/* Old sidebar styles removed — replaced by file tree and vault selector above */
 
 /* ── Vault CRUD ────────────────────────────────────────────────────────── */
 .sidebar-doc-row {
