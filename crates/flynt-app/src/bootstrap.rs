@@ -458,7 +458,11 @@ impl OmegonRuntimeContext {
             .map(PathBuf::from)
             .ok()
             .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| omegon_runtime_root.clone());
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .map(|h| h.join(".omegon"))
+                    .unwrap_or_else(|| omegon_runtime_root.clone())
+            });
 
         Self {
             local_state_root,

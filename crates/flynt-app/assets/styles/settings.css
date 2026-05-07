@@ -631,6 +631,49 @@
   color:       var(--foreground);
 }
 
+.extension-card-disabled {
+  opacity: 0.6;
+}
+
+.extension-card-badge {
+  font-size:      var(--font-size-xs);
+  padding:        1px var(--space-2);
+  border-radius:  var(--radius-full);
+  font-weight:    var(--font-weight-medium);
+}
+
+.extension-card-badge.disabled {
+  background: rgba(96, 120, 136, 0.15);
+  color:      var(--muted-foreground);
+}
+
+.extension-card-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+}
+
+.extension-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+  padding-top: var(--space-3);
+  border-top:  1px solid var(--border-dim);
+  margin-top:  var(--space-2);
+}
+
+.extension-install-form {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  flex-wrap:   wrap;
+  padding-top: var(--space-2);
+}
+
+.extension-install-form .input {
+  max-width: 400px;
+}
+
 /* ── Extension config panel ─────────────────────────────────────────── */
 .extension-config-panel {
   display:        flex;

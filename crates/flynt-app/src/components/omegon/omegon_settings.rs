@@ -17,25 +17,33 @@ pub fn OmegonSettingsSection() -> Element {
     let shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
     let config_options = use_context::<Signal<Vec<ConfigOption>>>();
 
-    // Load unified config from disk
+    // Load config from disk, then overlay live ACP session values.
+    // The rail dropdowns and this panel must show the same state.
     let omegon = ctx.omegon();
     let profile = omegon.load_project_profile();
     let operator = omegon.load_operator_settings();
     let mut config = use_signal(|| UnifiedOmegonConfig::load(&profile, &operator));
 
+    // Sync model/thinking/posture from the live ACP session whenever
+    // config_options changes (i.e. when the rail dropdowns are used).
+    let opts = config_options.read();
+    let live_model = opts.iter().find(|o| o.id == "model").map(|o| o.current_value.clone());
+    let live_thinking = opts.iter().find(|o| o.id == "thinking").map(|o| o.current_value.clone());
+    let live_posture = opts.iter().find(|o| o.id == "posture").map(|o| o.current_value.clone());
+    if let Some(ref m) = live_model { if *m != config.read().model { config.write().model = m.clone(); } }
+    if let Some(ref t) = live_thinking { if *t != config.read().thinking { config.write().thinking = t.clone(); } }
+    if let Some(ref p) = live_posture { if *p != config.read().posture { config.write().posture = p.clone(); } }
+
     let mut save_msg: Signal<Option<(&str, &str)>> = use_signal(|| None);
     let mut show_advanced = use_signal(|| false);
 
-    // Resolve available model options from ACP session config
-    let model_options: Vec<(String, String)> = config_options
-        .read()
+    let model_options: Vec<(String, String)> = opts
         .iter()
         .find(|o| o.id == "model")
         .map(|o| o.options.iter().map(|v| (v.value.clone(), v.name.clone())).collect())
         .unwrap_or_default();
 
-    let thinking_options: Vec<(String, String)> = config_options
-        .read()
+    let thinking_options: Vec<(String, String)> = opts
         .iter()
         .find(|o| o.id == "thinking")
         .map(|o| o.options.iter().map(|v| (v.value.clone(), v.name.clone())).collect())
@@ -91,7 +99,13 @@ pub fn OmegonSettingsSection() -> Element {
                     select {
                         class: "input settings-input",
                         value: "{config.read().model}",
-                        onchange: move |e| config.write().model = e.value(),
+                        onchange: move |e| {
+                            let val = e.value();
+                            config.write().model = val.clone();
+                            if let Some(sess) = shared_session.read().clone() {
+                                spawn(async move { sess.set_config("model", &val).await; });
+                            }
+                        },
                         if model_options.is_empty() {
                             option { value: "{config.read().model}", "{config.read().model}" }
                         }
@@ -106,7 +120,13 @@ pub fn OmegonSettingsSection() -> Element {
                     select {
                         class: "input settings-input",
                         value: "{config.read().thinking}",
-                        onchange: move |e| config.write().thinking = e.value(),
+                        onchange: move |e| {
+                            let val = e.value();
+                            config.write().thinking = val.clone();
+                            if let Some(sess) = shared_session.read().clone() {
+                                spawn(async move { sess.set_config("thinking", &val).await; });
+                            }
+                        },
                         for (value, name) in &thinking_options {
                             option { value: "{value}", "{name}" }
                         }
@@ -117,7 +137,12 @@ pub fn OmegonSettingsSection() -> Element {
                 SettingsRow { label: "Posture",
                     super::PosturePicker {
                         current: config.read().posture.clone(),
-                        on_change: move |v: String| config.write().posture = v,
+                        on_change: move |v: String| {
+                            config.write().posture = v.clone();
+                            if let Some(sess) = shared_session.read().clone() {
+                                spawn(async move { sess.set_config("posture", &v).await; });
+                            }
+                        },
                         vault_root: ctx.vault_root(),
                     }
                 }

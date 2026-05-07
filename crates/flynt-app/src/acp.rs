@@ -437,4 +437,37 @@ impl AcpSession {
             "extension": extension,
         })).await
     }
+
+    /// Install an extension from a local path, git URL, or tarball URI.
+    pub async fn extensions_install(&self, uri: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/install", serde_json::json!({
+            "uri": uri,
+        })).await
+    }
+
+    /// Remove an installed extension.
+    pub async fn extensions_remove(&self, extension: &str) -> Result<serde_json::Value> {
+        self.ext_call("extensions/remove", serde_json::json!({
+            "extension": extension,
+        })).await
+    }
+
+    /// Update an extension (git pull + rebuild). Pass None to update all.
+    pub async fn extensions_update(&self, extension: Option<&str>) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({});
+        if let Some(name) = extension {
+            params["extension"] = serde_json::Value::String(name.into());
+        }
+        self.ext_call("extensions/update", params).await
+    }
+
+    /// List available skills (bundled + project-local).
+    pub async fn skills_list(&self) -> Result<serde_json::Value> {
+        self.ext_call("skills/list", serde_json::json!({})).await
+    }
+
+    /// Install all bundled skills to ~/.omegon/skills/.
+    pub async fn skills_install(&self) -> Result<serde_json::Value> {
+        self.ext_call("skills/install", serde_json::json!({})).await
+    }
 }

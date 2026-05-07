@@ -98,7 +98,9 @@ pub fn ExtensionManagerSection() -> Element {
         .map(|v| parse_extensions_list(v))
         .unwrap_or_default();
 
-    let mut remove_error: Signal<Option<String>> = use_signal(|| None);
+    let mut action_msg: Signal<Option<(&'static str, String)>> = use_signal(|| None);
+    let mut install_uri = use_signal(String::new);
+    let mut show_install = use_signal(|| false);
 
     rsx! {
         section { class: "settings-section",
@@ -107,32 +109,77 @@ pub fn ExtensionManagerSection() -> Element {
                 for ext in extensions.read().as_ref().unwrap_or(&vec![]).iter() {
                     {
                         let ext_data = ext_data_list.iter().find(|d| d.name == ext.name).cloned();
+                        let is_enabled = ext_data.as_ref().map(|d| d.enabled).unwrap_or(true);
                         rsx! {
-                            div { class: "extension-card",
+                            div { class: if is_enabled { "extension-card" } else { "extension-card extension-card-disabled" },
                                 div { class: "extension-card-header",
                                     div { class: "extension-card-identity",
                                         span { class: "extension-card-name", "{ext.name}" }
                                         span { class: "provider-status-text", "v{ext.version}" }
+                                        if !is_enabled {
+                                            span { class: "extension-card-badge disabled", "disabled" }
+                                        }
                                     }
-                                    button {
-                                        class: "btn btn-ghost btn-sm provider-remove-btn",
-                                        onclick: {
-                                            let path = ext.path.clone();
-                                            let name = ext.name.clone();
-                                            move |_| {
-                                                match std::fs::remove_dir_all(&path) {
-                                                    Ok(()) => {
-                                                        tracing::info!("Removed extension: {name}");
-                                                        *refresh.write() += 1;
+                                    div { class: "extension-card-actions",
+                                        if is_enabled {
+                                            button {
+                                                class: "btn btn-ghost btn-sm",
+                                                onclick: {
+                                                    let name = ext.name.clone();
+                                                    let sess = shared_session.read().clone();
+                                                    move |_| {
+                                                        let name = name.clone();
+                                                        let sess = sess.clone();
+                                                        spawn(async move {
+                                                            if let Some(s) = sess {
+                                                                let _ = s.extensions_disable(&name).await;
+                                                                *refresh.write() += 1;
+                                                            }
+                                                        });
                                                     }
-                                                    Err(e) => {
-                                                        tracing::error!("Failed to remove extension {name}: {e}");
-                                                        *remove_error.write() = Some(format!("Failed to remove {name}: {e}"));
-                                                    }
-                                                }
+                                                },
+                                                "Disable"
                                             }
-                                        },
-                                        "Remove"
+                                        } else {
+                                            button {
+                                                class: "btn btn-ghost btn-sm",
+                                                onclick: {
+                                                    let name = ext.name.clone();
+                                                    let sess = shared_session.read().clone();
+                                                    move |_| {
+                                                        let name = name.clone();
+                                                        let sess = sess.clone();
+                                                        spawn(async move {
+                                                            if let Some(s) = sess {
+                                                                let _ = s.extensions_enable(&name).await;
+                                                                *refresh.write() += 1;
+                                                            }
+                                                        });
+                                                    }
+                                                },
+                                                "Enable"
+                                            }
+                                        }
+                                        button {
+                                            class: "btn btn-ghost btn-sm provider-remove-btn",
+                                            onclick: {
+                                                let name = ext.name.clone();
+                                                let sess = shared_session.read().clone();
+                                                move |_| {
+                                                    let name = name.clone();
+                                                    let sess = sess.clone();
+                                                    spawn(async move {
+                                                        if let Some(s) = sess {
+                                                            match s.extensions_remove(&name).await {
+                                                                Ok(_) => *refresh.write() += 1,
+                                                                Err(e) => *action_msg.write() = Some(("err", format!("Remove failed: {e}"))),
+                                                            }
+                                                        }
+                                                    });
+                                                }
+                                            },
+                                            "Remove"
+                                        }
                                     }
                                 }
                                 if !ext.description.is_empty() {
@@ -154,8 +201,81 @@ pub fn ExtensionManagerSection() -> Element {
                     }
                 }
             }
-            if let Some(ref err) = *remove_error.read() {
-                span { class: "text-error", "{err}" }
+
+            // ── Install / Update actions ──
+            div { class: "extension-actions",
+                button {
+                    class: "btn btn-ghost",
+                    onclick: move |_| {
+                        let v = *show_install.read();
+                        *show_install.write() = !v;
+                    },
+                    if *show_install.read() { "Cancel" } else { "Install extension" }
+                }
+                button {
+                    class: "btn btn-ghost",
+                    onclick: {
+                        let sess = shared_session.read().clone();
+                        move |_| {
+                            let sess = sess.clone();
+                            spawn(async move {
+                                if let Some(s) = sess {
+                                    match s.extensions_update(None).await {
+                                        Ok(_) => {
+                                            *action_msg.write() = Some(("ok", "Extensions updated".into()));
+                                            *refresh.write() += 1;
+                                        }
+                                        Err(e) => *action_msg.write() = Some(("err", format!("Update failed: {e}"))),
+                                    }
+                                }
+                            });
+                        }
+                    },
+                    "Update all"
+                }
+                if let Some((kind, msg)) = &*action_msg.read() {
+                    span {
+                        class: if *kind == "ok" { "save-msg ok" } else { "save-msg err" },
+                        "{msg}"
+                    }
+                }
+            }
+            if *show_install.read() {
+                div { class: "extension-install-form",
+                    input {
+                        class: "input settings-input",
+                        r#type: "text",
+                        placeholder: "Local path, git URL, or .tar.gz",
+                        value: "{install_uri}",
+                        oninput: move |e| *install_uri.write() = e.value(),
+                    }
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        onclick: {
+                            let sess = shared_session.read().clone();
+                            move |_| {
+                                let uri = install_uri.read().clone();
+                                let sess = sess.clone();
+                                if uri.trim().is_empty() { return; }
+                                spawn(async move {
+                                    if let Some(s) = sess {
+                                        match s.extensions_install(&uri).await {
+                                            Ok(_) => {
+                                                *action_msg.write() = Some(("ok", format!("Installed from {uri}")));
+                                                *install_uri.write() = String::new();
+                                                *show_install.write() = false;
+                                                *refresh.write() += 1;
+                                            }
+                                            Err(e) => *action_msg.write() = Some(("err", format!("Install failed: {e}"))),
+                                        }
+                                    }
+                                });
+                            }
+                        },
+                        "Install"
+                    }
+                    span { class: "settings-hint muted", "Accepts local paths, git URLs (https/ssh), or .tar.gz archives" }
+                }
             }
         }
     }
