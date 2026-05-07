@@ -565,4 +565,9 @@ impl AcpSession {
     pub async fn workspace_list(&self) -> Result<serde_json::Value> {
         self.control_call("workspace_list", "").await
     }
+
+    /// Design tree view.
+    pub async fn tree_view(&self, args: &str) -> Result<serde_json::Value> {
+        self.control_call("tree_view", args).await
+    }
 }
