@@ -102,6 +102,18 @@ pub fn App() -> Element {
         });
     }
 
+    // Bootstrap canvas assets (tweakcn presets, shadcn primitives) into the
+    // vault's .flynt-local directory so flynt-agent can read them via the
+    // canvas_* tool family. Idempotent and content-aware; safe to re-run on
+    // every launch.
+    {
+        let assets_ctx = ctx.clone();
+        use_effect(move || {
+            let vault = assets_ctx.vault();
+            crate::canvas_assets::bootstrap(&vault.root);
+        });
+    }
+
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
 

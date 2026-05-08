@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "primitives": [
+    {
+      "id": "button",
+      "name": "Button",
+      "category": "input",
+      "description": "Primary action button.",
+      "html": "<button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 transition\">Click me</button>"
+    },
+    {
+      "id": "button-secondary",
+      "name": "Button (secondary)",
+      "category": "input",
+      "description": "Secondary action button with muted styling.",
+      "html": "<button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 bg-secondary text-secondary-foreground border border-border hover:opacity-90 transition\">Cancel</button>"
+    },
+    {
+      "id": "button-ghost",
+      "name": "Button (ghost)",
+      "category": "input",
+      "description": "Borderless button for tertiary actions.",
+      "html": "<button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 text-foreground hover:bg-muted transition\">More</button>"
+    },
+    {
+      "id": "input",
+      "name": "Input",
+      "category": "input",
+      "description": "Text input field with label.",
+      "html": "<div class=\"flex flex-col gap-1.5\"><label class=\"text-sm font-medium text-foreground\">Email</label><input type=\"email\" placeholder=\"name@example.com\" class=\"flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm placeholder:text-muted-foreground\"></div>"
+    },
+    {
+      "id": "textarea",
+      "name": "Textarea",
+      "category": "input",
+      "description": "Multi-line text area.",
+      "html": "<div class=\"flex flex-col gap-1.5\"><label class=\"text-sm font-medium text-foreground\">Description</label><textarea rows=\"4\" class=\"flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground\" placeholder=\"Tell us more…\"></textarea></div>"
+    },
+    {
+      "id": "card",
+      "name": "Card",
+      "category": "container",
+      "description": "Card with header, body, and footer slots.",
+      "html": "<div class=\"rounded-lg border border-border bg-card text-card-foreground shadow\"><div class=\"flex flex-col gap-1.5 p-6\"><h3 class=\"font-semibold leading-none tracking-tight\">Card title</h3><p class=\"text-sm text-muted-foreground\">A short description.</p></div><div class=\"p-6 pt-0\"><p class=\"text-sm\">Card content goes here.</p></div><div class=\"flex items-center p-6 pt-0\"><button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 bg-primary text-primary-foreground\">Action</button></div></div>"
+    },
+    {
+      "id": "badge",
+      "name": "Badge",
+      "category": "display",
+      "description": "Small status pill.",
+      "html": "<span class=\"inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground\">Beta</span>"
+    },
+    {
+      "id": "alert",
+      "name": "Alert",
+      "category": "display",
+      "description": "Inline notification with title and description.",
+      "html": "<div class=\"relative w-full rounded-lg border border-border bg-background p-4 text-foreground\"><h5 class=\"mb-1 font-medium leading-none tracking-tight\">Heads up</h5><p class=\"text-sm text-muted-foreground\">You can add components and dependencies to your app using the cli.</p></div>"
+    },
+    {
+      "id": "avatar",
+      "name": "Avatar",
+      "category": "display",
+      "description": "Circular avatar with initials fallback.",
+      "html": "<div class=\"relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted items-center justify-center text-sm font-medium text-muted-foreground\">CW</div>"
+    },
+    {
+      "id": "separator",
+      "name": "Separator",
+      "category": "layout",
+      "description": "Horizontal divider.",
+      "html": "<div class=\"shrink-0 bg-border h-px w-full\"></div>"
+    },
+    {
+      "id": "label",
+      "name": "Label",
+      "category": "input",
+      "description": "Form field label.",
+      "html": "<label class=\"text-sm font-medium leading-none\">Label text</label>"
+    },
+    {
+      "id": "switch",
+      "name": "Switch",
+      "category": "input",
+      "description": "On/off toggle (visual only — wire onclick if interactive).",
+      "html": "<button role=\"switch\" aria-checked=\"true\" class=\"peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent bg-primary transition-colors\"><span class=\"pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform translate-x-5\"></span></button>"
+    }
+  ]
+}

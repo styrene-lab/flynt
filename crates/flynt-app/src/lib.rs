@@ -4,6 +4,7 @@ pub mod daemon_manager;
 pub mod icons;
 pub mod menu;
 pub mod bootstrap;
+pub mod canvas_assets;
 pub mod components;
 pub mod state;
 pub mod ui_state;

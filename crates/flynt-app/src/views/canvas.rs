@@ -9,31 +9,40 @@ use dioxus::prelude::*;
 use flynt_core::canvas::{Canvas, Cell};
 use std::path::PathBuf;
 
-/// Tailwind CSS bundled into the app binary. Phase 4 replaces this stub
-/// with the real precompiled stylesheet via a one-shot tailwindcss CLI
-/// run. Until then, classes don't resolve but the renderer pipeline is
-/// fully wired — drop the file in and cells light up.
+/// Tailwind CSS bundled into the app binary. Phase 4 ships a placeholder
+/// stub; the maintainer regenerates the real precompiled CSS via a
+/// one-shot tailwindcss standalone-binary run (no Node, no per-machine
+/// build). The renderer pipeline is otherwise complete — drop the real
+/// file in and Tailwind classes light up.
 const TAILWIND_CSS: &str = include_str!("../../assets/vendor/tailwind.css");
 
-/// Resolve theme tokens for a given theme id. Phase 4 will load these
-/// from a vendored tweakcn-presets.json; for now we ship one default
-/// theme so the renderer has something to inject. Returns CSS-variable
-/// declarations ready to drop inside a `:root { ... }` block.
+/// Vendored tweakcn-style theme presets. Compiled into the app binary so
+/// theme switching is instant and offline. The JSON map is also copied
+/// into the vault on first launch so flynt-agent can read it for
+/// canvas_apply_theme suggestions (phase 5).
+const TWEAKCN_PRESETS: &str = include_str!("../../assets/vendor/tweakcn-presets.json");
+
+/// Resolve theme tokens for a given theme id. Falls back to "default" if
+/// the requested theme is unknown so the canvas always renders. Returns
+/// CSS-variable declarations ready to drop inside a `:root { ... }` block.
 fn theme_vars(theme_id: &str) -> String {
-    // Single placeholder palette. Phase 4 replaces this with a JSON-driven
-    // preset map so the agent can switch themes via canvas_apply_theme.
-    let _ = theme_id;
-    [
-        "--background: #0c0c0c",
-        "--foreground: #f5f5f5",
-        "--primary: #6c8cff",
-        "--primary-foreground: #ffffff",
-        "--muted: #1a1a1a",
-        "--muted-foreground: #888",
-        "--border: #2a2a2a",
-        "--radius: 6px",
-    ]
-    .join("; ")
+    fn render(presets: &serde_json::Value, theme_id: &str) -> Option<String> {
+        let vars = presets.get(theme_id)?.get("vars")?.as_object()?;
+        let parts: Vec<String> = vars
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| format!("{k}: {s}")))
+            .collect();
+        if parts.is_empty() { None } else { Some(parts.join("; ")) }
+    }
+
+    let presets: serde_json::Value = serde_json::from_str(TWEAKCN_PRESETS)
+        .unwrap_or(serde_json::Value::Null);
+
+    render(&presets, theme_id)
+        .or_else(|| render(&presets, "default"))
+        .unwrap_or_else(|| {
+            "--background: #0c0c0c; --foreground: #f5f5f5; --primary: #6c8cff; --border: #2a2a2a; --radius: 6px".into()
+        })
 }
 
 /// Build the srcdoc HTML for a single cell. Pure function — unit tested.
