@@ -27,6 +27,7 @@ pub const NEW_BOARD: &str = "flynt-new-board";
 pub const DAILY_NOTE: &str = "flynt-daily-note";
 
 pub const NEW_DRAWING: &str = "flynt-new-drawing";
+pub const NEW_CANVAS: &str = "flynt-new-canvas";
 
 pub const RENAME_NOTE: &str = "flynt-rename-note";
 pub const DELETE_NOTE: &str = "flynt-delete-note";
@@ -88,6 +89,15 @@ pub fn build_menu_bar() -> Menu {
                 Some(Accelerator::new(
                     Some(Modifiers::META | Modifiers::SHIFT),
                     Code::KeyD,
+                )),
+            ),
+            &MenuItem::with_id(
+                NEW_CANVAS,
+                "New Canvas",
+                true,
+                Some(Accelerator::new(
+                    Some(Modifiers::META | Modifiers::SHIFT),
+                    Code::KeyC,
                 )),
             ),
             &PredefinedMenuItem::separator(),

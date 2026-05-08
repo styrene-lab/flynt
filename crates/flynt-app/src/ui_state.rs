@@ -18,6 +18,10 @@ struct DocumentRef {
     title: String,
     /// Path relative to vault root. Pass directly to `get_document`.
     path: String,
+    /// What kind of document this is from the agent's perspective. Lets
+    /// canvas-aware tools (canvas_active) skip the body-parse hop. Values:
+    /// "canvas", "drawing", or "note" (the default).
+    document_type: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,11 +51,36 @@ fn route_label(route: &Route) -> &'static str {
 
 fn resolve_doc_ref(vault: &Vault, id: &flynt_core::models::DocumentId, title: &str) -> Option<DocumentRef> {
     let doc = vault.store.get_document(id).ok().flatten()?;
+    let path_str = doc.path.to_string_lossy().to_string();
     Some(DocumentRef {
         id: id.0.to_string(),
         title: title.to_string(),
-        path: doc.path.to_string_lossy().to_string(),
+        document_type: classify_document(vault, &doc.path),
+        path: path_str,
     })
+}
+
+fn classify_document(vault: &Vault, rel_path: &Path) -> &'static str {
+    // Cheap classification: read the body and look for a single-line embed
+    // (canvas or drawing wrapper). Falls back to "note" on read error or
+    // when no embed pattern matches. Same wrapper detection logic the
+    // dispatch site in notes.rs uses, just simplified for ui-state.
+    let abs = vault.root.join(rel_path);
+    let Ok(content) = std::fs::read_to_string(&abs) else { return "note"; };
+    let body = if let Some(rest) = content.strip_prefix("+++\n") {
+        rest.find("\n+++").map(|end| rest[end + 4..].trim()).unwrap_or(content.trim())
+    } else {
+        content.trim()
+    };
+    let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() == 1 {
+        let line = lines[0].trim();
+        if line.starts_with("![[") {
+            if line.ends_with(".canvas]]") { return "canvas"; }
+            if line.ends_with(".excalidraw]]") { return "drawing"; }
+        }
+    }
+    "note"
 }
 
 /// Write the UI state snapshot to `<vault>/.flynt-local/flynt/ui-state.json`.

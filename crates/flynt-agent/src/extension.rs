@@ -1303,20 +1303,36 @@ impl FlyntExtension {
             Err(_) => return Ok(Value::Null),
         };
 
-        let active_path = ui
-            .get("active_document")
+        let active = ui.get("active_document");
+        let active_path = active
             .and_then(|d| d.get("path"))
             .and_then(|v| v.as_str());
         let Some(md_path) = active_path else { return Ok(Value::Null); };
 
-        // The active document is a markdown wrapper. Read it and check for the
-        // canvas embed pattern: a single body line `![[name.canvas]]`.
-        let md_abs = self.vault.root.join(md_path);
-        let md_body = match std::fs::read_to_string(&md_abs) {
-            Ok(s) => s,
-            Err(_) => return Ok(Value::Null),
+        // Fast path: if flynt-app classified this doc as "canvas" in the
+        // mirror, trust it and skip the body parse. Falls back to parsing
+        // the wrapper if the field is missing (older flynt-app, or a
+        // foreign tool wrote ui-state.json).
+        let typed_canvas = active
+            .and_then(|d| d.get("document_type"))
+            .and_then(|v| v.as_str())
+            == Some("canvas");
+
+        let canvas_file = if typed_canvas {
+            // The wrapper md and the .canvas data file share a stem, so we can
+            // skip the body read entirely.
+            std::path::Path::new(md_path)
+                .file_stem()
+                .map(|s| format!("{}.canvas", s.to_string_lossy()))
+        } else {
+            let md_abs = self.vault.root.join(md_path);
+            let md_body = match std::fs::read_to_string(&md_abs) {
+                Ok(s) => s,
+                Err(_) => return Ok(Value::Null),
+            };
+            canvas_embed_path(&md_body)
         };
-        let Some(canvas_file) = canvas_embed_path(&md_body) else { return Ok(Value::Null); };
+        let Some(canvas_file) = canvas_file else { return Ok(Value::Null); };
 
         let doc_dir = std::path::Path::new(md_path)
             .parent()

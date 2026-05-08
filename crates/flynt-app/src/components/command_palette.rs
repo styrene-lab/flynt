@@ -144,6 +144,24 @@ fn execute_command(
                 }
             });
         }
+        "new-canvas" => {
+            let c = ctx;
+            let mut ts = *tab_state;
+            let mut ar = *active_route;
+            spawn(async move {
+                let vault = c.vault();
+                let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
+                let name = format!("Canvas {ts_suffix}");
+                if let Ok(_md_path) = crate::views::canvas::create_canvas(&vault.root, &name) {
+                    let _ = vault.reindex();
+                    let slug = name.to_lowercase();
+                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                        ts.write().open(doc.id, name);
+                    }
+                    *ar.write() = Route::Notes;
+                }
+            });
+        }
         "daily-note" => {
             let c = ctx.clone();
             let mut ts = *tab_state;
@@ -248,6 +266,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
             Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
             Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
         Cmd { id: "new-drawing".into(), label: "New Drawing".into(), category: "Create".into() },
+        Cmd { id: "new-canvas".into(), label: "New Canvas".into(), category: "Create".into() },
         Cmd { id: "insert-drawing".into(), label: "Insert Drawing Here".into(), category: "Create".into() },
             Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },

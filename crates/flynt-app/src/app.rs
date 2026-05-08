@@ -202,6 +202,24 @@ pub fn App() -> Element {
                     }
                 });
             }
+            crate::menu::NEW_CANVAS => {
+                let c = ctx_menu_handler;
+                let mut ts = tab_state;
+                let mut ar = active_route;
+                spawn(async move {
+                    let vault = c.vault();
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
+                    let name = format!("Canvas {ts_suffix}");
+                    if let Ok(_md_path) = crate::views::canvas::create_canvas(&vault.root, &name) {
+                        let _ = vault.reindex();
+                        let slug = name.to_lowercase();
+                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                            ts.write().open(doc.id, name);
+                        }
+                        *ar.write() = Route::Notes;
+                    }
+                });
+            }
             crate::menu::OPEN_VAULT => {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
                     let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&path);
