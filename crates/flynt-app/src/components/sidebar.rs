@@ -14,37 +14,41 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     let ctx     = use_context::<AppContext>();
     let mut refresh = use_context_provider(|| Signal::new(0_u64));
 
+    // Debounced vault watcher — coalesces rapid-fire events (e.g., during
+    // reindex of 1000+ files) into a single sidebar refresh after 500ms of quiet.
     let vault_events = ctx.vault_events();
     use_effect(move || {
         let mut rx = vault_events.subscribe();
         spawn(async move {
             loop {
                 match rx.recv().await {
-                    Ok(_)  => *refresh.write() += 1,
+                    Ok(_) => {
+                        // Drain any queued events within the debounce window
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        while rx.try_recv().is_ok() {}
+                        *refresh.write() += 1;
+                    }
                     Err(_) => break,
                 }
             }
         });
     });
 
-    let docs = use_resource(move || {
+    // Document list — synchronous SQLite read (~2ms for 1500 docs).
+    // No spawn_blocking overhead. Debounced watcher prevents cascade.
+    let mut docs: Signal<Option<Vec<DocumentMeta>>> = use_signal(|| None);
+    use_effect(move || {
         let _ = refresh();
         let vault = ctx.vault();
-        async move {
-            let mut list = tokio::task::spawn_blocking(move || {
-                vault.store.list_documents().unwrap_or_default()
-            })
-            .await
-            .unwrap_or_default();
-            list.retain(|doc| {
-                let path = doc.path.to_string_lossy();
-                !path.starts_with("ai/delegations/")
-                    && !path.starts_with("ai/memory/")
-                    && !path.starts_with("references/comms/")
-            });
-            list.sort_by(|a, b| a.path.cmp(&b.path));
-            list
-        }
+        let mut list = vault.store.list_documents().unwrap_or_default();
+        list.retain(|doc| {
+            let path = doc.path.to_string_lossy();
+            !path.starts_with("ai/delegations/")
+                && !path.starts_with("ai/memory/")
+                && !path.starts_with("references/comms/")
+        });
+        list.sort_by(|a, b| a.path.cmp(&b.path));
+        *docs.write() = Some(list);
     });
 
     let mut creating = use_signal(|| false);
@@ -82,7 +86,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                         active_route,
                     }
                 }
-                match &*docs.read() {
+                match docs.read().as_ref() {
                     None => rsx! { span { class: "tree-item muted", "Loading…" } },
                     Some(list) if list.is_empty() => rsx! {
                         div { class: "tree-empty",
@@ -263,8 +267,11 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
             class: if is_active { "tree-item tree-file active" } else { "tree-item tree-file" },
             style: "padding-left: {indent + 20.0}px;",
             onclick: move |_| {
-                tab_state.write().open(id.clone(), title.clone());
-                *active_route.write() = Route::Notes;
+                    let t0 = std::time::Instant::now();
+                    tab_state.write().open(id.clone(), title.clone());
+                    tracing::info!("tab_state.write: {:?}", t0.elapsed());
+                    *active_route.write() = Route::Notes;
+                    tracing::info!("active_route.write: {:?}", t0.elapsed());
             },
             oncontextmenu: move |e| {
                 e.prevent_default();

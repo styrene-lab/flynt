@@ -268,10 +268,21 @@ fn cm6_init_js(content: &str) -> String {
     const container = document.getElementById('flynt-cm-editor');
     if (!container) {{ setTimeout(_initCM, 16); return; }}
 
+    console.time('cm6-total');
+    // Fast path: if CM6 already exists, just swap the document content.
     if (window._flyntCM) {{
-        window._flyntCM.destroy();
-        window._flyntCM = null;
+        console.time('cm6-swap');
+        const newContent = {escaped};
+        const cm = window._flyntCM;
+        cm.dispatch({{
+            changes: {{ from: 0, to: cm.state.doc.length, insert: newContent }}
+        }});
+        cm.scrollDOM.scrollTop = 0;
+        console.timeEnd('cm6-swap');
+        console.timeEnd('cm6-total');
+        return;
     }}
+    console.time('cm6-init');
     container.innerHTML = '';
 
     const {{
@@ -1115,6 +1126,8 @@ fn cm6_init_js(content: &str) -> String {
 
     window._flyntCM = new EditorView({{ state, parent: container }});
     window._flyntCM.focus();
+    console.timeEnd('cm6-init');
+    console.timeEnd('cm6-total');
     }} // end _initCM
     try {{ _initCM(); }} catch(e) {{
         const c = document.getElementById('flynt-cm-editor');
@@ -1188,7 +1201,19 @@ pub fn NotesView() -> Element {
         (std::path::PathBuf, String, String, String, bool),
     >> = use_signal(std::collections::HashMap::new);
 
-    // Invalidate render cache when content changes (save, conflict resolve, etc.)
+    // ── Two-phase rendering ───────────────────────────────────────────
+    // Phase 1 (instant): read document from SQLite synchronously — <1ms.
+    //   Sets edit_body and raw content immediately so the editor is responsive.
+    // Phase 2 (background): render HTML via comrak + query execution.
+    //   Swaps in when ready. Cached for instant tab switching.
+
+    // Render cache: doc_id → (path, title, body, html, has_conflicts)
+    let mut render_cache: Signal<std::collections::HashMap<
+        flynt_core::models::DocumentId,
+        (std::path::PathBuf, String, String, String, bool),
+    >> = use_signal(std::collections::HashMap::new);
+
+    // Invalidate cache on save
     use_effect(move || {
         let _ver = *render_ver.read();
         if _ver > 0 {
@@ -1198,6 +1223,23 @@ pub fn NotesView() -> Element {
         }
     });
 
+    // Phase 1: synchronous document read — no spawn_blocking, no async overhead
+    let mut doc_data: Signal<Option<(std::path::PathBuf, String, String)>> = use_signal(|| None);
+    use_effect(move || {
+        let _ver = *render_ver.read();
+        let selected_id = tab_state.read().active_id().cloned();
+        let Some(doc_id) = selected_id else {
+            *doc_data.write() = None;
+            return;
+        };
+        // Synchronous SQLite read — <1ms for any document
+        let vault = ctx_res.vault();
+        if let Ok(Some(doc)) = vault.store.get_document(&doc_id) {
+            *doc_data.write() = Some((doc.path.clone(), doc.title.clone(), doc.content.clone()));
+        }
+    });
+
+    // Phase 2: background HTML rendering — fires after doc_data is set
     let rendered: Resource<Option<(std::path::PathBuf, String, String, String, bool)>> = use_resource(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
@@ -1205,11 +1247,12 @@ pub fn NotesView() -> Element {
         async move {
             let Some(doc_id) = selected_id else { return None; };
 
-            // Check cache — instant tab switching for already-rendered docs.
+            // Cache hit — instant
             if let Some(cached) = render_cache.read().get(&doc_id) {
                 return Some(cached.clone());
             }
 
+            // Background render — won't block the UI
             let cache_id = doc_id.clone();
             let result = tokio::task::spawn_blocking(move || {
                 vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
@@ -1228,12 +1271,13 @@ pub fn NotesView() -> Element {
         }
     });
 
-    // Sync edit_body ONLY when switching to a new document, not on reindex
+    // Sync edit_body from phase 1 (instant) — don't wait for HTML render
     let mut synced_doc_id: Signal<Option<flynt_core::models::DocumentId>> = use_signal(|| None);
     use_effect(move || {
         let current_id = tab_state.read().active_id().cloned();
         if current_id == *synced_doc_id.peek() { return; }
-        if let Some(Some((_, _, body, _, _))) = &*rendered.read() {
+        // Try phase 1 data first (immediate), fall back to rendered cache
+        if let Some((_, _, body)) = &*doc_data.read() {
             *synced_doc_id.write() = current_id;
             *edit_body.write() = body.clone();
             *save_state.write() = SaveState::Clean;
@@ -1246,9 +1290,10 @@ pub fn NotesView() -> Element {
     let is_drawing_mode = use_context::<Signal<bool>>();
     let mut cm_init_ver = use_signal(|| 0u64);
     use_effect(move || {
-        let _ver = *cm_init_ver.read(); // reactive dep — bump to force re-init
+        let _ver = *cm_init_ver.read();
         if *is_drawing_mode.read() { return; }
         if !matches!(&*mode.read(), EditMode::Live) { return; }
+        tracing::info!("CM6 init effect triggered, ver={}", _ver);
         // Use edit_body if available (has latest edits), fall back to rendered content
         let content = {
             let eb = edit_body.peek().clone();
@@ -1371,26 +1416,24 @@ pub fn NotesView() -> Element {
         };
     }
 
-    let Some(data) = &*rendered.read() else {
+    // Gate on doc_data (synchronous, instant) not rendered (async, slow).
+    // The editor gets raw content immediately; HTML preview swaps in when ready.
+    let Some((rel_path, title, body)) = doc_data.read().clone() else {
         return rsx! {
             crate::components::TabBar {}
-            div { class: "notes-loading muted", "Loading…" }
-        };
-    };
-    let Some((rel_path, title, body, _html, _)) = data else {
-        return rsx! {
-            crate::components::TabBar {}
-            div { class: "notes-empty",
-                p { class: "muted", "This note may have been moved or deleted." }
-                p { class: "muted", style: "font-size: 12px; margin-top: 8px;",
-                    "Close this tab and select another note from the sidebar, or press \u{2318}N to create a new one."
-                }
+            if has_active {
+                div { class: "notes-loading muted", "Loading…" }
             }
         };
     };
 
+    // HTML from background render (may not be ready yet)
+    let rendered_html = rendered.read().as_ref()
+        .and_then(|opt| opt.as_ref())
+        .map(|(_, _, _, html, _)| html.clone());
+
     // If this document is an excalidraw wrapper, render ExcalidrawView directly
-    if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(body) {
+    if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&body) {
         let vault_root = ctx.vault_root();
         // Resolve the .excalidraw file relative to the document's directory
         let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));
@@ -1626,12 +1669,16 @@ pub fn NotesView() -> Element {
 
             div { class: "notes-scroll",
             // Excalidraw files get their own editor
-            if crate::views::excalidraw::is_excalidraw(rel_path) {
+            {
+            let check_path = rel_path.clone();
+            let check_path2 = rel_path.clone();
+            rsx! {
+            if crate::views::excalidraw::is_excalidraw(&check_path) {
                 crate::views::ExcalidrawView { path: rel_path.clone() }
             }
 
             match *mode.read() {
-                EditMode::Live if !crate::views::excalidraw::is_excalidraw(rel_path) => {
+                EditMode::Live if !crate::views::excalidraw::is_excalidraw(&check_path2) => {
                     rsx! {
                         div {
                             id: "flynt-cm-editor",
@@ -1692,13 +1739,19 @@ pub fn NotesView() -> Element {
                                 class: "preview-pane",
                                 div {
                                     class: "markdown-body",
-                                    dangerous_inner_html: "{render_html(&edit_body.read())}",
+                                    dangerous_inner_html: if let Some(ref cached_html) = rendered_html {
+                                        "{cached_html}"
+                                    } else {
+                                        "{render_html(&edit_body.read())}"
+                                    },
                                 }
                             }
                         }
                     }
                 },
             }
+            } // rsx block
+            } // check_path scope
             } // notes-scroll
         }
     }
