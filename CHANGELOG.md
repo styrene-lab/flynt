@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0 — 2026-05-07
+
+UX and perf rewrite of the sidebar + agent rail, Dioxus 0.7.9 upgrade, and a two-pass adversarial review.
+
+### Added
+- **Resizable sidebar** with vaults pinned at top and collapse-to-icons mode
+- **File-tree sidebar rewrite** with multi-level folder nesting and persistent panel widths
+- **Collapsible graph filters** + fuzzy tag search
+- **Drag-divider for agent panel resize** + textarea auto-grow on long prompts
+- **Inline session status** in the agent rail with provider auth warnings (expired / missing credentials surfaced before the next prompt fails)
+- **Auth-expired status badge** — visible signal when `/login` is needed
+
+### Changed
+- **Dioxus 0.6 → 0.7.9** across all view crates
+- **Render cache for instant tab switching** — VDOM no longer re-diffs the full notes view on every tab change (was the root of the 1.4s click delay)
+
+### Fixed
+- **1.4s sidebar-click delay** caused by a redundant route write in the click handler
+- Adversarial review pass 1: divider race, JSON escape in serialized state, eval leak in markdown render
+- Adversarial review pass 2: hook stability, deterministic sort keys, provider matching, polling interval correctness
+
 ## 0.7.0 — 2026-05-06
 
 First release under the new name. **Codyx is now Flynt.** Binaries, bundle IDs, asset paths, and the project site (https://flynt.styrene.io) all migrated. Existing vaults and configuration continue to work unchanged.

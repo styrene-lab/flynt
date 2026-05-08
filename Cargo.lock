@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-agent"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2118,7 +2118,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-app"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-core"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-mobile"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2196,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-models"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2207,7 +2207,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-store"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chrono",
