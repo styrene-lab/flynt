@@ -172,23 +172,25 @@ enum ChatItem {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum AgentStatus { Idle, Connecting, Thinking, ToolRunning }
+enum AgentStatus { Idle, Connecting, Thinking, ToolRunning, AuthExpired }
 
 impl AgentStatus {
     fn label(&self) -> &'static str {
         match self {
             Self::Idle => "ready", Self::Connecting => "connecting…",
             Self::Thinking => "thinking…", Self::ToolRunning => "running tool…",
+            Self::AuthExpired => "auth expired",
         }
     }
     fn css_class(&self) -> &'static str {
         match self {
             Self::Idle => "agent-status-badge connected",
             Self::Connecting => "agent-status-badge connecting",
+            Self::AuthExpired => "agent-status-badge disconnected",
             _ => "agent-status-badge active",
         }
     }
-    fn is_busy(&self) -> bool { !matches!(self, Self::Idle) }
+    fn is_busy(&self) -> bool { !matches!(self, Self::Idle | Self::AuthExpired) }
 }
 
 #[component]
@@ -243,10 +245,20 @@ pub fn AgentRail() -> Element {
                     }
 
                     *session.write() = Some(sess.clone());
-                    *shared_session.write() = Some(sess);
+                    *shared_session.write() = Some(sess.clone());
                     start_event_loop(rx, ctx.clone(), items, agent_status, available_commands, config_options);
                     *agent_status.write() = AgentStatus::Idle;
                     tracing::info!("ACP event loop started, agent ready");
+
+                    // Check if the active model's provider is healthy
+                    if let Ok(resp) = sess.provider_status().await {
+                        if let Some(text) = resp["text"].as_str() {
+                            let has_expired = text.lines().any(|l| l.contains(":expired:"));
+                            if has_expired {
+                                *agent_status.write() = AgentStatus::AuthExpired;
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!("ACP connect failed: {e}");
