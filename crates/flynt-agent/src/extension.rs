@@ -347,6 +347,80 @@ impl Extension for FlyntExtension {
                     "label": "Get UI State",
                     "description": "Return what the user is currently looking at in Flynt: the active document (if any), other open document tabs, and the current view (notes/kanban/graph/settings/search/welcome). Call this BEFORE asking the user clarifying questions about 'what they have open' or 'what they're working on' — Flynt mirrors this state to disk on every tab/view change so the answer is always current. Returns {active_document, open_documents, current_view, vault_root, updated_at}. The active_document.path can be passed straight to get_document.",
                     "parameters": { "type": "object", "properties": {} }
+                },
+                {
+                    "name": "canvas_get",
+                    "label": "Canvas: Get",
+                    "description": "Read a design canvas file (.canvas JSON) and return its parsed shape: { version, theme, grid: {cols, rows, gap}, cells: [{ id, x, y, w, h, html, css, js? }] }. Pass `path` relative to vault root, e.g. 'canvases/Hero.canvas'. Use canvas_active first to discover which canvas the user has open.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": { "path": { "type": "string" } },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "name": "canvas_set_cells",
+                    "label": "Canvas: Set Cells",
+                    "description": "Patch a canvas file. `cells` upserts by id (matching id replaces, new id appends). `delete_ids` removes cells. `grid` and `theme` are optional and only applied when present. Use this for incremental edits — never rewrite the whole document if you can target specific cells. Each cell must specify x, y, w, h in grid coordinates (0-indexed) plus html and css; js is optional. Return value confirms which cells were upserted/deleted.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string" },
+                            "cells": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "x": { "type": "integer", "minimum": 0 },
+                                        "y": { "type": "integer", "minimum": 0 },
+                                        "w": { "type": "integer", "minimum": 1 },
+                                        "h": { "type": "integer", "minimum": 1 },
+                                        "html": { "type": "string" },
+                                        "css": { "type": "string" },
+                                        "js": { "type": "string" }
+                                    },
+                                    "required": ["id", "x", "y", "w", "h", "html", "css"]
+                                }
+                            },
+                            "delete_ids": { "type": "array", "items": { "type": "string" } },
+                            "grid": {
+                                "type": "object",
+                                "properties": {
+                                    "cols": { "type": "integer", "minimum": 1 },
+                                    "rows": { "type": "integer", "minimum": 1 },
+                                    "gap": { "type": "integer", "minimum": 0 }
+                                }
+                            },
+                            "theme": { "type": "string" }
+                        },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "name": "canvas_apply_theme",
+                    "label": "Canvas: Apply Theme",
+                    "description": "Set the canvas's theme. Theme tokens (--background, --primary, etc.) inject into every cell's iframe and are picked up by Tailwind utility classes. Use canvas_list_primitives to discover available themes (presets ship with the install). Unknown themes fall back to 'default' at render time, but persist as-is so an upcoming preset can take effect later.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string" },
+                            "theme": { "type": "string" }
+                        },
+                        "required": ["path", "theme"]
+                    }
+                },
+                {
+                    "name": "canvas_list_primitives",
+                    "label": "Canvas: List Primitives",
+                    "description": "Return the available shadcn-style component primitives bundled with Flynt — Button, Card, Input, Badge, Alert, Avatar, Separator, etc. Each primitive has { id, name, category, description, html }. The html is a self-contained Tailwind-classed snippet you can paste directly into a cell's `html` field. Also returns the list of theme presets (id, name, description) so you can recommend or apply themes via canvas_apply_theme.",
+                    "parameters": { "type": "object", "properties": {} }
+                },
+                {
+                    "name": "canvas_active",
+                    "label": "Canvas: Active",
+                    "description": "Resolve the canvas the user is currently viewing. Reads the ui-state mirror, checks whether the active document is a canvas wrapper (.md whose body is exactly `![[X.canvas]]`), and returns the resolved .canvas path you can pass to canvas_get. Returns null if no canvas is active. Cheaper than running get_ui_state + parsing the body yourself.",
+                    "parameters": { "type": "object", "properties": {} }
                 }
             ])),
 
@@ -1067,9 +1141,222 @@ impl Extension for FlyntExtension {
                 }
             }
 
+            "execute_canvas_get" => self.execute_canvas_get(params),
+            "execute_canvas_set_cells" => self.execute_canvas_set_cells(params),
+            "execute_canvas_apply_theme" => self.execute_canvas_apply_theme(params),
+            "execute_canvas_list_primitives" => self.execute_canvas_list_primitives(),
+            "execute_canvas_active" => self.execute_canvas_active(),
+
             _ => Err(omegon_extension::Error::method_not_found(method)),
         }
     }
+}
+
+// ── Canvas tool implementations ───────────────────────────────────────────────
+//
+// Pulled out as inherent methods (rather than inline match arms) so each tool
+// is independently unit-testable and the dispatch table above stays scannable.
+// All paths are interpreted relative to the vault root, matching get_document
+// ergonomics. None of these tools panic on malformed input — they cross the
+// ACP boundary, where a panic would kill the worker thread.
+impl FlyntExtension {
+    fn resolve_canvas_path(&self, path_arg: &str) -> Result<std::path::PathBuf, omegon_extension::Error> {
+        // Refuse paths that escape the vault root (path traversal). The agent
+        // shouldn't be writing outside the vault, ever.
+        let rel = std::path::Path::new(path_arg);
+        if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(omegon_extension::Error::invalid_params(
+                "path must not contain '..'",
+            ));
+        }
+        Ok(self.vault.root.join(rel))
+    }
+
+    fn execute_canvas_get(&self, params: Value) -> omegon_extension::Result<Value> {
+        let path = params["path"]
+            .as_str()
+            .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path'"))?;
+        let abs = self.resolve_canvas_path(path)?;
+        let canvas = flynt_core::canvas::Canvas::load(&abs)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        serde_json::to_value(&canvas)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))
+    }
+
+    fn execute_canvas_set_cells(&self, params: Value) -> omegon_extension::Result<Value> {
+        let path = params["path"]
+            .as_str()
+            .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path'"))?;
+        let abs = self.resolve_canvas_path(path)?;
+
+        // Load existing or start fresh. Phase 5 lets the agent create cells in
+        // a freshly-touched file by writing a default canvas first; that keeps
+        // the tool useful even when the user hasn't created the canvas via UI.
+        let mut canvas = match flynt_core::canvas::Canvas::load(&abs) {
+            Ok(c) => c,
+            Err(_) if !abs.exists() => flynt_core::canvas::Canvas::default(),
+            Err(e) => return Err(omegon_extension::Error::internal_error(e.to_string())),
+        };
+
+        if let Some(theme) = params.get("theme").and_then(|v| v.as_str()) {
+            canvas.theme = theme.to_string();
+        }
+        if let Some(grid_val) = params.get("grid") {
+            let grid: flynt_core::canvas::Grid = serde_json::from_value(grid_val.clone())
+                .map_err(|e| omegon_extension::Error::invalid_params(format!("grid: {e}")))?;
+            canvas.grid = grid;
+        }
+
+        let mut deleted = Vec::new();
+        if let Some(ids) = params.get("delete_ids").and_then(|v| v.as_array()) {
+            for id in ids {
+                if let Some(id_str) = id.as_str() {
+                    if canvas.remove_cell(id_str) {
+                        deleted.push(id_str.to_string());
+                    }
+                }
+            }
+        }
+
+        let mut upserted = Vec::new();
+        if let Some(cells) = params.get("cells").and_then(|v| v.as_array()) {
+            for c in cells {
+                let cell: flynt_core::canvas::Cell = serde_json::from_value(c.clone())
+                    .map_err(|e| omegon_extension::Error::invalid_params(format!("cell: {e}")))?;
+                let id = cell.id.clone();
+                let replaced = canvas.upsert_cell(cell);
+                upserted.push(json!({ "id": id, "replaced": replaced }));
+            }
+        }
+
+        if let Some(parent) = abs.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        }
+        canvas.save(&abs)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+
+        Ok(json!({
+            "path": path,
+            "cell_count": canvas.cells.len(),
+            "upserted": upserted,
+            "deleted": deleted,
+        }))
+    }
+
+    fn execute_canvas_apply_theme(&self, params: Value) -> omegon_extension::Result<Value> {
+        let path = params["path"]
+            .as_str()
+            .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path'"))?;
+        let theme = params["theme"]
+            .as_str()
+            .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'theme'"))?;
+        let abs = self.resolve_canvas_path(path)?;
+        let mut canvas = flynt_core::canvas::Canvas::load(&abs)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        let previous = canvas.theme.clone();
+        canvas.theme = theme.to_string();
+        canvas.save(&abs)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        Ok(json!({ "path": path, "theme": theme, "previous_theme": previous }))
+    }
+
+    fn execute_canvas_list_primitives(&self) -> omegon_extension::Result<Value> {
+        // Read from the vault-side copy that flynt-app's canvas_assets bootstrap
+        // writes on launch. If the bootstrap hasn't run yet (agent started before
+        // app), return an empty primitives list rather than erroring.
+        let dir = self.vault.root.join(".flynt-local").join("flynt").join("assets");
+        let primitives = read_json_or_default(
+            &dir.join("shadcn-primitives.json"),
+            json!({ "version": 1, "primitives": [] }),
+        );
+        let presets = read_json_or_default(&dir.join("tweakcn-presets.json"), json!({}));
+        // Theme preset summaries (id + name + description) — keep the response
+        // small; full vars are only injected at render time, agent doesn't need them.
+        let themes: Vec<Value> = presets
+            .as_object()
+            .map(|m| {
+                m.iter()
+                    .map(|(id, v)| json!({
+                        "id": id,
+                        "name": v.get("name").cloned().unwrap_or(json!(id)),
+                        "description": v.get("description").cloned().unwrap_or(Value::Null),
+                    }))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(json!({
+            "primitives": primitives.get("primitives").cloned().unwrap_or(json!([])),
+            "themes": themes,
+        }))
+    }
+
+    fn execute_canvas_active(&self) -> omegon_extension::Result<Value> {
+        let ui_path = self
+            .vault
+            .root
+            .join(".flynt-local")
+            .join("flynt")
+            .join("ui-state.json");
+        let ui: Value = match std::fs::read_to_string(&ui_path) {
+            Ok(body) => serde_json::from_str(&body).unwrap_or(Value::Null),
+            Err(_) => return Ok(Value::Null),
+        };
+
+        let active_path = ui
+            .get("active_document")
+            .and_then(|d| d.get("path"))
+            .and_then(|v| v.as_str());
+        let Some(md_path) = active_path else { return Ok(Value::Null); };
+
+        // The active document is a markdown wrapper. Read it and check for the
+        // canvas embed pattern: a single body line `![[name.canvas]]`.
+        let md_abs = self.vault.root.join(md_path);
+        let md_body = match std::fs::read_to_string(&md_abs) {
+            Ok(s) => s,
+            Err(_) => return Ok(Value::Null),
+        };
+        let Some(canvas_file) = canvas_embed_path(&md_body) else { return Ok(Value::Null); };
+
+        let doc_dir = std::path::Path::new(md_path)
+            .parent()
+            .unwrap_or(std::path::Path::new(""));
+        let canvas_rel = doc_dir.join(&canvas_file);
+        Ok(json!({
+            "wrapper_path": md_path,
+            "canvas_path": canvas_rel.to_string_lossy(),
+        }))
+    }
+}
+
+fn read_json_or_default(path: &std::path::Path, fallback: Value) -> Value {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or(fallback)
+}
+
+/// Detect a `.md` wrapper whose body is exactly one `![[...canvas]]` embed.
+/// Mirrors the same logic in flynt-app::views::canvas — duplicated here so
+/// flynt-agent doesn't take a UI-crate dependency.
+fn canvas_embed_path(content: &str) -> Option<String> {
+    let body = if let Some(rest) = content.strip_prefix("+++\n") {
+        if let Some(end) = rest.find("\n+++") {
+            rest[end + 4..].trim()
+        } else {
+            content.trim()
+        }
+    } else {
+        content.trim()
+    };
+    let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() == 1 {
+        let line = lines[0].trim();
+        if line.starts_with("![[") && line.ends_with(".canvas]]") {
+            return Some(line[3..line.len() - 2].to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1162,5 +1449,257 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tasks.as_array().unwrap().len(), 1);
+    }
+
+    // ── Canvas tools ────────────────────────────────────────────────────────
+
+    fn write_canvas(tmp: &TempDir, rel: &str, body: &str) {
+        let abs = tmp.path().join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, body).unwrap();
+    }
+
+    fn write_ui_state(tmp: &TempDir, active_path: Option<&str>) {
+        let dir = tmp.path().join(".flynt-local").join("flynt");
+        std::fs::create_dir_all(&dir).unwrap();
+        let body = match active_path {
+            Some(p) => json!({
+                "active_document": {"id": "x", "title": "x", "path": p},
+                "open_documents": [],
+                "current_view": "notes",
+                "vault_root": tmp.path().to_string_lossy(),
+                "updated_at": "now"
+            }),
+            None => json!({
+                "active_document": null, "open_documents": [],
+                "current_view": "notes", "vault_root": tmp.path().to_string_lossy(),
+                "updated_at": "now"
+            }),
+        };
+        std::fs::write(dir.join("ui-state.json"), serde_json::to_string(&body).unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn canvas_get_returns_parsed_canvas() {
+        let (tmp, ext) = test_extension();
+        let canvas = flynt_core::canvas::Canvas::default();
+        let body = serde_json::to_string(&canvas).unwrap();
+        write_canvas(&tmp, "canvases/Hero.canvas", &body);
+
+        let out = ext
+            .handle_rpc("execute_canvas_get", json!({"path": "canvases/Hero.canvas"}))
+            .await
+            .unwrap();
+        assert_eq!(out["version"], 1);
+        assert_eq!(out["theme"], "default");
+        assert!(out["cells"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn canvas_get_rejects_missing_path() {
+        let (_tmp, ext) = test_extension();
+        let err = ext
+            .handle_rpc("execute_canvas_get", json!({}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("path"));
+    }
+
+    #[tokio::test]
+    async fn canvas_get_rejects_path_traversal() {
+        let (_tmp, ext) = test_extension();
+        let err = ext
+            .handle_rpc("execute_canvas_get", json!({"path": "../etc/passwd"}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains(".."));
+    }
+
+    #[tokio::test]
+    async fn canvas_set_cells_creates_file_when_missing() {
+        let (tmp, ext) = test_extension();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "canvases/New.canvas",
+                    "cells": [{
+                        "id": "a", "x": 0, "y": 0, "w": 4, "h": 2,
+                        "html": "<div>x</div>", "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(out["cell_count"], 1);
+        assert!(tmp.path().join("canvases/New.canvas").exists());
+
+        // Round-trip: canvas_get returns the cell we just wrote.
+        let got = ext
+            .handle_rpc("execute_canvas_get", json!({"path": "canvases/New.canvas"}))
+            .await
+            .unwrap();
+        assert_eq!(got["cells"][0]["id"], "a");
+        assert_eq!(got["cells"][0]["html"], "<div>x</div>");
+    }
+
+    #[tokio::test]
+    async fn canvas_set_cells_upserts_by_id() {
+        let (tmp, ext) = test_extension();
+        let mut canvas = flynt_core::canvas::Canvas::default();
+        canvas.upsert_cell(flynt_core::canvas::Cell {
+            id: "a".into(), x: 0, y: 0, w: 1, h: 1,
+            html: "old".into(), css: "".into(), js: None,
+        });
+        write_canvas(&tmp, "x.canvas", &serde_json::to_string(&canvas).unwrap());
+
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "x.canvas",
+                    "cells": [{
+                        "id": "a", "x": 0, "y": 0, "w": 1, "h": 1,
+                        "html": "new", "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["cell_count"], 1, "upsert must replace, not append");
+        assert_eq!(out["upserted"][0]["replaced"], true);
+    }
+
+    #[tokio::test]
+    async fn canvas_set_cells_deletes_by_id() {
+        let (tmp, ext) = test_extension();
+        let mut canvas = flynt_core::canvas::Canvas::default();
+        for id in ["a", "b", "c"] {
+            canvas.upsert_cell(flynt_core::canvas::Cell {
+                id: id.into(), x: 0, y: 0, w: 1, h: 1,
+                html: "".into(), css: "".into(), js: None,
+            });
+        }
+        write_canvas(&tmp, "x.canvas", &serde_json::to_string(&canvas).unwrap());
+
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({"path": "x.canvas", "delete_ids": ["b", "missing"]}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["cell_count"], 2);
+        let deleted: Vec<&str> = out["deleted"].as_array().unwrap()
+            .iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(deleted, vec!["b"], "deleted only reports actually-removed ids");
+    }
+
+    #[tokio::test]
+    async fn canvas_set_cells_updates_grid_and_theme() {
+        let (tmp, ext) = test_extension();
+        write_canvas(&tmp, "x.canvas",
+            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap());
+
+        ext.handle_rpc(
+            "execute_canvas_set_cells",
+            json!({
+                "path": "x.canvas",
+                "grid": {"cols": 6, "rows": 4, "gap": 16},
+                "theme": "ocean"
+            }),
+        ).await.unwrap();
+
+        let got = ext.handle_rpc("execute_canvas_get", json!({"path": "x.canvas"})).await.unwrap();
+        assert_eq!(got["grid"]["cols"], 6);
+        assert_eq!(got["grid"]["gap"], 16);
+        assert_eq!(got["theme"], "ocean");
+    }
+
+    #[tokio::test]
+    async fn canvas_apply_theme_returns_previous() {
+        let (tmp, ext) = test_extension();
+        write_canvas(&tmp, "x.canvas",
+            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap());
+
+        let out = ext.handle_rpc(
+            "execute_canvas_apply_theme",
+            json!({"path": "x.canvas", "theme": "amber"}),
+        ).await.unwrap();
+        assert_eq!(out["theme"], "amber");
+        assert_eq!(out["previous_theme"], "default");
+    }
+
+    #[tokio::test]
+    async fn canvas_list_primitives_reads_vault_assets() {
+        let (tmp, ext) = test_extension();
+        let dir = tmp.path().join(".flynt-local/flynt/assets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("shadcn-primitives.json"), r#"{
+            "version": 1,
+            "primitives": [{"id":"button","name":"Button","category":"input","description":"","html":"<button/>"}]
+        }"#).unwrap();
+        std::fs::write(dir.join("tweakcn-presets.json"), r#"{
+            "default": {"name": "Default", "description": "stub", "vars": {}}
+        }"#).unwrap();
+
+        let out = ext.handle_rpc("execute_canvas_list_primitives", json!({})).await.unwrap();
+        assert_eq!(out["primitives"][0]["id"], "button");
+        assert_eq!(out["themes"][0]["id"], "default");
+    }
+
+    #[tokio::test]
+    async fn canvas_list_primitives_returns_empty_when_no_assets() {
+        let (_tmp, ext) = test_extension();
+        let out = ext.handle_rpc("execute_canvas_list_primitives", json!({})).await.unwrap();
+        // No bootstrap done — fallback shape, no error.
+        assert!(out["primitives"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn canvas_active_returns_null_when_no_ui_state() {
+        let (_tmp, ext) = test_extension();
+        let out = ext.handle_rpc("execute_canvas_active", json!({})).await.unwrap();
+        assert!(out.is_null());
+    }
+
+    #[tokio::test]
+    async fn canvas_active_returns_null_for_non_canvas_doc() {
+        let (tmp, ext) = test_extension();
+        std::fs::create_dir_all(tmp.path().join("notes")).unwrap();
+        std::fs::write(tmp.path().join("notes/plain.md"), "Just text.\n").unwrap();
+        write_ui_state(&tmp, Some("notes/plain.md"));
+
+        let out = ext.handle_rpc("execute_canvas_active", json!({})).await.unwrap();
+        assert!(out.is_null());
+    }
+
+    #[tokio::test]
+    async fn canvas_active_resolves_canvas_wrapper() {
+        let (tmp, ext) = test_extension();
+        std::fs::create_dir_all(tmp.path().join("canvases")).unwrap();
+        std::fs::write(
+            tmp.path().join("canvases/Hero.md"),
+            "+++\ntitle = \"Hero\"\ntags = [\"canvas\"]\n+++\n\n![[Hero.canvas]]\n",
+        ).unwrap();
+        write_ui_state(&tmp, Some("canvases/Hero.md"));
+
+        let out = ext.handle_rpc("execute_canvas_active", json!({})).await.unwrap();
+        assert_eq!(out["wrapper_path"], "canvases/Hero.md");
+        assert_eq!(out["canvas_path"], "canvases/Hero.canvas");
+    }
+
+    #[tokio::test]
+    async fn canvas_tools_appear_in_get_tools() {
+        let (_tmp, ext) = test_extension();
+        let tools = ext.handle_rpc("get_tools", json!({})).await.unwrap();
+        let names: Vec<String> = tools.as_array().unwrap().iter()
+            .filter_map(|t| t["name"].as_str().map(str::to_string))
+            .collect();
+        for expected in ["canvas_get", "canvas_set_cells", "canvas_apply_theme",
+                         "canvas_list_primitives", "canvas_active"] {
+            assert!(names.contains(&expected.to_string()), "missing: {expected}");
+        }
     }
 }
