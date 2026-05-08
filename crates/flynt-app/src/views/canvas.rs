@@ -6,6 +6,7 @@
 
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
+use flynt_core::canvas::Canvas;
 use std::path::PathBuf;
 
 /// Extension check for the raw canvas data file.
@@ -46,8 +47,7 @@ pub fn create_canvas(vault_root: &std::path::Path, name: &str) -> anyhow::Result
 
     let canvas_file = format!("{name}.canvas");
     let canvas_abs = canvases_dir.join(&canvas_file);
-    let scene = r#"{"version":1,"theme":"default","grid":{"cols":12,"rows":8,"gap":8},"cells":[]}"#;
-    std::fs::write(&canvas_abs, scene)?;
+    Canvas::default().save(&canvas_abs)?;
 
     let md_file = format!("{name}.md");
     let md_rel = PathBuf::from("canvases").join(&md_file);
@@ -63,20 +63,30 @@ pub fn CanvasView(path: PathBuf) -> Element {
     let ctx = use_context::<AppContext>();
     let path_load = path.clone();
 
-    let content = use_memo(move || {
+    // Parse via the typed Canvas model. A parse error becomes Err(message)
+    // so the user sees what's wrong rather than an opaque blank pane.
+    // Phase 3 replaces this stub with the iframe-per-cell renderer.
+    let parsed = use_memo(move || {
         let vault = ctx.vault();
         let abs = vault.root.join(&path_load);
-        std::fs::read_to_string(&abs).unwrap_or_else(|_| {
-            r#"{"version":1,"theme":"default","grid":{"cols":12,"rows":8,"gap":8},"cells":[]}"#.into()
-        })
+        Canvas::load(&abs).map_err(|e| e.to_string())
     });
 
     rsx! {
         div {
             class: "canvas-pane",
-            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:16px;font-family:monospace;color:var(--text-muted);",
+            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:16px;font-family:monospace;color:var(--text-muted);gap:8px;",
             div { "Canvas: {path.display()}" }
-            pre { style: "white-space:pre-wrap;font-size:11px;opacity:0.6;", "{content}" }
+            match &*parsed.read() {
+                Ok(c) => rsx! {
+                    div { style: "opacity:0.7;font-size:12px;",
+                        "v{c.version} · theme={c.theme} · grid={c.grid.cols}×{c.grid.rows} gap={c.grid.gap}px · {c.cells.len()} cell(s)"
+                    }
+                },
+                Err(e) => rsx! {
+                    div { style: "color:var(--text-error,#f88);font-size:12px;", "Parse error: {e}" }
+                },
+            }
         }
     }
 }

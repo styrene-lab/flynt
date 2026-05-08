@@ -862,6 +862,10 @@ pub struct FlyntOperatorSettings {
     /// Per-vault agent daemon configuration — model, posture, vox channels.
     #[serde(default)]
     pub agent_daemon: crate::daemon::AgentDaemonConfig,
+    /// Design canvas settings — default theme, grid, asset bootstrap state.
+    /// Phase 1+2 ship the field with defaults; Phase 4 fills it in.
+    #[serde(default)]
+    pub canvas: crate::canvas::CanvasSettings,
 }
 
 impl Default for FlyntOperatorSettings {
@@ -875,6 +879,7 @@ impl Default for FlyntOperatorSettings {
             vox: VoxSettings::default(),
             acp_config: std::collections::HashMap::new(),
             agent_daemon: crate::daemon::AgentDaemonConfig::default(),
+            canvas: crate::canvas::CanvasSettings::default(),
         }
     }
 }
