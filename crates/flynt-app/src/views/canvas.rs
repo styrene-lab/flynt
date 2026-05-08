@@ -117,9 +117,40 @@ pub fn create_canvas(vault_root: &std::path::Path, name: &str) -> anyhow::Result
 #[component]
 pub fn CanvasView(path: PathBuf) -> Element {
     let ctx = use_context::<AppContext>();
-    let path_load = path.clone();
 
+    // Refresh counter — bumped whenever the vault watcher reports a write
+    // to our .canvas file (typically by the agent via canvas_set_cells).
+    // Hook into use_memo's deps so reload happens automatically.
+    let mut refresh = use_signal(|| 0u64);
+
+    {
+        let vault_events = ctx.vault_events();
+        let watch_path = path.clone();
+        use_effect(move || {
+            let mut rx = vault_events.subscribe();
+            let watch_path = watch_path.clone();
+            spawn(async move {
+                while let Ok(event) = rx.recv().await {
+                    let changed = match event {
+                        flynt_store::watcher::VaultChangeEvent::FileCreated(p)
+                        | flynt_store::watcher::VaultChangeEvent::FileModified(p) => Some(p),
+                        flynt_store::watcher::VaultChangeEvent::FileDeleted(_) => None,
+                    };
+                    let Some(changed) = changed else { continue; };
+                    // Match by suffix — events carry absolute paths; our path
+                    // is vault-relative. Keeps the comparison robust to
+                    // canonicalization differences.
+                    if changed.ends_with(&watch_path) {
+                        *refresh.write() += 1;
+                    }
+                }
+            });
+        });
+    }
+
+    let path_load = path.clone();
     let parsed = use_memo(move || {
+        let _ = refresh();
         let vault = ctx.vault();
         let abs = vault.root.join(&path_load);
         Canvas::load(&abs).map_err(|e| e.to_string())
