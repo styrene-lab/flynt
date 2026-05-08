@@ -267,11 +267,12 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
             class: if is_active { "tree-item tree-file active" } else { "tree-item tree-file" },
             style: "padding-left: {indent + 20.0}px;",
             onclick: move |_| {
-                    let t0 = std::time::Instant::now();
                     tab_state.write().open(id.clone(), title.clone());
-                    tracing::info!("tab_state.write: {:?}", t0.elapsed());
-                    *active_route.write() = Route::Notes;
-                    tracing::info!("active_route.write: {:?}", t0.elapsed());
+                    // Only write route if we're not already on Notes — avoids
+                    // triggering a full app route re-evaluation for no reason.
+                    if *active_route.peek() != Route::Notes {
+                        *active_route.write() = Route::Notes;
+                    }
             },
             oncontextmenu: move |e| {
                 e.prevent_default();
