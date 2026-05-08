@@ -1450,6 +1450,23 @@ pub fn NotesView() -> Element {
         }
     }
 
+    // If this document is a canvas wrapper, render CanvasView directly
+    if let Some(canvas_file) = crate::views::canvas::canvas_embed_path(&body) {
+        let vault_root = ctx.vault_root();
+        let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));
+        let canvas_path = doc_dir.join(&canvas_file);
+        let abs = vault_root.join(&canvas_path);
+        if abs.exists() {
+            is_drawing.set(true);
+            return rsx! {
+                div {
+                    style: "display:flex;flex-direction:column;flex:1;overflow:hidden;padding:0;min-height:0;height:100%;",
+                    crate::views::CanvasView { path: canvas_path }
+                }
+            };
+        }
+    }
+
     // Clear drawing mode flag
     is_drawing.set(false);
 

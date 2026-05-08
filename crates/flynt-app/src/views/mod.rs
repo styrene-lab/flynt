@@ -1,3 +1,4 @@
+pub mod canvas;
 pub mod excalidraw;
 pub mod graph;
 pub mod indexing_scopes;
@@ -8,6 +9,7 @@ pub mod search;
 pub mod settings;
 pub mod welcome;
 
+pub use canvas::CanvasView;
 pub use excalidraw::ExcalidrawView;
 pub use graph::GraphView;
 pub use indexing_scopes::IndexingScopesEditor;
