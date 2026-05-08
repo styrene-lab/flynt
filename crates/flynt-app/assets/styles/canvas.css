@@ -1,0 +1,65 @@
+/* Design canvas — outer grid container + iframe-per-cell layout. */
+
+.canvas-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: var(--bg-canvas, var(--bg, #0c0c0c));
+  overflow: auto;
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, #222);
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  background: var(--bg-elevated, var(--bg, #0c0c0c));
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.canvas-toolbar .canvas-meta {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  opacity: 0.7;
+}
+
+.canvas-toolbar .canvas-error {
+  color: var(--text-error, #f88);
+}
+
+.canvas-grid {
+  display: grid;
+  padding: 16px;
+  flex: 1;
+  align-content: start;
+}
+
+.canvas-cell {
+  background: var(--bg-cell, #111);
+  border: 1px solid var(--border, #222);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.canvas-cell iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+}
+
+.canvas-empty {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-muted, #888);
+  font-size: 13px;
+  opacity: 0.7;
+}

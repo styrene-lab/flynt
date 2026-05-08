@@ -1,0 +1,16 @@
+/* Tailwind CSS placeholder — phase 4 vendoring step.
+ *
+ * This file is a stub so `include_str!("../../assets/vendor/tailwind.css")`
+ * compiles. Phase 4 replaces it with the real precompiled Tailwind output
+ * from a one-shot `tailwindcss` standalone-binary run against a content
+ * scope including the bundled shadcn-primitives.json snippets.
+ *
+ * Until phase 4, Tailwind class attributes the agent emits won't resolve
+ * — but the renderer pipeline (iframe srcdoc, theme injection, grid
+ * placement) is otherwise complete. Drop the real file in and cells
+ * light up with no other code changes.
+ *
+ * Regenerate command (documented again in LICENSES.md when phase 4
+ * lands): tailwindcss -i input.css -o tailwind.css --minify --content
+ * 'crates/flynt-app/assets/vendor/shadcn-primitives.json,crates/flynt-app/src/views/canvas.rs'
+ */

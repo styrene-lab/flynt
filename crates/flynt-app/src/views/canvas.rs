@@ -6,8 +6,55 @@
 
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
-use flynt_core::canvas::Canvas;
+use flynt_core::canvas::{Canvas, Cell};
 use std::path::PathBuf;
+
+/// Tailwind CSS bundled into the app binary. Phase 4 replaces this stub
+/// with the real precompiled stylesheet via a one-shot tailwindcss CLI
+/// run. Until then, classes don't resolve but the renderer pipeline is
+/// fully wired — drop the file in and cells light up.
+const TAILWIND_CSS: &str = include_str!("../../assets/vendor/tailwind.css");
+
+/// Resolve theme tokens for a given theme id. Phase 4 will load these
+/// from a vendored tweakcn-presets.json; for now we ship one default
+/// theme so the renderer has something to inject. Returns CSS-variable
+/// declarations ready to drop inside a `:root { ... }` block.
+fn theme_vars(theme_id: &str) -> String {
+    // Single placeholder palette. Phase 4 replaces this with a JSON-driven
+    // preset map so the agent can switch themes via canvas_apply_theme.
+    let _ = theme_id;
+    [
+        "--background: #0c0c0c",
+        "--foreground: #f5f5f5",
+        "--primary: #6c8cff",
+        "--primary-foreground: #ffffff",
+        "--muted: #1a1a1a",
+        "--muted-foreground: #888",
+        "--border: #2a2a2a",
+        "--radius: 6px",
+    ]
+    .join("; ")
+}
+
+/// Build the srcdoc HTML for a single cell. Pure function — unit tested.
+///
+/// Inlines Tailwind, theme tokens, and the cell's CSS into `<head>`, then
+/// the cell's HTML and optional JS into `<body>`. Inlining (vs. a
+/// `vault://` link) keeps the canvas portable: it renders identically
+/// across boundaries — exported, screenshotted, run on a different
+/// machine, or run offline.
+pub fn build_srcdoc(cell: &Cell, theme: &str, tailwind_css: &str) -> String {
+    let theme = theme_vars(theme);
+    let css = &cell.css;
+    let html = &cell.html;
+    let js = cell.js.as_deref().unwrap_or("");
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+<style>{tailwind_css}</style>\
+<style>:root {{ {theme} }} html,body {{ margin:0; padding:0; background:var(--background); color:var(--foreground); font-family:system-ui,sans-serif; }} {css}</style>\
+</head><body>{html}<script>{js}</script></body></html>"
+    )
+}
 
 /// Extension check for the raw canvas data file.
 pub fn is_canvas(path: &std::path::Path) -> bool {
@@ -63,29 +110,69 @@ pub fn CanvasView(path: PathBuf) -> Element {
     let ctx = use_context::<AppContext>();
     let path_load = path.clone();
 
-    // Parse via the typed Canvas model. A parse error becomes Err(message)
-    // so the user sees what's wrong rather than an opaque blank pane.
-    // Phase 3 replaces this stub with the iframe-per-cell renderer.
     let parsed = use_memo(move || {
         let vault = ctx.vault();
         let abs = vault.root.join(&path_load);
         Canvas::load(&abs).map_err(|e| e.to_string())
     });
 
-    rsx! {
-        div {
-            class: "canvas-pane",
-            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:16px;font-family:monospace;color:var(--text-muted);gap:8px;",
-            div { "Canvas: {path.display()}" }
-            match &*parsed.read() {
-                Ok(c) => rsx! {
-                    div { style: "opacity:0.7;font-size:12px;",
-                        "v{c.version} · theme={c.theme} · grid={c.grid.cols}×{c.grid.rows} gap={c.grid.gap}px · {c.cells.len()} cell(s)"
+    let parsed_ref = parsed.read();
+    let canvas = match &*parsed_ref {
+        Ok(c) => c,
+        Err(e) => {
+            return rsx! {
+                div { class: "canvas-pane",
+                    div { class: "canvas-toolbar",
+                        span { class: "canvas-meta", "Canvas: {path.display()}" }
+                        span { class: "canvas-error", "Parse error: {e}" }
                     }
-                },
-                Err(e) => rsx! {
-                    div { style: "color:var(--text-error,#f88);font-size:12px;", "Parse error: {e}" }
-                },
+                }
+            };
+        }
+    };
+
+    let grid_style = format!(
+        "grid-template-columns: repeat({}, 1fr); grid-auto-rows: minmax(120px, auto); gap: {}px;",
+        canvas.grid.cols.max(1),
+        canvas.grid.gap,
+    );
+
+    rsx! {
+        div { class: "canvas-pane",
+            div { class: "canvas-toolbar",
+                span { class: "canvas-meta", "Canvas: {path.display()}" }
+                span { class: "canvas-meta",
+                    "v{canvas.version} · theme={canvas.theme} · {canvas.grid.cols}×{canvas.grid.rows} · {canvas.cells.len()} cell(s)"
+                }
+            }
+            if canvas.cells.is_empty() {
+                div { class: "canvas-empty",
+                    "Empty canvas. Ask the agent to design something here."
+                }
+            } else {
+                div { class: "canvas-grid", style: "{grid_style}",
+                    for cell in canvas.cells.iter() {
+                        {
+                            let cell_style = format!(
+                                "grid-column: {} / span {}; grid-row: {} / span {};",
+                                cell.x.saturating_add(1),
+                                cell.w.max(1),
+                                cell.y.saturating_add(1),
+                                cell.h.max(1),
+                            );
+                            let srcdoc = build_srcdoc(cell, &canvas.theme, TAILWIND_CSS);
+                            rsx! {
+                                div { key: "{cell.id}", class: "canvas-cell", style: "{cell_style}",
+                                    iframe {
+                                        title: "canvas cell {cell.id}",
+                                        "sandbox": "allow-scripts",
+                                        "srcdoc": "{srcdoc}",
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -122,6 +209,55 @@ mod tests {
     fn is_canvas_extension() {
         assert!(is_canvas(std::path::Path::new("canvases/x.canvas")));
         assert!(!is_canvas(std::path::Path::new("notes/x.md")));
+    }
+
+    fn cell_with(html: &str, css: &str, js: Option<&str>) -> Cell {
+        Cell {
+            id: "t".into(), x: 0, y: 0, w: 1, h: 1,
+            html: html.into(), css: css.into(),
+            js: js.map(|s| s.into()),
+        }
+    }
+
+    #[test]
+    fn build_srcdoc_inlines_tailwind_and_theme_and_cell_css() {
+        let cell = cell_with("<button class=\"btn\">Hi</button>", ".btn { color: red; }", None);
+        let out = build_srcdoc(&cell, "default", "/* tw-marker */");
+        assert!(out.contains("/* tw-marker */"), "tailwind must be inlined");
+        assert!(out.contains("--background:"), "theme vars must be inlined");
+        assert!(out.contains(".btn { color: red; }"), "cell css must be inlined");
+        assert!(out.contains("<button class=\"btn\">Hi</button>"), "cell html must be in body");
+    }
+
+    #[test]
+    fn build_srcdoc_handles_missing_js() {
+        let cell = cell_with("<div>x</div>", "", None);
+        let out = build_srcdoc(&cell, "default", "");
+        // Empty <script></script> is fine — the document still parses.
+        assert!(out.contains("<script></script>"));
+    }
+
+    #[test]
+    fn build_srcdoc_includes_cell_js() {
+        let cell = cell_with("<div></div>", "", Some("console.log('hi')"));
+        let out = build_srcdoc(&cell, "default", "");
+        assert!(out.contains("console.log('hi')"));
+    }
+
+    #[test]
+    fn build_srcdoc_starts_with_doctype() {
+        let cell = cell_with("", "", None);
+        let out = build_srcdoc(&cell, "default", "");
+        assert!(out.starts_with("<!doctype html>"));
+    }
+
+    #[test]
+    fn theme_vars_returns_css_declarations() {
+        let vars = theme_vars("default");
+        assert!(vars.contains("--background:"));
+        assert!(vars.contains("--primary:"));
+        // Semicolon-joined so it can drop directly inside :root { ... }
+        assert!(vars.contains(";"));
     }
 
     #[test]

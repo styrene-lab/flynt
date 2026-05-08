@@ -398,6 +398,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
         document::Stylesheet { href: asset!("/assets/styles/graph.css") }
         document::Stylesheet { href: asset!("/assets/styles/welcome.css") }
+        document::Stylesheet { href: asset!("/assets/styles/canvas.css") }
         // Reveal body after stylesheets are loaded
         document::Script { "document.body.classList.add('ready');" }
 
