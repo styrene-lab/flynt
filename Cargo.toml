@@ -6,6 +6,7 @@ members = [
     "crates/flynt-app",
     "crates/flynt-agent",
     "crates/flynt-mobile",
+    "crates/omegon-design",
 ]
 resolver = "2"
 

@@ -133,6 +133,18 @@ const MIGRATIONS: &[&str] = &[
     // v3: task decay
     "ALTER TABLE tasks ADD COLUMN decay TEXT NOT NULL DEFAULT '\"natural\"';",
     "ALTER TABLE tasks ADD COLUMN last_touched_at TEXT;",
+    // v4: sentry integration prerequisites — external_refs and design_node_id
+    // are model fields with #[serde(default)] but were never persisted to
+    // SQLite, so they were silently lost across process restarts. The TODOs
+    // at row_to_task hardcoded empty/None. See flynt/design/sentry-integration.md.
+    "ALTER TABLE tasks ADD COLUMN external_refs TEXT NOT NULL DEFAULT '[]';",
+    "ALTER TABLE tasks ADD COLUMN design_node_id TEXT;",
+    // v5: sentry integration priority 3 — execution metadata + openspec_change.
+    // Mirrors omegon::sentry::types::TaskSpec (model, skill, max_turns, etc.)
+    // so the planned FlyntTaskBoard adapter is a thin pass-through. Stored as
+    // JSON blob in a single column; openspec_change is a bare string.
+    "ALTER TABLE tasks ADD COLUMN execution TEXT;",
+    "ALTER TABLE tasks ADD COLUMN openspec_change TEXT;",
 ];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────
@@ -398,7 +410,7 @@ impl VaultStore for SqliteStore {
     fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE id = ?1",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change FROM tasks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -407,7 +419,11 @@ impl VaultStore for SqliteStore {
 
     fn list_tasks(&self, filter: &TaskFilter) -> Result<Vec<Task>> {
         let conn = self.conn.lock().unwrap();
-        // Build query dynamically
+        // Build a parameterized query. Predicates AND together. Tags are
+        // matched via SQLite's json_each — task must contain ALL filter tags
+        // (intersection). Status compares against the JSON-encoded form
+        // ("todo" / "in_progress" / etc., quotes included) since that's
+        // exactly how save_task writes it.
         let mut conds = vec!["1=1".to_string()];
         let mut values: Vec<String> = Vec::new();
         if let Some(ref bid) = filter.board_id {
@@ -418,8 +434,22 @@ impl VaultStore for SqliteStore {
             conds.push(format!("column_name = ?{}", values.len() + 1));
             values.push(col.clone());
         }
+        if let Some(status) = filter.status {
+            // serde_json::to_string yields a quoted form like "\"todo\""
+            // — the same form save_task writes into the column. Match
+            // by string equality, no JSON parsing needed.
+            conds.push(format!("status = ?{}", values.len() + 1));
+            values.push(serde_json::to_string(&status)?);
+        }
+        for tag in &filter.tags {
+            conds.push(format!(
+                "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?{})",
+                values.len() + 1
+            ));
+            values.push(tag.clone());
+        }
         let sql = format!(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE {} ORDER BY position ASC",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change FROM tasks WHERE {} ORDER BY position ASC",
             conds.join(" AND ")
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -431,9 +461,15 @@ impl VaultStore for SqliteStore {
 
     fn save_task(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let execution_json = task
+            .execution
+            .as_ref()
+            .filter(|e| !e.is_empty())
+            .map(|e| serde_json::to_string(e))
+            .transpose()?;
         conn.execute(
-            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
                ON CONFLICT(id) DO UPDATE SET
                  board_id=excluded.board_id, column_name=excluded.column_name,
                  title=excluded.title, description=excluded.description,
@@ -441,7 +477,9 @@ impl VaultStore for SqliteStore {
                  tags=excluded.tags, document_refs=excluded.document_refs,
                  due_date=excluded.due_date, position=excluded.position,
                  updated_at=excluded.updated_at,
-                 decay=excluded.decay, last_touched_at=excluded.last_touched_at"#,
+                 decay=excluded.decay, last_touched_at=excluded.last_touched_at,
+                 external_refs=excluded.external_refs, design_node_id=excluded.design_node_id,
+                 execution=excluded.execution, openspec_change=excluded.openspec_change"#,
             params![
                 task.id.0.to_string(),
                 task.board_id.0.to_string(),
@@ -458,9 +496,49 @@ impl VaultStore for SqliteStore {
                 task.updated_at.to_rfc3339(),
                 serde_json::to_string(&task.decay)?,
                 task.last_touched_at.map(|t| t.to_rfc3339()),
+                serde_json::to_string(&task.external_refs)?,
+                task.design_node_id.map(|u| u.to_string()),
+                execution_json,
+                task.openspec_change,
             ],
         )?;
         Ok(())
+    }
+
+    fn update_task(&self, id: &TaskId, patch: &flynt_models::TaskPatch) -> Result<bool> {
+        if patch.is_empty() {
+            // No-op patch — caller didn't provide any changes. Still return
+            // true if the task exists (for caller convenience), false if not.
+            return Ok(self.get_task(id)?.is_some());
+        }
+
+        // Read-modify-write strategy: load the existing task, merge the
+        // patch onto it, write back. Keeps the SQL simple (one UPDATE that
+        // touches every column) at the cost of one extra SELECT. Tasks are
+        // small; this is fine.
+        let mut task = match self.get_task(id)? {
+            Some(t) => t,
+            None => return Ok(false),
+        };
+
+        if let Some(v) = &patch.column { task.column = v.clone(); }
+        if let Some(v) = &patch.title { task.title = v.clone(); }
+        if let Some(v) = &patch.description { task.description = v.clone(); }
+        if let Some(v) = patch.priority.clone() { task.priority = v; }
+        if let Some(v) = patch.status.clone() { task.status = v; }
+        if let Some(v) = &patch.tags { task.tags = v.clone(); }
+        if let Some(v) = patch.due_date { task.due_date = v; }
+        if let Some(v) = &patch.external_refs { task.external_refs = v.clone(); }
+        if let Some(v) = &patch.document_refs { task.document_refs = v.clone(); }
+        if let Some(v) = patch.position { task.position = v; }
+        if let Some(v) = patch.decay.clone() { task.decay = v; }
+        if let Some(v) = patch.design_node_id { task.design_node_id = v; }
+        if let Some(v) = &patch.openspec_change { task.openspec_change = v.clone(); }
+        if let Some(v) = &patch.execution { task.execution = v.clone(); }
+        task.updated_at = chrono::Utc::now();
+
+        self.save_task(&task)?;
+        Ok(true)
     }
 
     fn delete_task(&self, id: &TaskId) -> Result<()> {
@@ -527,7 +605,8 @@ impl VaultStore for SqliteStore {
         let mut stmt = conn.prepare(
             r#"SELECT id, board_id, column_name, title, description, priority, status,
                       tags, document_refs, due_date, position, created_at, updated_at,
-                      decay, last_touched_at
+                      decay, last_touched_at, external_refs, design_node_id,
+                      execution, openspec_change
                FROM tasks
                WHERE project_id = ?1
                  AND (last_committed_at IS NULL OR updated_at > last_committed_at)
@@ -694,8 +773,19 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         updated_at: parse_dt(updated_at),
         decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
         last_touched_at: last_touched.and_then(|s| s.parse().ok()),
-        external_refs: Vec::new(), // TODO: persist in SQLite schema
-        design_node_id: None, // TODO: persist in SQLite schema
+        external_refs: {
+            let json: String = row.get(15)?;
+            serde_json::from_str(&json).unwrap_or_default()
+        },
+        design_node_id: {
+            let id_str: Option<String> = row.get(16)?;
+            id_str.and_then(|s| s.parse().ok())
+        },
+        execution: {
+            let json: Option<String> = row.get(17)?;
+            json.and_then(|s| serde_json::from_str(&s).ok())
+        },
+        openspec_change: row.get(18)?,
     })
 }
 
@@ -787,5 +877,239 @@ fn metadata_protection_label(protection: &MetadataProtection) -> &'static str {
     match protection {
         MetadataProtection::PlaintextIndexed => "plaintext_indexed",
         MetadataProtection::EncryptedOpaque => "encrypted_opaque",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Adversarial / end-to-end tests for the sentry-integration changes.
+    //! Each test below probes a specific concern from the assessment pass:
+    //! cold-restart persistence, migration safety on existing data, filter
+    //! correctness against a populated DB, and TaskPatch field-level
+    //! independence.
+
+    use super::*;
+    use flynt_core::{
+        models::{BoardId, ExecutionSpec, Priority, Task, TaskId, TaskPatch, TaskStatus},
+        store::TaskFilter,
+    };
+
+    fn fresh_store() -> (tempfile::TempDir, SqliteStore) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+        let store = SqliteStore::open(&db).unwrap();
+        (tmp, store)
+    }
+
+    fn seed_board(store: &SqliteStore) -> BoardId {
+        let mut board = flynt_core::models::Board::default_sprint("Sentry");
+        board.columns = vec![
+            flynt_core::models::Column { name: "Backlog".into(), wip_limit: None },
+            flynt_core::models::Column { name: "Scheduled".into(), wip_limit: None },
+            flynt_core::models::Column { name: "Running".into(), wip_limit: Some(1) },
+        ];
+        let bid = board.id.clone();
+        store.save_board(&board).unwrap();
+        bid
+    }
+
+    #[test]
+    fn task_with_execution_and_openspec_persists_across_reopen() {
+        // Cold restart durability: write a fully populated task, drop the
+        // store, reopen the same DB, and verify every field survives.
+        // Catches the entire class of "I forgot to add a column to SELECT
+        // or save_task" bugs.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let board_id;
+
+        // ── First open: write
+        {
+            let store = SqliteStore::open(&db).unwrap();
+            board_id = seed_board(&store);
+
+            let mut env = std::collections::BTreeMap::new();
+            env.insert("API_TOKEN".into(), "redacted".into());
+            let mut t = Task::new(board_id.clone(), "Scheduled", "Recurring scan");
+            t.id = task_id.clone();
+            t.tags = vec!["sentry".into(), "recurring".into()];
+            t.external_refs = vec!["cron:0 */4 * * *".into(), "webhook:gh-pr".into()];
+            t.design_node_id = Some(uuid::Uuid::new_v4());
+            t.openspec_change = Some("auth-rewrite".into());
+            t.execution = Some(ExecutionSpec {
+                model: Some("anthropic:claude-sonnet-4-6".into()),
+                max_turns: Some(20),
+                env,
+                ..Default::default()
+            });
+            store.save_task(&t).unwrap();
+        }
+
+        // ── Second open: read
+        let store = SqliteStore::open(&db).unwrap();
+        let loaded = store.get_task(&task_id).unwrap().expect("task exists");
+        assert_eq!(loaded.tags, vec!["sentry", "recurring"]);
+        assert_eq!(loaded.external_refs, vec!["cron:0 */4 * * *", "webhook:gh-pr"]);
+        assert!(loaded.design_node_id.is_some());
+        assert_eq!(loaded.openspec_change.as_deref(), Some("auth-rewrite"));
+        let exec = loaded.execution.expect("execution preserved");
+        assert_eq!(exec.model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
+        assert_eq!(exec.max_turns, Some(20));
+        assert_eq!(exec.env.get("API_TOKEN").map(String::as_str), Some("redacted"));
+    }
+
+    #[test]
+    fn migration_v4_v5_is_idempotent_on_reopen() {
+        // The migration runner re-applies all ALTER TABLE statements on every
+        // open. Re-running on a DB that already has the columns must not
+        // error or destroy data. This proves the runner's `let _ = ...; //
+        // ignore duplicate column errors` strategy actually works.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        {
+            let store = SqliteStore::open(&db).unwrap();
+            let board_id = seed_board(&store);
+            let mut t = Task::new(board_id, "Backlog", "T");
+            t.id = task_id.clone();
+            t.openspec_change = Some("change-x".into());
+            store.save_task(&t).unwrap();
+        }
+        // Reopen multiple times — exercises migration idempotency.
+        for _ in 0..3 {
+            let store = SqliteStore::open(&db).unwrap();
+            let loaded = store.get_task(&task_id).unwrap().expect("task survives reopens");
+            assert_eq!(loaded.openspec_change.as_deref(), Some("change-x"));
+        }
+    }
+
+    #[test]
+    fn update_task_with_only_status_does_not_clobber_other_fields() {
+        // The TaskPatch contract: untouched fields must be preserved. If
+        // update_task accidentally read the patch's None-as-clear instead of
+        // None-as-leave-unchanged for any field, the side effect would land
+        // here.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "Original");
+        t.id = task_id.clone();
+        t.tags = vec!["a".into(), "b".into()];
+        t.priority = Priority::High;
+        t.openspec_change = Some("change-x".into());
+        t.execution = Some(ExecutionSpec { model: Some("m".into()), ..Default::default() });
+        store.save_task(&t).unwrap();
+
+        let patch = TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            ..Default::default()
+        };
+        let updated = store.update_task(&task_id, &patch).unwrap();
+        assert!(updated);
+
+        let after = store.get_task(&task_id).unwrap().unwrap();
+        assert_eq!(after.status, TaskStatus::InProgress);
+        // Everything else preserved.
+        assert_eq!(after.title, "Original");
+        assert_eq!(after.tags, vec!["a", "b"]);
+        assert_eq!(after.priority, Priority::High);
+        assert_eq!(after.openspec_change.as_deref(), Some("change-x"));
+        assert!(after.execution.is_some());
+        assert_eq!(after.execution.unwrap().model.as_deref(), Some("m"));
+    }
+
+    #[test]
+    fn list_tasks_tag_filter_uses_intersection_against_real_data() {
+        // Sentry's discovery query: column + status + multi-tag against a
+        // populated DB. Ensures the json_each-based SQL is actually correct
+        // when there are tasks with overlapping but not identical tag sets.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+
+        let bid = board_id.clone();
+        let mk = |col: &str, tags: &[&str], st: TaskStatus| {
+            let mut t = Task::new(bid.clone(), col, format!("T-{col}-{:?}", st));
+            t.tags = tags.iter().map(|s| (*s).to_string()).collect();
+            t.status = st;
+            store.save_task(&t).unwrap();
+            t.id
+        };
+
+        let _a = mk("Scheduled", &["sentry", "recurring"], TaskStatus::Todo);
+        let _b = mk("Scheduled", &["sentry"],              TaskStatus::Todo);
+        let _c = mk("Scheduled", &["recurring"],           TaskStatus::Todo);
+        let _d = mk("Backlog",   &["sentry", "recurring"], TaskStatus::InProgress);
+
+        let intersection = store.list_tasks(&TaskFilter {
+            board_id: Some(board_id),
+            column: Some("Scheduled".into()),
+            tags: vec!["sentry".into(), "recurring".into()],
+            status: Some(TaskStatus::Todo),
+        }).unwrap();
+        assert_eq!(intersection.len(), 1, "only A matches all four predicates");
+        assert_eq!(intersection[0].tags, vec!["sentry", "recurring"]);
+    }
+
+    #[test]
+    fn update_task_clear_sentinels_actually_clear() {
+        // Some(None) on Option<Option<T>> patch fields means CLEAR. Verify
+        // that's what happens, not "preserve" or "set to default".
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.id = task_id.clone();
+        t.design_node_id = Some(uuid::Uuid::new_v4());
+        t.openspec_change = Some("change-x".into());
+        t.execution = Some(ExecutionSpec { model: Some("m".into()), ..Default::default() });
+        store.save_task(&t).unwrap();
+
+        let patch = TaskPatch {
+            design_node_id: Some(None),
+            openspec_change: Some(None),
+            execution: Some(None),
+            ..Default::default()
+        };
+        store.update_task(&task_id, &patch).unwrap();
+
+        let after = store.get_task(&task_id).unwrap().unwrap();
+        assert!(after.design_node_id.is_none());
+        assert!(after.openspec_change.is_none());
+        assert!(after.execution.is_none());
+    }
+
+    #[test]
+    fn update_task_returns_false_for_missing_id_without_creating() {
+        // Soft-failure path: missing id → false return, no insert.
+        let (_tmp, store) = fresh_store();
+        let phantom = TaskId(uuid::Uuid::new_v4());
+        let patch = TaskPatch {
+            title: Some("Should not be inserted".into()),
+            ..Default::default()
+        };
+        let result = store.update_task(&phantom, &patch).unwrap();
+        assert!(!result);
+        assert!(store.get_task(&phantom).unwrap().is_none());
+    }
+
+    #[test]
+    fn empty_patch_returns_true_when_task_exists_no_write() {
+        // The is_empty() short-circuit. Verify no spurious updated_at bump.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.id = task_id.clone();
+        store.save_task(&t).unwrap();
+        let original_ts = store.get_task(&task_id).unwrap().unwrap().updated_at;
+
+        let patch = TaskPatch::default();
+        let result = store.update_task(&task_id, &patch).unwrap();
+        assert!(result);
+        let after = store.get_task(&task_id).unwrap().unwrap();
+        assert_eq!(after.updated_at, original_ts, "empty patch must not bump updated_at");
     }
 }

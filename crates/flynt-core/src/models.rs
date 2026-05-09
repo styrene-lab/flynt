@@ -7,7 +7,7 @@ use uuid::Uuid;
 // ── Re-export task types from flynt-models ──────────────────────────────────
 // These are the canonical definitions. flynt-core re-exports for backward compat.
 pub use flynt_models::task::{
-    BoardId, DecayRate, DocumentId, Priority, Task, TaskId, TaskStatus,
+    BoardId, DecayRate, DocumentId, ExecutionSpec, Priority, Task, TaskId, TaskPatch, TaskStatus,
 };
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
@@ -956,6 +956,8 @@ mod tests {
             decay,
             last_touched_at: Some(anchor),
             design_node_id: None,
+            openspec_change: None,
+            execution: None,
         }
     }
 

@@ -15,11 +15,18 @@ pub struct DocumentMetadataFilter {
     pub value: String,
 }
 /// Filter for task queries.
+///
+/// All fields combine with AND semantics. Tags require ALL listed tags to
+/// be present on the task (intersection, not union). Sentry's
+/// `list_actionable()` calls into the `FlyntTaskBoard` adapter with
+/// column/status/tag filters to discover ready work — see
+/// flynt/design/sentry-integration.md priority 4.
 #[derive(Debug, Clone, Default)]
 pub struct TaskFilter {
     pub board_id: Option<BoardId>,
     pub column: Option<String>,
     pub tags: Vec<String>,
+    pub status: Option<crate::models::TaskStatus>,
 }
 
 /// The storage abstraction. Implementations live in `flynt-store`.
@@ -46,6 +53,15 @@ pub trait VaultStore: Send + Sync {
     fn list_tasks(&self, filter: &TaskFilter) -> Result<Vec<Task>>;
     fn save_task(&self, task: &Task) -> Result<()>;
     fn delete_task(&self, id: &TaskId) -> Result<()>;
+    /// Apply a partial update to an existing task. Only the `Some(_)` fields
+    /// in `patch` are modified; `None` means leave-unchanged. `updated_at`
+    /// is bumped automatically. Returns Ok(false) if no task with that id
+    /// exists, Ok(true) on a successful update. Empty patches are a no-op
+    /// and return Ok(true) without writing.
+    ///
+    /// Foundational for the sentry integration's claim/release/complete
+    /// semantics — see flynt/design/sentry-integration.md.
+    fn update_task(&self, id: &TaskId, patch: &flynt_models::TaskPatch) -> Result<bool>;
 
     // ── Boards ────────────────────────────────────────────────────────────────
     fn get_board(&self, id: &BoardId) -> Result<Option<Board>>;

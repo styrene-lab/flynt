@@ -5,6 +5,8 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 // ── Newtype IDs ─────────────────────────────────────────────────────────────
@@ -91,6 +93,120 @@ impl DecayRate {
     }
 }
 
+// ── ExecutionSpec ───────────────────────────────────────────────────────────
+//
+// Sentry execution parameters attached to a task. Mirrors the wire shape of
+// `omegon::sentry::types::TaskSpec` (minus `prompt`, which is `task.description`)
+// so the planned `FlyntTaskBoard` adapter is a thin pass-through and not a
+// translation layer. See flynt/design/sentry-integration.md priority 3.
+//
+// On disk this lives under `[data.execution]` in the task file's TOML
+// frontmatter. In storage it round-trips as a JSON blob in a single SQLite
+// column.
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_budget: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<PathBuf>,
+    /// Extra env vars to inject into the spawned task process. Empty map is
+    /// serialized as absent so blank tasks don't pollute the on-disk form.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+impl ExecutionSpec {
+    /// True when no field is meaningful — used to skip serializing an empty
+    /// execution block to disk.
+    pub fn is_empty(&self) -> bool {
+        self.model.is_none()
+            && self.skill.is_none()
+            && self.max_turns.is_none()
+            && self.timeout_secs.is_none()
+            && self.token_budget.is_none()
+            && self.cwd.is_none()
+            && self.env.is_empty()
+    }
+}
+
+// ── TaskPatch ───────────────────────────────────────────────────────────────
+//
+// Partial-update payload for `VaultStore::update_task`. Only the `Some(_)`
+// fields are applied; `None` means "leave unchanged." This is the contract
+// the sentry integration relies on (see flynt/design/sentry-integration.md
+// — claim/release/complete need to mutate status + column without
+// clobbering description/tags/etc).
+//
+// `due_date: Option<Option<NaiveDate>>` is the standard sentinel: `None`
+// means leave-unchanged, `Some(None)` means clear, `Some(Some(d))` sets.
+// Same shape applies to `design_node_id`.
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<TaskStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    /// Some(None) clears the due date; Some(Some(d)) sets it; None leaves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<Option<NaiveDate>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_refs: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_refs: Option<Vec<DocumentId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decay: Option<DecayRate>,
+    /// Some(None) clears; Some(Some(uuid)) sets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_node_id: Option<Option<Uuid>>,
+    /// Some(None) clears; Some(Some(name)) sets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openspec_change: Option<Option<String>>,
+    /// Some(None) clears the execution block; Some(Some(spec)) replaces it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Option<ExecutionSpec>>,
+}
+
+impl TaskPatch {
+    /// True when no field is set — caller can short-circuit and skip the
+    /// roundtrip to storage.
+    pub fn is_empty(&self) -> bool {
+        self.column.is_none()
+            && self.title.is_none()
+            && self.description.is_none()
+            && self.priority.is_none()
+            && self.status.is_none()
+            && self.tags.is_none()
+            && self.due_date.is_none()
+            && self.external_refs.is_none()
+            && self.document_refs.is_none()
+            && self.position.is_none()
+            && self.decay.is_none()
+            && self.design_node_id.is_none()
+            && self.openspec_change.is_none()
+            && self.execution.is_none()
+    }
+}
+
 // ── Task ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -120,6 +236,16 @@ pub struct Task {
     pub last_touched_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_node_id: Option<Uuid>,
+    /// OpenSpec change name this task implements/verifies. Set by the agent
+    /// or operator when the task is part of a spec-driven flow; consumed
+    /// by sentry's lifecycle hooks to advance the change's stage on
+    /// completion. None for tasks unrelated to OpenSpec.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openspec_change: Option<String>,
+    /// Sentry execution parameters. None for human-only tasks; populated
+    /// when the task is intended for autonomous execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<ExecutionSpec>,
 }
 
 impl Task {
@@ -147,6 +273,8 @@ impl Task {
             decay: DecayRate::default(),
             last_touched_at: None,
             design_node_id: None,
+            openspec_change: None,
+            execution: None,
         }
     }
 

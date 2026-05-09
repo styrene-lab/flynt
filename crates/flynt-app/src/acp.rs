@@ -41,16 +41,42 @@ pub enum AcpEvent {
         id: String,
         status: String,
         title: Option<String>,
+        /// Text output from the tool, if any. Concatenated from the
+        /// content array's Text blocks; non-text content (Diff,
+        /// terminal embeds) is dropped for now — the renderer doesn't
+        /// have surfaces for those yet.
+        output: Option<String>,
     },
     /// Available slash commands changed.
     CommandsAvailable(Vec<SlashCommand>),
     /// Config options changed (model, thinking, posture, etc).
     ConfigChanged(Vec<ConfigOption>),
+    /// The agent's execution plan for the current turn. Replaces any
+    /// previous plan — the agent emits the full list with each update.
+    PlanUpdated(Vec<PlanItem>),
+    /// Session metadata changed — typically the title once the agent
+    /// has derived one from the first prompt.
+    SessionTitleChanged(Option<String>),
     /// The prompt completed.
     Done,
     /// An error occurred.
     Error(String),
 }
+
+/// One entry in the agent's execution plan. Mirrors `agent_client_protocol::PlanEntry`
+/// but stripped of meta and reduced to a UI-friendly shape.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanItem {
+    pub content: String,
+    pub status: PlanStatus,
+    pub priority: PlanPriority,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanStatus { Pending, InProgress, Completed }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanPriority { Low, Medium, High }
 
 /// A slash command advertised by the agent.
 #[derive(Debug, Clone, PartialEq)]
@@ -173,6 +199,25 @@ impl Client for FlyntAcpClient {
                 });
             }
             SessionUpdate::ToolCallUpdate(update) => {
+                // Concatenate text output from the content array. Diff
+                // and terminal-embed variants get rendered by the
+                // host-delegated paths once we advertise those
+                // capabilities; for now we surface text only.
+                let output = update.fields.content.as_ref().map(|blocks| {
+                    let mut out = String::new();
+                    for block in blocks {
+                        if let agent_client_protocol::ToolCallContent::Content(c) = block {
+                            if let ContentBlock::Text(t) = &c.content {
+                                if !out.is_empty() {
+                                    out.push('\n');
+                                }
+                                out.push_str(&t.text);
+                            }
+                        }
+                    }
+                    out
+                }).filter(|s| !s.is_empty());
+
                 let _ = tx.send(AcpEvent::ToolCallUpdated {
                     id: update.tool_call_id.to_string(),
                     status: update
@@ -181,7 +226,40 @@ impl Client for FlyntAcpClient {
                         .map(|s| format!("{s:?}"))
                         .unwrap_or_default(),
                     title: update.fields.title,
+                    output,
                 });
+            }
+            SessionUpdate::Plan(plan) => {
+                let items: Vec<PlanItem> = plan.entries.into_iter().map(|e| PlanItem {
+                    content: e.content,
+                    status: match e.status {
+                        agent_client_protocol::PlanEntryStatus::Pending => PlanStatus::Pending,
+                        agent_client_protocol::PlanEntryStatus::InProgress => PlanStatus::InProgress,
+                        agent_client_protocol::PlanEntryStatus::Completed => PlanStatus::Completed,
+                        _ => PlanStatus::Pending,
+                    },
+                    priority: match e.priority {
+                        agent_client_protocol::PlanEntryPriority::High => PlanPriority::High,
+                        agent_client_protocol::PlanEntryPriority::Medium => PlanPriority::Medium,
+                        agent_client_protocol::PlanEntryPriority::Low => PlanPriority::Low,
+                        _ => PlanPriority::Medium,
+                    },
+                }).collect();
+                let _ = tx.send(AcpEvent::PlanUpdated(items));
+            }
+            SessionUpdate::SessionInfoUpdate(info) => {
+                // MaybeUndefined<String>: serialize_undefined doesn't expose a
+                // direct getter, so we round-trip through serde_json. Title
+                // can be present (Some), explicitly null (treated as None to
+                // clear), or absent (no event).
+                let title = match serde_json::to_value(&info.title).ok() {
+                    Some(serde_json::Value::String(s)) => Some(Some(s)),
+                    Some(serde_json::Value::Null) => Some(None),
+                    _ => None,
+                };
+                if let Some(t) = title {
+                    let _ = tx.send(AcpEvent::SessionTitleChanged(t));
+                }
             }
             SessionUpdate::AvailableCommandsUpdate(cmds) => {
                 let commands: Vec<SlashCommand> = cmds

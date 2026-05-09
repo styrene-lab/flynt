@@ -6,7 +6,7 @@
 //! keep the two binaries in lockstep.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Current on-disk schema version. Bump when the shape changes in a way
 /// that older readers cannot tolerate. Old files still parse via the
@@ -138,6 +138,98 @@ impl Canvas {
     }
 }
 
+/// Create a new canvas: a `.canvas` data file plus a `.md` wrapper that
+/// embeds it. Returns the `.md` path (indexable by Flynt). The wrapper
+/// pattern mirrors how Excalidraw documents are stored — the `.md` is
+/// the indexable handle, the data file is the source of truth.
+///
+/// Lives here in flynt-core so both flynt-app (UI menu/command palette)
+/// and flynt-agent (canvas_create ACP tool) can call into the same
+/// implementation. Refuses to overwrite an existing `.canvas` file.
+pub fn create_canvas(vault_root: &Path, name: &str) -> anyhow::Result<PathBuf> {
+    let canvases_dir = vault_root.join("canvases");
+    std::fs::create_dir_all(&canvases_dir)?;
+
+    let canvas_file = format!("{name}.canvas");
+    let canvas_abs = canvases_dir.join(&canvas_file);
+    if canvas_abs.exists() {
+        anyhow::bail!("canvas already exists: canvases/{canvas_file}");
+    }
+    Canvas::default().save(&canvas_abs)?;
+
+    let md_file = format!("{name}.md");
+    let md_rel = PathBuf::from("canvases").join(&md_file);
+    let md_abs = vault_root.join(&md_rel);
+    let escaped_name = name.replace('"', "\\\"");
+    let md_content = format!(
+        "+++\ntitle = \"{escaped_name}\"\ntags = [\"canvas\"]\n+++\n\n![[{canvas_file}]]\n"
+    );
+    std::fs::write(&md_abs, md_content)?;
+
+    Ok(md_rel)
+}
+
+// ── Capture pipeline types ──────────────────────────────────────────────
+//
+// The runtime capture (xcap, JS measurement) lives in `flynt-app` since it
+// needs the WebView. The wire types live here so the omegon-design tool
+// (separate binary) and flynt-app's request handler agree on the shape of
+// `<vault>/.flynt-local/flynt/capture-{requests,responses}/*.json` files.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureRequest {
+    pub request_id: String,
+    #[serde(default)]
+    pub canvas_path: Option<String>,
+    #[serde(default = "default_true")]
+    pub include_metrics: bool,
+}
+
+fn default_true() -> bool { true }
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BoxXywh {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CellMetric {
+    pub id: String,
+    pub cell_box: BoxXywh,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_box: Option<BoxXywh>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_ratio: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureResponse {
+    pub request_id: String,
+    pub image_path: String,
+    /// PNG bytes, base64-encoded. Inlined here so the tool can return it
+    /// in one round trip without the agent needing a follow-up read.
+    pub image_base64: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub viewport_box: BoxXywh,
+    pub cells: Vec<CellMetric>,
+    pub scale_factor: f32,
+    pub captured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+pub fn capture_request_dir(vault_root: &Path) -> PathBuf {
+    vault_root.join(".flynt-local").join("flynt").join("capture-requests")
+}
+
+pub fn capture_response_dir(vault_root: &Path) -> PathBuf {
+    vault_root.join(".flynt-local").join("flynt").join("capture-responses")
+}
+
 /// Operator-level canvas settings, persisted in `FlyntOperatorSettings.canvas`.
 /// Phase 4 introduces real values; Phase 1+2 ship the field with defaults so
 /// later phases can attach without migrating existing operator-settings.json.
@@ -166,7 +258,7 @@ impl Default for CanvasSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     fn sample_cell(id: &str) -> Cell {
         Cell {
@@ -272,6 +364,44 @@ mod tests {
         assert!(c.remove_cell("a"));
         assert!(!c.remove_cell("a"));
         assert!(c.cells.is_empty());
+    }
+
+    #[test]
+    fn create_canvas_writes_data_file_and_wrapper() {
+        let tmp = TempDir::new().unwrap();
+        let md_path = create_canvas(tmp.path(), "Hero").unwrap();
+
+        assert!(md_path.to_string_lossy().ends_with(".md"));
+        let md_abs = tmp.path().join(&md_path);
+        let canvas_abs = tmp.path().join("canvases/Hero.canvas");
+        assert!(md_abs.exists());
+        assert!(canvas_abs.exists());
+
+        let canvas = Canvas::load(&canvas_abs).unwrap();
+        assert_eq!(canvas.version, CANVAS_VERSION);
+        assert!(canvas.cells.is_empty());
+
+        let md = std::fs::read_to_string(&md_abs).unwrap();
+        assert!(md.contains("![[Hero.canvas]]"));
+        assert!(md.contains("tags = [\"canvas\"]"));
+        assert!(md.contains("title = \"Hero\""));
+    }
+
+    #[test]
+    fn create_canvas_refuses_to_overwrite_existing() {
+        let tmp = TempDir::new().unwrap();
+        create_canvas(tmp.path(), "Hero").unwrap();
+        let err = create_canvas(tmp.path(), "Hero").unwrap_err().to_string();
+        assert!(err.contains("already exists"), "got: {err}");
+    }
+
+    #[test]
+    fn create_canvas_escapes_quotes_in_name() {
+        let tmp = TempDir::new().unwrap();
+        let md_path = create_canvas(tmp.path(), "Quoted \"X\"").unwrap();
+        let md = std::fs::read_to_string(tmp.path().join(&md_path)).unwrap();
+        // Frontmatter title must remain valid TOML — embedded quote escaped.
+        assert!(md.contains(r#"title = "Quoted \"X\"""#), "got: {md}");
     }
 
     #[test]

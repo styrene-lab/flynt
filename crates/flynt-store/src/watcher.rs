@@ -20,14 +20,21 @@ pub struct VaultWatcher {
 impl VaultWatcher {
     pub fn new(vault_root: &Path) -> Result<Self> {
         let (tx, rx) = mpsc::channel();
-        let flynt_dir = vault_root.join(".flynt");
+        // Canonicalize the vault path before deriving the skip prefix and
+        // before handing it to notify. macOS FSEvents emits paths against
+        // the underlying filesystem (symlinks resolved), so a starts_with
+        // filter built from a symlinked input would silently miss every
+        // event. Same hardening pass omegon shipped in 0.19.4's triggers.rs;
+        // we have the same notify backend and the same exposure.
+        let canonical_root = std::fs::canonicalize(vault_root).unwrap_or_else(|_| vault_root.to_path_buf());
+        let flynt_dir = canonical_root.join(".flynt");
 
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
             let Ok(event) = res else { return };
             for path in event.paths {
                 if path.starts_with(&flynt_dir) { continue; }
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if ext != "md" && ext != "excalidraw" && ext != "d2" { continue; }
+                if ext != "md" && ext != "excalidraw" && ext != "d2" && ext != "canvas" { continue; }
                 let evt = match event.kind {
                     notify::EventKind::Create(_) => VaultChangeEvent::FileCreated(path),
                     notify::EventKind::Modify(_) => VaultChangeEvent::FileModified(path),
@@ -38,7 +45,7 @@ impl VaultWatcher {
             }
         })?;
 
-        watcher.watch(vault_root, RecursiveMode::Recursive)?;
+        watcher.watch(&canonical_root, RecursiveMode::Recursive)?;
         Ok(Self { _watcher: watcher, rx })
     }
 }

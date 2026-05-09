@@ -1450,8 +1450,24 @@ pub fn NotesView() -> Element {
         }
     }
 
-    // If this document is a canvas wrapper, render CanvasView directly
-    if let Some(canvas_file) = crate::views::canvas::canvas_embed_path(&body) {
+    // If this document is a canvas wrapper, render CanvasView directly.
+    // Two acceptance paths:
+    //  (1) body is exactly `![[X.canvas]]` (the normal wrapper shape), or
+    //  (2) frontmatter has `tags = [..., "canvas", ...]` AND a sibling
+    //      `<stem>.canvas` file exists. (1) is the happy path; (2) is a
+    //      recovery for cases where another bug has stomped the body but
+    //      the user's design data is still intact on disk — better to
+    //      surface the canvas than dump them into an empty note view.
+    let canvas_file_from_body = crate::views::canvas::canvas_embed_path(&body);
+    let canvas_file_from_recovery = if canvas_file_from_body.is_none()
+        && crate::views::canvas::frontmatter_has_canvas_tag(&body)
+    {
+        rel_path.file_stem()
+            .map(|s| format!("{}.canvas", s.to_string_lossy()))
+    } else {
+        None
+    };
+    if let Some(canvas_file) = canvas_file_from_body.or(canvas_file_from_recovery) {
         let vault_root = ctx.vault_root();
         let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));
         let canvas_path = doc_dir.join(&canvas_file);

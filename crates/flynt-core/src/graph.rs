@@ -525,6 +525,7 @@ mod tests {
         fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
         fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
         fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }
+        fn update_task(&self, _id: &TaskId, _patch: &flynt_models::TaskPatch) -> Result<bool> { Ok(true) }
         fn delete_task(&self, _id: &TaskId) -> Result<()> { Ok(()) }
         fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
         fn list_boards(&self) -> Result<Vec<Board>> { Ok(self.boards.clone()) }
@@ -605,6 +606,8 @@ mod tests {
                 decay: Default::default(),
                 last_touched_at: Some(now),
                 design_node_id: None,
+                openspec_change: None,
+                execution: None,
             }],
         };
 

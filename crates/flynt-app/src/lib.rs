@@ -5,6 +5,7 @@ pub mod icons;
 pub mod menu;
 pub mod bootstrap;
 pub mod canvas_assets;
+pub mod canvas_capture;
 pub mod components;
 pub mod state;
 pub mod ui_state;

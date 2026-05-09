@@ -135,15 +135,17 @@ fn start_event_loop(
     agent_status: Signal<AgentStatus>,
     available_commands: Signal<Vec<SlashCommand>>,
     config_options: Signal<Vec<ConfigOption>>,
+    session_title: Signal<Option<String>>,
 ) {
     let mut items = items;
     let mut agent_status = agent_status;
     let mut available_commands = available_commands;
     let mut config_options = config_options;
+    let mut session_title = session_title;
     spawn(async move {
         loop {
             while let Ok(event) = rx.try_recv() {
-                handle_acp_event(event, &ctx, &mut items, &mut agent_status, &mut available_commands, &mut config_options);
+                handle_acp_event(event, &ctx, &mut items, &mut agent_status, &mut available_commands, &mut config_options, &mut session_title);
             }
             tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
@@ -162,6 +164,9 @@ struct ToolCallBlock {
     /// Short summary of the tool's input args, e.g. `path="Foo.md", limit=20`.
     /// Empty if no args were emitted.
     args_summary: String,
+    /// Text output from the tool. Populated by ToolCallUpdated.content
+    /// once omegon ships it. Empty until the tool produces output.
+    output: String,
 }
 
 #[derive(Clone, PartialEq)]
@@ -169,6 +174,9 @@ enum ChatItem {
     Message { role: ChatRole, content: String },
     Thought { content: String },
     ToolCall(ToolCallBlock),
+    /// The agent's full execution plan. Replaces any prior Plan item
+    /// (omegon emits the complete entry list with each update).
+    Plan(Vec<crate::acp::PlanItem>),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -203,6 +211,10 @@ pub fn AgentRail() -> Element {
     let mut session: Signal<Option<Rc<AcpSession>>> = use_signal(|| None);
     let mut shared_session = use_context::<Signal<Option<Rc<AcpSession>>>>();
     let available_commands: Signal<Vec<SlashCommand>> = use_signal(Vec::new);
+    // Session title pushed by omegon via SessionInfoUpdate (typically derived
+    // from the first user prompt). None until omegon picks one or after a
+    // clear; rendered in the status bar when present.
+    let session_title: Signal<Option<String>> = use_signal(|| None);
     let config_options = use_context::<Signal<Vec<ConfigOption>>>();
 
     // Input history (up/down arrow)
@@ -246,7 +258,7 @@ pub fn AgentRail() -> Element {
 
                     *session.write() = Some(sess.clone());
                     *shared_session.write() = Some(sess.clone());
-                    start_event_loop(rx, ctx.clone(), items, agent_status, available_commands, config_options);
+                    start_event_loop(rx, ctx.clone(), items, agent_status, available_commands, config_options, session_title);
                     *agent_status.write() = AgentStatus::Idle;
                     tracing::info!("ACP event loop started, agent ready");
 
@@ -266,6 +278,85 @@ pub fn AgentRail() -> Element {
                 }
             }
         });
+    });
+
+    // ── Sticky-bottom scroll behavior ────────────────────────────────
+    // Auto-scrolls the messages area as content streams in, but only while
+    // the user is parked at (or very near) the bottom. When the user
+    // scrolls up to read history we stop yanking them back. Re-pinning is
+    // either implicit (scroll to within 16px of bottom) or explicit (the
+    // jump-to-bottom control). Implemented in JS because Dioxus doesn't
+    // expose scrollTop/scrollHeight via signals; the JS surface also
+    // backs the prev/next user-message navigation buttons below.
+    use_effect(move || {
+        document::eval(r#"
+            (function install() {
+                const root = document.querySelector('.agent-rail');
+                const messages = root && root.querySelector('.agent-messages');
+                if (!root || !messages) { return setTimeout(install, 100); }
+                if (messages.dataset.flyntScrollWired === '1') return;
+                messages.dataset.flyntScrollWired = '1';
+
+                const PIN_THRESHOLD = 16;  // px from bottom that still counts as "pinned"
+
+                function isAtBottom() {
+                    return messages.scrollHeight - messages.scrollTop - messages.clientHeight <= PIN_THRESHOLD;
+                }
+                function syncPinClass() {
+                    root.classList.toggle('agent-pinned', isAtBottom());
+                }
+                function scrollToBottom() {
+                    messages.scrollTop = messages.scrollHeight;
+                    syncPinClass();
+                }
+
+                // Observe DOM changes inside messages (new chat items, streaming
+                // delta appends, tool-call status updates) and auto-scroll only
+                // while the user is pinned.
+                const obs = new MutationObserver(() => {
+                    if (root.classList.contains('agent-pinned')) scrollToBottom();
+                });
+                obs.observe(messages, { childList: true, subtree: true, characterData: true });
+
+                messages.addEventListener('scroll', syncPinClass, { passive: true });
+
+                // Public API for the floating control buttons.
+                window.flyntAgentScroll = {
+                    bottom: () => scrollToBottom(),
+                    prevUser: () => {
+                        const users = messages.querySelectorAll('.agent-msg.user');
+                        const top = messages.scrollTop;
+                        for (let i = users.length - 1; i >= 0; i--) {
+                            if (users[i].offsetTop < top - 8) {
+                                messages.scrollTop = users[i].offsetTop - 8;
+                                syncPinClass();
+                                return;
+                            }
+                        }
+                        // No earlier user msg → jump to very top
+                        messages.scrollTop = 0;
+                        syncPinClass();
+                    },
+                    nextUser: () => {
+                        const users = messages.querySelectorAll('.agent-msg.user');
+                        const top = messages.scrollTop;
+                        for (let i = 0; i < users.length; i++) {
+                            if (users[i].offsetTop > top + 8) {
+                                messages.scrollTop = users[i].offsetTop - 8;
+                                syncPinClass();
+                                return;
+                            }
+                        }
+                        // No later user msg → jump to bottom
+                        scrollToBottom();
+                    },
+                };
+
+                // Start pinned.
+                root.classList.add('agent-pinned');
+                scrollToBottom();
+            })();
+        "#);
     });
 
     // Slash command menu
@@ -301,6 +392,11 @@ pub fn AgentRail() -> Element {
                         }
                     }
                     span { class: agent_status.read().css_class(), {agent_status.read().label()} }
+                }
+                // Session title — set by omegon from the first prompt's content.
+                // Hidden when None so we don't carve out empty space pre-prompt.
+                if let Some(title) = session_title.read().clone() {
+                    div { class: "agent-session-title", title: "{title}", "{title}" }
                 }
             }
 
@@ -371,6 +467,39 @@ pub fn AgentRail() -> Element {
                                             }
                                             span { class: format!("agent-tool-status {}", tc.status.to_lowercase()), "{tc.status}" }
                                         }
+                                        if !tc.output.is_empty() {
+                                            // Tool output (text only for now). Mono font, faint
+                                            // color, scrollable on overflow so multi-line outputs
+                                            // don't blow up the message area.
+                                            pre { class: "agent-tool-output", "{tc.output}" }
+                                        }
+                                    }
+                                }
+                            },
+                            ChatItem::Plan(entries) => {
+                                rsx! {
+                                    div { key: "plan-{idx}", class: "agent-plan",
+                                        div { class: "agent-plan-header", "Plan" }
+                                        for (i, entry) in entries.iter().enumerate() {
+                                            {
+                                                let (icon, status_class) = match entry.status {
+                                                    crate::acp::PlanStatus::Pending     => ("○", "pending"),
+                                                    crate::acp::PlanStatus::InProgress  => ("●", "in-progress"),
+                                                    crate::acp::PlanStatus::Completed   => ("✓", "completed"),
+                                                };
+                                                let priority_class = match entry.priority {
+                                                    crate::acp::PlanPriority::High   => "high",
+                                                    crate::acp::PlanPriority::Medium => "medium",
+                                                    crate::acp::PlanPriority::Low    => "low",
+                                                };
+                                                rsx! {
+                                                    div { key: "{i}", class: format!("agent-plan-entry {status_class} priority-{priority_class}"),
+                                                        span { class: "agent-plan-icon", "{icon}" }
+                                                        span { class: "agent-plan-content", "{entry.content}" }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             },
@@ -394,6 +523,34 @@ pub fn AgentRail() -> Element {
                                 div { class: "agent-msg-content typing", "Thinking…" }
                             }
                         })
+                    }
+                }
+            }
+
+            // ── Floating scroll controls ────────────────────────
+            // Always visible while there's a session; jump-to-bottom hides
+            // automatically when already pinned (CSS: .agent-pinned variant).
+            // prev/next user navigate by jumping to the previous/next "You"
+            // message above/below the current scroll position.
+            if !items.read().is_empty() {
+                div { class: "agent-scroll-controls",
+                    button {
+                        class: "agent-scroll-btn",
+                        title: "Previous user message",
+                        onclick: move |_| { document::eval("window.flyntAgentScroll && window.flyntAgentScroll.prevUser();"); },
+                        "↑"
+                    }
+                    button {
+                        class: "agent-scroll-btn",
+                        title: "Next user message",
+                        onclick: move |_| { document::eval("window.flyntAgentScroll && window.flyntAgentScroll.nextUser();"); },
+                        "↓"
+                    }
+                    button {
+                        class: "agent-scroll-btn agent-scroll-bottom",
+                        title: "Jump to bottom",
+                        onclick: move |_| { document::eval("window.flyntAgentScroll && window.flyntAgentScroll.bottom();"); },
+                        "⤓"
                     }
                 }
             }
@@ -491,6 +648,9 @@ pub fn AgentRail() -> Element {
 
                             items.write().push(ChatItem::Message { role: ChatRole::User, content: prompt.clone() });
                             *input.write() = String::new();
+                            // Sending a prompt always re-pins to bottom — the
+                            // user just initiated a turn, they want to see it.
+                            document::eval("window.flyntAgentScroll && window.flyntAgentScroll.bottom();");
 
                             let is_login = prompt.trim().starts_with("/login");
                             let prompt_seq = items.read().len();
@@ -521,7 +681,7 @@ pub fn AgentRail() -> Element {
                                             }
                                             *session.write() = Some(new_sess.clone());
                                             *shared_session.write() = Some(new_sess);
-                                            start_event_loop(rx, use_context::<AppContext>(), items, agent_status, available_commands, config_options);
+                                            start_event_loop(rx, use_context::<AppContext>(), items, agent_status, available_commands, config_options, session_title);
                                             items.write().push(ChatItem::Message {
                                                 role: ChatRole::Assistant,
                                                 content: "Session reconnected with new credentials.".into(),
@@ -631,6 +791,7 @@ fn handle_acp_event(
     status: &mut Signal<AgentStatus>,
     commands: &mut Signal<Vec<SlashCommand>>,
     config: &mut Signal<Vec<ConfigOption>>,
+    session_title: &mut Signal<Option<String>>,
 ) {
     match event {
         AcpEvent::TextDelta(ref text) => {
@@ -661,9 +822,10 @@ fn handle_acp_event(
                 kind: kind.clone(),
                 status: "InProgress".into(),
                 args_summary: summarize_tool_args(args.as_ref()),
+                output: String::new(),
             }));
         }
-        AcpEvent::ToolCallUpdated { ref id, status: ref st, ref title } => {
+        AcpEvent::ToolCallUpdated { ref id, status: ref st, ref title, ref output } => {
             tracing::debug!("ACP ToolCallUpdated: id={id} status={st}");
             let mut list = items.write();
             for item in list.iter_mut() {
@@ -671,10 +833,26 @@ fn handle_acp_event(
                     if tc.id == *id {
                         if !st.is_empty() { tc.status = st.clone(); }
                         if let Some(t) = title { tc.title = t.clone(); }
+                        if let Some(o) = output { tc.output = o.clone(); }
                         break;
                     }
                 }
             }
+        }
+        AcpEvent::PlanUpdated(ref plan) => {
+            tracing::info!("ACP PlanUpdated: {} entries", plan.len());
+            let mut list = items.write();
+            // Replace the most-recent Plan item if there is one; otherwise
+            // append. Plans are full snapshots, so we don't accumulate them.
+            if let Some(idx) = list.iter().rposition(|i| matches!(i, ChatItem::Plan(_))) {
+                list[idx] = ChatItem::Plan(plan.clone());
+            } else {
+                list.push(ChatItem::Plan(plan.clone()));
+            }
+        }
+        AcpEvent::SessionTitleChanged(ref title) => {
+            tracing::info!("ACP SessionTitleChanged: {:?}", title);
+            *session_title.write() = title.clone();
         }
         AcpEvent::CommandsAvailable(ref cmds) => {
             tracing::info!("ACP CommandsAvailable: {} commands", cmds.len());
