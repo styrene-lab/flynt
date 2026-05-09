@@ -27,6 +27,11 @@ pub struct TaskFilter {
     pub column: Option<String>,
     pub tags: Vec<String>,
     pub status: Option<crate::models::TaskStatus>,
+    /// Engagement scope. When set, only tasks linked to this engagement
+    /// are returned. Powers the kanban "by engagement" pill and lets
+    /// sentry's FlyntTaskBoard list actionable work for one engagement
+    /// at a time when an omegon is launched into a multi-engagement vault.
+    pub engagement_id: Option<flynt_models::engagement::EngagementId>,
 }
 
 /// The storage abstraction. Implementations live in `flynt-store`.

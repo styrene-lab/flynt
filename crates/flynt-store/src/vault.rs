@@ -2349,7 +2349,7 @@ Description from git.
         task1.priority = flynt_core::models::Priority::High;
         vault.save_project_task(&task1, &project_id).unwrap();
 
-        let task2 = flynt_core::models::Task::new(board.id.clone(), "In Progress", "Build parser");
+        let task2 = flynt_core::models::Task::new(board.id.clone(), "Running", "Build parser");
         vault.save_project_task(&task2, &project_id).unwrap();
 
         // Export

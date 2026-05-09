@@ -181,6 +181,9 @@ pub struct TaskPatch {
     /// Some(None) clears; Some(Some(name)) sets.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openspec_change: Option<Option<String>>,
+    /// Some(None) clears the engagement link; Some(Some(id)) sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engagement_id: Option<Option<crate::engagement::EngagementId>>,
     /// Some(None) clears the execution block; Some(Some(spec)) replaces it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Option<ExecutionSpec>>,
@@ -203,6 +206,7 @@ impl TaskPatch {
             && self.decay.is_none()
             && self.design_node_id.is_none()
             && self.openspec_change.is_none()
+            && self.engagement_id.is_none()
             && self.execution.is_none()
     }
 }
@@ -242,6 +246,13 @@ pub struct Task {
     /// completion. None for tasks unrelated to OpenSpec.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openspec_change: Option<String>,
+    /// Engagement scope this task belongs to. Populated when the task is
+    /// part of a multi-repo engagement (see flynt_models::engagement);
+    /// used by the kanban filter pill and by the agent to resolve which
+    /// repo binding owns forge issues linked from `external_refs`. None
+    /// for un-scoped / personal tasks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engagement_id: Option<crate::engagement::EngagementId>,
     /// Sentry execution parameters. None for human-only tasks; populated
     /// when the task is intended for autonomous execution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,6 +314,7 @@ impl Task {
             last_touched_at: None,
             design_node_id: None,
             openspec_change: None,
+            engagement_id: None,
             execution: None,
         }
     }

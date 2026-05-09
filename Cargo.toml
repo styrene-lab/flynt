@@ -31,7 +31,7 @@ anyhow = "1"
 thiserror = "2"
 
 # IDs + time
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Logging
@@ -64,6 +64,9 @@ tokio-util = { version = "0.7", features = ["compat"] }
 # UI
 dirs = "5"
 dioxus = { version = "0.7", features = ["launch", "devtools", "logger", "lib", "desktop"] }
+
+# Forge contract (shared types across styrene ecosystem)
+styrene-forge = { path = "../styrene-rs/crates/libs/styrene-forge" }
 
 # Internal crates
 flynt-models = { path = "crates/flynt-models" }

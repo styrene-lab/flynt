@@ -607,6 +607,7 @@ mod tests {
                 last_touched_at: Some(now),
                 design_node_id: None,
                 openspec_change: None,
+                engagement_id: None,
                 execution: None,
             }],
         };

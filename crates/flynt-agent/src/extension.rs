@@ -651,6 +651,7 @@ impl Extension for FlyntExtension {
                         column,
                         tags,
                         status,
+                        ..Default::default()
                     })
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(serde_json::to_value(tasks).unwrap_or(json!([])))

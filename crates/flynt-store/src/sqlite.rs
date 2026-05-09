@@ -145,6 +145,12 @@ const MIGRATIONS: &[&str] = &[
     // JSON blob in a single column; openspec_change is a bare string.
     "ALTER TABLE tasks ADD COLUMN execution TEXT;",
     "ALTER TABLE tasks ADD COLUMN openspec_change TEXT;",
+    // v6: scribe absorption — engagement scope on tasks. Stored as TEXT
+    // (UUID string); the engagement record itself lives in vault TOML
+    // under the engagements table (added in a later migration when we
+    // build out flynt-forge). Tasks can carry an engagement_id without
+    // the engagements table existing yet — null is valid.
+    "ALTER TABLE tasks ADD COLUMN engagement_id TEXT;",
 ];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────
@@ -410,7 +416,7 @@ impl VaultStore for SqliteStore {
     fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change FROM tasks WHERE id = ?1",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id FROM tasks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -441,6 +447,10 @@ impl VaultStore for SqliteStore {
             conds.push(format!("status = ?{}", values.len() + 1));
             values.push(serde_json::to_string(&status)?);
         }
+        if let Some(ref eng) = filter.engagement_id {
+            conds.push(format!("engagement_id = ?{}", values.len() + 1));
+            values.push(eng.0.to_string());
+        }
         for tag in &filter.tags {
             conds.push(format!(
                 "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?{})",
@@ -449,7 +459,7 @@ impl VaultStore for SqliteStore {
             values.push(tag.clone());
         }
         let sql = format!(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change FROM tasks WHERE {} ORDER BY position ASC",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id FROM tasks WHERE {} ORDER BY position ASC",
             conds.join(" AND ")
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -468,8 +478,8 @@ impl VaultStore for SqliteStore {
             .map(|e| serde_json::to_string(e))
             .transpose()?;
         conn.execute(
-            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)
                ON CONFLICT(id) DO UPDATE SET
                  board_id=excluded.board_id, column_name=excluded.column_name,
                  title=excluded.title, description=excluded.description,
@@ -479,7 +489,8 @@ impl VaultStore for SqliteStore {
                  updated_at=excluded.updated_at,
                  decay=excluded.decay, last_touched_at=excluded.last_touched_at,
                  external_refs=excluded.external_refs, design_node_id=excluded.design_node_id,
-                 execution=excluded.execution, openspec_change=excluded.openspec_change"#,
+                 execution=excluded.execution, openspec_change=excluded.openspec_change,
+                 engagement_id=excluded.engagement_id"#,
             params![
                 task.id.0.to_string(),
                 task.board_id.0.to_string(),
@@ -500,6 +511,7 @@ impl VaultStore for SqliteStore {
                 task.design_node_id.map(|u| u.to_string()),
                 execution_json,
                 task.openspec_change,
+                task.engagement_id.as_ref().map(|e| e.0.to_string()),
             ],
         )?;
         Ok(())
@@ -534,6 +546,7 @@ impl VaultStore for SqliteStore {
         if let Some(v) = patch.decay.clone() { task.decay = v; }
         if let Some(v) = patch.design_node_id { task.design_node_id = v; }
         if let Some(v) = &patch.openspec_change { task.openspec_change = v.clone(); }
+        if let Some(v) = &patch.engagement_id { task.engagement_id = v.clone(); }
         if let Some(v) = &patch.execution { task.execution = v.clone(); }
         task.updated_at = chrono::Utc::now();
 
@@ -606,7 +619,7 @@ impl VaultStore for SqliteStore {
             r#"SELECT id, board_id, column_name, title, description, priority, status,
                       tags, document_refs, due_date, position, created_at, updated_at,
                       decay, last_touched_at, external_refs, design_node_id,
-                      execution, openspec_change
+                      execution, openspec_change, engagement_id
                FROM tasks
                WHERE project_id = ?1
                  AND (last_committed_at IS NULL OR updated_at > last_committed_at)
@@ -786,6 +799,12 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
             json.and_then(|s| serde_json::from_str(&s).ok())
         },
         openspec_change: row.get(18)?,
+        engagement_id: {
+            let id_str: Option<String> = row.get(19)?;
+            id_str
+                .and_then(|s| uuid::Uuid::parse_str(&s).ok())
+                .map(flynt_models::engagement::EngagementId)
+        },
     })
 }
 
@@ -1048,6 +1067,7 @@ mod tests {
             column: Some("Scheduled".into()),
             tags: vec!["sentry".into(), "recurring".into()],
             status: Some(TaskStatus::Todo),
+            ..Default::default()
         }).unwrap();
         assert_eq!(intersection.len(), 1, "only A matches all four predicates");
         assert_eq!(intersection[0].tags, vec!["sentry", "recurring"]);
@@ -1111,5 +1131,76 @@ mod tests {
         assert!(result);
         let after = store.get_task(&task_id).unwrap().unwrap();
         assert_eq!(after.updated_at, original_ts, "empty patch must not bump updated_at");
+    }
+
+    #[test]
+    fn engagement_id_round_trips_through_sqlite() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        let eid = EngagementId::new();
+        t.engagement_id = Some(eid.clone());
+        store.save_task(&t).unwrap();
+
+        let loaded = store.get_task(&t.id).unwrap().unwrap();
+        assert_eq!(loaded.engagement_id, Some(eid));
+    }
+
+    #[test]
+    fn list_tasks_filters_by_engagement() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let eid_a = EngagementId::new();
+        let eid_b = EngagementId::new();
+
+        let mut a1 = Task::new(board_id.clone(), "Backlog", "A1");
+        a1.engagement_id = Some(eid_a.clone());
+        let mut a2 = Task::new(board_id.clone(), "Backlog", "A2");
+        a2.engagement_id = Some(eid_a.clone());
+        let mut b1 = Task::new(board_id.clone(), "Backlog", "B1");
+        b1.engagement_id = Some(eid_b.clone());
+        let unscoped = Task::new(board_id.clone(), "Backlog", "Unscoped");
+
+        for t in [&a1, &a2, &b1, &unscoped] { store.save_task(t).unwrap(); }
+
+        let only_a = store.list_tasks(&TaskFilter {
+            engagement_id: Some(eid_a),
+            ..Default::default()
+        }).unwrap();
+        assert_eq!(only_a.len(), 2, "expected only the two A-engagement tasks");
+        assert!(only_a.iter().all(|t| t.title == "A1" || t.title == "A2"));
+    }
+
+    #[test]
+    fn update_task_engagement_id_set_and_clear() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.id = task_id.clone();
+        store.save_task(&t).unwrap();
+
+        // Set
+        let eid = EngagementId::new();
+        let patch = TaskPatch {
+            engagement_id: Some(Some(eid.clone())),
+            ..Default::default()
+        };
+        store.update_task(&task_id, &patch).unwrap();
+        assert_eq!(
+            store.get_task(&task_id).unwrap().unwrap().engagement_id,
+            Some(eid),
+        );
+
+        // Clear via Some(None)
+        let patch = TaskPatch {
+            engagement_id: Some(None),
+            ..Default::default()
+        };
+        store.update_task(&task_id, &patch).unwrap();
+        assert!(store.get_task(&task_id).unwrap().unwrap().engagement_id.is_none());
     }
 }

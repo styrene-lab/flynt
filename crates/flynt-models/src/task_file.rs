@@ -59,6 +59,10 @@ pub fn serialize_task_to_markdown(task: &Task, project_id: &Uuid) -> String {
         fm.push_str(&format!("openspec_change = {}\n", toml_quote(change)));
     }
 
+    if let Some(eng) = &task.engagement_id {
+        fm.push_str(&format!("engagement = \"{}\"\n", eng.0));
+    }
+
     // Execution block — nested table under [data.execution]. Hand-format
     // each field. We can't use toml::to_string here: it emits BTreeMap<String,
     // String> as a separate sub-table header, which after our [data.execution]
@@ -200,6 +204,9 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
         // lifecycle integration matches changes by name, so we don't try to
         // canonicalize — just round-trip the string.
         openspec_change: get_str("openspec_change"),
+        engagement_id: get_str("engagement")
+            .and_then(|s| Uuid::parse_str(&s).ok())
+            .map(crate::engagement::EngagementId),
         // execution: nested `[data.execution]` table. Parsed via toml::Value
         // → typed ExecutionSpec. Absent table = None; empty table also = None
         // (no point persisting an empty execution block).
@@ -395,6 +402,29 @@ mod tests {
         let md = serialize_task_to_markdown(&task, &project_id);
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert_eq!(parsed.openspec_change.as_deref(), Some("auth-rewrite"));
+    }
+
+    #[test]
+    fn roundtrip_engagement_id() {
+        let project_id = Uuid::new_v4();
+        let mut task = sample_task();
+        let eid = crate::engagement::EngagementId::new();
+        task.engagement_id = Some(eid.clone());
+
+        let md = serialize_task_to_markdown(&task, &project_id);
+        assert!(md.contains("engagement = "), "expected engagement field in:\n{md}");
+        let parsed = parse_task_from_markdown(&md).unwrap();
+        assert_eq!(parsed.engagement_id, Some(eid));
+    }
+
+    #[test]
+    fn missing_engagement_round_trips_as_none() {
+        let project_id = Uuid::new_v4();
+        let task = sample_task();
+        let md = serialize_task_to_markdown(&task, &project_id);
+        assert!(!md.contains("engagement"), "expected no engagement field in:\n{md}");
+        let parsed = parse_task_from_markdown(&md).unwrap();
+        assert!(parsed.engagement_id.is_none());
     }
 
     #[test]

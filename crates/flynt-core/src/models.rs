@@ -9,6 +9,9 @@ use uuid::Uuid;
 pub use flynt_models::task::{
     BoardId, DecayRate, DocumentId, ExecutionSpec, Priority, Task, TaskId, TaskPatch, TaskStatus,
 };
+pub use flynt_models::engagement::{
+    Engagement, EngagementId, EngagementStatus, Partnership, PartnershipId, RepoBinding,
+};
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
@@ -965,6 +968,7 @@ mod tests {
             last_touched_at: Some(anchor),
             design_node_id: None,
             openspec_change: None,
+            engagement_id: None,
             execution: None,
         }
     }

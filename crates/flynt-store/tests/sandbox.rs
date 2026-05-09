@@ -161,7 +161,7 @@ fn test_create_and_list_boards() {
     let boards = vault.store.list_boards().unwrap();
     assert_eq!(boards.len(), 1);
     assert_eq!(boards[0].name, "Test Sprint");
-    assert_eq!(boards[0].columns.len(), 4); // Backlog, In Progress, Review, Done
+    assert_eq!(boards[0].columns.len(), 5); // Backlog, Scheduled, Running, Done, Failed
 }
 
 #[test]
