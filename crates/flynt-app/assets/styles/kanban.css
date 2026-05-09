@@ -476,6 +476,69 @@
   color: rgba(80, 200, 220, 0.95);
 }
 
+/* ── Sentry / Lifecycle inline section ──────────────────────────────── */
+/*
+ * Collapsible section in the task detail editor. Auto-expands when the
+ * task is sentry-managed (has cron/webhook trigger or execution block) so
+ * the operator opens straight onto the relevant fields. Fully collapsible
+ * for hand-tracked tasks.
+ */
+.task-sentry-section {
+  margin-top:    var(--space-2);
+  border-top:    1px solid var(--border, #2a2a2a);
+  padding-top:   var(--space-2);
+}
+
+.task-sentry-toggle {
+  background:    transparent;
+  border:        none;
+  color:         var(--text-muted, #888);
+  font-size:     var(--font-size-xs);
+  font-weight:   500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding:       4px 0;
+  cursor:        pointer;
+  transition:    color var(--duration-fast) var(--ease);
+}
+.task-sentry-toggle:hover {
+  color: var(--text, #ddd);
+}
+
+.task-sentry-fields {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+  padding-top:    var(--space-2);
+}
+
+.task-sentry-group {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  padding:        var(--space-2);
+  background:     rgba(255, 255, 255, 0.02);
+  border-radius:  var(--radius-md);
+  border:         1px solid var(--border, #2a2a2a);
+}
+
+.task-sentry-group-label {
+  font-size:      10px;
+  font-weight:    600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color:          var(--text-muted, #888);
+  margin-bottom:  2px;
+}
+
+.task-sentry-fields .field input[type="text"],
+.task-sentry-fields .field input[type="number"],
+.task-sentry-fields .field input:not([type]),
+.task-sentry-fields .field textarea {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size:   var(--font-size-xs);
+}
+
 /* Archive button — shown on hover */
 .task-actions {
   display:         flex;
