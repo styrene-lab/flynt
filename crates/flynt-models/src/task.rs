@@ -249,6 +249,35 @@ pub struct Task {
 }
 
 impl Task {
+    /// True when the task carries any signal that omegon's sentry would
+    /// pick it up: a cron / webhook trigger in `external_refs`, or an
+    /// `execution` block with at least one configured field. Predicate-
+    /// driven detection (no separate flag) means cards self-correct as
+    /// fields populate. Used by Flynt's UI to surface sentry-aware chips
+    /// only when there's something to show.
+    pub fn is_sentry_managed(&self) -> bool {
+        self.execution.as_ref().map(|e| !e.is_empty()).unwrap_or(false)
+            || self.external_refs.iter().any(|r| {
+                r.starts_with("cron:") || r.starts_with("webhook:")
+            })
+    }
+
+    /// Extract the cron expression from external_refs if any (just the
+    /// expression part, no `cron:` prefix). Returns the first match;
+    /// multiple cron entries on one task is unusual but allowed.
+    pub fn cron_trigger(&self) -> Option<&str> {
+        self.external_refs
+            .iter()
+            .find_map(|r| r.strip_prefix("cron:"))
+    }
+
+    /// Extract the webhook name from external_refs if any.
+    pub fn webhook_trigger(&self) -> Option<&str> {
+        self.external_refs
+            .iter()
+            .find_map(|r| r.strip_prefix("webhook:"))
+    }
+
     pub fn new(
         board_id: BoardId,
         column: impl Into<String>,
@@ -320,5 +349,64 @@ impl Task {
     /// Touch the task — resets the decay clock.
     pub fn touch(&mut self) {
         self.last_touched_at = Some(Utc::now());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task() -> Task {
+        Task::new(BoardId::new(), "Backlog", "T")
+    }
+
+    #[test]
+    fn fresh_task_is_not_sentry_managed() {
+        assert!(!task().is_sentry_managed());
+    }
+
+    #[test]
+    fn cron_external_ref_marks_sentry_managed() {
+        let mut t = task();
+        t.external_refs = vec!["cron:0 */4 * * *".into()];
+        assert!(t.is_sentry_managed());
+        assert_eq!(t.cron_trigger(), Some("0 */4 * * *"));
+    }
+
+    #[test]
+    fn webhook_external_ref_marks_sentry_managed() {
+        let mut t = task();
+        t.external_refs = vec!["webhook:gh-pr".into()];
+        assert!(t.is_sentry_managed());
+        assert_eq!(t.webhook_trigger(), Some("gh-pr"));
+    }
+
+    #[test]
+    fn execution_block_marks_sentry_managed() {
+        let mut t = task();
+        t.execution = Some(ExecutionSpec {
+            model: Some("anthropic:claude".into()),
+            ..Default::default()
+        });
+        assert!(t.is_sentry_managed());
+    }
+
+    #[test]
+    fn empty_execution_block_does_not_mark_sentry_managed() {
+        // is_empty() check on ExecutionSpec — a Some(default) shouldn't
+        // count, only a meaningfully populated one.
+        let mut t = task();
+        t.execution = Some(ExecutionSpec::default());
+        assert!(!t.is_sentry_managed());
+    }
+
+    #[test]
+    fn unrelated_external_refs_do_not_mark_sentry_managed() {
+        // GitHub URLs and similar are external_refs but not sentry triggers.
+        let mut t = task();
+        t.external_refs = vec!["https://github.com/org/repo/issues/42".into()];
+        assert!(!t.is_sentry_managed());
+        assert!(t.cron_trigger().is_none());
+        assert!(t.webhook_trigger().is_none());
     }
 }

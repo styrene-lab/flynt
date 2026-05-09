@@ -555,6 +555,65 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                         }
                     }
                 }
+                // ── Sentry-aware chips ────────────────────────────────────
+                // Predicate-driven, not flag-driven. Cards self-correct as
+                // fields populate. Each chip is small + low-contrast until
+                // hover; full content goes in the title attr for tooltip.
+                {
+                    let has_cron = task.cron_trigger().is_some();
+                    let has_webhook = task.webhook_trigger().is_some();
+                    let has_model = task.execution.as_ref().and_then(|e| e.model.as_deref()).is_some();
+                    let has_design = task.design_node_id.is_some();
+                    let has_spec = task.openspec_change.is_some();
+                    let any = has_cron || has_webhook || has_model || has_design || has_spec;
+                    any.then(|| {
+                        let cron_text = task.cron_trigger().map(String::from);
+                        let webhook_text = task.webhook_trigger().map(String::from);
+                        let model_text = task.execution.as_ref()
+                            .and_then(|e| e.model.as_deref())
+                            .map(short_model_label);
+                        let spec_text = task.openspec_change.clone();
+                        rsx! {
+                            div { class: "task-card-chips",
+                                if let Some(cron) = cron_text {
+                                    span {
+                                        class: "task-chip task-chip-trigger",
+                                        title: "cron trigger: {cron}",
+                                        "cron"
+                                    }
+                                }
+                                if let Some(webhook) = webhook_text {
+                                    span {
+                                        class: "task-chip task-chip-trigger",
+                                        title: "webhook trigger: {webhook}",
+                                        "webhook"
+                                    }
+                                }
+                                if let Some(model) = model_text {
+                                    span {
+                                        class: "task-chip task-chip-model",
+                                        title: "execution.model",
+                                        "{model}"
+                                    }
+                                }
+                                if has_design {
+                                    span {
+                                        class: "task-chip task-chip-design",
+                                        title: "linked to a design tree node",
+                                        "→ design"
+                                    }
+                                }
+                                if let Some(spec) = spec_text {
+                                    span {
+                                        class: "task-chip task-chip-spec",
+                                        title: "openspec change: {spec}",
+                                        "↪ {spec}"
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
                 button {
                     class: "task-menu-btn",
                     title: if *open.read() { "Close details" } else { "Open details" },
@@ -690,6 +749,49 @@ fn priority_badge_class(priority: Priority) -> &'static str {
         Priority::High => "high",
         Priority::Critical => "critical",
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_model_strips_provider_prefix() {
+        assert_eq!(short_model_label("anthropic:claude-sonnet-4-6"), "sonnet-4");
+        assert_eq!(short_model_label("anthropic:claude-opus-4-7"), "opus-4");
+        assert_eq!(short_model_label("anthropic:claude-haiku-4-5"), "haiku-4");
+    }
+
+    #[test]
+    fn short_model_passes_through_unknown_shapes() {
+        // No `claude-` prefix → return the bare part as-is.
+        assert_eq!(short_model_label("openai:gpt-5-turbo"), "gpt-5-turbo");
+        assert_eq!(short_model_label("ollama:qwen2-72b"), "qwen2-72b");
+        assert_eq!(short_model_label("custom-model"), "custom-model");
+    }
+
+    #[test]
+    fn short_model_handles_no_prefix() {
+        // Bare model name, no provider colon.
+        assert_eq!(short_model_label("claude-sonnet-4-6"), "sonnet-4");
+    }
+}
+
+/// Short display label for an execution.model string. Strips the provider
+/// prefix (`anthropic:`, `openai:`, `ollama:`) and abbreviates known long
+/// model names. Card chips only have ~6-10 chars of room before wrap.
+pub(crate) fn short_model_label(model: &str) -> String {
+    let bare = model.split(':').last().unwrap_or(model);
+    if let Some(rest) = bare.strip_prefix("claude-") {
+        // claude-sonnet-4-6 → sonnet-4
+        // claude-opus-4-7   → opus-4
+        // claude-haiku-4-5  → haiku-4
+        let parts: Vec<&str> = rest.split('-').collect();
+        if parts.len() >= 2 {
+            return format!("{}-{}", parts[0], parts[1]);
+        }
+    }
+    bare.to_string()
 }
 
 // ── New board prompts ────────────────────────────────────────────────────────
