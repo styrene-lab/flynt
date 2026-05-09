@@ -258,7 +258,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
         let _ = *open.read(); // reactive dependency — recompute when palette opens/closes
         let mut all: Vec<Cmd> = vec![
             Cmd { id: "view-notes".into(), label: "Notes".into(), category: "Navigate".into() },
-            Cmd { id: "view-board".into(), label: "Board".into(), category: "Navigate".into() },
+            Cmd { id: "view-board".into(), label: "Tasks".into(), category: "Navigate".into() },
             Cmd { id: "view-graph".into(), label: "Graph".into(), category: "Navigate".into() },
             Cmd { id: "view-settings".into(), label: "Settings".into(), category: "Navigate".into() },
             Cmd { id: "view-welcome".into(), label: "Welcome".into(), category: "Navigate".into() },
@@ -445,7 +445,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                                 ctx_parts.push(format!("[Currently viewing: \"{title}\"]"));
                                             }
                                             match *route {
-                                                Route::Kanban => ctx_parts.push("[On: Board view]".into()),
+                                                Route::Kanban => ctx_parts.push("[On: Tasks view]".into()),
                                                 Route::Graph => ctx_parts.push("[On: Graph view]".into()),
                                                 Route::Settings => ctx_parts.push("[On: Settings]".into()),
                                                 _ => {}

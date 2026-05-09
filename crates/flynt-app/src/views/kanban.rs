@@ -187,6 +187,59 @@ pub fn KanbanView() -> Element {
 
 // ── Board ─────────────────────────────────────────────────────────────────────
 
+/// Filter slice applied above the kanban columns. `All` is the default
+/// (non-archived everywhere); the others are the operator's view-modes
+/// for working with sentry-managed tasks. `Archived` is opt-in only —
+/// archived tasks are otherwise hidden everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskFilterKind {
+    All,
+    Actionable,
+    LifecycleLinked,
+    Manual,
+    Archived,
+}
+
+impl TaskFilterKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Actionable => "Actionable",
+            Self::LifecycleLinked => "Lifecycle",
+            Self::Manual => "Manual",
+            Self::Archived => "Archived",
+        }
+    }
+    fn title(&self) -> &'static str {
+        match self {
+            Self::All => "All non-archived tasks",
+            Self::Actionable => "Tasks that sentry would pick up next: column=Scheduled, status=Todo",
+            Self::LifecycleLinked => "Tasks linked to a design node or openspec change",
+            Self::Manual => "Hand-tracked tasks (no sentry triggers or execution metadata)",
+            Self::Archived => "Archived tasks (otherwise hidden everywhere)",
+        }
+    }
+    /// Apply the filter to a single task. Caller still applies the
+    /// per-column name match separately.
+    fn matches(&self, task: &Task) -> bool {
+        match self {
+            Self::All => task.status != TaskStatus::Archived,
+            Self::Actionable => {
+                task.column == "Scheduled"
+                    && task.status == TaskStatus::Todo
+            }
+            Self::LifecycleLinked => {
+                task.status != TaskStatus::Archived
+                    && (task.design_node_id.is_some() || task.openspec_change.is_some())
+            }
+            Self::Manual => {
+                task.status != TaskStatus::Archived && !task.is_sentry_managed()
+            }
+            Self::Archived => task.status == TaskStatus::Archived,
+        }
+    }
+}
+
 #[component]
 fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let ctx     = use_context::<AppContext>();
@@ -210,6 +263,9 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     });
 
     let dragging: Signal<Option<TaskId>> = use_signal(|| None);
+    // Active filter pill — All by default. Persists for the board view's
+    // lifetime; resets when switching boards (KanbanBoard re-mounts).
+    let mut active_filter = use_signal(|| TaskFilterKind::All);
 
     let mut adding_col = use_signal(|| false);
     let mut new_col_name = use_signal(String::new);
@@ -218,14 +274,37 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let board_for_add = board.clone();
 
     rsx! {
-        div { class: "kanban-board",
-            match &*tasks.read() {
-                None => rsx! { div { class: "kanban-loading muted", "Loading tasks…" } },
-                Some(all) => rsx! {
+        div { class: "kanban-board-shell",
+            div { class: "kanban-filter-pills",
+                for kind in [
+                    TaskFilterKind::All,
+                    TaskFilterKind::Actionable,
+                    TaskFilterKind::LifecycleLinked,
+                    TaskFilterKind::Manual,
+                    TaskFilterKind::Archived,
+                ] {
+                    {
+                        let is_active = *active_filter.read() == kind;
+                        rsx! {
+                            button {
+                                class: if is_active { "kanban-filter-pill active" } else { "kanban-filter-pill" },
+                                title: kind.title(),
+                                onclick: move |_| *active_filter.write() = kind,
+                                "{kind.label()}"
+                            }
+                        }
+                    }
+                }
+            }
+            div { class: "kanban-board",
+                match &*tasks.read() {
+                    None => rsx! { div { class: "kanban-loading muted", "Loading tasks…" } },
+                    Some(all) => rsx! {
                     for col in board.columns.iter().cloned() {
                         {
+                            let filter = *active_filter.read();
                             let col_tasks: Vec<Task> = all.iter()
-                                .filter(|t| t.column == col.name && t.status != TaskStatus::Archived)
+                                .filter(|t| t.column == col.name && filter.matches(t))
                                 .cloned()
                                 .collect();
                             let col_empty = col_tasks.is_empty();
@@ -333,6 +412,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                         }
                     }
                 },
+                }
             }
         }
     }
@@ -1052,8 +1132,8 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
 
     rsx! {
         div { class: "new-board-prompt",
-            h2 { class: "view-heading", "Create your first board" }
-            p { class: "muted", "Boards organize tasks into columns like Backlog, In Progress, Review, and Done." }
+            h2 { class: "view-heading", "Create your first task board" }
+            p { class: "muted", "Boards organize tasks into Backlog → Scheduled → Running → Done columns. Tasks can be hand-tracked or executed autonomously by the agent — add a cron, webhook, or execution block to a card and Sentry picks it up." }
             div { class: "row gap-2",
                 input {
                     autofocus: true,

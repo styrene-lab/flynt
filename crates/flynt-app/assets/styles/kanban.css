@@ -169,6 +169,51 @@
   line-height: 1.4;
 }
 
+/* ── Board shell: filter pills + columns stacked ─────────────────────────── */
+.kanban-board-shell {
+  display:        flex;
+  flex-direction: column;
+  flex:           1;
+  min-height:     0;
+}
+
+/* ── Filter pills row ─────────────────────────────────────────────────────── */
+.kanban-filter-pills {
+  display:       flex;
+  gap:           var(--space-1);
+  padding:       var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background:    var(--toolbar-bg);
+  flex-shrink:   0;
+  overflow-x:    auto;
+}
+
+.kanban-filter-pill {
+  padding:       3px var(--space-2);
+  border-radius: var(--radius);
+  font-size:     var(--font-size-xs);
+  font-weight:   var(--font-weight-medium);
+  color:         var(--muted-foreground);
+  white-space:   nowrap;
+  background:    transparent;
+  border:        1px solid transparent;
+  cursor:        pointer;
+  transition:    color      var(--duration-fast) var(--ease),
+                 background var(--duration-fast) var(--ease),
+                 border     var(--duration-fast) var(--ease);
+}
+
+.kanban-filter-pill:hover {
+  color:      var(--foreground);
+  background: var(--accent);
+}
+
+.kanban-filter-pill.active {
+  color:      var(--foreground);
+  background: var(--accent);
+  border-color: var(--primary);
+}
+
 /* ── Board: horizontal column strip ──────────────────────────────────────── */
 .kanban-board {
   display:        flex;

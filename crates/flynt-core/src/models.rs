@@ -269,15 +269,23 @@ pub struct Column {
 }
 
 impl Board {
+    /// Default columns for a new board.
+    ///
+    /// `Backlog → Scheduled → Running → Done` mirrors sentry's task lifecycle
+    /// (queued → claimed → executing → terminal) so an autonomous flow lands
+    /// in the right column without renaming. `Failed` is a terminal sibling
+    /// of `Done` for non-recoverable runs. Hand-tracked tasks are unaffected
+    /// — operators can still rename or reshape any column.
     pub fn default_sprint(name: impl Into<String>) -> Self {
         Self {
             id: BoardId::new(),
             name: name.into(),
             columns: vec![
                 Column { name: "Backlog".into(), wip_limit: None },
-                Column { name: "In Progress".into(), wip_limit: Some(3) },
-                Column { name: "Review".into(), wip_limit: None },
+                Column { name: "Scheduled".into(), wip_limit: None },
+                Column { name: "Running".into(), wip_limit: Some(3) },
                 Column { name: "Done".into(), wip_limit: None },
+                Column { name: "Failed".into(), wip_limit: None },
             ],
             project_id: None,
             created_at: Utc::now(),
@@ -1059,14 +1067,15 @@ mod tests {
     // ── Board ───────────────────────────────────────────────────────
 
     #[test]
-    fn board_default_sprint_has_four_columns() {
+    fn board_default_sprint_has_lifecycle_columns() {
         let board = Board::default_sprint("Sprint 1");
         assert_eq!(board.name, "Sprint 1");
-        assert_eq!(board.columns.len(), 4);
+        assert_eq!(board.columns.len(), 5);
         assert_eq!(board.columns[0].name, "Backlog");
-        assert_eq!(board.columns[1].name, "In Progress");
-        assert_eq!(board.columns[2].name, "Review");
+        assert_eq!(board.columns[1].name, "Scheduled");
+        assert_eq!(board.columns[2].name, "Running");
         assert_eq!(board.columns[3].name, "Done");
+        assert_eq!(board.columns[4].name, "Failed");
         assert!(board.project_id.is_none());
     }
 

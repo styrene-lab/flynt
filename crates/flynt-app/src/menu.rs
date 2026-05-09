@@ -159,7 +159,7 @@ pub fn build_menu_bar() -> Menu {
             ),
             &MenuItem::with_id(
                 VIEW_BOARD,
-                "Board",
+                "Tasks",
                 true,
                 Some(Accelerator::new(Some(Modifiers::META), Code::Digit2)),
             ),

@@ -107,7 +107,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                 }
                 button {
                     class: if *active_route.read() == Route::Kanban   { "nav-btn active" } else { "nav-btn" },
-                    title: "Kanban",
+                    title: "Tasks",
                     onclick: move |_| *active_route.write() = Route::Kanban,
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
                 }
