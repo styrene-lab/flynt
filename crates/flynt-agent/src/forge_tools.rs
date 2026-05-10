@@ -655,10 +655,23 @@ pub async fn forge_create_issue(
         assignees: Vec::new(),
     }).await.map_err(|e| ExtError::internal_error(format!("forge: {e}")))?;
 
+    // Refetch the issue via GET so the IssueMap stores the canonical
+    // server-side state. GitHub normalizes whitespace + label metadata
+    // between the POST response and subsequent GETs; without the
+    // refetch, the very next forge_sync_issues sees a hash mismatch
+    // and reports a spurious "updated" op for an issue we just made.
+    // Falls back to the POST response on GET failure (issue still got
+    // created — operator should know rather than have us roll back).
+    let canonical = client.get_issue(&org, &repo, issue.number).await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, issue = issue.number, "post-create GET failed; using POST response for hash");
+            issue.clone()
+        });
+
     let mut t = Task::new(board_id.clone(), &column, title);
     t.description = body;
     t.tags = labels;
-    t.external_refs = vec![issue.url.clone()];
+    t.external_refs = vec![canonical.url.clone()];
     t.engagement_id = Some(eid.clone());
     vault.store.save_task(&t)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
@@ -669,16 +682,16 @@ pub async fn forge_create_issue(
         board_id: board_id.0,
         forge_org: org.clone(),
         forge_repo: repo.clone(),
-        forge_issue_number: issue.number,
+        forge_issue_number: canonical.number,
         last_synced: Utc::now(),
-        last_hash: Some(issue_hash(&issue)),
-        forge_url: Some(issue.url.clone()),
+        last_hash: Some(issue_hash(&canonical)),
+        forge_url: Some(canonical.url.clone()),
     }).map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     Ok(json!({
         "task_id": t.id.0.to_string(),
-        "issue_number": issue.number,
-        "issue_url": issue.url,
+        "issue_number": canonical.number,
+        "issue_url": canonical.url,
     }))
 }
 
