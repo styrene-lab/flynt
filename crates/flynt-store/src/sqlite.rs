@@ -146,11 +146,27 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tasks ADD COLUMN execution TEXT;",
     "ALTER TABLE tasks ADD COLUMN openspec_change TEXT;",
     // v6: scribe absorption — engagement scope on tasks. Stored as TEXT
-    // (UUID string); the engagement record itself lives in vault TOML
-    // under the engagements table (added in a later migration when we
-    // build out flynt-forge). Tasks can carry an engagement_id without
-    // the engagements table existing yet — null is valid.
+    // (UUID string). Soft-coupled to v7's engagements table: a task may
+    // carry an engagement_id whose row doesn't exist (yet, or any more)
+    // — callers treat that as "no engagement," not an error.
     "ALTER TABLE tasks ADD COLUMN engagement_id TEXT;",
+    // v7: engagements table — multi-repo work scope records. `repos` and
+    // `forge` round-trip as JSON blobs (RepoBinding[] and ForgeEndpoint
+    // respectively); `partnership_id` is loose so we can defer
+    // partnership persistence until something actually needs it.
+    r#"CREATE TABLE IF NOT EXISTS engagements (
+        id              TEXT PRIMARY KEY,
+        partnership_id  TEXT,
+        name            TEXT NOT NULL,
+        description     TEXT,
+        repos           TEXT NOT NULL DEFAULT '[]',
+        forge           TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT '"active"',
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    );"#,
+    "CREATE INDEX IF NOT EXISTS idx_engagements_partnership ON engagements (partnership_id);",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_engagement ON tasks (engagement_id);",
 ];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────
@@ -611,6 +627,76 @@ impl VaultStore for SqliteStore {
         Ok(())
     }
 
+    // ── Engagements ──────────────────────────────────────────────────────────
+
+    fn get_engagement(
+        &self,
+        id: &flynt_models::engagement::EngagementId,
+    ) -> Result<Option<flynt_models::engagement::Engagement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, partnership_id, name, description, repos, forge, status, created_at, updated_at
+             FROM engagements WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id.0.to_string()])?;
+        let Some(row) = rows.next()? else { return Ok(None) };
+        Ok(Some(row_to_engagement(row)?))
+    }
+
+    fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, partnership_id, name, description, repos, forge, status, created_at, updated_at
+             FROM engagements ORDER BY name ASC",
+        )?;
+        let rows = stmt.query_map([], row_to_engagement)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn save_engagement(&self, engagement: &flynt_models::engagement::Engagement) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT INTO engagements (id, partnership_id, name, description, repos, forge, status, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+               ON CONFLICT(id) DO UPDATE SET
+                 partnership_id = excluded.partnership_id,
+                 name           = excluded.name,
+                 description    = excluded.description,
+                 repos          = excluded.repos,
+                 forge          = excluded.forge,
+                 status         = excluded.status,
+                 updated_at     = excluded.updated_at"#,
+            params![
+                engagement.id.0.to_string(),
+                engagement.partnership_id.as_ref().map(|p| p.0.to_string()),
+                engagement.name,
+                engagement.description,
+                serde_json::to_string(&engagement.repos)?,
+                serde_json::to_string(&engagement.forge)?,
+                serde_json::to_string(&engagement.status)?,
+                engagement.created_at.to_rfc3339(),
+                engagement.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn delete_engagement(
+        &self,
+        id: &flynt_models::engagement::EngagementId,
+    ) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "DELETE FROM engagements WHERE id = ?1",
+            params![id.0.to_string()],
+        )?;
+        // Tasks keep their engagement_id pointing at a now-missing row;
+        // callers treat dangling refs as "no engagement" per the trait
+        // doc. We don't NULL them out here because that's a policy
+        // decision (cascade vs orphan) the caller may want to override.
+        Ok(n > 0)
+    }
+
     // ── Project dirty tracking ───────────────────────────────────────────────
 
     fn list_dirty_tasks(&self, project_id: &uuid::Uuid) -> Result<Vec<Task>> {
@@ -805,6 +891,36 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
                 .and_then(|s| uuid::Uuid::parse_str(&s).ok())
                 .map(flynt_models::engagement::EngagementId)
         },
+    })
+}
+
+fn row_to_engagement(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<flynt_models::engagement::Engagement> {
+    use flynt_models::engagement::{Engagement, EngagementId, EngagementStatus, PartnershipId};
+    let id: String = row.get(0)?;
+    let partnership_id: Option<String> = row.get(1)?;
+    let repos_json: String = row.get(4)?;
+    let forge_json: String = row.get(5)?;
+    let status_json: String = row.get(6)?;
+    let created_at: String = row.get(7)?;
+    let updated_at: String = row.get(8)?;
+    Ok(Engagement {
+        id: EngagementId(id.parse().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        partnership_id: partnership_id
+            .and_then(|s| s.parse().ok())
+            .map(PartnershipId),
+        name: row.get(2)?,
+        description: row.get(3)?,
+        repos: serde_json::from_str(&repos_json).unwrap_or_default(),
+        forge: serde_json::from_str(&forge_json).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        status: serde_json::from_str(&status_json).unwrap_or(EngagementStatus::Active),
+        created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
+        updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
 }
 
@@ -1202,5 +1318,99 @@ mod tests {
         };
         store.update_task(&task_id, &patch).unwrap();
         assert!(store.get_task(&task_id).unwrap().unwrap().engagement_id.is_none());
+    }
+
+    // ── Engagement table persistence (migration v7) ────────────────────────
+
+    fn sample_engagement() -> flynt_models::engagement::Engagement {
+        use flynt_models::engagement::{Engagement, RepoBinding};
+        use styrene_forge::{ForgeEndpoint, ForgeKind};
+        let mut e = Engagement::new(
+            "Q2 Migration",
+            ForgeEndpoint {
+                id: "github".into(),
+                kind: ForgeKind::GitHub,
+                base_url: "https://api.github.com".into(),
+                token_secret: Some("GITHUB_TOKEN".into()),
+            },
+        );
+        e.description = Some("Audit + migration of legacy auth path".into());
+        e.repos.push(RepoBinding::new("anthropics", "claude-code"));
+        e.repos.push(RepoBinding::new("anthropics", "claude-sdk"));
+        e
+    }
+
+    #[test]
+    fn engagement_round_trips_through_sqlite() {
+        let (_tmp, store) = fresh_store();
+        let e = sample_engagement();
+        store.save_engagement(&e).unwrap();
+        let loaded = store.get_engagement(&e.id).unwrap().expect("engagement should load");
+        assert_eq!(loaded.id, e.id);
+        assert_eq!(loaded.name, "Q2 Migration");
+        assert_eq!(loaded.description.as_deref(), Some("Audit + migration of legacy auth path"));
+        assert_eq!(loaded.repos.len(), 2);
+        assert_eq!(loaded.repos[0].full_name(), "anthropics/claude-code");
+        assert_eq!(loaded.forge.kind, styrene_forge::ForgeKind::GitHub);
+        assert!(matches!(loaded.status, flynt_models::engagement::EngagementStatus::Active));
+    }
+
+    #[test]
+    fn list_engagements_returns_sorted_by_name() {
+        let (_tmp, store) = fresh_store();
+        let mut a = sample_engagement(); a.name = "Beta".into();
+        let mut b = sample_engagement(); b.name = "Alpha".into();
+        store.save_engagement(&a).unwrap();
+        store.save_engagement(&b).unwrap();
+        let list = store.list_engagements().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "Alpha");
+        assert_eq!(list[1].name, "Beta");
+    }
+
+    #[test]
+    fn delete_engagement_returns_true_for_existing_false_for_missing() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let e = sample_engagement();
+        store.save_engagement(&e).unwrap();
+        assert!(store.delete_engagement(&e.id).unwrap());
+        assert!(store.get_engagement(&e.id).unwrap().is_none());
+        // Second delete: nothing to remove → false.
+        assert!(!store.delete_engagement(&EngagementId::new()).unwrap());
+    }
+
+    #[test]
+    fn delete_engagement_does_not_cascade_to_tasks() {
+        // Soft-coupling: tasks keep their engagement_id pointing at a
+        // now-missing record. Callers treat it as "no engagement," not
+        // an error — matches the trait doc and avoids data loss.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let e = sample_engagement();
+        let eid = e.id.clone();
+        store.save_engagement(&e).unwrap();
+
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.engagement_id = Some(eid.clone());
+        store.save_task(&t).unwrap();
+
+        assert!(store.delete_engagement(&eid).unwrap());
+        let after = store.get_task(&t.id).unwrap().unwrap();
+        assert_eq!(after.engagement_id, Some(eid), "task should still carry the dangling id");
+        assert!(store.get_engagement(&after.engagement_id.unwrap()).unwrap().is_none());
+    }
+
+    #[test]
+    fn save_engagement_is_upsert() {
+        // Same id, mutated name → row is updated, not duplicated.
+        let (_tmp, store) = fresh_store();
+        let mut e = sample_engagement();
+        store.save_engagement(&e).unwrap();
+        e.name = "Renamed".into();
+        store.save_engagement(&e).unwrap();
+        let list = store.list_engagements().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Renamed");
     }
 }

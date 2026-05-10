@@ -531,6 +531,16 @@ mod tests {
         fn list_boards(&self) -> Result<Vec<Board>> { Ok(self.boards.clone()) }
         fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
         fn delete_board(&self, _id: &BoardId) -> Result<()> { Ok(()) }
+        fn get_engagement(
+            &self,
+            _id: &flynt_models::engagement::EngagementId,
+        ) -> Result<Option<flynt_models::engagement::Engagement>> { Ok(None) }
+        fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> { Ok(vec![]) }
+        fn save_engagement(&self, _e: &flynt_models::engagement::Engagement) -> Result<()> { Ok(()) }
+        fn delete_engagement(
+            &self,
+            _id: &flynt_models::engagement::EngagementId,
+        ) -> Result<bool> { Ok(true) }
         fn list_dirty_tasks(&self, _project_id: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
         fn list_dirty_documents(&self, _project_id: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
         fn mark_committed(&self, _task_ids: &[TaskId], _doc_ids: &[DocumentId], _at: chrono::DateTime<chrono::Utc>) -> Result<()> { Ok(()) }

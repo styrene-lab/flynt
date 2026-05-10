@@ -74,6 +74,21 @@ pub trait VaultStore: Send + Sync {
     fn save_board(&self, board: &Board) -> Result<()>;
     fn delete_board(&self, id: &BoardId) -> Result<()>;
 
+    // ── Engagements ──────────────────────────────────────────────────────────
+    /// Multi-repo engagement records. Tasks reference engagements via
+    /// `Task::engagement_id`; the kanban filter pill, the agent's
+    /// `engagement_status` tool, and any forge-scoped operation resolve
+    /// the engagement here. Soft-coupling: a task may carry an
+    /// engagement_id whose record doesn't exist yet (or has been deleted)
+    /// — callers should treat that as "no engagement" rather than an error.
+    fn get_engagement(
+        &self,
+        id: &flynt_models::engagement::EngagementId,
+    ) -> Result<Option<flynt_models::engagement::Engagement>>;
+    fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>>;
+    fn save_engagement(&self, engagement: &flynt_models::engagement::Engagement) -> Result<()>;
+    fn delete_engagement(&self, id: &flynt_models::engagement::EngagementId) -> Result<bool>;
+
     // ── Project dirty tracking ───────────────────────────────────────────────
     /// List tasks for a project that have been modified since last commit.
     fn list_dirty_tasks(&self, project_id: &Uuid) -> Result<Vec<Task>>;

@@ -6,6 +6,22 @@
 //!   pick up rotated PATs without rebuilding the client.
 //! - User-agent and version strings are flynt's. No scribe dependency
 //!   leaked through.
+//!
+//! ## Pagination contract
+//!
+//! `list_*` methods cap pagination at [`MAX_PAGES`] × [`MAX_PER_PAGE`]
+//! (currently 10 × 100 = 1000 items). When the cap is hit a
+//! `tracing::warn!` is emitted but the truncated `Vec` is still
+//! returned successfully — there is no in-band signal that the result
+//! is partial.
+//!
+//! Implication: for sync against repos with more than ~1k issues, the
+//! local mirror will diverge from the forge silently. Either narrow the
+//! query (`ListOpts::state = Closed/Open` filters help), use
+//! `page` / `per_page` for explicit cursoring, or treat this client
+//! as best-effort. A future revision can lift the cap or surface a
+//! `truncated: bool` flag — for now it preserves scribe's behavior to
+//! keep the absorption diff small.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

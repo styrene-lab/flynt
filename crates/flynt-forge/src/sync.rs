@@ -97,7 +97,14 @@ pub struct SyncEngine<'a> {
 impl<'a> SyncEngine<'a> {
     pub fn new(client: &'a dyn ForgeClient) -> Self { Self { client } }
 
-    /// Pull all issues from the forge and report changes.
+    /// Pull issues from the forge and report changes.
+    ///
+    /// **Truncation caveat**: this delegates to
+    /// [`ForgeClient::list_issues`] with no pagination args, so the
+    /// underlying client may silently cap at its `MAX_PAGES` (1000
+    /// items for the GitHub client). For repos that overflow that
+    /// window, missing issues will not appear as `CreateLocal` ops
+    /// — they'll just be absent. See `clients::github` module doc.
     pub async fn pull_issues(
         &self,
         binding: &RepoBinding,

@@ -99,9 +99,15 @@ impl SyncStore {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Upsert. Caller passes the canonical `IssueMap` and we replace
-    /// any existing row keyed on `(local_id)` — UNIQUE on `(org, repo,
-    /// number)` rejects accidental duplicates.
+    /// Upsert. Caller passes the canonical [`IssueMap`] and we replace
+    /// any existing row keyed on `local_id`.
+    ///
+    /// **Cross-uniqueness**: the schema also enforces
+    /// `UNIQUE(forge_org, forge_repo, forge_issue_number)`. Attempting
+    /// to upsert a *different* `local_id` that points at the same forge
+    /// issue returns an error rather than silently rebinding — a forge
+    /// issue may only have one local representation. To rebind, the
+    /// caller must `delete_by_local(old)` first.
     pub fn upsert(&self, m: &IssueMap) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -219,6 +225,32 @@ mod tests {
         store.upsert(&sample_map(local, 7)).unwrap();
         store.delete_by_local(&local).unwrap();
         assert!(store.list_by_local(&local).unwrap().is_empty());
+    }
+
+    #[test]
+    fn upsert_rejects_cross_uniqueness_conflict() {
+        // Two different local_ids cannot both point at (org, repo, #).
+        // The UNIQUE(forge_org, forge_repo, forge_issue_number) check
+        // surfaces as an Err — caller must delete_by_local first to
+        // rebind. Test exercises the contract documented on upsert().
+        let store = SyncStore::in_memory().unwrap();
+        let local_a = Uuid::new_v4();
+        let local_b = Uuid::new_v4();
+        store.upsert(&sample_map(local_a, 42)).unwrap();
+
+        let conflict = sample_map(local_b, 42);
+        let err = store.upsert(&conflict);
+        assert!(err.is_err(), "expected UNIQUE violation, got: {err:?}");
+
+        // Original mapping still intact.
+        let got = store.get_by_issue("anthropics", "test", 42).unwrap().unwrap();
+        assert_eq!(got.local_id, local_a);
+
+        // Rebind path: delete first, then upsert succeeds.
+        store.delete_by_local(&local_a).unwrap();
+        store.upsert(&conflict).unwrap();
+        let got = store.get_by_issue("anthropics", "test", 42).unwrap().unwrap();
+        assert_eq!(got.local_id, local_b);
     }
 
     #[test]
