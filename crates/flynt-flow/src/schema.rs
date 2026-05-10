@@ -97,6 +97,25 @@ pub enum NodeKind {
     Custom(String),
 }
 
+impl NodeKind {
+    /// Parse the wire-format string ("step", "input", …) back into a
+    /// `NodeKind`. Unknown strings become `Custom(s)` — symmetric with the
+    /// untagged serde behavior. Used by the agent tool layer where the
+    /// kind arrives as a JSON string and the JSON value can't drive serde
+    /// directly without round-tripping through `Value`.
+    pub fn from_wire_str(s: &str) -> Self {
+        match s {
+            "step" => Self::Step,
+            "input" => Self::Input,
+            "output" => Self::Output,
+            "branch" => Self::Branch,
+            "agent_call" => Self::AgentCall,
+            "note" => Self::Note,
+            other => Self::Custom(other.to_string()),
+        }
+    }
+}
+
 // ── Sockets ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

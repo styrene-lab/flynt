@@ -17,6 +17,17 @@
 //! `forge_tools` and `execute_canvas_create`. Path traversal is rejected
 //! with `invalid_params`.
 //!
+//! ## Concurrency
+//!
+//! Last-writer-wins. A `flow_patch` does load → mutate → save with no
+//! file lock; if two agents (or an agent and the desktop editor)
+//! write the same `.flow` file in the same window, one set of changes
+//! is silently overwritten. With one operator and one agent acting
+//! through them, this is acceptable — the agent typically waits for a
+//! tool result before issuing the next call. Multi-agent or
+//! agent-while-editor scenarios need a future revision (file locking
+//! or a CRDT layer).
+//!
 //! ## Why this surface and not "render arbitrary structured data"
 //!
 //! The pitch was a node editor for "architecture, workflows, diagrams,
@@ -29,7 +40,7 @@ use flynt_flow::{Flow, FlowEdge, FlowEndpoint, FlowMeta, FlowNode, NodeKind, Soc
 use flynt_store::project::Project;
 use omegon_extension::{Error as ExtError, Result as ExtResult};
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 // ── Tool definitions (advertised to omegon) ─────────────────────────────────
@@ -197,11 +208,15 @@ pub fn flow_create(project: &Project, params: Value) -> ExtResult<Value> {
     flynt_flow::save_flow(&abs, &flow, Some(id))
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
+    // Run validation post-save so an agent that creates a graph with
+    // dangling edges learns immediately. Mirrors what flow_patch returns.
+    let validation = flow.validate();
     Ok(json!({
         "path": rel_path.to_string_lossy(),
         "id": id.to_string(),
         "node_count": flow.nodes.len(),
         "edge_count": flow.edges.len(),
+        "validation": validation_report_json(&validation),
     }))
 }
 
@@ -209,6 +224,11 @@ pub fn flow_get(project: &Project, params: Value) -> ExtResult<Value> {
     let rel_path = parse_flow_path(&params)?;
     let abs = project.root.join(&rel_path);
 
+    if !abs.exists() {
+        return Err(ExtError::invalid_params(format!(
+            "no such file: {}", rel_path.display()
+        )));
+    }
     let doc = flynt_flow::load_flow(&abs)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
@@ -225,6 +245,12 @@ pub fn flow_patch(project: &Project, params: Value) -> ExtResult<Value> {
     let rel_path = parse_flow_path(&params)?;
     let abs = project.root.join(&rel_path);
 
+    if !abs.exists() {
+        return Err(ExtError::invalid_params(format!(
+            "no such file: {} — call flow_create first",
+            rel_path.display()
+        )));
+    }
     let mut doc = flynt_flow::load_flow(&abs)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
@@ -298,15 +324,19 @@ pub fn flow_patch(project: &Project, params: Value) -> ExtResult<Value> {
         "id": doc.id.to_string(),
         "node_count": doc.flow.nodes.len(),
         "edge_count": doc.flow.edges.len(),
-        "validation": {
-            "is_clean": validation.is_clean(),
-            "dangling_edges": validation.dangling_edges.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
-            "duplicate_node_ids": validation.duplicate_node_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
-            "duplicate_edge_ids": validation.duplicate_edge_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
-            "edges_with_unknown_sockets": validation.edges_with_unknown_sockets.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
-            "duplicate_socket_names": validation.duplicate_socket_names.iter().map(|(n, s)| json!({ "node": n.to_string(), "socket": s })).collect::<Vec<_>>(),
-        }
+        "validation": validation_report_json(&validation),
     }))
+}
+
+fn validation_report_json(v: &flynt_flow::ValidationReport) -> Value {
+    json!({
+        "is_clean": v.is_clean(),
+        "dangling_edges": v.dangling_edges.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        "duplicate_node_ids": v.duplicate_node_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        "duplicate_edge_ids": v.duplicate_edge_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        "edges_with_unknown_sockets": v.edges_with_unknown_sockets.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        "duplicate_socket_names": v.duplicate_socket_names.iter().map(|(n, s)| json!({ "node": n.to_string(), "socket": s })).collect::<Vec<_>>(),
+    })
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -355,7 +385,7 @@ fn parse_node(v: &Value) -> ExtResult<FlowNode> {
         .map_err(|_| ExtError::invalid_params(format!("node.id: {id_str} is not a UUID")))?;
     let kind_str = v.get("kind").and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("node.kind is required"))?;
-    let kind = NodeKind::from_str_value(kind_str);
+    let kind = NodeKind::from_wire_str(kind_str);
     let position = parse_position(v.get("position"))?;
     let data = v.get("data").cloned().unwrap_or(json!({}));
     let sockets = v.get("sockets").and_then(|s| s.as_array())
@@ -401,31 +431,6 @@ fn parse_endpoint(v: Option<&Value>, label: &str) -> ExtResult<FlowEndpoint> {
         .map_err(|_| ExtError::invalid_params(format!("edge.{label}.node: {node_str} is not a UUID")))?;
     let socket = obj.get("socket").and_then(|v| v.as_str()).unwrap_or("").to_string();
     Ok(FlowEndpoint { node, socket })
-}
-
-// `NodeKind::from_str` exists on the enum but takes a `&str` — we wrap
-// it here so the tool layer doesn't pull `flynt_flow::schema` directly.
-trait NodeKindFromStr {
-    fn from_str_value(s: &str) -> NodeKind;
-}
-impl NodeKindFromStr for NodeKind {
-    fn from_str_value(s: &str) -> NodeKind {
-        match s {
-            "step" => NodeKind::Step,
-            "input" => NodeKind::Input,
-            "output" => NodeKind::Output,
-            "branch" => NodeKind::Branch,
-            "agent_call" => NodeKind::AgentCall,
-            "note" => NodeKind::Note,
-            other => NodeKind::Custom(other.to_string()),
-        }
-    }
-}
-
-// Path used only by tests below — keeps the import surface tight.
-#[allow(dead_code)]
-fn flow_path_for_test(project_root: &Path, rel: &str) -> PathBuf {
-    project_root.join(rel)
 }
 
 #[cfg(test)]
@@ -607,6 +612,112 @@ mod tests {
         })).unwrap();
         let got = flow_get(&project, json!({ "path": "x.flow" })).unwrap();
         assert_eq!(got["nodes"][0]["kind"], "queue_consumer");
+    }
+
+    #[test]
+    fn full_loop_roundtrip_preserves_complex_data() {
+        // End-to-end: agent creates with rich data, patches to mutate
+        // structure, reads back. Verifies the JSON `data` payload (which
+        // is schema-flexible per kind) survives create → patch → get.
+        let (_tmp, project) = make_project();
+        let n_input = "11111111-1111-1111-1111-111111111111";
+        let n_agent = "22222222-2222-2222-2222-222222222222";
+        let n_output = "33333333-3333-3333-3333-333333333333";
+
+        flow_create(&project, json!({
+            "path": "loop.flow",
+            "title": "Auth verification",
+            "description": "credentials → mint token",
+            "nodes": [
+                {
+                    "id": n_input,
+                    "kind": "input",
+                    "position": [0.0, 0.0],
+                    "data": { "schema": "Credentials" },
+                    "sockets": [{ "name": "out", "direction": "output", "ty": "Credentials" }]
+                },
+                {
+                    "id": n_agent,
+                    "kind": "agent_call",
+                    "position": [240.0, 0.0],
+                    "data": {
+                        "skill": "auth.verify_password",
+                        "model": "anthropic:claude-sonnet-4-6",
+                        "max_turns": 1
+                    },
+                    "sockets": [
+                        { "name": "in", "direction": "input", "ty": "Credentials" },
+                        { "name": "ok", "direction": "output", "ty": "Token" }
+                    ]
+                }
+            ]
+        })).unwrap();
+
+        // Add an output node + connect agent → output via patch.
+        let e1 = "aaaa1111-1111-1111-1111-111111111111";
+        let e2 = "bbbb1111-1111-1111-1111-111111111111";
+        flow_patch(&project, json!({
+            "path": "loop.flow",
+            "add_nodes": [{
+                "id": n_output,
+                "kind": "output",
+                "position": [480.0, 0.0],
+                "data": { "schema": "Token" },
+                "sockets": [{ "name": "in", "direction": "input", "ty": "Token" }]
+            }],
+            "add_edges": [
+                { "id": e1, "source": { "node": n_input, "socket": "out" }, "target": { "node": n_agent, "socket": "in" } },
+                { "id": e2, "source": { "node": n_agent, "socket": "ok" }, "target": { "node": n_output, "socket": "in" } }
+            ]
+        })).unwrap();
+
+        // Read back and verify everything's there.
+        let got = flow_get(&project, json!({ "path": "loop.flow" })).unwrap();
+        assert_eq!(got["meta"]["title"], "Auth verification");
+        assert_eq!(got["meta"]["description"], "credentials → mint token");
+        assert_eq!(got["nodes"].as_array().unwrap().len(), 3);
+        assert_eq!(got["edges"].as_array().unwrap().len(), 2);
+
+        // Spot-check the rich agent_call payload survived round-trip.
+        let agent = got["nodes"].as_array().unwrap().iter()
+            .find(|n| n["kind"] == "agent_call").unwrap();
+        assert_eq!(agent["data"]["skill"], "auth.verify_password");
+        assert_eq!(agent["data"]["max_turns"], 1);
+        assert_eq!(agent["sockets"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn get_on_missing_file_returns_friendly_error() {
+        let (_tmp, project) = make_project();
+        let err = flow_get(&project, json!({ "path": "missing.flow" })).unwrap_err();
+        assert!(err.to_string().contains("no such file"), "{err}");
+    }
+
+    #[test]
+    fn patch_on_missing_file_suggests_create() {
+        let (_tmp, project) = make_project();
+        let err = flow_patch(&project, json!({
+            "path": "missing.flow",
+            "add_nodes": []
+        })).unwrap_err();
+        assert!(err.to_string().contains("flow_create"), "{err}");
+    }
+
+    #[test]
+    fn create_returns_validation_report() {
+        // Symmetric with patch — agent that creates a malformed graph
+        // learns immediately, doesn't have to re-call get to find out.
+        let (_tmp, project) = make_project();
+        let out = flow_create(&project, json!({
+            "path": "bad.flow",
+            "edges": [{
+                "id": "aaaa1111-1111-1111-1111-111111111111",
+                "source": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" },
+                "target": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" }
+            }]
+        })).unwrap();
+        assert_eq!(out["validation"]["is_clean"], false);
+        assert_eq!(out["validation"]["dangling_edges"].as_array().unwrap().len(), 1);
     }
 
     #[test]
