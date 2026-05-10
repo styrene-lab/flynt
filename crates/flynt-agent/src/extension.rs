@@ -708,7 +708,7 @@ impl Extension for FlyntExtension {
                 // Route through project.persist_task so the new task lands
                 // as a .md file alongside the sqlite row.
                 self.project
-                    .persist_task(&task, None)
+                    .persist_task(&task)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(serde_json::to_value(&task).unwrap_or(json!({})))
             }
@@ -1309,7 +1309,6 @@ impl Extension for FlyntExtension {
             "execute_engagement_create" => forge_tools::engagement_create(&self.project, params),
             "execute_engagement_list"   => forge_tools::engagement_list(&self.project, params),
             "execute_engagement_status" => forge_tools::engagement_status(&self.project, params),
-            "execute_project_list"      => forge_tools::project_list(&self.project, params),
             "execute_forge_status"      => forge_tools::forge_status(&self.project, &self.secrets, params),
             "execute_forge_list_issues" => {
                 forge_tools::forge_list_issues(&self.project, &self.secrets, params).await
@@ -1776,11 +1775,8 @@ mod tests {
         assert!(names.contains(&"get_board".to_string()));
         assert!(names.contains(&"create_board".to_string()));
         // Phase 3 — scribe-absorbed forge / engagement tools.
-        // Phase 7.5 added project_list so operators can discover the
-        // UUID needed for FLYNT_PROJECT scoping.
         for n in [
             "engagement_create", "engagement_list", "engagement_status",
-            "project_list",
             "forge_status", "forge_list_issues", "forge_sync_issues",
             "forge_create_issue", "log_work", "timeline",
         ] {

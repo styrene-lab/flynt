@@ -647,14 +647,17 @@ impl VaultStore for SqliteStore {
     fn save_board(&self, board: &Board) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
+            // boards.project_id column is vestigial (legacy from the
+            // dissolved inner Project entity). We continue to write
+            // NULL here so existing schemas don't break, but the field
+            // is no longer read or surfaced to callers.
             r#"INSERT INTO boards (id, name, columns, project_id, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5)
-               ON CONFLICT(id) DO UPDATE SET name=excluded.name, columns=excluded.columns, project_id=excluded.project_id"#,
+               VALUES (?1, ?2, ?3, NULL, ?4)
+               ON CONFLICT(id) DO UPDATE SET name=excluded.name, columns=excluded.columns"#,
             params![
                 board.id.0.to_string(),
                 board.name,
                 serde_json::to_string(&board.columns)?,
-                board.project_id.map(|p| p.to_string()),
                 board.created_at.to_rfc3339(),
             ],
         )?;
@@ -974,14 +977,14 @@ fn row_to_engagement(
 
 fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
     let cols_json: String = row.get(2)?;
-    let project_id: Option<String> = row.get(3)?;
+    // Column 3 is the vestigial project_id (legacy schema). Skipped
+    // — Board no longer carries it.
     let created_at: String = row.get(4)?;
     let id: String = row.get(0)?;
     Ok(Board {
         id: BoardId(id.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?),
         name: row.get(1)?,
         columns: serde_json::from_str(&cols_json).unwrap_or_default(),
-        project_id: project_id.and_then(|s| s.parse().ok()),
         created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
 }

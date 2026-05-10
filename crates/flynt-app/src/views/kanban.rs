@@ -9,22 +9,22 @@ use crate::state::{Route, TabState};
 
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
-async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String, project_id: Option<uuid::Uuid>) {
+async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String) {
     let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
         let task = Task::new(board_id, col, title);
-        project.persist_task(&task, project_id)
+        project.persist_task(&task)
     })
     .await;
 }
 
-async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Option<uuid::Uuid>) {
+async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
     let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
             t.column     = col;
             t.updated_at = Utc::now();
-            project.persist_task(&t, project_id)
+            project.persist_task(&t)
         } else {
             Ok(())
         }
@@ -32,13 +32,13 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Op
     .await;
 }
 
-async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid::Uuid>) {
+async fn archive_task(ctx: AppContext, task_id: TaskId) {
     let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
             t.status     = TaskStatus::Archived;
             t.updated_at = Utc::now();
-            project.persist_task(&t, project_id)
+            project.persist_task(&t)
         } else {
             Ok(())
         }
@@ -233,7 +233,6 @@ impl TaskFilterKind {
 fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let ctx     = use_context::<AppContext>();
     let board_id = board.id.clone();
-    let project_id = board.project_id;
 
     let tasks = use_resource(move || {
         let _ = refresh();
@@ -398,7 +397,6 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                     rsx! {
                                         KanbanColumn {
                                             board_id: board.id.clone(),
-                                            project_id,
                                             column: col,
                                             tasks: col_tasks,
                                             dragging,
@@ -441,10 +439,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                                     })?;
                                                     for mut t in tasks {
                                                         t.column = new_name.clone();
-                                                        // project_id is the board's; pass through
-                                                        // so project-backed boards keep writing to
-                                                        // git-backing.
-                                                        project.persist_task(&t, b.project_id)?;
+                                                        project.persist_task(&t)?;
                                                     }
                                                     Ok::<_, anyhow::Error>(())
                                                 }).await;
@@ -514,7 +509,6 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
 #[component]
 fn KanbanColumn(
     board_id:   BoardId,
-    project_id: Option<uuid::Uuid>,
     column:     Column,
     tasks:      Vec<Task>,
     dragging:   Signal<Option<TaskId>>,
@@ -566,7 +560,7 @@ fn KanbanColumn(
         let col = col_add1.clone();
         let bid = bid_add1.clone();
         spawn(async move {
-            create_task(c, bid, col, title, project_id).await;
+            create_task(c, bid, col, title).await;
             *refresh.write() += 1;
         });
         *new_title.write() = String::new();
@@ -582,7 +576,7 @@ fn KanbanColumn(
                 let col = col_add2.clone();
                 let bid = bid_add2.clone();
                 spawn(async move {
-                    create_task(c, bid, col, title, project_id).await;
+                    create_task(c, bid, col, title).await;
                     *refresh.write() += 1;
                 });
                 *new_title.write() = String::new();
@@ -616,7 +610,7 @@ fn KanbanColumn(
                 let c = ctx_drop.clone();
                 let col = col_drop.clone();
                 spawn(async move {
-                    move_task(c, tid, col, project_id).await;
+                    move_task(c, tid, col).await;
                     *refresh.write() += 1;
                 });
                 *dragging.write() = None;
@@ -668,7 +662,6 @@ fn KanbanColumn(
                 for task in tasks.iter().cloned() {
                     TaskCard {
                         task,
-                        project_id,
                         dragging,
                         refresh,
                         engagement_options: engagement_options.clone(),
@@ -714,7 +707,6 @@ fn KanbanColumn(
 #[component]
 fn TaskCard(
     task: Task,
-    project_id: Option<uuid::Uuid>,
     dragging: Signal<Option<TaskId>>,
     mut refresh: Signal<u64>,
     /// (id_string, name) pairs for the engagement picker. Empty when
@@ -950,7 +942,7 @@ fn TaskCard(
                                                 uuid::Uuid::parse_str(&engagement_s).ok().map(EngagementId)
                                             };
                                             t.updated_at = Utc::now();
-                                            project.persist_task(&t, project_id)
+                                            project.persist_task(&t)
                                         } else {
                                             Ok(())
                                         }
@@ -996,7 +988,7 @@ fn TaskCard(
                                 let c = ctx_archive.clone();
                                 let task_id = tid_archive.clone();
                                 spawn(async move {
-                                    archive_task(c, task_id, project_id).await;
+                                    archive_task(c, task_id).await;
                                     *refresh.write() += 1;
                                 });
                             },

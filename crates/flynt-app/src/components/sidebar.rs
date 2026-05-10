@@ -311,9 +311,6 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                     if !matches!(current_kind, Some(EntityKind::DesignNode)) {
                         items.push(crate::components::ContextMenuItem::new("kind-design_node", "Convert to Design Node"));
                     }
-                    if !matches!(current_kind, Some(EntityKind::Project)) {
-                        items.push(crate::components::ContextMenuItem::new("kind-project", "Convert to Project"));
-                    }
                     if current_kind.is_some() {
                         items.push(crate::components::ContextMenuItem::new("kind-clear", "Remove Kind"));
                     }

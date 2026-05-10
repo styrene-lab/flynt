@@ -256,7 +256,6 @@ pub struct Entity {
 #[serde(rename_all = "snake_case")]
 pub enum EntityKind {
     Document,
-    Project,
     Task,
     /// A git repository — local, remote, or both.
     Repo,
@@ -277,7 +276,6 @@ impl EntityKind {
     pub fn from_str(s: &str) -> Self {
         match s {
             "document" => Self::Document,
-            "project" => Self::Project,
             "task" => Self::Task,
             "repo" => Self::Repo,
             "link" => Self::Link,
@@ -291,7 +289,6 @@ impl EntityKind {
     pub fn as_str(&self) -> &str {
         match self {
             Self::Document => "document",
-            Self::Project => "project",
             Self::Task => "task",
             Self::Repo => "repo",
             Self::Link => "link",
@@ -556,84 +553,6 @@ impl<'a> LinkView<'a> {
 
     pub fn tags(&self) -> Vec<String> {
         self.entity.get_text_list("tags")
-    }
-}
-
-/// A project view — typed accessors over project entity fields.
-#[derive(Debug, Clone)]
-pub struct ProjectView<'a> {
-    pub entity: &'a Entity,
-}
-
-impl<'a> ProjectView<'a> {
-    pub fn from_entity(entity: &'a Entity) -> Option<Self> {
-        if entity.kind == EntityKind::Project {
-            Some(Self { entity })
-        } else {
-            None
-        }
-    }
-
-    pub fn title(&self) -> &str {
-        self.entity.get_text("title").unwrap_or("Untitled")
-    }
-
-    pub fn status(&self) -> &str {
-        self.entity.get_text("status").unwrap_or("active")
-    }
-
-    pub fn columns(&self) -> Vec<String> {
-        let cols = self.entity.get_text_list("columns");
-        if cols.is_empty() {
-            vec!["Backlog".into(), "In Progress".into(), "Review".into(), "Done".into()]
-        } else {
-            cols
-        }
-    }
-
-    pub fn owner(&self) -> Option<&str> {
-        self.entity.get_text("owner")
-    }
-
-    /// Repo IDs associated with this project.
-    pub fn repo_refs(&self) -> Vec<DatumRef> {
-        self.entity
-            .fields
-            .get("repos")
-            .and_then(|d| d.as_list())
-            .map(|list| list.iter().filter_map(|d| d.try_as_ref()).collect())
-            .unwrap_or_default()
-    }
-
-    /// The singular backing repo entity reference (1:1 project-repo mapping).
-    pub fn repo_ref(&self) -> Option<DatumRef> {
-        self.entity.get_ref("repo")
-    }
-
-    /// Git backing configuration — how this project maps to a git repo.
-    /// Deserialized from the `data.git_backing` nested table.
-    pub fn git_backing(&self) -> Option<crate::models::GitBacking> {
-        let map = self.entity.fields.get("git_backing")?.as_map()?;
-        // Convert the Datum map back to a TOML table for deserialization
-        let toml_table: toml::map::Map<String, toml::Value> = map
-            .iter()
-            .map(|(k, v)| (k.clone(), toml::Value::from(v.clone())))
-            .collect();
-        let toml_val = toml::Value::Table(toml_table);
-        toml_val.try_into().ok()
-    }
-
-    /// Commit configuration for this project.
-    pub fn commit_config(&self) -> crate::models::ProjectCommitConfig {
-        let Some(map) = self.entity.fields.get("commit_config").and_then(|d| d.as_map()) else {
-            return crate::models::ProjectCommitConfig::default();
-        };
-        let toml_table: toml::map::Map<String, toml::Value> = map
-            .iter()
-            .map(|(k, v)| (k.clone(), toml::Value::from(v.clone())))
-            .collect();
-        let toml_val = toml::Value::Table(toml_table);
-        toml_val.try_into().unwrap_or_default()
     }
 }
 
@@ -958,25 +877,22 @@ mod tests {
     fn entity_from_frontmatter() {
         let toml_str = r#"
             id = "550e8400-e29b-41d4-a716-446655440000"
-            kind = "project"
+            kind = "design_node"
 
             [data]
             title = "Styrene Mesh"
             status = "active"
-            columns = ["Backlog", "In Progress", "Review", "Done"]
+            tags = ["alpha", "beta"]
             priority = 3
         "#;
         let val: toml::Value = toml::from_str(toml_str).unwrap();
         let entity = Entity::from_frontmatter(&val).unwrap();
 
-        assert_eq!(entity.kind, EntityKind::Project);
+        assert_eq!(entity.kind, EntityKind::DesignNode);
         assert_eq!(entity.get_text("title"), Some("Styrene Mesh"));
         assert_eq!(entity.get_text("status"), Some("active"));
         assert_eq!(entity.get_int("priority"), Some(3));
-        assert_eq!(
-            entity.get_text_list("columns"),
-            vec!["Backlog", "In Progress", "Review", "Done"]
-        );
+        assert_eq!(entity.get_text_list("tags"), vec!["alpha", "beta"]);
     }
 
     #[test]
@@ -1002,18 +918,18 @@ mod tests {
 
     #[test]
     fn entity_builder_pattern() {
-        let project = Entity::new(EntityKind::Project)
+        let entity = Entity::new(EntityKind::DesignNode)
             .with_field("title", Datum::Text("Alpha".into()))
             .with_field("owner", Datum::Text("testuser".into()))
-            .with_field("columns", Datum::List(vec![
-                Datum::Text("Backlog".into()),
-                Datum::Text("Done".into()),
+            .with_field("tags", Datum::List(vec![
+                Datum::Text("backlog".into()),
+                Datum::Text("done".into()),
             ]));
 
-        assert_eq!(project.kind, EntityKind::Project);
-        assert_eq!(project.get_text("title"), Some("Alpha"));
-        assert_eq!(project.get_text("owner"), Some("testuser"));
-        assert_eq!(project.get_text_list("columns"), vec!["Backlog", "Done"]);
+        assert_eq!(entity.kind, EntityKind::DesignNode);
+        assert_eq!(entity.get_text("title"), Some("Alpha"));
+        assert_eq!(entity.get_text("owner"), Some("testuser"));
+        assert_eq!(entity.get_text_list("tags"), vec!["backlog", "done"]);
     }
 
     #[test]
@@ -1033,13 +949,15 @@ mod tests {
 
     #[test]
     fn entity_kind_parsing() {
-        assert_eq!(EntityKind::from_str("project"), EntityKind::Project);
+        // The "project" string is no longer a first-class kind — operators
+        // who used it now get an opaque Custom("project") entity (which
+        // documents that the rename happened without breaking older files).
+        assert_eq!(EntityKind::from_str("project"), EntityKind::Custom("project".into()));
         assert_eq!(EntityKind::from_str("task"), EntityKind::Task);
         assert_eq!(EntityKind::from_str("document"), EntityKind::Document);
         assert_eq!(EntityKind::from_str("repo"), EntityKind::Repo);
         assert_eq!(EntityKind::from_str("link"), EntityKind::Link);
         assert_eq!(EntityKind::from_str("contact"), EntityKind::Custom("contact".into()));
-        assert!(EntityKind::Project.is_known());
         assert!(EntityKind::Repo.is_known());
         assert!(!EntityKind::Custom("sprint".into()).is_known());
     }
@@ -1063,8 +981,8 @@ mod tests {
         assert_eq!(view.local_path(), Some("/workspace/flynt"));
 
         // Can't create RepoView from a non-repo entity
-        let project = Entity::new(EntityKind::Project);
-        assert!(RepoView::from_entity(&project).is_none());
+        let task = Entity::new(EntityKind::Task);
+        assert!(RepoView::from_entity(&task).is_none());
     }
 
     #[test]
@@ -1083,27 +1001,6 @@ mod tests {
         assert_eq!(view.url(), Some("https://grafana.internal/d/latency"));
         assert_eq!(view.link_type(), Some("dashboard"));
         assert_eq!(view.tags(), vec!["monitoring", "oncall"]);
-    }
-
-    #[test]
-    fn project_view_with_repo_refs() {
-        let repo_id = Uuid::new_v4();
-        let project = Entity::new(EntityKind::Project)
-            .with_field("title", Datum::Text("Styrene Mesh".into()))
-            .with_field("status", Datum::Text("active".into()))
-            .with_field("columns", Datum::List(vec![
-                Datum::Text("Backlog".into()),
-                Datum::Text("Done".into()),
-            ]))
-            .with_field("repos", Datum::List(vec![
-                Datum::Text(repo_id.to_string()),
-            ]));
-
-        let view = ProjectView::from_entity(&project).unwrap();
-        assert_eq!(view.title(), "Styrene Mesh");
-        assert_eq!(view.columns(), vec!["Backlog", "Done"]);
-        assert_eq!(view.repo_refs().len(), 1);
-        assert_eq!(view.repo_refs()[0].id, repo_id);
     }
 
     #[test]
@@ -1129,105 +1026,4 @@ mod tests {
         assert_eq!(view.org(), Some("example-org"));
     }
 
-    #[test]
-    fn project_view_git_backing_vault_repo() {
-        let project = Entity::new(EntityKind::Project)
-            .with_field("title", Datum::Text("My Project".into()))
-            .with_field("git_backing", Datum::Map(BTreeMap::from([
-                ("type".into(), Datum::Text("vault_repo".into())),
-                ("sub_path".into(), Datum::Text(".flynt/projects/my-project".into())),
-            ])));
-
-        let view = ProjectView::from_entity(&project).unwrap();
-        let backing = view.git_backing().expect("should parse git_backing");
-        assert!(backing.is_vault_repo());
-        assert_eq!(backing.sub_path(), std::path::Path::new(".flynt/projects/my-project"));
-    }
-
-    #[test]
-    fn project_view_git_backing_external_repo() {
-        let project = Entity::new(EntityKind::Project)
-            .with_field("title", Datum::Text("External".into()))
-            .with_field("git_backing", Datum::Map(BTreeMap::from([
-                ("type".into(), Datum::Text("external_repo".into())),
-                ("repo_root".into(), Datum::Text("/repos/external".into())),
-                ("sub_path".into(), Datum::Text("data".into())),
-                ("remote".into(), Datum::Text("origin".into())),
-                ("branch".into(), Datum::Text("main".into())),
-            ])));
-
-        let view = ProjectView::from_entity(&project).unwrap();
-        let backing = view.git_backing().expect("should parse git_backing");
-        assert!(!backing.is_vault_repo());
-        assert_eq!(backing.sub_path(), std::path::Path::new("data"));
-    }
-
-    #[test]
-    fn project_view_commit_config_defaults() {
-        let project = Entity::new(EntityKind::Project)
-            .with_field("title", Datum::Text("No Config".into()));
-
-        let view = ProjectView::from_entity(&project).unwrap();
-        let config = view.commit_config();
-        assert_eq!(config.auto_commit_seconds, 0);
-        assert_eq!(config.message_prefix, None);
-    }
-
-    #[test]
-    fn project_view_commit_config_custom() {
-        let project = Entity::new(EntityKind::Project)
-            .with_field("title", Datum::Text("Configured".into()))
-            .with_field("commit_config", Datum::Map(BTreeMap::from([
-                ("auto_commit_seconds".into(), Datum::Int(300)),
-                ("message_prefix".into(), Datum::Text("[flynt:myproj]".into())),
-            ])));
-
-        let view = ProjectView::from_entity(&project).unwrap();
-        let config = view.commit_config();
-        assert_eq!(config.auto_commit_seconds, 300);
-        assert_eq!(config.message_prefix, Some("[flynt:myproj]".into()));
-    }
-
-    #[test]
-    fn project_view_repo_ref() {
-        let repo_id = Uuid::new_v4();
-        let project = Entity::new(EntityKind::Project)
-            .with_field("title", Datum::Text("With Repo".into()))
-            .with_field("repo", Datum::Text(repo_id.to_string()));
-
-        let view = ProjectView::from_entity(&project).unwrap();
-        let r = view.repo_ref().expect("should resolve repo ref");
-        assert_eq!(r.id, repo_id);
-    }
-
-    #[test]
-    fn git_backing_from_frontmatter_roundtrip() {
-        let toml_str = r#"
-            id = "550e8400-e29b-41d4-a716-446655440000"
-            kind = "project"
-
-            [data]
-            title = "Roundtrip"
-            status = "active"
-
-            [data.git_backing]
-            type = "vault_repo"
-            sub_path = ".flynt/projects/roundtrip"
-
-            [data.commit_config]
-            auto_commit_seconds = 60
-            message_prefix = "[rt]"
-        "#;
-        let val: toml::Value = toml::from_str(toml_str).unwrap();
-        let entity = Entity::from_frontmatter(&val).unwrap();
-        let view = ProjectView::from_entity(&entity).unwrap();
-
-        let backing = view.git_backing().expect("git_backing should parse from frontmatter");
-        assert!(backing.is_vault_repo());
-        assert_eq!(backing.sub_path(), std::path::Path::new(".flynt/projects/roundtrip"));
-
-        let config = view.commit_config();
-        assert_eq!(config.auto_commit_seconds, 60);
-        assert_eq!(config.message_prefix, Some("[rt]".into()));
-    }
 }

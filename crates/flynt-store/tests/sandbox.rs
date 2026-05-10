@@ -175,17 +175,6 @@ fn test_get_board() {
     assert_eq!(fetched.unwrap().name, "My Board");
 }
 
-#[test]
-fn test_board_with_project() {
-    let (_tmp, project) = setup_vault();
-    let project_id = uuid::Uuid::new_v4();
-    let board = Board::for_project("Project Board", project_id);
-    project.store.save_board(&board).unwrap();
-
-    let fetched = project.store.get_board(&board.id).unwrap().unwrap();
-    assert_eq!(fetched.project_id, Some(project_id));
-}
-
 // ── Task CRUD ────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1210,36 +1199,6 @@ fn test_publication_wikilink_to_private_becomes_plain_text() {
     let exported_md = std::fs::read_to_string(output.join("public-note.md")).unwrap();
     assert!(!exported_md.contains("[[Private Note]]"), "wikilink to private doc should be rewritten");
     assert!(exported_md.contains("Private Note"), "text should remain, just not as a link");
-}
-
-#[test]
-fn test_publication_empty_board_exports() {
-    let (_tmp, project) = setup_vault();
-    let output = _tmp.path().join("pub-output");
-
-    // Create a project with publication enabled
-    std::fs::create_dir_all(project.root.join("projects")).unwrap();
-    project.save_document_content(
-        &std::path::PathBuf::from("projects/test-project.md"),
-        "+++\ntitle = \"Test Project\"\nkind = \"project\"\n[publication]\nenabled = true\nvisibility = \"public\"\n[data]\n+++\n\n# Test Project",
-    ).unwrap();
-    project.reindex().unwrap();
-
-    // Create a board with no tasks
-    let doc = project.store.list_documents().unwrap();
-    let project_doc = doc.iter().find(|d| d.title == "Test Project");
-    if let Some(proj) = project_doc {
-        if let Ok(Some(full_doc)) = project.store.get_document(&proj.id) {
-            if let Some(id) = full_doc.frontmatter.id {
-                let board = Board::for_project("Empty Board", id);
-                project.store.save_board(&board).unwrap();
-            }
-        }
-    }
-
-    let report = project.export_publication_tree(&output).unwrap();
-    // Should not crash even with empty board
-    assert!(report.errors.is_empty(), "empty board export should not error: {:?}", report.errors);
 }
 
 // ── Sync config validation ──────────────────────────────────────────────────

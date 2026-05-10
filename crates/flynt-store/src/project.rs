@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use flynt_core::{
-    datum::{Entity, ProjectView},
     models::*,
     parser::parse_document_source,
     store::VaultStore,
@@ -14,9 +13,7 @@ use std::{
     sync::Arc,
 };
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 use crate::sqlite::SqliteStore;
-use crate::sync::ProjectGit;
 use crate::task_file;
 
 /// Project manages the root directory layout:
@@ -71,31 +68,6 @@ pub struct PublishedDocument {
     pub output_path: PathBuf,
     pub slug: String,
     pub title: String,
-}
-
-/// Report of a project flush operation.
-#[derive(Debug, Clone, Default)]
-pub struct FlushReport {
-    pub tasks_flushed: usize,
-    pub files_removed: usize,
-    pub commit_oid: Option<String>,
-}
-
-impl FlushReport {
-    pub fn summary(&self) -> String {
-        let mut parts = Vec::new();
-        if self.tasks_flushed > 0 {
-            parts.push(format!("{} tasks", self.tasks_flushed));
-        }
-        if self.files_removed > 0 {
-            parts.push(format!("{} removed", self.files_removed));
-        }
-        if parts.is_empty() {
-            "no changes".into()
-        } else {
-            parts.join(", ")
-        }
-    }
 }
 
 enum ImportDisposition {
@@ -200,54 +172,13 @@ impl Project {
             }
         })?;
 
-        // After indexing documents, discover git-backed projects and reindex
-        // their task files into SQLite.
-        self.reindex_all_projects(&mut errors);
+        // (Removed: reindex_all_projects iterated kind="project" entities
+        // and recursively walked their git_backing sub-paths. With the
+        // inner Project entity dissolved, the outer reindex above
+        // covers everything.)
 
         info!("Reindex complete: {indexed} files, {} errors", errors.len());
         Ok((indexed, errors))
-    }
-
-    /// Discover all project entities with git_backing and reindex their task files.
-    fn reindex_all_projects(&self, errors: &mut Vec<String>) {
-        use flynt_core::datum::EntityKind;
-
-        let projects = match self.store.list_entities_by_kind(&EntityKind::Project) {
-            Ok(p) => p,
-            Err(e) => {
-                errors.push(format!("failed to list projects: {e}"));
-                return;
-            }
-        };
-
-        for meta in &projects {
-            let doc = match self.store.get_document(&meta.id) {
-                Ok(Some(d)) => d,
-                _ => continue,
-            };
-            let entity = match &doc.entity {
-                Some(e) => e,
-                None => continue,
-            };
-            let view = match ProjectView::from_entity(entity) {
-                Some(v) => v,
-                None => continue,
-            };
-            if view.git_backing().is_none() {
-                continue;
-            }
-
-            match self.reindex_project(entity.id) {
-                Ok(n) => {
-                    if n > 0 {
-                        info!("Reindexed {n} tasks for project '{}'", view.title());
-                    }
-                }
-                Err(e) => {
-                    errors.push(format!("project '{}': {e}", view.title()));
-                }
-            }
-        }
     }
 
     /// Parse and upsert a single markdown file into the store.
@@ -654,8 +585,10 @@ impl Project {
 
         fs::create_dir_all(output_root)?;
 
-        // Also export project boards if any projects are publishable
-        self.export_project_boards(output_root, &mut manifest_entries, &mut exported, &mut errors);
+        // (Removed: export_project_boards iterated kind="project" entities
+        // and rendered board snapshots. With the inner Project entity
+        // dissolved, board export — if revived — should iterate boards
+        // directly, not via project entities.)
 
         let manifest = PublicationManifest {
             generated_at: Utc::now().to_rfc3339(),
@@ -679,160 +612,6 @@ impl Project {
         fs::write(output_root.join("index.mu"), &index_mu)?;
 
         Ok(PublicationExportReport { exported, skipped_private, errors })
-    }
-
-    /// Export git-backed project boards as static markdown + HTML.
-    fn export_project_boards(
-        &self,
-        output_root: &Path,
-        manifest_entries: &mut Vec<PublicationManifestEntry>,
-        exported: &mut usize,
-        errors: &mut Vec<String>,
-    ) {
-        use flynt_core::datum::EntityKind;
-
-        let projects = match self.store.list_entities_by_kind(&EntityKind::Project) {
-            Ok(p) => p,
-            Err(e) => {
-                errors.push(format!("failed to list projects for publication: {e}"));
-                return;
-            }
-        };
-
-        for meta in &projects {
-            let doc = match self.store.get_document(&meta.id) {
-                Ok(Some(d)) => d,
-                _ => continue,
-            };
-
-            // Only export projects that have publication enabled
-            if !doc.frontmatter.publication.enabled {
-                continue;
-            }
-            let visibility = effective_publication_visibility(&doc, &self.config.publication);
-            if visibility == PublicationVisibility::Private {
-                continue;
-            }
-
-            let entity = match &doc.entity {
-                Some(e) => e,
-                None => continue,
-            };
-            let view = match ProjectView::from_entity(entity) {
-                Some(v) => v,
-                None => continue,
-            };
-
-            // Find boards for this project
-            let boards = match self.store.list_boards() {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-            let project_boards: Vec<_> = boards
-                .into_iter()
-                .filter(|b| b.project_id == Some(entity.id))
-                .collect();
-
-            if project_boards.is_empty() {
-                continue;
-            }
-
-            let slug = format!("project-{}", slugify_title(view.title()));
-            let board_md_path = output_root.join(format!("{slug}.md"));
-            let board_html_path = output_root.join(format!("{slug}.html"));
-            let board_mu_path = output_root.join(format!("{slug}.mu"));
-
-            match self.render_project_board_markdown(&view, &project_boards) {
-                Ok(md) => {
-                    let html = self.render_project_board_html(view.title(), &md);
-                    let micron = markdown_to_micron(&md);
-                    if let Err(e) = fs::write(&board_md_path, &md) {
-                        errors.push(format!("project '{}': {e}", view.title()));
-                        continue;
-                    }
-                    if let Err(e) = fs::write(&board_html_path, &html) {
-                        errors.push(format!("project '{}' html: {e}", view.title()));
-                        continue;
-                    }
-                    if let Err(e) = fs::write(&board_mu_path, &micron) {
-                        errors.push(format!("project '{}' micron: {e}", view.title()));
-                        continue;
-                    }
-                    manifest_entries.push(PublicationManifestEntry {
-                        title: format!("{} — Board", view.title()),
-                        slug: slug.clone(),
-                        source_path: doc.path.clone(),
-                        output_path: board_md_path,
-                        tags: vec!["project".into(), "board".into()],
-                        visibility: PublicationVisibility::Public,
-                    });
-                    *exported += 1;
-                }
-                Err(e) => {
-                    errors.push(format!("project '{}': {e}", view.title()));
-                }
-            }
-        }
-    }
-
-    fn render_project_board_markdown(
-        &self,
-        view: &ProjectView,
-        boards: &[Board],
-    ) -> Result<String> {
-        use flynt_core::store::TaskFilter;
-
-        let mut md = format!("# {}\n\n", view.title());
-        md.push_str(&format!("**Status:** {}\n\n", view.status()));
-
-        for board in boards {
-            md.push_str(&format!("## {}\n\n", board.name));
-
-            let tasks = self.store.list_tasks(&TaskFilter {
-                board_id: Some(board.id.clone()),
-                ..Default::default()
-            })?;
-
-            for col in &board.columns {
-                let col_tasks: Vec<_> = tasks.iter()
-                    .filter(|t| t.column == col.name && t.status != TaskStatus::Archived)
-                    .collect();
-
-                md.push_str(&format!("### {} ({})\n\n", col.name, col_tasks.len()));
-
-                if col_tasks.is_empty() {
-                    md.push_str("*No tasks*\n\n");
-                } else {
-                    for task in &col_tasks {
-                        let priority = match task.priority {
-                            Priority::Critical => " **CRITICAL**",
-                            Priority::High => " **HIGH**",
-                            Priority::Low => " *low*",
-                            Priority::Medium => "",
-                        };
-                        let status_icon = match task.status {
-                            TaskStatus::Done => "- [x]",
-                            _ => "- [ ]",
-                        };
-                        md.push_str(&format!("{status_icon} {}{priority}\n", task.title));
-                    }
-                    md.push('\n');
-                }
-            }
-        }
-
-        Ok(md)
-    }
-
-    fn render_project_board_html(&self, title: &str, markdown: &str) -> String {
-        let mut options = Options::default();
-        options.extension.table = true;
-        options.extension.strikethrough = true;
-        options.extension.tasklist = true;
-        let html = markdown_to_html(markdown, &options);
-        format!(
-            "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{title}</title><style>body{{max-width:860px;margin:0 auto;padding:40px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;background:#0b0f16;color:#d7e0ea}}a{{color:#4cc9f0}}h1{{border-bottom:1px solid #1e293b;padding-bottom:8px}}h2{{color:#94a3b8}}h3{{color:#64748b;font-size:0.95em}}ul{{list-style:none;padding-left:0}}li{{padding:4px 0}}</style></head><body>{html}</body></html>"
-        )
     }
 
     fn export_published_document(&self, relative_path: &Path, output_root: &Path) -> Result<Option<PublishedDocument>> {
@@ -868,44 +647,8 @@ impl Project {
         Ok(Some(manifest))
     }
 
-    // ── Project-aware task operations ──────────────────────────────────────
-
-    /// Save a task that belongs to a project board.
-    /// Sets the project_id, saves to SQLite, and writes the task file to disk
-    /// if the project has git backing.
-    pub fn save_project_task(&self, task: &Task, project_id: &Uuid) -> Result<()> {
-        self.store.save_task(task)?;
-        self.store.set_task_project(&task.id, project_id)?;
-
-        // Write task file to disk if project has git backing
-        if let Ok(entity) = self.resolve_project_entity(project_id) {
-            if let Some(view) = ProjectView::from_entity(&entity) {
-                if let Some(backing) = view.git_backing() {
-                    let md = task_file::serialize_task_to_markdown(task, project_id);
-                    let rel_path = task_file::task_file_path(backing.sub_path(), &task.id);
-                    let abs_path = backing.repo_root(&self.root).join(&rel_path);
-                    if let Some(parent) = abs_path.parent() {
-                        fs::create_dir_all(parent)?;
-                    }
-                    fs::write(&abs_path, &md)?;
-
-                    // Record project-relative path so the migration sweep
-                    // at next project.open doesn't see this as unfiled and
-                    // write a duplicate at Tasks/<board>/...
-                    let abs_root = self.root.canonicalize().unwrap_or(self.root.clone());
-                    let abs_full = abs_path.canonicalize().unwrap_or(abs_path.clone());
-                    if let Ok(rel) = abs_full.strip_prefix(&abs_root) {
-                        let _ = self.store.set_task_file_path(&task.id, &rel.to_string_lossy());
-                    }
-
-                    // Mark as committed immediately (written to disk)
-                    let now = Utc::now();
-                    self.store.mark_committed(&[task.id.clone()], &[], now)?;
-                }
-            }
-        }
-        Ok(())
-    }
+    // save_project_task removed: with the inner Project entity dissolved,
+    // every task lives at the project root via save_any_task.
 
     /// Apply a TaskPatch then write the task to disk via persist_task.
     /// Use instead of `store.update_task` whenever the caller wants the
@@ -937,25 +680,17 @@ impl Project {
         if let Some(v) = &patch.engagement_id { task.engagement_id = v.clone(); }
         if let Some(v) = &patch.execution { task.execution = v.clone(); }
         task.updated_at = Utc::now();
-        // project_id from the board (boards table) drives routing.
-        let project_id = self.store
-            .get_board(&task.board_id)?
-            .and_then(|b| b.project_id);
-        self.persist_task(&task, project_id)?;
+        self.persist_task(&task)?;
         Ok(true)
     }
 
-    /// Single entry point for persisting a task. Routes based on project
-    /// association: project-backed tasks go through `save_project_task`
-    /// (writes under the project's git-backing); everything else goes
-    /// through `save_any_task` (writes under `Tasks/<board>/<slug>.md`).
-    /// Either way the file_path column is updated so the next startup
-    /// migration doesn't double-write.
-    pub fn persist_task(&self, task: &Task, project_id: Option<Uuid>) -> Result<()> {
-        match project_id {
-            Some(pid) => self.save_project_task(task, &pid),
-            None => self.save_any_task(task).map(|_| ()),
-        }
+    /// Single entry point for persisting a task. Writes the `.md` file
+    /// under `Tasks/<board-slug>/<title-slug>.md` and the sqlite row,
+    /// and records the file path for future renames. The previous
+    /// project_id parameter is gone — every task lives in the
+    /// project root, no inner-project routing needed.
+    pub fn persist_task(&self, task: &Task) -> Result<()> {
+        self.save_any_task(task).map(|_| ())
     }
 
     /// Persist a task: write `.md` file to disk + sqlite + remember the
@@ -1050,156 +785,6 @@ impl Project {
             info!("migrated {migrated} task(s) from sqlite-only to .md files");
         }
         Ok(migrated)
-    }
-
-    /// Delete a task that belongs to a project. Records the deletion for
-    /// git cleanup and removes the file from disk if it exists.
-    pub fn delete_project_task(&self, task_id: &TaskId, project_id: &Uuid) -> Result<()> {
-        // Record deletion for git tracking
-        self.store.record_project_deletion(&task_id.0, "task", project_id)?;
-
-        // Remove file from disk if project has git backing
-        if let Ok(entity) = self.resolve_project_entity(project_id) {
-            if let Some(view) = ProjectView::from_entity(&entity) {
-                if let Some(backing) = view.git_backing() {
-                    let rel_path = task_file::task_file_path(backing.sub_path(), task_id);
-                    let abs_path = backing.repo_root(&self.root).join(&rel_path);
-                    if abs_path.exists() {
-                        fs::remove_file(&abs_path)?;
-                    }
-                }
-            }
-        }
-
-        self.store.delete_task(task_id)?;
-        Ok(())
-    }
-
-    // ── Project git backing ───────────────────────────────────────────────
-
-    /// Flush dirty tasks and documents for a git-backed project to disk as
-    /// markdown files. For ExternalRepo projects, also stages and commits.
-    ///
-    /// Returns a report of what was flushed.
-    pub fn flush_project(&self, project_id: Uuid) -> Result<FlushReport> {
-        let project_entity = self.resolve_project_entity(&project_id)?;
-        let view = ProjectView::from_entity(&project_entity)
-            .context("entity is not a project")?;
-        let backing = view.git_backing()
-            .context("project has no git_backing configured")?;
-        let commit_config = view.commit_config();
-
-        let data_root = backing.data_root(&self.root);
-
-        // Ensure directories exist
-        fs::create_dir_all(data_root.join("tasks"))?;
-
-        let mut report = FlushReport::default();
-
-        // 1. Write dirty tasks to disk
-        let dirty_tasks = self.store.list_dirty_tasks(&project_id)?;
-        let mut committed_task_ids = Vec::new();
-        for task in &dirty_tasks {
-            let md = task_file::serialize_task_to_markdown(task, &project_id);
-            let rel_path = task_file::task_file_path(backing.sub_path(), &task.id);
-            let abs_path = backing.repo_root(&self.root).join(&rel_path);
-            if let Some(parent) = abs_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&abs_path, &md)?;
-            committed_task_ids.push(task.id.clone());
-            report.tasks_flushed += 1;
-        }
-
-        // 2. Handle pending deletions
-        let deletions = self.store.list_pending_deletions(&project_id)?;
-        let mut deleted_ids = Vec::new();
-        for (entity_id, entity_kind) in &deletions {
-            if entity_kind == "task" {
-                let rel_path = task_file::task_file_path(
-                    backing.sub_path(),
-                    &TaskId(*entity_id),
-                );
-                let abs_path = backing.repo_root(&self.root).join(&rel_path);
-                if abs_path.exists() {
-                    fs::remove_file(&abs_path)?;
-                    report.files_removed += 1;
-                }
-            }
-            deleted_ids.push(*entity_id);
-        }
-
-        // 3. Mark as committed in SQLite
-        let now = Utc::now();
-        self.store.mark_committed(&committed_task_ids, &[], now)?;
-        if !deleted_ids.is_empty() {
-            self.store.mark_deletions_committed(&deleted_ids)?;
-        }
-
-        // 4. For ExternalRepo, also do the git commit
-        if !backing.is_vault_repo() && (report.tasks_flushed > 0 || report.files_removed > 0) {
-            let pg = ProjectGit::open(&backing, &self.root)?;
-            let prefix = commit_config.message_prefix
-                .unwrap_or_else(|| "[flynt]".into());
-            let msg = format!("{prefix} flush {}", report.summary());
-            if let Some(oid) = pg.commit(&msg)? {
-                report.commit_oid = Some(oid.to_string());
-            }
-        }
-
-        info!(
-            "Flushed project {project_id}: {} tasks, {} removals",
-            report.tasks_flushed, report.files_removed
-        );
-        Ok(report)
-    }
-
-    /// Re-index task files from a project's sub-path into SQLite.
-    /// Called on project open and after git pulls to sync disk -> DB.
-    pub fn reindex_project(&self, project_id: Uuid) -> Result<usize> {
-        let project_entity = self.resolve_project_entity(&project_id)?;
-        let view = ProjectView::from_entity(&project_entity)
-            .context("entity is not a project")?;
-        let backing = view.git_backing()
-            .context("project has no git_backing configured")?;
-
-        let tasks_dir = backing.data_root(&self.root).join("tasks");
-
-        if !tasks_dir.exists() {
-            return Ok(0);
-        }
-
-        let mut count = 0;
-        for entry in walkdir::WalkDir::new(&tasks_dir)
-            .max_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_type().is_file()
-                    && e.path().extension().map(|x| x == "md").unwrap_or(false)
-            })
-        {
-            let raw = fs::read_to_string(entry.path())?;
-            match task_file::parse_task_from_markdown(&raw) {
-                Ok(task) => {
-                    self.store.save_task(&task)?;
-                    count += 1;
-                }
-                Err(e) => {
-                    warn!("Failed to parse task file {}: {e}", entry.path().display());
-                }
-            }
-        }
-        info!("Reindexed {count} tasks for project {project_id}");
-        Ok(count)
-    }
-
-    /// Look up a project entity from SQLite by its UUID.
-    fn resolve_project_entity(&self, project_id: &Uuid) -> Result<Entity> {
-        let doc = self.store
-            .get_document(&DocumentId(*project_id))?
-            .context("project document not found in store")?;
-        doc.entity.context("project document has no entity")
     }
 
     /// Write a new config to disk. Does not update `self.config` (the in-memory
@@ -2349,235 +1934,6 @@ See [[roadmap|the roadmap]].\n",
         assert!(mu.contains("-\n"), "hr: {mu}");
         assert!(mu.contains("`=\nfn main() {}\n``"), "code block: {mu}");
         assert!(mu.contains("`[link`https://example.com]"), "link: {mu}");
-    }
-
-    // ── Project git-backing tests ────────────────────────────────────────
-
-    fn create_git_backed_project(project: &Project) -> uuid::Uuid {
-        let project_id = uuid::Uuid::new_v4();
-        let sub_path = format!("projects/{}", &project_id.to_string()[..8]);
-
-        let frontmatter = format!(
-            r#"+++
-id = "{project_id}"
-kind = "project"
-
-[data]
-title = "Test Project"
-status = "active"
-columns = ["Backlog", "In Progress", "Done"]
-
-[data.git_backing]
-type = "vault_repo"
-sub_path = "{sub_path}"
-
-[data.commit_config]
-auto_commit_seconds = 0
-+++
-
-# Test Project
-"#
-        );
-
-        // Use a unique path per project to avoid collision
-        let rel_path = PathBuf::from(format!("project-{}.md", &project_id.to_string()[..8]));
-        let abs_path = project.root.join(&rel_path);
-        std::fs::write(&abs_path, &frontmatter).unwrap();
-        project.index_file(&abs_path).unwrap();
-
-        project_id
-    }
-
-    #[test]
-    fn flush_project_writes_dirty_tasks_to_disk() {
-        let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        // Init a git repo so ProjectGit can open it
-        git2::Repository::init(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
-
-        let project_id = create_git_backed_project(&project);
-
-        // Create a task associated with this project
-        let board = flynt_core::models::Board::default_sprint("Sprint");
-        project.store.save_board(&board).unwrap();
-
-        let mut task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Fix the parser");
-        task.description = "Need to fix the TOML parser.".into();
-        task.priority = flynt_core::models::Priority::High;
-
-        // Save task with project_id set
-        project.store.save_task(&task).unwrap();
-
-        // Associate task with this project
-        project.store.set_task_project(&task.id, &project_id).unwrap();
-
-        // Flush should write the task file
-        let report = project.flush_project(project_id).unwrap();
-        assert_eq!(report.tasks_flushed, 1);
-
-        // Verify the file exists on disk
-        let project_entity = project.store.get_document(&DocumentId(project_id)).unwrap().unwrap();
-        let entity = project_entity.entity.unwrap();
-        let view = flynt_core::datum::ProjectView::from_entity(&entity).unwrap();
-        let backing = view.git_backing().unwrap();
-        let task_path = vault_root.join(backing.sub_path()).join("tasks").join(format!("{}.md", task.id.0));
-        assert!(task_path.exists(), "task file should exist at {}", task_path.display());
-
-        // Verify content
-        let content = std::fs::read_to_string(&task_path).unwrap();
-        assert!(content.contains("Fix the parser"));
-        assert!(content.contains("kind = \"task\""));
-    }
-
-    #[test]
-    fn reindex_project_reads_task_files_into_db() {
-        let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        git2::Repository::init(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
-
-        let project_id = create_git_backed_project(&project);
-
-        // Resolve the sub_path from the project entity
-        let project_doc = project.store.get_document(&DocumentId(project_id)).unwrap().unwrap();
-        let entity = project_doc.entity.unwrap();
-        let view = flynt_core::datum::ProjectView::from_entity(&entity).unwrap();
-        let backing = view.git_backing().unwrap();
-
-        // Write a task file manually (simulating a git pull)
-        let task_id = uuid::Uuid::new_v4();
-        // Create the board first so the FK constraint is satisfied
-        let board = flynt_core::models::Board::default_sprint("Sprint");
-        project.store.save_board(&board).unwrap();
-        let board_id = board.id.0;
-        let task_md = format!(
-            r#"+++
-id = "{task_id}"
-kind = "task"
-
-[data]
-title = "Imported task"
-project = "{project_id}"
-board = "{board_id}"
-column = "In Progress"
-priority = 3
-status = "in_progress"
-position = 1
-+++
-
-Description from git.
-"#
-        );
-        let tasks_dir = vault_root.join(backing.sub_path()).join("tasks");
-        std::fs::create_dir_all(&tasks_dir).unwrap();
-        std::fs::write(tasks_dir.join(format!("{task_id}.md")), &task_md).unwrap();
-
-        // Reindex should parse the file and insert into SQLite
-        let count = project.reindex_project(project_id).unwrap();
-        assert_eq!(count, 1);
-
-        // Verify the task is in the DB
-        let stored_task = project.store.get_task(&flynt_core::models::TaskId(task_id)).unwrap();
-        assert!(stored_task.is_some(), "task should be in SQLite after reindex");
-        let stored = stored_task.unwrap();
-        assert_eq!(stored.title, "Imported task");
-        assert_eq!(stored.column, "In Progress");
-        assert_eq!(stored.priority, flynt_core::models::Priority::High);
-    }
-
-    #[test]
-    fn flush_then_reindex_roundtrips() {
-        let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        git2::Repository::init(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
-
-        let project_id = create_git_backed_project(&project);
-
-        let board = flynt_core::models::Board::default_sprint("Sprint");
-        project.store.save_board(&board).unwrap();
-
-        let mut task = flynt_core::models::Task::new(board.id.clone(), "Review", "Write tests");
-        task.tags = vec!["test".into()];
-        project.store.save_task(&task).unwrap();
-        let original_id = task.id.clone();
-
-        // Associate task with this project
-        project.store.set_task_project(&task.id, &project_id).unwrap();
-
-        // Flush
-        let report = project.flush_project(project_id).unwrap();
-        assert_eq!(report.tasks_flushed, 1);
-
-        // Delete from DB to simulate a fresh reindex
-        project.store.delete_task(&original_id).unwrap();
-        assert!(project.store.get_task(&original_id).unwrap().is_none());
-
-        // Reindex from disk
-        let count = project.reindex_project(project_id).unwrap();
-        assert_eq!(count, 1);
-
-        // Verify roundtrip
-        let restored = project.store.get_task(&original_id).unwrap().unwrap();
-        assert_eq!(restored.title, "Write tests");
-        assert_eq!(restored.column, "Review");
-        assert_eq!(restored.tags, vec!["test"]);
-    }
-
-    #[test]
-    fn publication_exports_project_board_state() {
-        let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        git2::Repository::init(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
-        let output_root = tmp.path().join("published");
-
-        let project_id = create_git_backed_project(&project);
-
-        // Enable publication on the project document
-        let project_doc_path = vault_root.join(
-            format!("project-{}.md", &project_id.to_string()[..8])
-        );
-        let raw = std::fs::read_to_string(&project_doc_path).unwrap();
-        let updated = raw.replace(
-            "+++\n\n# Test Project",
-            "[publication]\nenabled = true\nvisibility = \"public\"\n+++\n\n# Test Project"
-        );
-        std::fs::write(&project_doc_path, &updated).unwrap();
-        project.index_file(&project_doc_path).unwrap();
-
-        // Create a board for this project
-        let board = flynt_core::models::Board::for_project("Sprint 1", project_id);
-        project.store.save_board(&board).unwrap();
-
-        // Create tasks
-        let mut task1 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Design API");
-        task1.priority = flynt_core::models::Priority::High;
-        project.save_project_task(&task1, &project_id).unwrap();
-
-        let task2 = flynt_core::models::Task::new(board.id.clone(), "Running", "Build parser");
-        project.save_project_task(&task2, &project_id).unwrap();
-
-        // Export
-        let report = project.export_publication_tree(&output_root).unwrap();
-        assert!(report.exported >= 1, "should export at least the project board");
-        assert!(report.errors.is_empty(), "errors: {:?}", report.errors);
-
-        // Check board markdown exists and contains task info
-        // Collect all exported files and search for board content across all of them
-        let all_files: Vec<_> = walkdir::WalkDir::new(&output_root)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .collect();
-        let all_content: String = all_files.iter()
-            .filter_map(|e| std::fs::read_to_string(e.path()).ok())
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(all_content.contains("Design API"), "should contain task title, got: {}", all_content);
-        assert!(all_content.contains("Build parser"), "should contain second task");
-        assert!(all_content.contains("**HIGH**"), "should show priority");
     }
 
     #[test]

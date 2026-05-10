@@ -259,9 +259,6 @@ pub struct Board {
     pub id: BoardId,
     pub name: String,
     pub columns: Vec<Column>,
-    /// When set, tasks on this board belong to a git-backed project.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -290,16 +287,8 @@ impl Board {
                 Column { name: "Done".into(), wip_limit: None },
                 Column { name: "Failed".into(), wip_limit: None },
             ],
-            project_id: None,
             created_at: Utc::now(),
         }
-    }
-
-    /// Create a board associated with a git-backed project.
-    pub fn for_project(name: impl Into<String>, project_id: Uuid) -> Self {
-        let mut board = Self::default_sprint(name);
-        board.project_id = Some(project_id);
-        board
     }
 }
 
@@ -1080,14 +1069,6 @@ mod tests {
         assert_eq!(board.columns[2].name, "Running");
         assert_eq!(board.columns[3].name, "Done");
         assert_eq!(board.columns[4].name, "Failed");
-        assert!(board.project_id.is_none());
-    }
-
-    #[test]
-    fn board_for_project_sets_project_id() {
-        let pid = uuid::Uuid::new_v4();
-        let board = Board::for_project("Project Board", pid);
-        assert_eq!(board.project_id, Some(pid));
     }
 
     // ── Task constructors ───────────────────────────────────────────

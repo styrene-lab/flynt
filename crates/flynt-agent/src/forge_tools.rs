@@ -140,12 +140,6 @@ pub fn tool_definitions() -> Vec<Value> {
             "parameters": { "type": "object", "properties": {} }
         }),
         json!({
-            "name": "project_list",
-            "label": "List Projects",
-            "description": "List all flynt projects in this project with their id and title. Use the id when setting FLYNT_PROJECT to scope sentry — without this tool the operator has to dig the UUID out of the project sqlite manually.",
-            "parameters": { "type": "object", "properties": {} }
-        }),
-        json!({
             "name": "engagement_status",
             "label": "Engagement Status",
             "description": "Detail for one engagement: repos, forge endpoint, recent sync timestamps, and task counts. Required: engagement_id.",
@@ -427,22 +421,6 @@ pub fn engagement_list(project: &Project, _params: Value) -> ExtResult<Value> {
     Ok(json!(summary))
 }
 
-pub fn project_list(project: &Project, _params: Value) -> ExtResult<Value> {
-    // Surface flynt project entities so operators can copy the UUID
-    // they need for FLYNT_PROJECT (the env var that scopes sentry to
-    // one project's tasks). Without this, discovering the UUID
-    // required querying the project sqlite by hand.
-    let docs = project.store
-        .list_entities_by_kind(&flynt_core::datum::EntityKind::Project)
-        .map_err(|e| ExtError::internal_error(e.to_string()))?;
-    let summary: Vec<Value> = docs.iter().map(|d| json!({
-        "id":    d.id.0.to_string(),
-        "title": d.title,
-        "path":  d.path.to_string_lossy(),
-    })).collect();
-    Ok(json!(summary))
-}
-
 pub fn engagement_status(project: &Project, params: Value) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
     let eng = load_engagement(project, &eid)?;
@@ -572,7 +550,7 @@ fn materialize_sync_ops(
                 // Use persist_task so the issue lands as a .md file
                 // under Tasks/<board>/<slug>.md (board has no
                 // project_id in the typical sync flow).
-                project.persist_task(&t, None)
+                project.persist_task(&t)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 store.upsert(&IssueMap {
                     local_id: *local_id,
@@ -680,7 +658,7 @@ pub async fn forge_create_issue(
     t.external_refs = vec![canonical.url.clone()];
     t.engagement_id = Some(eid.clone());
     // persist_task writes the .md file alongside sqlite.
-    project.persist_task(&t, None)
+    project.persist_task(&t)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     let store = sync_store_for(project)?;
