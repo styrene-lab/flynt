@@ -262,9 +262,23 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
 
     let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
 
+    // Task files live under Tasks/ — they're real notes but get a
+    // subtle visual cue (different icon + class) so the operator can
+    // pick them out in the tree without confusing them with regular
+    // notes. Detection by path prefix because the .md frontmatter
+    // already carries `kind = "task"` but isn't surfaced on
+    // DocumentMeta yet.
+    let is_task = meta.path.starts_with("Tasks/")
+        || meta.path.to_string_lossy().starts_with("Tasks/");
+
     rsx! {
         button {
-            class: if is_active { "tree-item tree-file active" } else { "tree-item tree-file" },
+            class: match (is_active, is_task) {
+                (true, true)   => "tree-item tree-file tree-file-task active",
+                (true, false)  => "tree-item tree-file active",
+                (false, true)  => "tree-item tree-file tree-file-task",
+                (false, false) => "tree-item tree-file",
+            },
             style: "padding-left: {indent + 20.0}px;",
             onclick: move |_| {
                     tab_state.write().open(id.clone(), title.clone());
@@ -279,7 +293,9 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                 let coords = e.client_coordinates();
                 *ctx_menu.write() = Some((coords.x, coords.y));
             },
-            span { class: "tree-file-icon", "\u{25C7}" }
+            span { class: "tree-file-icon",
+                if is_task { "\u{2611}" } else { "\u{25C7}" }
+            }
             span { class: "tree-name", "{meta.title}" }
         }
 

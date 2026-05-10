@@ -152,6 +152,17 @@
   color: var(--primary-muted);
 }
 
+/* Task files (under Tasks/) — subtle green tint on the icon to
+ * distinguish them from regular notes without a hard separator. */
+.tree-file-task .tree-file-icon {
+  color: rgba(120, 220, 150, 0.85);
+  font-size: 11px;
+}
+.tree-file-task .tree-name {
+  color: rgba(190, 220, 200, 0.95);
+}
+.tree-file-task.active .tree-name { color: var(--foreground); }
+
 .tree-name {
   overflow:      hidden;
   text-overflow: ellipsis;

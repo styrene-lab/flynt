@@ -5,6 +5,7 @@ use flynt_core::{
 };
 use dioxus::prelude::*;
 use crate::bootstrap::AppContext;
+use crate::state::{Route, TabState};
 
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
@@ -727,74 +728,24 @@ fn TaskCard(
     engagements_loaded: bool,
 ) -> Element {
     let ctx = use_context::<AppContext>();
+    let mut tab_state = use_context::<Signal<TabState>>();
+    let mut active_route = use_context::<Signal<Route>>();
     let mut open = use_signal(|| false);
+    // The inline editor is intentionally narrow: title rename, priority
+    // quick-toggle, engagement quick-toggle. Description, sentry triggers,
+    // execution config, lifecycle linkage all live in the task's .md
+    // file — operator opens the file via "Open in editor" to edit those.
     let mut inline_title = use_signal(|| task.title.clone());
-    let mut inline_desc = use_signal(|| task.description.clone());
     let mut inline_priority = use_signal(|| task.priority);
-    let mut inline_due = use_signal(|| task.due_date.map(|d| d.to_string()).unwrap_or_default());
-
-    // ── Forge / Engagement state ──────────────────────────────────────────
     let mut inline_engagement = use_signal(|| {
         task.engagement_id.as_ref().map(|e| e.0.to_string()).unwrap_or_default()
     });
 
-    // ── Sentry / Lifecycle inline-edit state ──────────────────────────────
-    // Auto-expand on first render for tasks that already carry sentry
-    // signals — the section is the operator's reason to open the editor at
-    // all in those cases. Otherwise the section stays collapsed and
-    // hand-tracked tasks see the simple editor unchanged.
-    // Auto-expand the section if the task carries any of the metadata
-    // it edits — sentry signals, lifecycle linkage, OR an engagement.
-    // Otherwise the operator would have to remember to open the toggle
-    // to see / change an engagement scope they already set.
-    let mut sentry_open = use_signal(|| {
-        task.is_sentry_managed()
-            || task.design_node_id.is_some()
-            || task.openspec_change.is_some()
-            || task.engagement_id.is_some()
-    });
-    let mut inline_cron = use_signal(|| task.cron_trigger().unwrap_or("").to_string());
-    let mut inline_webhook = use_signal(|| task.webhook_trigger().unwrap_or("").to_string());
-    let mut inline_other_refs = use_signal(|| {
-        // Refs that aren't cron:/webhook: — preserve them through edits.
-        task.external_refs
-            .iter()
-            .filter(|r| !r.starts_with("cron:") && !r.starts_with("webhook:"))
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
-    });
-    let mut inline_model = use_signal(|| {
-        task.execution.as_ref().and_then(|e| e.model.clone()).unwrap_or_default()
-    });
-    let mut inline_skill = use_signal(|| {
-        task.execution.as_ref().and_then(|e| e.skill.clone()).unwrap_or_default()
-    });
-    let mut inline_max_turns = use_signal(|| {
-        task.execution.as_ref().and_then(|e| e.max_turns).map(|v| v.to_string()).unwrap_or_default()
-    });
-    let mut inline_timeout = use_signal(|| {
-        task.execution.as_ref().and_then(|e| e.timeout_secs).map(|v| v.to_string()).unwrap_or_default()
-    });
-    let mut inline_token_budget = use_signal(|| {
-        task.execution.as_ref().and_then(|e| e.token_budget).map(|v| v.to_string()).unwrap_or_default()
-    });
-    let mut inline_cwd = use_signal(|| {
-        task.execution.as_ref().and_then(|e| e.cwd.as_ref()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
-    });
-    let mut inline_env = use_signal(|| {
-        task.execution.as_ref()
-            .map(|e| e.env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n"))
-            .unwrap_or_default()
-    });
-    let mut inline_design_node = use_signal(|| {
-        task.design_node_id.map(|u| u.to_string()).unwrap_or_default()
-    });
-    let mut inline_openspec = use_signal(|| task.openspec_change.clone().unwrap_or_default());
-
     let tid_drag = task.id.clone();
     let tid_archive = task.id.clone();
+    let tid_open = task.id.clone();
     let ctx_archive = ctx.clone();
+    let ctx_open = ctx.clone();
     let priority_class = priority_badge_class(task.priority);
 
     rsx! {
@@ -921,17 +872,6 @@ fn TaskCard(
                         }
                     }
 
-                    label { class: "field",
-                        span { "Description" }
-                        textarea {
-                            class: "task-desc-input",
-                            value: "{inline_desc}",
-                            rows: "3",
-                            placeholder: "Task description…",
-                            oninput: move |e| *inline_desc.write() = e.value(),
-                        }
-                    }
-
                     div { class: "task-detail-row",
                         label { class: "field",
                             span { "Priority" }
@@ -951,188 +891,24 @@ fn TaskCard(
                             }
                         }
 
-                        label { class: "field",
-                            span { "Due date" }
-                            input {
-                                r#type: "date",
-                                value: "{inline_due}",
-                                oninput: move |e| *inline_due.write() = e.value(),
-                            }
-                        }
-                    }
-
-                    // ── Sentry / Lifecycle (collapsible) ──────────────────
-                    div { class: "task-sentry-section",
-                        button {
-                            class: "task-sentry-toggle",
-                            onclick: move |_| {
-                                let v = *sentry_open.read();
-                                *sentry_open.write() = !v;
-                            },
-                            if *sentry_open.read() { "− Sentry / Lifecycle" } else { "+ Sentry / Lifecycle" }
-                        }
-
-                        if *sentry_open.read() {
-                            div { class: "task-sentry-fields",
-
-                                // ── Triggers ────────────────────────────
-                                div { class: "task-sentry-group",
-                                    span { class: "task-sentry-group-label", "Triggers" }
-                                    label { class: "field",
-                                        span { "Cron" }
-                                        input {
-                                            placeholder: "0 */4 * * *",
-                                            value: "{inline_cron}",
-                                            oninput: move |e| *inline_cron.write() = e.value(),
-                                        }
-                                    }
-                                    label { class: "field",
-                                        span { "Webhook name" }
-                                        input {
-                                            placeholder: "gh-pr",
-                                            value: "{inline_webhook}",
-                                            oninput: move |e| *inline_webhook.write() = e.value(),
-                                        }
-                                    }
-                                    label { class: "field",
-                                        span { "Other external refs (one per line)" }
-                                        textarea {
-                                            rows: "2",
-                                            placeholder: "https://github.com/org/repo/issues/42",
-                                            value: "{inline_other_refs}",
-                                            oninput: move |e| *inline_other_refs.write() = e.value(),
-                                        }
-                                    }
-                                }
-
-                                // ── Execution ───────────────────────────
-                                div { class: "task-sentry-group",
-                                    span { class: "task-sentry-group-label", "Execution" }
-                                    div { class: "task-detail-row",
-                                        label { class: "field",
-                                            span { "Model" }
-                                            input {
-                                                placeholder: "anthropic:claude-sonnet-4-6",
-                                                value: "{inline_model}",
-                                                oninput: move |e| *inline_model.write() = e.value(),
-                                            }
-                                        }
-                                        label { class: "field",
-                                            span { "Skill" }
-                                            input {
-                                                placeholder: "security",
-                                                value: "{inline_skill}",
-                                                oninput: move |e| *inline_skill.write() = e.value(),
-                                            }
-                                        }
-                                    }
-                                    div { class: "task-detail-row",
-                                        label { class: "field",
-                                            span { "Max turns" }
-                                            input {
-                                                r#type: "number",
-                                                min: "1",
-                                                value: "{inline_max_turns}",
-                                                oninput: move |e| *inline_max_turns.write() = e.value(),
-                                            }
-                                        }
-                                        label { class: "field",
-                                            span { "Timeout (sec)" }
-                                            input {
-                                                r#type: "number",
-                                                min: "1",
-                                                value: "{inline_timeout}",
-                                                oninput: move |e| *inline_timeout.write() = e.value(),
-                                            }
-                                        }
-                                        label { class: "field",
-                                            span { "Token budget" }
-                                            input {
-                                                r#type: "number",
-                                                min: "1",
-                                                value: "{inline_token_budget}",
-                                                oninput: move |e| *inline_token_budget.write() = e.value(),
-                                            }
-                                        }
-                                    }
-                                    label { class: "field",
-                                        span { "cwd" }
-                                        input {
-                                            placeholder: "/path/to/project",
-                                            value: "{inline_cwd}",
-                                            oninput: move |e| *inline_cwd.write() = e.value(),
-                                        }
-                                    }
-                                    label { class: "field",
-                                        span { "Env (KEY=value, one per line)" }
-                                        textarea {
-                                            rows: "2",
-                                            placeholder: "SCAN_DEPTH=deep\nAPI_TOKEN=xyz",
-                                            value: "{inline_env}",
-                                            oninput: move |e| *inline_env.write() = e.value(),
-                                        }
-                                    }
-                                }
-
-                                // ── Lifecycle ───────────────────────────
-                                div { class: "task-sentry-group",
-                                    span { class: "task-sentry-group-label", "Lifecycle" }
-                                    label { class: "field",
-                                        span { "Design node UUID" }
-                                        input {
-                                            placeholder: "00000000-0000-0000-0000-000000000000",
-                                            value: "{inline_design_node}",
-                                            oninput: move |e| *inline_design_node.write() = e.value(),
-                                        }
-                                    }
-                                    label { class: "field",
-                                        span { "OpenSpec change" }
-                                        input {
-                                            placeholder: "auth-rewrite",
-                                            value: "{inline_openspec}",
-                                            oninput: move |e| *inline_openspec.write() = e.value(),
-                                        }
-                                    }
-                                }
-
-                                // ── Engagement ──────────────────────────
-                                // Lets the operator scope this task to one
-                                // of the engagements created via the agent
-                                // (engagement_create tool). Empty list ⇒
-                                // hint to create one. Saved alongside the
-                                // sentry/lifecycle fields below. Forge
-                                // sync state (last_synced, diverged) is
-                                // a separate operator surface — agent
-                                // tools cover it for now.
-                                div { class: "task-sentry-group",
-                                    span { class: "task-sentry-group-label", "Engagement" }
-                                    if engagement_options.is_empty() {
-                                        p { class: "muted task-sentry-empty",
-                                            "No engagements yet. Use the agent's "
-                                            code { "engagement_create" }
-                                            " tool to scope tasks to a multi-repo project."
-                                        }
-                                    } else {
-                                        label { class: "field",
-                                            span { "Engagement" }
-                                            {
-                                                let cur = inline_engagement.read().clone();
-                                                rsx! {
-                                                    select {
-                                                        onchange: move |e| *inline_engagement.write() = e.value(),
-                                                        option { value: "", selected: cur.is_empty(), "(none)" }
-                                                        for (id, name) in engagement_options.iter() {
-                                                            {
-                                                                let id_str = id.clone();
-                                                                let is_sel = id_str == cur;
-                                                                rsx! {
-                                                                    option {
-                                                                        value: "{id_str}",
-                                                                        selected: is_sel,
-                                                                        "{name}"
-                                                                    }
-                                                                }
-                                                            }
+                        if !engagement_options.is_empty() {
+                            label { class: "field",
+                                span { "Engagement" }
+                                {
+                                    let cur = inline_engagement.read().clone();
+                                    rsx! {
+                                        select {
+                                            onchange: move |e| *inline_engagement.write() = e.value(),
+                                            option { value: "", selected: cur.is_empty(), "(none)" }
+                                            for (id, name) in engagement_options.iter() {
+                                                {
+                                                    let id_str = id.clone();
+                                                    let is_sel = id_str == cur;
+                                                    rsx! {
+                                                        option {
+                                                            value: "{id_str}",
+                                                            selected: is_sel,
+                                                            "{name}"
                                                         }
                                                     }
                                                 }
@@ -1144,83 +920,36 @@ fn TaskCard(
                         }
                     }
 
+                    p { class: "muted task-detail-hint",
+                        "Description, sentry triggers, execution config, and lifecycle "
+                        "metadata live in the task's note. Open in editor to access them."
+                    }
+
+
                     div { class: "row gap-2",
+                        // Save: title + priority + engagement only.
+                        // Everything else is in the .md file — open it
+                        // to edit description, sentry config, etc.
                         button {
                             class: "btn btn-primary",
                             onclick: move |_| {
                                 let c = ctx.clone();
                                 let task_id = task.id.clone();
                                 let new_title = inline_title.read().trim().to_string();
-                                let new_desc = inline_desc.read().clone();
                                 let new_priority = *inline_priority.read();
-                                let new_due = inline_due.read().clone();
-                                // Snapshot all sentry-section signals for the
-                                // background save. Parsing happens off-thread.
-                                let cron = inline_cron.read().trim().to_string();
-                                let webhook = inline_webhook.read().trim().to_string();
-                                let other_refs = inline_other_refs.read().clone();
-                                let model = inline_model.read().trim().to_string();
-                                let skill = inline_skill.read().trim().to_string();
-                                let max_turns_s = inline_max_turns.read().trim().to_string();
-                                let timeout_s = inline_timeout.read().trim().to_string();
-                                let token_budget_s = inline_token_budget.read().trim().to_string();
-                                let cwd = inline_cwd.read().trim().to_string();
-                                let env_raw = inline_env.read().clone();
-                                let design_node_s = inline_design_node.read().trim().to_string();
-                                let openspec = inline_openspec.read().trim().to_string();
                                 let engagement_s = inline_engagement.read().trim().to_string();
                                 spawn(async move {
                                     let vault = c.vault();
                                     let _ = tokio::task::spawn_blocking(move || {
                                         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
                                             t.title      = new_title;
-                                            t.description = new_desc;
                                             t.priority   = new_priority;
-                                            t.due_date   = chrono::NaiveDate::parse_from_str(&new_due, "%Y-%m-%d").ok();
-                                            t.updated_at = Utc::now();
-
-                                            // Recombine external_refs from the
-                                            // structured trigger fields plus the
-                                            // free-form "other" textarea.
-                                            let mut refs: Vec<String> = Vec::new();
-                                            if !cron.is_empty() { refs.push(format!("cron:{cron}")); }
-                                            if !webhook.is_empty() { refs.push(format!("webhook:{webhook}")); }
-                                            for line in other_refs.lines() {
-                                                let line = line.trim();
-                                                if !line.is_empty() { refs.push(line.to_string()); }
-                                            }
-                                            t.external_refs = refs;
-
-                                            // Build ExecutionSpec from the
-                                            // populated fields. is_empty() check
-                                            // strips out the all-blank case.
-                                            let mut exec = flynt_core::models::ExecutionSpec::default();
-                                            if !model.is_empty() { exec.model = Some(model); }
-                                            if !skill.is_empty() { exec.skill = Some(skill); }
-                                            if let Ok(v) = max_turns_s.parse::<u32>() { exec.max_turns = Some(v); }
-                                            if let Ok(v) = timeout_s.parse::<u64>() { exec.timeout_secs = Some(v); }
-                                            if let Ok(v) = token_budget_s.parse::<u64>() { exec.token_budget = Some(v); }
-                                            if !cwd.is_empty() { exec.cwd = Some(std::path::PathBuf::from(cwd)); }
-                                            for line in env_raw.lines() {
-                                                if let Some((k, v)) = line.split_once('=') {
-                                                    let k = k.trim();
-                                                    let v = v.trim();
-                                                    if !k.is_empty() {
-                                                        exec.env.insert(k.to_string(), v.to_string());
-                                                    }
-                                                }
-                                            }
-                                            t.execution = if exec.is_empty() { None } else { Some(exec) };
-
-                                            // Lifecycle linkage: empty input clears.
-                                            t.design_node_id = uuid::Uuid::parse_str(&design_node_s).ok();
-                                            t.openspec_change = if openspec.is_empty() { None } else { Some(openspec) };
                                             t.engagement_id = if engagement_s.is_empty() {
                                                 None
                                             } else {
                                                 uuid::Uuid::parse_str(&engagement_s).ok().map(EngagementId)
                                             };
-
+                                            t.updated_at = Utc::now();
                                             vault.persist_task(&t, project_id)
                                         } else {
                                             Ok(())
@@ -1230,6 +959,35 @@ fn TaskCard(
                                 });
                             },
                             "Save"
+                        }
+
+                        // Open the task's .md file in the notes view.
+                        // Looks the document up by file path (recorded
+                        // in sqlite by persist_task), opens a tab, and
+                        // switches the active route. Routes silently if
+                        // the file isn't indexed yet — operator can
+                        // reindex via Settings.
+                        button {
+                            class: "btn",
+                            onclick: move |_| {
+                                let c = ctx_open.clone();
+                                let task_id = tid_open.clone();
+                                spawn(async move {
+                                    let vault = c.vault();
+                                    let lookup = tokio::task::spawn_blocking(move || -> Option<(flynt_core::models::DocumentId, String)> {
+                                        let path = vault.store.task_file_path(&task_id).ok().flatten()?;
+                                        let doc = vault.store.get_document_by_path(std::path::Path::new(&path)).ok().flatten()?;
+                                        Some((doc.id, doc.title))
+                                    }).await.ok().flatten();
+                                    if let Some((id, title)) = lookup {
+                                        tab_state.write().open(id, title);
+                                        *active_route.write() = Route::Notes;
+                                    } else {
+                                        tracing::warn!("could not resolve task file to a document — try reindexing");
+                                    }
+                                });
+                            },
+                            "Open in editor"
                         }
 
                         button {
