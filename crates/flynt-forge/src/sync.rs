@@ -25,7 +25,15 @@ pub fn content_hash(title: &str, body: &str, state: &str, labels: &[String]) -> 
     title.hash(&mut h);
     body.hash(&mut h);
     state.hash(&mut h);
-    labels.hash(&mut h);
+    // Sort labels before hashing — GitHub returns labels in arbitrary
+    // order across requests, and we don't want order-only differences
+    // to trigger false conflict detection. Same content + same set of
+    // labels → same hash, regardless of how the API ordered them.
+    let mut sorted: Vec<&String> = labels.iter().collect();
+    sorted.sort();
+    for label in sorted {
+        label.hash(&mut h);
+    }
     format!("{:016x}", h.finish())
 }
 
@@ -337,6 +345,33 @@ mod tests {
         let ops = engine.pull_issues(&binding(), &[map]).await.unwrap();
         assert_eq!(ops.len(), 1);
         assert!(matches!(ops[0], SyncOp::UpdateLocal { .. }));
+    }
+
+    #[test]
+    fn content_hash_is_label_order_invariant() {
+        // Forge APIs return labels in arbitrary order. content_hash
+        // sorts before hashing so the same set of labels in different
+        // order produces the same hash — otherwise every other GET
+        // would falsely flag a conflict.
+        let a = content_hash("t", "b", "open", &["bug".into(), "infra".into()]);
+        let b = content_hash("t", "b", "open", &["infra".into(), "bug".into()]);
+        assert_eq!(a, b, "label order shouldn't change the hash");
+    }
+
+    #[test]
+    fn content_hash_still_differs_on_content_change() {
+        let a = content_hash("title", "body", "open", &["a".into()]);
+        let b = content_hash("title-2", "body", "open", &["a".into()]);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn content_hash_label_set_difference_changes_hash() {
+        // Sort doesn't dedupe — a label being added/removed still
+        // changes the hash.
+        let a = content_hash("t", "b", "open", &["a".into()]);
+        let b = content_hash("t", "b", "open", &["a".into(), "b".into()]);
+        assert_ne!(a, b);
     }
 
     #[tokio::test]

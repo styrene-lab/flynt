@@ -117,6 +117,13 @@ impl MappingConfig {
                 out.push(first[..=colon].to_string());
             }
         }
+        // Due-date label is flynt-managed when the strategy is Label.
+        // Without this, a stale `due:2026-01-01` would survive across
+        // a push that moved due_date to a different date — both would
+        // accumulate on the issue.
+        if matches!(self.due_date.strategy, DueDateStrategy::Label) {
+            out.push("due:".to_string());
+        }
         out
     }
 
@@ -391,6 +398,28 @@ mod tests {
         assert!(!cfg.owns_label("good-first-issue"));
         assert!(!cfg.owns_label("infra"));
         assert!(!cfg.owns_label("bug"));
+    }
+
+    #[test]
+    fn due_label_prefix_in_owned_when_strategy_is_label() {
+        // Without this, a push that changes due_date would leave the
+        // old `due:OLD-DATE` label hanging on the issue alongside the
+        // new one — both labels would accumulate.
+        let mut cfg = MappingConfig::default();
+        cfg.due_date.strategy = DueDateStrategy::Label;
+        assert!(cfg.owned_label_prefixes().iter().any(|p| p == "due:"));
+        assert!(cfg.owns_label("due:2026-01-01"));
+        assert!(cfg.owns_label("due:2026-06-15"));
+    }
+
+    #[test]
+    fn due_label_prefix_not_owned_for_milestone_strategy() {
+        // When the strategy is Milestone, an operator-added `due:*`
+        // label is not flynt-managed — it's just a regular label the
+        // operator chose to use.
+        let cfg = MappingConfig::default(); // Milestone is default
+        assert!(!cfg.owns_label("due:2026-01-01"));
+        assert!(!cfg.owned_label_prefixes().iter().any(|p| p == "due:"));
     }
 
     #[test]
