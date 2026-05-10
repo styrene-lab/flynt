@@ -24,6 +24,63 @@ struct Cmd {
     category: String,
 }
 
+/// Convert a plain note into a task by injecting `kind = "task"` and a
+/// `[data]` block with sensible defaults. Refuses if the doc already
+/// has a `kind` set — operator can edit the frontmatter manually for
+/// kind transitions, but the palette command is the safe path for the
+/// common case.
+fn convert_active_doc_to_task(
+    project: &flynt_store::project::Project,
+    doc_id: &flynt_core::models::DocumentId,
+) -> anyhow::Result<()> {
+    use flynt_core::store::ProjectStore;
+    let doc = project.store.get_document(doc_id)?
+        .ok_or_else(|| anyhow::anyhow!("active document not found in store"))?;
+
+    if doc.frontmatter.kind.is_some() {
+        anyhow::bail!(
+            "Document already has kind = \"{}\" — Convert to Task only operates on plain notes",
+            doc.frontmatter.kind.as_deref().unwrap_or("?")
+        );
+    }
+
+    // Pick the target board: prefer "Default", else the first one we
+    // find. `ensure_default_board` runs at Project::open so this is
+    // never empty in practice — but be defensive.
+    let boards = project.store.list_boards()?;
+    let target_board = boards.iter()
+        .find(|b| b.name == "Default")
+        .or_else(|| boards.first())
+        .ok_or_else(|| anyhow::anyhow!("no boards exist — cannot convert to task"))?;
+    let first_column = target_board.columns.first()
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "Active".into());
+
+    // The title we land in [data].title: prefer H1 from body, else the
+    // existing doc title (which itself fell back through the
+    // extract_data_title chain), else the filename stem.
+    let body_h1 = doc.content.lines()
+        .find_map(|l| l.strip_prefix("# ").map(|s| s.trim().to_string()))
+        .filter(|s| !s.is_empty());
+    let task_title = body_h1.unwrap_or_else(|| doc.title.clone());
+
+    // First, set kind via the existing helper (which knows how to
+    // splice top-level frontmatter without disturbing the body).
+    project.set_document_kind(&doc.path, Some("task"))?;
+
+    // Then populate the [data] fields one at a time via set_data_field.
+    // Going one-at-a-time rather than building the [data] block by hand
+    // means we share the toml_edit code path with the picker writes
+    // and don't risk producing a subtly different format.
+    project.set_data_field(&doc.path, "title", toml_edit::Value::from(task_title))?;
+    project.set_data_field(&doc.path, "board", toml_edit::Value::from(target_board.id.0.to_string()))?;
+    project.set_data_field(&doc.path, "column", toml_edit::Value::from(first_column))?;
+    project.set_data_field(&doc.path, "status", toml_edit::Value::from("todo"))?;
+    project.set_data_field(&doc.path, "priority", toml_edit::Value::from(2_i64))?;
+    project.set_data_field(&doc.path, "position", toml_edit::Value::from(0_i64))?;
+    Ok(())
+}
+
 fn fuzzy_match(haystack: &str, needle: &str) -> bool {
     if needle.is_empty() { return true; }
     let mut hi = haystack.chars();
@@ -230,6 +287,32 @@ fn execute_command(
             // Handled by the toolbar — the palette just triggers a show_agent toggle.
             // The signal isn't accessible here, but the menu handler in app.rs handles it.
         }
+        "convert-to-task" => {
+            // Take the active document, inject `kind = "task"` and a
+            // [data] block with sensible defaults (Default board if it
+            // exists, else first board; column = "Active"; status =
+            // "todo"; priority = 2; position = 0). Refuses if the doc
+            // already has a `kind` set — we only convert plain notes.
+            let c = ctx;
+            let active = tab_state.read().active_id().cloned();
+            spawn(async move {
+                let Some(doc_id) = active else {
+                    tracing::warn!("Convert to Task: no active document");
+                    return;
+                };
+                let project = c.project();
+                let project_for_blocking = project.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    convert_active_doc_to_task(&project_for_blocking, &doc_id)
+                })
+                .await;
+                match result {
+                    Ok(Ok(())) => tracing::info!("Convert to Task: ok"),
+                    Ok(Err(e)) => tracing::warn!("Convert to Task: {e}"),
+                    Err(e) => tracing::warn!("Convert to Task task panicked: {e}"),
+                }
+            });
+        }
         other if other.starts_with("open:") => {
             if let Some(uuid_str) = other.strip_prefix("open:") {
                 if let Ok(uuid) = uuid_str.parse::<uuid::Uuid>() {
@@ -272,6 +355,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
             Cmd { id: "create-tag".into(), label: "Create Snapshot".into(), category: "Action".into() },
         Cmd { id: "icloud-project".into(), label: "Create Project in iCloud".into(), category: "Create".into() },
+        Cmd { id: "convert-to-task".into(), label: "Convert to Task".into(), category: "Action".into() },
         ];
         let templates = flynt_core::templates::list_templates(&ctx.project().root);
         for tmpl in &templates {

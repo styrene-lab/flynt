@@ -1,0 +1,179 @@
+/* Task metadata strip — sits between the title bar and the editor body
+   in the notes view when a document has `kind = "task"`. Pills are
+   clickable buttons that open a picker popover anchored to themselves.
+   See: crates/flynt-app/src/components/task_metadata_strip.rs */
+
+.task-metadata-strip {
+  display:           flex;
+  flex-wrap:         wrap;
+  align-items:       center;
+  gap:               6px;
+  padding:           6px var(--space-10, 40px);
+  border-bottom:     1px solid var(--prose-pre-border, #1e293b);
+  background:        rgba(15, 23, 42, 0.4);
+  font-size:         var(--font-size-xs, 12px);
+}
+
+.task-metadata-strip .kind-badge {
+  font-size:         10px;
+  letter-spacing:    0.5px;
+  text-transform:    uppercase;
+  color:             var(--muted-foreground, #64748b);
+  padding:           2px 6px;
+  border-radius:     3px;
+  background:        rgba(100, 116, 139, 0.1);
+}
+
+/* ── Pill base ───────────────────────────────────────────────────────── */
+
+.task-metadata-strip .pill-anchor {
+  position:          relative;
+  display:           inline-block;
+}
+
+.task-metadata-strip .pill {
+  appearance:        none;
+  border:            1px solid var(--prose-pre-border, #1e293b);
+  background:        rgba(15, 23, 42, 0.6);
+  color:             var(--prose-body, #d7e0ea);
+  font-size:         11px;
+  font-family:       var(--font-sans);
+  padding:           3px 8px;
+  border-radius:     4px;
+  cursor:            pointer;
+  transition:        background var(--duration-fast, 150ms),
+                     border-color var(--duration-fast, 150ms);
+  white-space:       nowrap;
+}
+
+.task-metadata-strip .pill:hover {
+  background:        rgba(30, 41, 59, 0.8);
+  border-color:      var(--ring, #2ab4c8);
+}
+
+.task-metadata-strip .pill:focus-visible {
+  outline:           2px solid var(--ring, #2ab4c8);
+  outline-offset:    1px;
+}
+
+/* ── Status pill — primary, color-coded by lifecycle state ──────────── */
+
+.pill-status {
+  font-weight:       500;
+}
+.pill-status-todo        { color: #94a3b8; border-color: #334155; }
+.pill-status-in_progress { color: #38bdf8; border-color: rgba(56,189,248,0.4); background: rgba(56,189,248,0.1); }
+.pill-status-review      { color: #c084fc; border-color: rgba(192,132,252,0.4); background: rgba(192,132,252,0.1); }
+.pill-status-done        { color: #4ade80; border-color: rgba(74,222,128,0.4); background: rgba(74,222,128,0.1); }
+.pill-status-archived    { color: #64748b; border-color: #1e293b; background: rgba(15,23,42,0.3); }
+
+/* ── Priority pill — color-coded by level ────────────────────────────── */
+
+.pill-priority-low      { color: #94a3b8; }
+.pill-priority-medium   { color: #d7e0ea; }
+.pill-priority-high     { color: #fbbf24; border-color: rgba(251,191,36,0.4); }
+.pill-priority-critical { color: #f87171; border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.1); font-weight: 600; }
+
+/* ── Column pill — de-emphasized; placement metadata ────────────────── */
+
+.pill-column {
+  color:             var(--muted-foreground, #64748b);
+  background:        transparent;
+  font-size:         10px;
+}
+
+/* ── Other pills ─────────────────────────────────────────────────────── */
+
+.pill-board {
+  color:             var(--muted-foreground, #94a3b8);
+}
+.pill-due {
+  color:             #fbbf24;
+}
+.pill-tags {
+  color:             var(--ring, #2ab4c8);
+}
+.pill-engagement {
+  color:             #c084fc;
+}
+.pill-design-node {
+  color:             var(--muted-foreground, #64748b);
+  font-style:        italic;
+  background:        transparent;
+  border:            none;
+  padding:           3px 4px;
+  cursor:            default;
+}
+
+/* ── Picker popover ──────────────────────────────────────────────────── */
+
+.field-picker-popover {
+  position:          absolute;
+  top:               100%;
+  left:              0;
+  margin-top:        4px;
+  z-index:           20;
+  min-width:         140px;
+  max-height:        240px;
+  overflow-y:        auto;
+  background:        var(--background, #0b0f16);
+  border:            1px solid var(--prose-pre-border, #1e293b);
+  border-radius:     6px;
+  box-shadow:        0 4px 12px rgba(0, 0, 0, 0.4);
+  padding:           4px 0;
+}
+
+.field-picker-list {
+  list-style:        none;
+  padding:           0;
+  margin:            0;
+}
+
+.field-picker-item {
+  padding:           4px 12px;
+  cursor:            pointer;
+  font-size:         12px;
+  color:             var(--prose-body, #d7e0ea);
+  transition:        background var(--duration-fast, 150ms);
+}
+
+.field-picker-item:hover {
+  background:        rgba(42, 180, 200, 0.15);
+}
+
+.field-picker-item.current {
+  background:        rgba(42, 180, 200, 0.1);
+  font-weight:       500;
+}
+
+.field-picker-item.current::before {
+  content:           "✓ ";
+  color:             var(--ring, #2ab4c8);
+}
+
+.field-picker-item.muted {
+  color:             var(--muted-foreground, #64748b);
+  cursor:            default;
+  font-style:        italic;
+}
+
+.field-picker-text,
+.field-picker-date {
+  padding:           4px 8px;
+}
+
+.field-picker-input {
+  width:             100%;
+  background:        var(--background, #0b0f16);
+  border:            1px solid var(--prose-pre-border, #1e293b);
+  color:             var(--prose-body, #d7e0ea);
+  border-radius:     4px;
+  padding:           4px 8px;
+  font-size:         12px;
+  font-family:       var(--font-sans);
+}
+
+.field-picker-input:focus {
+  outline:           none;
+  border-color:      var(--ring, #2ab4c8);
+}

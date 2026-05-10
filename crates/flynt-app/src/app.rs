@@ -429,6 +429,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/markdown.css") }
         document::Stylesheet { href: asset!("/assets/styles/settings.css") }
         document::Stylesheet { href: asset!("/assets/styles/kanban.css") }
+        document::Stylesheet { href: asset!("/assets/styles/task-strip.css") }
         document::Stylesheet { href: asset!("/assets/styles/tabs.css") }
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
         document::Stylesheet { href: asset!("/assets/styles/graph.css") }

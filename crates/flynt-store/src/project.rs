@@ -1904,6 +1904,48 @@ Original body content.
     }
 
     #[test]
+    fn convert_to_task_via_set_kind_and_data_fields() {
+        // Reproduces the path the palette's "Convert to Task" command
+        // takes: existing plain note → set_document_kind("task") →
+        // set_data_field for each required field. Verifies the
+        // resulting frontmatter parses cleanly as a task and the body
+        // survives.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let board = project.store.list_boards().unwrap().into_iter()
+            .find(|b| b.name == "Default")
+            .expect("Default board materialized by ensure_default_board");
+
+        let path = std::path::PathBuf::from("note.md");
+        let abs = project.root.join(&path);
+        std::fs::write(&abs, "# Investigate the indexer\n\nNotes about the bug.\n").unwrap();
+        project.index_file(&abs).unwrap();
+
+        // Apply the same sequence the palette command runs.
+        project.set_document_kind(&path, Some("task")).unwrap();
+        project.set_data_field(&path, "title", toml_edit::Value::from("Investigate the indexer")).unwrap();
+        project.set_data_field(&path, "board", toml_edit::Value::from(board.id.0.to_string())).unwrap();
+        project.set_data_field(&path, "column", toml_edit::Value::from("Active")).unwrap();
+        project.set_data_field(&path, "status", toml_edit::Value::from("todo")).unwrap();
+        project.set_data_field(&path, "priority", toml_edit::Value::from(2_i64)).unwrap();
+        project.set_data_field(&path, "position", toml_edit::Value::from(0_i64)).unwrap();
+
+        let raw = std::fs::read_to_string(&abs).unwrap();
+        // Sanity: kind set, [data] populated, body preserved.
+        assert!(raw.contains("kind = \"task\""), "{raw}");
+        assert!(raw.contains("title = \"Investigate the indexer\""));
+        assert!(raw.contains("status = \"todo\""));
+        assert!(raw.contains("priority = 2"));
+        assert!(raw.contains("Notes about the bug."), "body preserved: {raw}");
+
+        // The indexed Document picks up the [data].title (via the title
+        // resolution chain we fixed earlier) — this is the user-facing
+        // "task title shows correctly in the tab bar" guarantee.
+        let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
+        assert_eq!(doc.title, "Investigate the indexer");
+    }
+
+    #[test]
     fn ensure_default_board_skips_when_other_boards_exist() {
         // Project that has a board (but not Default) — we don't add
         // Default after the fact. The "fresh project" semantic is

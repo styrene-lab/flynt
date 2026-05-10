@@ -1223,8 +1223,12 @@ pub fn NotesView() -> Element {
         }
     });
 
-    // Phase 1: synchronous document read — no spawn_blocking, no async overhead
-    let mut doc_data: Signal<Option<(std::path::PathBuf, String, String)>> = use_signal(|| None);
+    // Phase 1: synchronous document read — no spawn_blocking, no async overhead.
+    //
+    // Tuple holds (path, title, body, frontmatter). Frontmatter is included so
+    // the metadata strip can render without a second sqlite read; the indexer
+    // already parsed it on save.
+    let mut doc_data: Signal<Option<(std::path::PathBuf, String, String, flynt_core::models::Frontmatter)>> = use_signal(|| None);
     use_effect(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
@@ -1235,8 +1239,71 @@ pub fn NotesView() -> Element {
         // Synchronous SQLite read — <1ms for any document
         let project = ctx_res.project();
         if let Ok(Some(doc)) = project.store.get_document(&doc_id) {
-            *doc_data.write() = Some((doc.path.clone(), doc.title.clone(), doc.content.clone()));
+            *doc_data.write() = Some((
+                doc.path.clone(),
+                doc.title.clone(),
+                doc.content.clone(),
+                doc.frontmatter.clone(),
+            ));
         }
+    });
+
+    // Boards + engagements caches for the metadata strip's pickers.
+    // Refreshed by the existing `refresh` signal (sidebar bumps it on
+    // any project event), so a kanban board rename or a new engagement
+    // shows up in the picker without a tab toggle.
+    let mut boards_cache: Signal<Vec<flynt_core::models::Board>> = use_signal(Vec::new);
+    let mut engagements_cache: Signal<Vec<flynt_core::models::Engagement>> = use_signal(Vec::new);
+    use_effect(move || {
+        let _ver = *render_ver.read();
+        let project = ctx_res.project();
+        if let Ok(b) = project.store.list_boards() {
+            *boards_cache.write() = b;
+        }
+        if let Ok(e) = project.store.list_engagements() {
+            *engagements_cache.write() = e;
+        }
+    });
+
+    // Install the dispatcher once at mount. Picker `on_change` events
+    // flow into this channel; the spawned receiver translates them into
+    // `Project::set_data_field` calls. Going through a channel rather
+    // than direct ctx access keeps the strip's component scope free of
+    // AppContext (Dioxus contexts are scope-bound; the picker is in a
+    // different scope path than the apply site).
+    use_effect(move || {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::components::task_metadata_strip::FieldChangeRequest>();
+        crate::components::task_metadata_strip::install_dispatcher(tx);
+
+        let project = ctx_res.project();
+        let mut bump = render_ver;
+        spawn(async move {
+            while let Some(req) = rx.recv().await {
+                let key_for_log = req.key.clone();
+                let key = req.key;
+                let value = req.value;
+                let path = req.path;
+                let project_for_blocking = project.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let toml_value = crate::components::task_metadata_strip::translate_value(&key, &value);
+                    project_for_blocking.set_data_field(&path, &key, toml_value)
+                })
+                .await;
+                match result {
+                    Ok(Ok(())) => {
+                        // Bump render_ver so doc_data + rendered re-fetch
+                        // and the strip re-renders with the new value.
+                        *bump.write() += 1;
+                    }
+                    Ok(Err(e)) => {
+                        tracing::error!(error = %e, "set_data_field failed for {key_for_log}");
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "set_data_field task panicked for {key_for_log}");
+                    }
+                }
+            }
+        });
     });
 
     // Phase 2: background HTML rendering — fires after doc_data is set
@@ -1277,7 +1344,7 @@ pub fn NotesView() -> Element {
         let current_id = tab_state.read().active_id().cloned();
         if current_id == *synced_doc_id.peek() { return; }
         // Try phase 1 data first (immediate), fall back to rendered cache
-        if let Some((_, _, body)) = &*doc_data.read() {
+        if let Some((_, _, body, _)) = &*doc_data.read() {
             *synced_doc_id.write() = current_id;
             *edit_body.write() = body.clone();
             *save_state.write() = SaveState::Clean;
@@ -1420,7 +1487,7 @@ pub fn NotesView() -> Element {
 
     // Gate on doc_data (synchronous, instant) not rendered (async, slow).
     // The editor gets raw content immediately; HTML preview swaps in when ready.
-    let Some((rel_path, title, body)) = doc_data.read().clone() else {
+    let Some((rel_path, title, body, frontmatter)) = doc_data.read().clone() else {
         return rsx! {
             crate::components::TabBar {}
             if has_active {
@@ -1699,6 +1766,22 @@ pub fn NotesView() -> Element {
                             }
                         },
                     }
+                }
+            }
+
+            // Task metadata strip — between title bar and editor body.
+            // Renders only when the doc is `kind = "task"`. Pills are
+            // editable inline; changes flow through the dispatcher
+            // channel installed above.
+            if frontmatter.kind.as_deref() == Some("task")
+                && !crate::views::excalidraw::is_excalidraw(&rel_path)
+                && !crate::views::flow::is_flow(&rel_path)
+            {
+                crate::components::TaskMetadataStrip {
+                    path: rel_path.clone(),
+                    frontmatter: frontmatter.clone(),
+                    boards: ReadSignal::<Vec<flynt_core::models::Board>>::from(boards_cache),
+                    engagements: ReadSignal::<Vec<flynt_core::models::Engagement>>::from(engagements_cache),
                 }
             }
 
