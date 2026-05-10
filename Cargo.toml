@@ -3,6 +3,7 @@ members = [
     "crates/flynt-models",
     "crates/flynt-core",
     "crates/flynt-store",
+    "crates/flynt-forge",
     "crates/flynt-app",
     "crates/flynt-agent",
     "crates/flynt-mobile",
@@ -67,9 +68,11 @@ dioxus = { version = "0.7", features = ["launch", "devtools", "logger", "lib", "
 
 # Forge contract (shared types across styrene ecosystem)
 styrene-forge = { path = "../styrene-rs/crates/libs/styrene-forge" }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Internal crates
 flynt-models = { path = "crates/flynt-models" }
 flynt-core = { path = "crates/flynt-core" }
 flynt-store = { path = "crates/flynt-store" }
+flynt-forge = { path = "crates/flynt-forge" }
 flynt-agent = { path = "crates/flynt-agent" }
