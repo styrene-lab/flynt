@@ -1,4 +1,4 @@
-use flynt_core::{models::SearchResult, store::VaultStore};
+use flynt_core::{models::SearchResult, store::ProjectStore};
 use dioxus::prelude::*;
 use rfd::FileDialog;
 use crate::{bootstrap::{AppContext, OmegonRuntimeContext}, state::{Route, SyncStatus, TabState}};
@@ -100,13 +100,13 @@ pub fn Toolbar(
 
     let grouped_results = group_results(&results.read());
     let flat_results = flatten_grouped_results(&grouped_results);
-    let vault_name = ctx.project().config.vault_name.clone();
-    let vault_root = ctx.vault_root();
+    let project_name = ctx.project().config.project_name.clone();
+    let project_root = ctx.project_root();
     let omegon = ctx.omegon();
 
     rsx! {
         div { class: "toolbar",
-            span { class: "toolbar-project-name", "{vault_name}" }
+            span { class: "toolbar-project-name", "{project_name}" }
             {
                 const BUILD: &str = env!("FLYNT_BUILD_HASH");
                 rsx! { span { class: "toolbar-build-hash", title: "Build {BUILD}", "{BUILD}" } }
@@ -241,7 +241,7 @@ pub fn Toolbar(
                     onclick: move |_| {
                         let _ = FileDialog::new()
                             .pick_folder()
-                            .and_then(|path| OmegonRuntimeContext::spawn_new_instance_for_vault(&path).ok());
+                            .and_then(|path| OmegonRuntimeContext::spawn_new_instance_for_project(&path).ok());
                     },
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
@@ -254,7 +254,7 @@ pub fn Toolbar(
                     onclick: move |_| {
                         let opening = !*show_agent.read();
                         let omegon = omegon.clone();
-                        let vault_root = vault_root.clone();
+                        let project_root = project_root.clone();
                         if opening {
                             let mut should_clear_child = false;
                             let mut child_check_error = None;
@@ -283,7 +283,7 @@ pub fn Toolbar(
 
                             if omegon_child.read().is_none() {
                                 spawn(async move {
-                                    match omegon.spawn_background_host(&vault_root).await {
+                                    match omegon.spawn_background_host(&project_root).await {
                                         Ok(child) => {
                                             let pid = child.id();
                                             *omegon_child.write() = Some(child);

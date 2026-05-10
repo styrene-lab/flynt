@@ -5,7 +5,7 @@
 UX and perf rewrite of the sidebar + agent rail, Dioxus 0.7.9 upgrade, and a two-pass adversarial review.
 
 ### Added
-- **Resizable sidebar** with vaults pinned at top and collapse-to-icons mode
+- **Resizable sidebar** with projects pinned at top and collapse-to-icons mode
 - **File-tree sidebar rewrite** with multi-level folder nesting and persistent panel widths
 - **Collapsible graph filters** + fuzzy tag search
 - **Drag-divider for agent panel resize** + textarea auto-grow on long prompts
@@ -23,12 +23,12 @@ UX and perf rewrite of the sidebar + agent rail, Dioxus 0.7.9 upgrade, and a two
 
 ## 0.7.0 — 2026-05-06
 
-First release under the new name. **Codyx is now Flynt.** Binaries, bundle IDs, asset paths, and the project site (https://flynt.styrene.io) all migrated. Existing vaults and configuration continue to work unchanged.
+First release under the new name. **Codyx is now Flynt.** Binaries, bundle IDs, asset paths, and the project site (https://flynt.styrene.io) all migrated. Existing projects and configuration continue to work unchanged.
 
 ### Added
-- **Embedded Omegon agent configuration GUI** — configure the agent surface (model, tools, vault scope) directly from the desktop app, no separate config file editing
+- **Embedded Omegon agent configuration GUI** — configure the agent surface (model, tools, project scope) directly from the desktop app, no separate config file editing
 - **Git login flow** — first-class git authentication for sync, including SSH key selection and credential helper integration
-- **Tracing instrumentation** — structured `tracing` spans across vault, sync, and ACP layers for diagnostics
+- **Tracing instrumentation** — structured `tracing` spans across project, sync, and ACP layers for diagnostics
 
 ### Changed
 - **Rebrand: Codyx → Flynt** across crates (`flynt-models`, `flynt-store`, `flynt-app`, `flynt-agent`, `flynt-mobile`), binaries, desktop entries, and asset paths
@@ -41,7 +41,7 @@ First release under the new name. **Codyx is now Flynt.** Binaries, bundle IDs, 
 ## 0.5.0 — 2026-04-23
 
 ### Added
-- **iOS Share Extension** — save links, text, and images from any iOS app into your Flynt vault via the system Share Sheet
+- **iOS Share Extension** — save links, text, and images from any iOS app into your Flynt project via the system Share Sheet
 - **Obsidian-style live preview** — CM6 editor now hides markdown syntax (headings, bold, links, tables) and reveals on cursor focus, using the Lezer syntax tree instead of regex
 - **Table widget rendering** — markdown tables render as styled HTML tables; click into them to edit raw markdown
 - **Frontmatter hiding** — TOML frontmatter is collapsed when cursor is outside it
@@ -59,7 +59,7 @@ First release under the new name. **Codyx is now Flynt.** Binaries, bundle IDs, 
 - **iOS Info.plist** patching uses actool partial plist merge (fixes App Store validation)
 
 ### Fixed
-- **IndexingConfig** — existing repos opened as vaults no longer get frontmatter injected into source files
+- **IndexingConfig** — existing repos opened as projects no longer get frontmatter injected into source files
 - **App Store icon validation** — actool's generated CFBundleIcons plist is now merged properly instead of hand-crafted
 - **macOS sandbox crash** — added `network.server` entitlement for Dioxus edit socket
 - **Quarantine xattr** — stripped from provisioning profiles before packaging

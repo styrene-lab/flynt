@@ -7,7 +7,7 @@
 use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
 use crate::state::{Route, TabState};
-use flynt_core::store::VaultStore;
+use flynt_core::store::ProjectStore;
 use dioxus::prelude::*;
 use std::rc::Rc;
 
@@ -74,9 +74,9 @@ fn execute_command(
             });
         }
         "icloud-project" => {
-            match flynt_store::sync::icloud::create_icloud_vault("Flynt") {
+            match flynt_store::sync::icloud::create_icloud_project("Flynt") {
                 Ok(root) => {
-                    let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_vault(&root);
+                    let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_project(&root);
                 }
                 Err(e) => {
                     tracing::error!("iCloud project creation failed: {e}");
@@ -89,8 +89,8 @@ fn execute_command(
                 if let Some(tmpl) = templates.iter().find(|t| t.name == tmpl_name) {
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let title = format!("{} {ts_suffix}", tmpl.name);
-                    let vault_name = ctx.project().config.vault_name.clone();
-                    let content = flynt_core::templates::expand(&tmpl.content, &title, &vault_name);
+                    let project_name = ctx.project().config.project_name.clone();
+                    let content = flynt_core::templates::expand(&tmpl.content, &title, &project_name);
                     let filename = format!("{title}.md");
                     let path = std::path::PathBuf::from(&filename);
                     let c = ctx;

@@ -14,6 +14,6 @@ pub use agent_rail::AgentRail;
 pub use command_palette::CommandPalette;
 pub use context_menu::{ContextMenu, ContextMenuItem};
 pub use panel_divider::{PanelDivider, SidebarDivider};
-pub use sidebar::{initial_note_id_for_vault, Sidebar};
+pub use sidebar::{initial_note_id_for_project, Sidebar};
 pub use tab_bar::TabBar;
 pub use toolbar::Toolbar;

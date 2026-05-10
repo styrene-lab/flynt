@@ -12,13 +12,13 @@ use crate::bootstrap::OmegonRuntimeContext;
 pub struct DaemonManager {
     state: Arc<Mutex<DaemonState>>,
     child: Arc<Mutex<Option<Child>>>,
-    vault_root: PathBuf,
+    project_root: PathBuf,
     omegon_ctx: OmegonRuntimeContext,
     port: Arc<Mutex<u16>>,
 }
 
 impl DaemonManager {
-    pub fn new(config: &AgentDaemonConfig, vault_root: PathBuf, omegon_ctx: OmegonRuntimeContext) -> Self {
+    pub fn new(config: &AgentDaemonConfig, project_root: PathBuf, omegon_ctx: OmegonRuntimeContext) -> Self {
         let initial_state = if config.enabled {
             DaemonState::Stopped
         } else {
@@ -27,7 +27,7 @@ impl DaemonManager {
         Self {
             state: Arc::new(Mutex::new(initial_state)),
             child: Arc::new(Mutex::new(None)),
-            vault_root,
+            project_root,
             omegon_ctx,
             port: Arc::new(Mutex::new(config.port)),
         }
@@ -61,9 +61,9 @@ impl DaemonManager {
         }
 
         let port = *self.port.lock().unwrap();
-        info!("Starting daemon on port {port} for project {:?}", self.vault_root);
+        info!("Starting daemon on port {port} for project {:?}", self.project_root);
 
-        match self.omegon_ctx.spawn_background_host(&self.vault_root).await {
+        match self.omegon_ctx.spawn_background_host(&self.project_root).await {
             Ok(child) => {
                 let pid = child.id().unwrap_or(0);
                 {
@@ -89,7 +89,7 @@ impl DaemonManager {
     pub async fn stop(&self) -> anyhow::Result<()> {
         let mut child_guard = self.child.lock().unwrap();
         if let Some(ref mut child) = *child_guard {
-            info!("Stopping daemon for project {:?}", self.vault_root);
+            info!("Stopping daemon for project {:?}", self.project_root);
             let _ = child.kill().await;
         }
         *child_guard = None;

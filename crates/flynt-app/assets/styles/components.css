@@ -18,13 +18,13 @@
   user-select:    none;
 }
 
-/* ── Vault selector (compact top bar) ──────────────────────────────── */
-.vault-selector {
+/* ── Project selector (compact top bar) ──────────────────────────────── */
+.project-selector {
   flex-shrink:   0;
   border-bottom: 1px solid var(--sidebar-border);
 }
 
-.vault-selector-btn {
+.project-selector-btn {
   display:     flex;
   align-items: center;
   justify-content: space-between;
@@ -37,29 +37,29 @@
   transition:  background var(--duration-fast) var(--ease);
 }
 
-.vault-selector-btn:hover {
+.project-selector-btn:hover {
   background: var(--sidebar-item-hover);
 }
 
-.vault-selector-name {
+.project-selector-name {
   overflow:      hidden;
   text-overflow: ellipsis;
   white-space:   nowrap;
 }
 
-.vault-selector-arrow {
+.project-selector-arrow {
   font-size: var(--font-size-xs);
   color:     var(--muted-foreground);
   flex-shrink: 0;
 }
 
-.vault-dropdown {
+.project-dropdown {
   border-top:  1px solid var(--sidebar-border);
   max-height:  200px;
   overflow-y:  auto;
 }
 
-.vault-dropdown-item {
+.project-dropdown-item {
   display:    block;
   width:      100%;
   text-align: left;
@@ -70,11 +70,11 @@
   transition: background var(--duration-fast) var(--ease);
 }
 
-.vault-dropdown-item:hover {
+.project-dropdown-item:hover {
   background: var(--sidebar-item-hover);
 }
 
-.vault-dropdown-item.muted {
+.project-dropdown-item.muted {
   color: var(--muted-foreground);
 }
 
@@ -217,7 +217,7 @@
   padding:   2px var(--space-2);
 }
 
-/* Legacy sidebar-doc — still used by vault dropdown items */
+/* Legacy sidebar-doc — still used by project dropdown items */
 .sidebar-doc {
   display:       flex;
   align-items:   center;
@@ -808,9 +808,9 @@
 }
 
 /* ── Sidebar folder tree ──────────────────────────────────────────────────── */
-/* Old sidebar styles removed — replaced by file tree and vault selector above */
+/* Old sidebar styles removed — replaced by file tree and project selector above */
 
-/* ── Vault CRUD ────────────────────────────────────────────────────────── */
+/* ── Project CRUD ────────────────────────────────────────────────────────── */
 .sidebar-doc-row {
   display:      flex;
   align-items:  center;
@@ -820,7 +820,7 @@
   flex:         1;
   min-width:    0;
 }
-.vault-remove-btn {
+.project-remove-btn {
   font-size:    10px;
   color:        var(--dim);
   opacity:      0;
@@ -828,38 +828,38 @@
   border-radius: var(--radius-sm);
   transition:   opacity 0.15s, color 0.15s;
 }
-.sidebar-doc-row:hover .vault-remove-btn { opacity: 1; }
-.vault-remove-btn:hover { color: var(--error); }
-.vault-remove-confirm {
+.sidebar-doc-row:hover .project-remove-btn { opacity: 1; }
+.project-remove-btn:hover { color: var(--error); }
+.project-remove-confirm {
   display:        flex;
   flex-direction: column;
   gap:            var(--space-1);
   padding:        2px var(--space-2);
 }
-.vault-remove-confirm .row { margin-top: 2px; }
-.vault-remove-hint {
+.project-remove-confirm .row { margin-top: 2px; }
+.project-remove-hint {
   font-size:   9px;
   color:       var(--muted-foreground);
   font-style:  italic;
 }
-.vault-role-badge {
+.project-role-badge {
   font-size:    9px;
   color:        var(--dim);
   margin-left:  auto;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.vault-add-form {
+.project-add-form {
   display:        flex;
   flex-direction: column;
   gap:            var(--space-1);
   padding:        var(--space-2) var(--space-3);
 }
-.vault-add-form .input-sm {
+.project-add-form .input-sm {
   font-size:   var(--font-size-xs);
   padding:     4px var(--space-2);
 }
-.vault-error {
+.project-error {
   display:      flex;
   align-items:  center;
   gap:          var(--space-1);
@@ -870,16 +870,16 @@
   border-radius: var(--radius-sm);
   margin:       2px var(--space-2);
 }
-.vault-error-dismiss {
+.project-error-dismiss {
   font-size:    9px;
   color:        var(--error);
   margin-left:  auto;
   cursor:       pointer;
   opacity:      0.6;
 }
-.vault-error-dismiss:hover { opacity: 1; }
+.project-error-dismiss:hover { opacity: 1; }
 
-.vault-actions {
+.project-actions {
   display: flex;
   flex-direction: column;
 }

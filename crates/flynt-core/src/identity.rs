@@ -209,20 +209,20 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
 // ── Git signing config ──────────────────────────────────────────────────────
 
 pub fn configure_git_signing(
-    vault_root: &Path,
+    project_root: &Path,
     ssh_pubkey: &str,
     name: Option<&str>,
     email: Option<&str>,
 ) -> Result<()> {
-    let git_dir = vault_root.join(".git");
+    let git_dir = project_root.join(".git");
     if !git_dir.exists() {
-        anyhow::bail!("Not a git repository: {}", vault_root.display());
+        anyhow::bail!("Not a git repository: {}", project_root.display());
     }
 
     let key_path = git_dir.join("styrene-signing-key.pub");
     std::fs::write(&key_path, ssh_pubkey)?;
 
-    let repo = git2::Repository::open(vault_root)
+    let repo = git2::Repository::open(project_root)
         .map_err(|e| anyhow::anyhow!("Failed to open git repo: {e}"))?;
     let mut config = repo.config()
         .map_err(|e| anyhow::anyhow!("Failed to open git config: {e}"))?;

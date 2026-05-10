@@ -29,20 +29,20 @@ pub fn detect_providers() -> Vec<CloudProvider> {
 }
 
 /// Get the project path within a cloud provider's sync directory.
-pub fn vault_path_for_provider(provider: &CloudProvider, vault_name: &str) -> PathBuf {
-    provider.sync_root.join(vault_name)
+pub fn project_path_for_provider(provider: &CloudProvider, project_name: &str) -> PathBuf {
+    provider.sync_root.join(project_name)
 }
 
 /// Create a project inside a cloud provider's sync directory.
-pub fn create_cloud_vault(
+pub fn create_cloud_project(
     provider: &CloudProvider,
-    vault_name: &str,
+    project_name: &str,
 ) -> anyhow::Result<PathBuf> {
-    let vault_root = vault_path_for_provider(provider, vault_name);
-    if vault_root.exists() {
-        anyhow::bail!("Project '{}' already exists in {}", vault_name, provider.label);
+    let project_root = project_path_for_provider(provider, project_name);
+    if project_root.exists() {
+        anyhow::bail!("Project '{}' already exists in {}", project_name, provider.label);
     }
-    std::fs::create_dir_all(vault_root.join(".flynt"))?;
+    std::fs::create_dir_all(project_root.join(".flynt"))?;
 
     // Determine the sync config based on provider type
     let sync_backend = match provider.id {
@@ -51,7 +51,7 @@ pub fn create_cloud_vault(
     };
 
     let config = format!(
-        r#"vault_name = "{vault_name}"
+        r#"project_name = "{project_name}"
 
 [sync]
 backend = "{sync_backend}"
@@ -60,9 +60,9 @@ backend = "{sync_backend}"
 theme = "alpharius"
 "#
     );
-    std::fs::write(vault_root.join(".flynt/config.toml"), config)?;
+    std::fs::write(project_root.join(".flynt/config.toml"), config)?;
 
-    Ok(vault_root)
+    Ok(project_root)
 }
 
 // ── Provider detection ──────────────────────────────────────────────────────
@@ -201,19 +201,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn vault_path_for_provider_appends_name() {
+    fn project_path_for_provider_appends_name() {
         let provider = CloudProvider {
             id: "test",
             label: "Test",
             description: "test provider",
             sync_root: PathBuf::from("/cloud/sync"),
         };
-        let path = vault_path_for_provider(&provider, "MyVault");
-        assert_eq!(path, PathBuf::from("/cloud/sync/MyVault"));
+        let path = project_path_for_provider(&provider, "MyProject");
+        assert_eq!(path, PathBuf::from("/cloud/sync/MyProject"));
     }
 
     #[test]
-    fn create_cloud_vault_creates_directory_and_config() {
+    fn create_cloud_project_creates_directory_and_config() {
         let tmp = tempfile::TempDir::new().unwrap();
         let provider = CloudProvider {
             id: "test",
@@ -222,16 +222,16 @@ mod tests {
             sync_root: tmp.path().to_path_buf(),
         };
 
-        let result = create_cloud_vault(&provider, "TestVault").unwrap();
+        let result = create_cloud_project(&provider, "TestProject").unwrap();
         assert!(result.exists());
         assert!(result.join(".flynt/config.toml").exists());
 
         let config = std::fs::read_to_string(result.join(".flynt/config.toml")).unwrap();
-        assert!(config.contains("TestVault"));
+        assert!(config.contains("TestProject"));
     }
 
     #[test]
-    fn create_cloud_vault_rejects_existing() {
+    fn create_cloud_project_rejects_existing() {
         let tmp = tempfile::TempDir::new().unwrap();
         let provider = CloudProvider {
             id: "test",
@@ -240,8 +240,8 @@ mod tests {
             sync_root: tmp.path().to_path_buf(),
         };
 
-        create_cloud_vault(&provider, "Existing").unwrap();
-        let result = create_cloud_vault(&provider, "Existing");
+        create_cloud_project(&provider, "Existing").unwrap();
+        let result = create_cloud_project(&provider, "Existing");
         assert!(result.is_err());
     }
 

@@ -1,4 +1,4 @@
-use flynt_core::{models::DocumentMeta, store::VaultStore};
+use flynt_core::{models::DocumentMeta, store::ProjectStore};
 use dioxus::prelude::*;
 use std::{collections::BTreeMap, path::PathBuf};
 use crate::{
@@ -16,9 +16,9 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
 
     // Debounced project watcher — coalesces rapid-fire events (e.g., during
     // reindex of 1000+ files) into a single sidebar refresh after 500ms of quiet.
-    let vault_events = ctx.vault_events();
+    let project_events = ctx.project_events();
     use_effect(move || {
-        let mut rx = vault_events.subscribe();
+        let mut rx = project_events.subscribe();
         spawn(async move {
             loop {
                 match rx.recv().await {
@@ -58,7 +58,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     rsx! {
         nav { class: "sidebar",
             // ── Project selector (compact) ──────────────────────
-            VaultSelector {}
+            ProjectSelector {}
 
             // ── File tree ─────────────────────────────────────
             div { class: "file-tree",
@@ -466,18 +466,18 @@ fn NewNoteInput(
 // ── Project selector ────────────────────────────────────────────────────────────
 
 #[component]
-fn VaultSelector() -> Element {
+fn ProjectSelector() -> Element {
     let mut ctx = use_context::<AppContext>();
     let mut active_route = use_context::<Signal<Route>>();
     let mut profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
-    let current_root = ctx.vault_root();
-    let current_name = ctx.project().config.vault_name.clone();
+    let current_root = ctx.project_root();
+    let current_name = ctx.project().config.project_name.clone();
 
     let mut do_switch = move |root: std::path::PathBuf| {
-        let new_runtime = crate::bootstrap::runtime_state_for_vault_root(root.clone());
+        let new_runtime = crate::bootstrap::runtime_state_for_project_root(root.clone());
         ctx.set_runtime(new_runtime);
         let mut updated = OmegonRuntimeContext::load_launcher_profile();
-        updated.last_vault_root = Some(root);
+        updated.last_project_root = Some(root);
         let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
         profile.set(updated);
         *active_route.write() = Route::Notes;
@@ -487,11 +487,11 @@ fn VaultSelector() -> Element {
         let Some(selected_root) = FileDialog::new().pick_folder() else { return; };
         let name = selected_root.file_name()
             .and_then(|v| v.to_str()).unwrap_or("Flynt").to_string();
-        if OmegonRuntimeContext::initialize_vault(
+        if OmegonRuntimeContext::initialize_project(
             &selected_root, &name, flynt_core::models::SyncConfig::None,
         ).is_ok() {
             let mut updated = OmegonRuntimeContext::load_launcher_profile();
-            OmegonRuntimeContext::register_known_vault(&mut updated, &selected_root, &name);
+            OmegonRuntimeContext::register_known_project(&mut updated, &selected_root, &name);
             let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
             profile.set(updated);
             do_switch(selected_root);
@@ -499,11 +499,11 @@ fn VaultSelector() -> Element {
     };
 
     let mut expanded = use_signal(|| false);
-    let other_vaults: Vec<_> = profile.read().known_vaults.iter()
+    let other_projects: Vec<_> = profile.read().known_projects.iter()
         .filter(|v| v.root != current_root)
         .cloned()
         .collect();
-    let has_others = !other_vaults.is_empty();
+    let has_others = !other_projects.is_empty();
 
     rsx! {
         div { class: "project-selector",
@@ -519,7 +519,7 @@ fn VaultSelector() -> Element {
             }
             if *expanded.read() {
                 div { class: "project-dropdown",
-                    for project in other_vaults {
+                    for project in other_projects {
                         {
                             let root = project.root.clone();
                             rsx! {
@@ -542,10 +542,10 @@ fn VaultSelector() -> Element {
     }
 }
 
-pub fn initial_note_id_for_vault(vault_root: &PathBuf) -> Option<String> {
-    let project = crate::bootstrap::OmegonRuntimeContext::initialize_vault(
-        vault_root,
-        vault_root.file_name().and_then(|name| name.to_str()).unwrap_or("Flynt"),
+pub fn initial_note_id_for_project(project_root: &PathBuf) -> Option<String> {
+    let project = crate::bootstrap::OmegonRuntimeContext::initialize_project(
+        project_root,
+        project_root.file_name().and_then(|name| name.to_str()).unwrap_or("Flynt"),
         flynt_core::models::SyncConfig::None,
     ).ok()?;
     project.store.list_documents().ok()?.into_iter().next()

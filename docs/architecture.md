@@ -4,7 +4,7 @@
 
 Flynt is a **single-user** knowledge management and task tracking desktop application for macOS, built in Rust with Dioxus 0.7. It combines Obsidian-style markdown note-taking with kanban project boards and a typed entity system.
 
-- **Markdown vault** as the canonical source of truth
+- **Markdown project** as the canonical source of truth
 - **SQLite** as a hot read index (disposable — rebuilt from markdown on launch)
 - **Omegon** is an embedded AI capability that enhances Flynt, not the other way around
 - **Publication** system for read-only external visibility when needed
@@ -18,7 +18,7 @@ Flynt is a **single-user** knowledge management and task tracking desktop applic
 - Kanban task tracker with per-project boards
 - Entity type system (Document, Project, Task, Repo, Link, Custom)
 - Git-backed project persistence for durability, portability, and audit trail
-- MCP tool surface so Omegon can read/write vault data
+- MCP tool surface so Omegon can read/write project data
 - Publication pipeline for static read-only output (markdown + HTML)
 
 ### What Flynt Is Not
@@ -32,8 +32,8 @@ Flynt is a **single-user** knowledge management and task tracking desktop applic
 
 | Crate | Role |
 |---|---|
-| `flynt-core` | Domain models, `VaultStore` trait, `SyncBackend` trait, entity/datum type system, markdown/wikilink parser |
-| `flynt-store` | `SqliteStore` (FTS5, WAL), `Vault` (filesystem indexer + project flush), `VaultWatcher` (FSEvents), task file serialization, `ProjectGit`, git sync |
+| `flynt-core` | Domain models, `ProjectStore` trait, `SyncBackend` trait, entity/datum type system, markdown/wikilink parser |
+| `flynt-store` | `SqliteStore` (FTS5, WAL), `Project` (filesystem indexer + project flush), `ProjectWatcher` (FSEvents), task file serialization, `ProjectGit`, git sync |
 | `flynt-agent` | Standalone MCP stdio binary; `omegon-extension` 0.15; 14 tools exposed to Omegon |
 | `flynt-app` | Dioxus 0.7 desktop binary; views: notes, graph, kanban, search, settings, publication rules |
 
@@ -55,7 +55,7 @@ Project, Task    — Documents/entities with known field contracts (typed projec
 
 | Kind | Storage | Projection |
 |---|---|---|
-| `Document` | Markdown file in vault | — |
+| `Document` | Markdown file in project | — |
 | `Project` | Markdown file (kind="project") | `ProjectView` |
 | `Task` | DB-only or markdown file under project sub-path | `TaskView` |
 | `Repo` | Markdown file (kind="repo") | `RepoView` |
@@ -77,7 +77,7 @@ status = "active"
 columns = ["Backlog", "In Progress", "Done"]
 
 [data.git_backing]
-type = "vault_repo"
+type = "project_repo"
 sub_path = "projects/my-project"
 +++
 ```
@@ -93,7 +93,7 @@ sub_path = "projects/my-project"
 
 Each project is optionally backed 1:1 by a git repository. Two modes:
 
-- **VaultRepo**: project data lives inside the vault's own git repo at a sub-path. Vault-level auto-commit handles git operations.
+- **ProjectRepo**: project data lives inside the project's own git repo at a sub-path. Project-level auto-commit handles git operations.
 - **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/flynt-projects`). `ProjectGit` handles its own commit cycle.
 
 ### Task lifecycle
@@ -113,7 +113,7 @@ Documents with `publication.enabled = true` export to a static output tree:
 - `{slug}.md` — clean markdown (provenance stripped, wikilinks resolved)
 - `{slug}.html` — self-contained HTML with inline styles
 
-Visibility is layered: vault-wide default policy, per-tag/per-path rules, per-document overrides. Only `public` and `unlisted` documents are exported; `private` is the default.
+Visibility is layered: project-wide default policy, per-tag/per-path rules, per-document overrides. Only `public` and `unlisted` documents are exported; `private` is the default.
 
 ## Omegon Integration
 
@@ -137,7 +137,7 @@ Flynt is the primary product. Omegon is an embedded AI capability.
 | Git backing purpose | Durability, portability, audit trail — not team sync |
 | Entity type system | Datum primitives, schema-flexible `[data]` tables, typed projections |
 | Document identity | UUID embedded in frontmatter; stable across DB wipes |
-| iCloud sync | Passive — vault root in iCloud Drive folder; no API calls |
+| iCloud sync | Passive — project root in iCloud Drive folder; no API calls |
 | Git sync | Auto-commit (debounced 30s), manual push; `git2` crate |
 | MCP transport | stdio; Omegon connects via `command` transport |
 | Omegon relationship | Omegon serves Flynt (embedded capability, not dependency) |

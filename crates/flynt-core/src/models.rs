@@ -207,7 +207,8 @@ pub struct Notification {
     pub title: String,
     pub body: String,
     /// Which project originated this notification.
-    pub source_vault: String,
+    #[serde(alias = "source_vault")]
+    pub source_project: String,
     /// Task ID if this notification relates to a task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<TaskId>,
@@ -233,13 +234,13 @@ pub enum NotificationKind {
 }
 
 impl Notification {
-    pub fn new(kind: NotificationKind, title: impl Into<String>, body: impl Into<String>, source_vault: impl Into<String>) -> Self {
+    pub fn new(kind: NotificationKind, title: impl Into<String>, body: impl Into<String>, source_project: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4(),
             kind,
             title: title.into(),
             body: body.into(),
-            source_vault: source_vault.into(),
+            source_project: source_project.into(),
             task_id: None,
             created_at: Utc::now(),
             delivered_at: None,
@@ -305,11 +306,11 @@ pub struct SearchResult {
 
 // ── Project config ──────────────────────────────────────────────────────────────
 
-/// Persisted configuration stored in `<vault_root>/.flynt/config.toml`.
+/// Persisted configuration stored in `<project_root>/.flynt/config.toml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct VaultConfig {
-    #[serde(default)]
-    pub vault_name: String,
+pub struct ProjectConfig {
+    #[serde(default, alias = "vault_name")]
+    pub project_name: String,
     #[serde(default)]
     pub sync: SyncConfig,
     #[serde(default)]
@@ -688,7 +689,7 @@ impl FontSizePreset {
 pub enum SyncConfig {
     #[default]
     None,
-    /// iCloud: vault_root must already be inside iCloud Drive; no extra config needed.
+    /// iCloud: project_root must already be inside iCloud Drive; no extra config needed.
     ICloud,
     Git {
         remote: String,
@@ -731,7 +732,7 @@ pub enum SyncConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GitBacking {
     /// Project data lives inside the project's own git repo.
-    VaultRepo {
+    ProjectRepo {
         /// Path relative to project root where this project's data lives
         /// (e.g. ".flynt/projects/my-project").
         sub_path: PathBuf,
@@ -766,15 +767,15 @@ impl GitBacking {
     /// The sub-path within the repo where project data lives.
     pub fn sub_path(&self) -> &Path {
         match self {
-            Self::VaultRepo { sub_path } => sub_path,
+            Self::ProjectRepo { sub_path } => sub_path,
             Self::ExternalRepo { sub_path, .. } => sub_path,
             Self::ForgeRepo { sub_path, .. } => sub_path,
         }
     }
 
     /// Whether this backing uses the project's own repo.
-    pub fn is_vault_repo(&self) -> bool {
-        matches!(self, Self::VaultRepo { .. })
+    pub fn is_project_repo(&self) -> bool {
+        matches!(self, Self::ProjectRepo { .. })
     }
 
     /// Whether this backing is managed by a forge via Scribe.
@@ -784,19 +785,19 @@ impl GitBacking {
 
     /// Resolve the absolute repo root directory.
     ///
-    /// For `VaultRepo`, returns `vault_root`.
+    /// For `ProjectRepo`, returns `project_root`.
     /// For `ExternalRepo` and `ForgeRepo`, returns their own root path.
-    pub fn repo_root(&self, vault_root: &Path) -> PathBuf {
+    pub fn repo_root(&self, project_root: &Path) -> PathBuf {
         match self {
-            Self::VaultRepo { .. } => vault_root.to_path_buf(),
+            Self::ProjectRepo { .. } => project_root.to_path_buf(),
             Self::ExternalRepo { repo_root, .. } => repo_root.clone(),
             Self::ForgeRepo { local_path, .. } => local_path.clone(),
         }
     }
 
     /// Resolve the absolute path to the data directory (repo_root + sub_path).
-    pub fn data_root(&self, vault_root: &Path) -> PathBuf {
-        self.repo_root(vault_root).join(self.sub_path())
+    pub fn data_root(&self, project_root: &Path) -> PathBuf {
+        self.repo_root(project_root).join(self.sub_path())
     }
 }
 
@@ -1044,7 +1045,7 @@ mod tests {
         assert_eq!(n.kind, NotificationKind::DueDate);
         assert_eq!(n.title, "Due");
         assert_eq!(n.body, "Task is due");
-        assert_eq!(n.source_vault, "my-project");
+        assert_eq!(n.source_project, "my-project");
         assert!(n.task_id.is_none());
         assert!(n.delivered_at.is_none());
     }
@@ -1231,7 +1232,7 @@ mod tests {
     // ── IndexingConfig scoping ─────────────────────────────────────
 
     #[test]
-    fn no_scopes_uses_vault_wide_default() {
+    fn no_scopes_uses_project_wide_default() {
         let cfg = IndexingConfig { write_frontmatter: true, scopes: vec![] };
         assert!(cfg.should_write_frontmatter(Path::new("README.md")));
         assert_eq!(cfg.file_tier(Path::new("README.md")), FileTier::Managed);
@@ -1242,7 +1243,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_overrides_vault_default() {
+    fn scope_overrides_project_default() {
         let cfg = IndexingConfig {
             write_frontmatter: false,
             scopes: vec![IndexScope {

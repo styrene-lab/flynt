@@ -1,10 +1,10 @@
 use crate::{
-    bootstrap::{bootstrap_from_env, runtime_state_for_vault_root, AppContext, OmegonRuntimeContext, PendingVaultSetup},
-    components::{initial_note_id_for_vault, AgentRail, CommandPalette, Sidebar, Toolbar},
+    bootstrap::{bootstrap_from_env, runtime_state_for_project_root, AppContext, OmegonRuntimeContext, PendingProjectSetup},
+    components::{initial_note_id_for_project, AgentRail, CommandPalette, Sidebar, Toolbar},
     state::{Route, SettingsTab, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
-use flynt_core::store::VaultStore;
+use flynt_core::store::ProjectStore;
 use dioxus::prelude::*;
 use rfd::FileDialog;
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ pub fn App() -> Element {
     // Route — provided via context so search view can navigate back
     let mut active_route = use_context_provider(|| {
         let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
-        let route = if launcher_profile.wizard_completed || launcher_profile.last_vault_root.is_some() {
+        let route = if launcher_profile.wizard_completed || launcher_profile.last_project_root.is_some() {
             Route::Notes
         } else {
             Route::Welcome
@@ -220,9 +220,9 @@ pub fn App() -> Element {
                     }
                 });
             }
-            crate::menu::OPEN_VAULT => {
+            crate::menu::OPEN_PROJECT => {
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                    let _ = OmegonRuntimeContext::spawn_new_instance_for_vault(&path);
+                    let _ = OmegonRuntimeContext::spawn_new_instance_for_project(&path);
                 }
             }
             crate::menu::DELETE_NOTE => {
@@ -250,19 +250,19 @@ pub fn App() -> Element {
 
     // Auto-render SVG when .excalidraw or .d2 files are created/modified
     {
-        let vault_events = ctx.vault_events();
-        let vault_for_svg = ctx.project();
+        let project_events = ctx.project_events();
+        let project_for_svg = ctx.project();
         use_future(move || {
-            let mut rx = vault_events.subscribe();
-            let project = vault_for_svg.clone();
+            let mut rx = project_events.subscribe();
+            let project = project_for_svg.clone();
             async move {
                 loop {
                     let Ok(evt) = rx.recv().await else { break };
                     // Re-read viz config on each event so settings changes take effect immediately
                     let viz = project.config.visualization.clone();
                     let path = match evt {
-                        flynt_store::watcher::VaultChangeEvent::FileCreated(p)
-                        | flynt_store::watcher::VaultChangeEvent::FileModified(p) => p,
+                        flynt_store::watcher::ProjectChangeEvent::FileCreated(p)
+                        | flynt_store::watcher::ProjectChangeEvent::FileModified(p) => p,
                         _ => continue,
                     };
                     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -392,7 +392,7 @@ pub fn App() -> Element {
     let ctx_for_switch = ctx.clone();
     let _switch_runtime = move |selected_root: PathBuf| {
         let mut ctx = ctx_for_switch.clone();
-        ctx.set_runtime(runtime_state_for_vault_root(selected_root));
+        ctx.set_runtime(runtime_state_for_project_root(selected_root));
     };
 
     rsx! {
@@ -479,20 +479,20 @@ pub fn App() -> Element {
                                 *welcome_error.write() = None;
 
                                 // If we already have a project, switch to it
-                                let existing = launcher_profile().last_vault_root.clone();
+                                let existing = launcher_profile().last_project_root.clone();
                                 if let Some(ref root) = existing {
                                     if root.exists() {
-                                        start_ctx.set_runtime(runtime_state_for_vault_root(root.clone()));
+                                        start_ctx.set_runtime(runtime_state_for_project_root(root.clone()));
                                         *active_route.write() = Route::Notes;
                                         return;
                                     }
                                 }
 
-                                let vault_root = dirs::document_dir()
+                                let project_root = dirs::document_dir()
                                     .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
                                     .join("Flynt");
-                                match OmegonRuntimeContext::initialize_vault(
-                                    &vault_root,
+                                match OmegonRuntimeContext::initialize_project(
+                                    &project_root,
                                     "Flynt",
                                     flynt_core::models::SyncConfig::None,
                                 ) {
@@ -504,14 +504,14 @@ pub fn App() -> Element {
                                         let _ = project.reindex();
 
                                         let mut profile = launcher_profile();
-                                        profile.last_vault_root = Some(vault_root.clone());
+                                        profile.last_project_root = Some(project_root.clone());
                                         profile.wizard_completed = true;
-                                        if !profile.recent_vaults.contains(&vault_root) {
-                                            profile.recent_vaults.push(vault_root.clone());
+                                        if !profile.recent_projects.contains(&project_root) {
+                                            profile.recent_projects.push(project_root.clone());
                                         }
                                         let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                         launcher_profile.set(profile);
-                                        start_ctx.set_runtime(runtime_state_for_vault_root(vault_root));
+                                        start_ctx.set_runtime(runtime_state_for_project_root(project_root));
 
                                         // Open the welcome note
                                         let project = start_ctx.project();
@@ -536,7 +536,7 @@ pub fn App() -> Element {
                                     return;
                                 }
                                 // Existing folders: don't modify source files (no frontmatter injection)
-                                if let Err(e) = OmegonRuntimeContext::initialize_vault_with_indexing(
+                                if let Err(e) = OmegonRuntimeContext::initialize_project_with_indexing(
                                     &selected_root,
                                     selected_root
                                         .file_name()
@@ -549,18 +549,18 @@ pub fn App() -> Element {
                                     return;
                                 }
                                 let mut profile = launcher_profile();
-                                profile.pending_setup = Some(PendingVaultSetup::OpenExisting {
+                                profile.pending_setup = Some(PendingProjectSetup::OpenExisting {
                                     path: selected_root.clone(),
                                 });
-                                profile.last_vault_root = Some(selected_root.clone());
+                                profile.last_project_root = Some(selected_root.clone());
                                 profile.wizard_completed = true;
-                                if !profile.recent_vaults.contains(&selected_root) {
-                                    profile.recent_vaults.push(selected_root.clone());
+                                if !profile.recent_projects.contains(&selected_root) {
+                                    profile.recent_projects.push(selected_root.clone());
                                 }
                                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                 launcher_profile.set(profile);
-                                choose_ctx.set_runtime(runtime_state_for_vault_root(selected_root.clone()));
-                                if let Some(note_id) = initial_note_id_for_vault(&selected_root) {
+                                choose_ctx.set_runtime(runtime_state_for_project_root(selected_root.clone()));
+                                if let Some(note_id) = initial_note_id_for_project(&selected_root) {
                                     if let Ok(parsed) = uuid::Uuid::parse_str(&note_id) {
                                         tab_state.write().open(
                                             flynt_core::models::DocumentId(parsed),
@@ -575,14 +575,14 @@ pub fn App() -> Element {
                                 *clone_error.write() = None;
                             };
                             let cloud_ctx = ctx.clone();
-                            let on_cloud_vault = move |root: PathBuf| {
+                            let on_cloud_project = move |root: PathBuf| {
                                 *welcome_error.write() = None;
                                 let name = root.file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or("Flynt")
                                     .to_string();
                                 // Initialize the project at the cloud location
-                                match OmegonRuntimeContext::initialize_vault(&root, &name, flynt_core::models::SyncConfig::None) {
+                                match OmegonRuntimeContext::initialize_project(&root, &name, flynt_core::models::SyncConfig::None) {
                                     Ok(project) => {
                                         let welcome_path = std::path::PathBuf::from("Welcome.md");
                                         let welcome_content = include_str!("../assets/welcome-note.md");
@@ -590,13 +590,13 @@ pub fn App() -> Element {
                                         let _ = project.reindex();
 
                                         let mut profile = launcher_profile();
-                                        profile.last_vault_root = Some(root.clone());
+                                        profile.last_project_root = Some(root.clone());
                                         profile.wizard_completed = true;
-                                        OmegonRuntimeContext::register_known_vault(&mut profile, &root, &name);
+                                        OmegonRuntimeContext::register_known_project(&mut profile, &root, &name);
                                         let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                         launcher_profile.set(profile);
                                         let mut c = cloud_ctx.clone();
-                                        c.set_runtime(runtime_state_for_vault_root(root));
+                                        c.set_runtime(runtime_state_for_project_root(root));
                                         *active_route.write() = Route::Notes;
                                     }
                                     Err(e) => {
@@ -639,7 +639,7 @@ pub fn App() -> Element {
                                     on_choose_existing,
                                     on_clone_remote,
                                     on_import_markdown,
-                                    on_cloud_vault,
+                                    on_cloud_project,
                                 }
                             }
                         },
@@ -745,7 +745,7 @@ pub fn App() -> Element {
                                             spawn(async move {
                                                 let clone_result = tokio::task::spawn_blocking(move || {
                                                     if token.is_empty() {
-                                                        OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch)
+                                                        OmegonRuntimeContext::clone_remote_project(&dest, &url, &branch)
                                                     } else {
                                                         flynt_store::sync::GitSync::clone_repo_with_token(&url, &branch, &dest, &token)
                                                             .and_then(|_| flynt_store::project::Project::open(&dest).map_err(Into::into))
@@ -761,19 +761,19 @@ pub fn App() -> Element {
                                                             }
                                                         }
                                                         let mut profile = launcher_profile();
-                                                        profile.pending_setup = Some(PendingVaultSetup::LinkGithub {
+                                                        profile.pending_setup = Some(PendingProjectSetup::LinkGithub {
                                                             local_path: dest.clone(),
                                                             repo: url,
                                                             branch,
                                                         });
-                                                        profile.last_vault_root = Some(dest.clone());
+                                                        profile.last_project_root = Some(dest.clone());
                                                         profile.wizard_completed = true;
-                                                        if !profile.recent_vaults.contains(&dest) {
-                                                            profile.recent_vaults.push(dest.clone());
+                                                        if !profile.recent_projects.contains(&dest) {
+                                                            profile.recent_projects.push(dest.clone());
                                                         }
                                                         let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
                                                         launcher_profile.set(profile);
-                                                        github_ctx.set_runtime(runtime_state_for_vault_root(dest));
+                                                        github_ctx.set_runtime(runtime_state_for_project_root(dest));
                                                         *clone_dialog_open.write() = false;
                                                         *active_route.write() = Route::Notes;
                                                     }

@@ -1,9 +1,9 @@
 use dioxus::prelude::{ReadableExt, Signal};
 use flynt_core::{
-    models::{FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, VaultConfig},
-    store::VaultStore,
+    models::{FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, ProjectConfig},
+    store::ProjectStore,
 };
-use flynt_store::{project::Project, watcher::{VaultChangeEvent, VaultWatcher}};
+use flynt_store::{project::Project, watcher::{ProjectChangeEvent, ProjectWatcher}};
 use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
 use tokio::{process::Command, sync::broadcast};
@@ -25,30 +25,30 @@ pub(crate) fn env_with_fallback(new_name: &str, old_name: &str) -> Option<String
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct LauncherProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_vault_root: Option<PathBuf>,
+    pub last_project_root: Option<PathBuf>,
     #[serde(default)]
     pub wizard_completed: bool,
     #[serde(default)]
-    pub recent_vaults: Vec<PathBuf>,
+    pub recent_projects: Vec<PathBuf>,
     #[serde(default)]
-    pub known_vaults: Vec<KnownVault>,
+    pub known_projects: Vec<KnownProject>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pending_setup: Option<PendingVaultSetup>,
-    /// Path to a cloned project manifest repo. If set, known_vaults are
-    /// supplemented from the manifest's `vaults.toml`.
+    pub pending_setup: Option<PendingProjectSetup>,
+    /// Path to a cloned project manifest repo. If set, known_projects are
+    /// supplemented from the manifest's `projects.toml`.
     #[serde(default)]
     pub manifest_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KnownVault {
+pub struct KnownProject {
     pub name: String,
     pub root: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum PendingVaultSetup {
+pub enum PendingProjectSetup {
     OpenExisting { path: PathBuf },
     CreateLocal { path: PathBuf, name: String },
     LinkGithub { local_path: PathBuf, repo: String, branch: String },
@@ -98,10 +98,10 @@ impl OmegonRuntimeContext {
             .ok()
             .and_then(|content| serde_json::from_str(&content).ok())
             .unwrap_or_default();
-        // Prune vaults whose root no longer exists on disk
-        profile.known_vaults.retain(|v| v.root.exists());
-        profile.recent_vaults.retain(|v| v.exists());
-        // Merge any vaults from the manifest
+        // Prune projects whose root no longer exists on disk
+        profile.known_projects.retain(|v| v.root.exists());
+        profile.recent_projects.retain(|v| v.exists());
+        // Merge any projects from the manifest
         Self::sync_from_manifest(&mut profile);
         profile
     }
@@ -115,57 +115,57 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    /// Merge vaults from the manifest into known_vaults.
-    /// Only adds vaults that have a local_path set (cloned on this device).
+    /// Merge projects from the manifest into known_projects.
+    /// Only adds projects that have a local_path set (cloned on this device).
     pub fn sync_from_manifest(profile: &mut LauncherProfile) {
         let Some(ref manifest_dir) = profile.manifest_dir else { return };
         let Ok(manifest) = flynt_core::manifest::load_manifest_with_local(manifest_dir) else { return };
 
-        for project in &manifest.vaults {
+        for project in &manifest.projects {
             let Some(ref local_path) = project.local_path else { continue };
             if !local_path.exists() { continue; }
             // Add if not already known
-            if !profile.known_vaults.iter().any(|kv| kv.root == *local_path) {
-                profile.known_vaults.push(KnownVault {
+            if !profile.known_projects.iter().any(|kv| kv.root == *local_path) {
+                profile.known_projects.push(KnownProject {
                     name: project.name.clone(),
                     root: local_path.clone(),
                 });
             }
         }
-        profile.known_vaults.sort_by(|a, b| a.name.cmp(&b.name));
+        profile.known_projects.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
-    pub fn register_known_vault(profile: &mut LauncherProfile, root: &Path, name: &str) {
+    pub fn register_known_project(profile: &mut LauncherProfile, root: &Path, name: &str) {
         let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
 
-        // Prune vaults whose root no longer exists on disk
-        profile.known_vaults.retain(|v| v.root.exists());
-        profile.recent_vaults.retain(|v| v.exists());
+        // Prune projects whose root no longer exists on disk
+        profile.known_projects.retain(|v| v.root.exists());
+        profile.recent_projects.retain(|v| v.exists());
 
-        if let Some(existing) = profile.known_vaults.iter_mut().find(|project| project.root == root) {
+        if let Some(existing) = profile.known_projects.iter_mut().find(|project| project.root == root) {
             existing.name = name.to_string();
         } else {
-            profile.known_vaults.push(KnownVault {
+            profile.known_projects.push(KnownProject {
                 name: name.to_string(),
                 root: root.clone(),
             });
-            profile.known_vaults.sort_by(|left, right| left.name.cmp(&right.name));
+            profile.known_projects.sort_by(|left, right| left.name.cmp(&right.name));
         }
-        if !profile.recent_vaults.contains(&root) {
-            profile.recent_vaults.push(root.clone());
+        if !profile.recent_projects.contains(&root) {
+            profile.recent_projects.push(root.clone());
         }
-        profile.last_vault_root = Some(root);
+        profile.last_project_root = Some(root);
     }
 
     /// Add a project to the manifest and clone it locally.
-    pub fn add_vault_to_manifest(
+    pub fn add_project_to_manifest(
         profile: &mut LauncherProfile,
         name: &str,
         repo: &str,
         branch: &str,
         token: Option<&str>,
     ) -> anyhow::Result<PathBuf> {
-        use flynt_core::manifest::{self, ManifestVault, VaultRole};
+        use flynt_core::manifest::{self, ManifestProject, ProjectRole};
 
         let manifest_dir = profile.manifest_dir.clone()
             .ok_or_else(|| anyhow::anyhow!("No manifest configured. Connect a manifest first."))?;
@@ -176,16 +176,16 @@ impl OmegonRuntimeContext {
             .unwrap_or_else(|| PathBuf::from("."))
             .join(name);
 
-        let project = ManifestVault {
+        let project = ManifestProject {
             name: name.into(),
             repo: repo.into(),
             branch: branch.into(),
-            role: VaultRole::Owner,
+            role: ProjectRole::Owner,
             hub: None,
             local_path: Some(local_path.clone()),
             auto_commit_seconds: 60,
         };
-        manifest::add_vault(&mut m, project)?;
+        manifest::add_project(&mut m, project)?;
         manifest::save_manifest(&manifest_dir, &m)?;
         manifest::save_local_manifest(&manifest_dir, &m)?;
 
@@ -197,7 +197,7 @@ impl OmegonRuntimeContext {
         }
 
         // Register in launcher profile
-        Self::register_known_vault(profile, &local_path, name);
+        Self::register_known_project(profile, &local_path, name);
 
         // Commit manifest changes
         let _ = Self::commit_manifest(&manifest_dir, &format!("Add project: {name}"));
@@ -206,9 +206,9 @@ impl OmegonRuntimeContext {
     }
 
     /// Remove a project from the manifest. Optionally delete local files.
-    pub fn remove_vault_from_manifest(
+    pub fn remove_project_from_manifest(
         profile: &mut LauncherProfile,
-        vault_name: &str,
+        project_name: &str,
         delete_local: bool,
     ) -> anyhow::Result<()> {
         use flynt_core::manifest;
@@ -219,16 +219,16 @@ impl OmegonRuntimeContext {
         let mut m = manifest::load_manifest_with_local(&manifest_dir)?;
 
         // Find the local path before removal (for cleanup)
-        let local_path = m.vaults.iter()
-            .find(|v| v.name == vault_name)
+        let local_path = m.projects.iter()
+            .find(|v| v.name == project_name)
             .and_then(|v| v.local_path.clone());
 
-        manifest::remove_vault(&mut m, vault_name)?;
+        manifest::remove_project(&mut m, project_name)?;
         manifest::save_manifest(&manifest_dir, &m)?;
         manifest::save_local_manifest(&manifest_dir, &m)?;
 
-        // Remove from known vaults
-        profile.known_vaults.retain(|v| v.name != vault_name);
+        // Remove from known projects
+        profile.known_projects.retain(|v| v.name != project_name);
 
         // Delete local clone if requested
         if delete_local {
@@ -239,7 +239,7 @@ impl OmegonRuntimeContext {
             }
         }
 
-        let _ = Self::commit_manifest(&manifest_dir, &format!("Remove project: {vault_name}"));
+        let _ = Self::commit_manifest(&manifest_dir, &format!("Remove project: {project_name}"));
 
         Ok(())
     }
@@ -254,7 +254,7 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    pub fn spawn_new_instance_for_vault(root: &Path) -> anyhow::Result<()> {
+    pub fn spawn_new_instance_for_project(root: &Path) -> anyhow::Result<()> {
         let exe = std::env::current_exe()?;
         Command::new(exe)
             .arg("--project")
@@ -266,11 +266,11 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    pub fn initialize_vault(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Project> {
-        Self::initialize_vault_with_indexing(path, name, sync, Default::default())
+    pub fn initialize_project(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Project> {
+        Self::initialize_project_with_indexing(path, name, sync, Default::default())
     }
 
-    pub fn initialize_vault_with_indexing(
+    pub fn initialize_project_with_indexing(
         path: &Path,
         name: &str,
         sync: SyncConfig,
@@ -278,25 +278,25 @@ impl OmegonRuntimeContext {
     ) -> anyhow::Result<Project> {
         std::fs::create_dir_all(path)?;
         let project = Project::open(path)?;
-        let mut config: VaultConfig = project.config.clone();
-        config.vault_name = name.to_string();
+        let mut config: ProjectConfig = project.config.clone();
+        config.project_name = name.to_string();
         config.sync = sync;
         config.indexing = indexing;
         project.save_config(&config)?;
         let project = Project::open(path)?;
         let mut profile = Self::load_launcher_profile();
-        Self::register_known_vault(&mut profile, path, name);
+        Self::register_known_project(&mut profile, path, name);
         Self::save_launcher_profile(&profile)?;
         Ok(project)
     }
 
-    pub fn initialize_github_linked_vault(
+    pub fn initialize_github_linked_project(
         local_path: &Path,
         name: &str,
         repo: &str,
         branch: &str,
     ) -> anyhow::Result<Project> {
-        Self::initialize_vault(
+        Self::initialize_project(
             local_path,
             name,
             SyncConfig::Git {
@@ -313,7 +313,7 @@ impl OmegonRuntimeContext {
         repo: &str,
         branch: &str,
     ) -> anyhow::Result<Project> {
-        let project = Self::initialize_github_linked_vault(local_path, name, repo, branch)?;
+        let project = Self::initialize_github_linked_project(local_path, name, repo, branch)?;
         let home_path = local_path.join("home.md");
         if !home_path.exists() {
             std::fs::write(
@@ -328,7 +328,7 @@ impl OmegonRuntimeContext {
     }
 
     /// Clone a remote git repo into `local_path` and open it as a Flynt project.
-    pub fn clone_remote_vault(
+    pub fn clone_remote_project(
         local_path: &Path,
         repo_url: &str,
         branch: &str,
@@ -353,7 +353,7 @@ impl OmegonRuntimeContext {
             .unwrap_or("origin")
             .to_string();
 
-        Self::initialize_vault(
+        Self::initialize_project(
             local_path,
             &name,
             SyncConfig::Git {
@@ -427,12 +427,12 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    fn discover(vault_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
+    fn discover(project_root: &std::path::Path, runtime: &LocalRuntimeConfig) -> Self {
         let default_local_state_root = env_with_fallback("FLYNT_LOCAL_STATE", "CODEX_LOCAL_STATE")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .or_else(dirs::data_local_dir)
-            .unwrap_or_else(|| vault_root.join(".flynt-local"))
+            .unwrap_or_else(|| project_root.join(".flynt-local"))
             .join("flynt");
         let local_state_root = runtime
             .local_state_root
@@ -469,9 +469,9 @@ impl OmegonRuntimeContext {
             flynt_index_db_path,
             omegon_runtime_root,
             omegon_mind_db_path,
-            project_profile_path: vault_root.join(".omegon/profile.json"),
+            project_profile_path: project_root.join(".omegon/profile.json"),
             global_profile_path: home_dir.join("profile.json"),
-            operator_settings_path: vault_root.join(".flynt/operator-settings.json"),
+            operator_settings_path: project_root.join(".flynt/operator-settings.json"),
             extensions_dir: home_dir.join("extensions"),
             vox_manifest_path: home_dir.join("extensions/vox/manifest.toml"),
             home_dir,
@@ -528,11 +528,11 @@ impl OmegonRuntimeContext {
         flynt_core::models::resolve_omegon_binary(&cfg)
     }
 
-    pub async fn spawn_background_host(&self, vault_root: &Path) -> anyhow::Result<tokio::process::Child> {
+    pub async fn spawn_background_host(&self, project_root: &Path) -> anyhow::Result<tokio::process::Child> {
         let binary = self.resolve_binary();
         let child = Command::new(&binary)
-            .current_dir(vault_root)
-            .env("FLYNT_VAULT", vault_root)
+            .current_dir(project_root)
+            .env("FLYNT_PROJECT", project_root)
             .env("OMEGON_HOME", &self.home_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -544,19 +544,19 @@ impl OmegonRuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{publication_output_path, KnownVault, LauncherProfile, OmegonRuntimeContext, PendingVaultSetup};
+    use super::{publication_output_path, KnownProject, LauncherProfile, OmegonRuntimeContext, PendingProjectSetup};
     use flynt_core::{
         models::{FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, PublicationTarget, SyncConfig},
-        store::VaultStore,
+        store::ProjectStore,
     };
     use tempfile::TempDir;
 
     #[test]
     fn derives_runtime_paths_from_local_runtime_config() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
+        let project_root = tmp.path().join("project");
         let runtime = OmegonRuntimeContext::discover(
-            &vault_root,
+            &project_root,
             &LocalRuntimeConfig {
                 local_state_root: Some(tmp.path().join("state")),
                 flynt_index_db_path: Some(tmp.path().join("state/custom-index.db")),
@@ -580,15 +580,15 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("launcher-profile.json");
         let profile = LauncherProfile {
-            last_vault_root: Some(tmp.path().join("vaults/example-org")),
+            last_project_root: Some(tmp.path().join("projects/example-org")),
             wizard_completed: true,
-            recent_vaults: vec![tmp.path().join("vaults/example-org")],
-            known_vaults: vec![KnownVault {
+            recent_projects: vec![tmp.path().join("projects/example-org")],
+            known_projects: vec![KnownProject {
                 name: "Black Meridian".into(),
-                root: tmp.path().join("vaults/example-org"),
+                root: tmp.path().join("projects/example-org"),
             }],
-            pending_setup: Some(PendingVaultSetup::LinkGithub {
-                local_path: tmp.path().join("vaults/example-org"),
+            pending_setup: Some(PendingProjectSetup::LinkGithub {
+                local_path: tmp.path().join("projects/example-org"),
                 repo: "git@github.com:example-org/codex-project.git".into(),
                 branch: "main".into(),
             }),
@@ -601,10 +601,10 @@ mod tests {
     }
 
     #[test]
-    fn initializes_github_linked_vault_with_git_sync_config() {
+    fn initializes_github_linked_project_with_git_sync_config() {
         let tmp = TempDir::new().unwrap();
         let local_path = tmp.path().join("project");
-        let project = OmegonRuntimeContext::initialize_github_linked_vault(
+        let project = OmegonRuntimeContext::initialize_github_linked_project(
             &local_path,
             "Black Meridian",
             "git@github.com:example-org/codex-project.git",
@@ -612,7 +612,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(project.config.vault_name, "Black Meridian");
+        assert_eq!(project.config.project_name, "Black Meridian");
         assert_eq!(
             project.config.sync,
             SyncConfig::Git {
@@ -728,9 +728,9 @@ mod tests {
 /// Top-level runtime context injected into the Dioxus app.
 #[derive(Clone)]
 pub struct RuntimeState {
-    pub vault_root: PathBuf,
+    pub project_root: PathBuf,
     pub project: Arc<Project>,
-    pub vault_events: broadcast::Sender<VaultChangeEvent>,
+    pub project_events: broadcast::Sender<ProjectChangeEvent>,
     pub omegon: OmegonRuntimeContext,
     /// Background git sync handle — kept alive as long as RuntimeState exists.
     pub _sync_handle: Option<Arc<flynt_store::sync::AutoSyncHandle>>,
@@ -746,16 +746,16 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub fn vault_root(&self) -> PathBuf {
-        self.runtime.read().vault_root.clone()
+    pub fn project_root(&self) -> PathBuf {
+        self.runtime.read().project_root.clone()
     }
 
     pub fn project(&self) -> Arc<Project> {
         self.runtime.read().project.clone()
     }
 
-    pub fn vault_events(&self) -> broadcast::Sender<VaultChangeEvent> {
-        self.runtime.read().vault_events.clone()
+    pub fn project_events(&self) -> broadcast::Sender<ProjectChangeEvent> {
+        self.runtime.read().project_events.clone()
     }
 
     pub fn omegon(&self) -> OmegonRuntimeContext {
@@ -772,8 +772,8 @@ impl AppContext {
     }
 }
 
-/// Build AppContext at launch. Reads persisted launcher profile first, then FLYNT_VAULT,
-/// then falls back to ~/Documents/Flynt.
+/// Build AppContext at launch. Reads persisted launcher profile first, then FLYNT_PROJECT
+/// (with FLYNT_VAULT / CODEX_VAULT honored as deprecated aliases), then falls back to ~/Documents/Flynt.
 fn publication_output_path(project: &Project) -> PathBuf {
     let target = project
         .store
@@ -791,26 +791,26 @@ fn publication_output_path(project: &Project) -> PathBuf {
     project.root.join(target)
 }
 
-pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState {
-    if let Err(e) = std::fs::create_dir_all(&vault_root) {
-        tracing::error!("Cannot create project directory at {}: {e}", vault_root.display());
+pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeState {
+    if let Err(e) = std::fs::create_dir_all(&project_root) {
+        tracing::error!("Cannot create project directory at {}: {e}", project_root.display());
         // Fall back to a temporary project so the app doesn't crash
         let fallback = std::env::temp_dir().join("flynt-fallback-project");
         let _ = std::fs::create_dir_all(&fallback);
         tracing::warn!("Using fallback project at {}", fallback.display());
-        return runtime_state_for_vault_root(fallback);
+        return runtime_state_for_project_root(fallback);
     }
 
-    let project = match Project::open(&vault_root) {
+    let project = match Project::open(&project_root) {
         Ok(v) => Arc::new(v),
         Err(e) => {
-            tracing::error!("Failed to open project at {}: {e}", vault_root.display());
+            tracing::error!("Failed to open project at {}: {e}", project_root.display());
             tracing::error!("The project directory may be corrupted. Try removing .flynt/ and reopening.");
             // Fall back to a temporary project
             let fallback = std::env::temp_dir().join("flynt-fallback-project");
             let _ = std::fs::create_dir_all(&fallback);
             tracing::warn!("Using fallback project at {}", fallback.display());
-            return runtime_state_for_vault_root(fallback);
+            return runtime_state_for_project_root(fallback);
         }
     };
 
@@ -824,34 +824,34 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
         Err(e) => warn!("Reindex failed: {e}"),
     }
 
-    let (tx, _rx) = broadcast::channel::<VaultChangeEvent>(256);
+    let (tx, _rx) = broadcast::channel::<ProjectChangeEvent>(256);
     let tx_clone = tx.clone();
-    let vault_root_clone = vault_root.clone();
-    let vault_clone = Arc::clone(&project);
+    let project_root_clone = project_root.clone();
+    let project_clone = Arc::clone(&project);
 
     tokio::spawn(async move {
-        let watcher = match VaultWatcher::new(&vault_root_clone) {
+        let watcher = match ProjectWatcher::new(&project_root_clone) {
             Ok(w) => w,
-            Err(e) => { warn!("VaultWatcher failed to start: {e}"); return; }
+            Err(e) => { warn!("ProjectWatcher failed to start: {e}"); return; }
         };
         loop {
             match watcher.rx.recv() {
                 Ok(evt) => {
                     let path = match &evt {
-                        VaultChangeEvent::FileModified(p) | VaultChangeEvent::FileCreated(p) => {
+                        ProjectChangeEvent::FileModified(p) | ProjectChangeEvent::FileCreated(p) => {
                             Some(p.clone())
                         }
-                        VaultChangeEvent::FileDeleted(_) => None,
+                        ProjectChangeEvent::FileDeleted(_) => None,
                     };
                     if let Some(ref p) = path {
                         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
                         if ext == "md" {
-                            if let Err(e) = vault_clone.index_file(p) {
+                            if let Err(e) = project_clone.index_file(p) {
                                 warn!("Re-index failed for {}: {e}", p.display());
                             }
                         }
                         // .excalidraw files: schedule SVG export via webview
-                        // (handled by the UI layer listening on vault_events)
+                        // (handled by the UI layer listening on project_events)
                     }
                     let _ = tx_clone.send(evt);
                 }
@@ -861,29 +861,29 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     });
 
     // Ensure default templates exist
-    let _ = flynt_core::templates::ensure_default_templates(&vault_root);
+    let _ = flynt_core::templates::ensure_default_templates(&project_root);
 
     // iCloud: download any placeholder files before indexing
     if matches!(project.config.sync, flynt_core::models::SyncConfig::ICloud) {
-        if let Err(e) = flynt_store::sync::icloud::ensure_downloaded(&vault_root) {
+        if let Err(e) = flynt_store::sync::icloud::ensure_downloaded(&project_root) {
             warn!("iCloud download check failed: {e}");
         }
     }
 
-    let omegon = OmegonRuntimeContext::discover(&vault_root, &project.config.local_runtime);
+    let omegon = OmegonRuntimeContext::discover(&project_root, &project.config.local_runtime);
 
     // Start background git sync if configured
     let (sync_handle, sync_status_rx) = match &project.config.sync {
         flynt_core::models::SyncConfig::Git { remote, branch, auto_commit_seconds } if *auto_commit_seconds > 0 => {
             let interval = std::time::Duration::from_secs(*auto_commit_seconds);
-            let vault_for_reindex = Arc::clone(&project);
+            let project_for_reindex = Arc::clone(&project);
             let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                if let Err(e) = vault_for_reindex.reindex() {
+                if let Err(e) = project_for_reindex.reindex() {
                     warn!("Post-pull reindex failed: {e}");
                 }
             });
             let (handle, status_rx) = flynt_store::sync::start_auto_sync(
-                vault_root.clone(),
+                project_root.clone(),
                 remote.clone(),
                 branch.clone(),
                 interval,
@@ -913,7 +913,7 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     let operator_settings = omegon.load_operator_settings();
     let daemon = Arc::new(crate::daemon_manager::DaemonManager::new(
         &operator_settings.agent_daemon,
-        vault_root.clone(),
+        project_root.clone(),
         omegon.clone(),
     ));
 
@@ -928,9 +928,9 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     }
 
     RuntimeState {
-        vault_root,
+        project_root,
         project,
-        vault_events: tx,
+        project_events: tx,
         omegon,
         _sync_handle: sync_handle,
         sync_status_rx,
@@ -947,17 +947,20 @@ pub fn bootstrap_from_env() -> RuntimeState {
             .join("Flynt")
     };
 
-    // FLYNT_VAULT env var takes priority (explicit override), then launcher
+    // FLYNT_PROJECT env var takes priority (explicit override), then launcher
     // profile's last project (only if parent dir is accessible), then default.
-    let vault_root = env_with_fallback("FLYNT_VAULT", "CODEX_VAULT")
+    // FLYNT_VAULT and CODEX_VAULT are honored as deprecated aliases.
+    let project_root = std::env::var("FLYNT_PROJECT")
+        .ok()
+        .or_else(|| env_with_fallback("FLYNT_VAULT", "CODEX_VAULT"))
         .map(PathBuf::from)
         .or_else(|| {
-            launcher_profile.last_vault_root.clone().filter(|p| {
+            launcher_profile.last_project_root.clone().filter(|p| {
                 // Accept if project dir exists, or its parent exists (so we can create it)
                 p.exists() || p.parent().is_some_and(|parent| parent.exists())
             })
         })
         .unwrap_or_else(default_root);
 
-    runtime_state_for_vault_root(vault_root)
+    runtime_state_for_project_root(project_root)
 }

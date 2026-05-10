@@ -23,8 +23,8 @@ const SHADCN_PRIMITIVES: &[u8] = include_bytes!("../assets/vendor/shadcn-primiti
 /// if they're missing or stale. Errors are logged but not propagated —
 /// the canvas still renders without the project-side copy; the only
 /// surface that requires it is the `canvas_*` agent tool family.
-pub fn bootstrap(vault_root: &Path) {
-    let dir = vault_root.join(".flynt-local").join("flynt").join("assets");
+pub fn bootstrap(project_root: &Path) {
+    let dir = project_root.join(".flynt-local").join("flynt").join("assets");
     if let Err(e) = std::fs::create_dir_all(&dir) {
         tracing::warn!("canvas asset dir create failed: {e}");
         return;

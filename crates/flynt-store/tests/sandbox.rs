@@ -9,7 +9,7 @@ use chrono::Utc;
 use flynt_core::{
     graph::{build_graph_payload, force_layout, render_graph_svg, LayoutConfig, GraphNodeKind, GraphEdgeKind},
     models::*,
-    store::{TaskFilter, VaultStore},
+    store::{TaskFilter, ProjectStore},
 };
 use flynt_store::project::Project;
 use std::path::Path;
@@ -18,7 +18,7 @@ use tempfile::TempDir;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn setup_vault() -> (TempDir, Arc<Project>) {
+fn setup_project() -> (TempDir, Arc<Project>) {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
     let root = tmp.path().to_path_buf();
 
@@ -26,7 +26,7 @@ fn setup_vault() -> (TempDir, Arc<Project>) {
     std::fs::create_dir_all(root.join(".flynt")).unwrap();
     std::fs::write(
         root.join(".flynt/config.toml"),
-        r#"vault_name = "test-sandbox"
+        r#"project_name = "test-sandbox"
 [sync]
 backend = "none"
 [appearance]
@@ -74,7 +74,7 @@ fn write_doc(root: &Path, rel: &str, title: &str, tags: &[&str], body: &str) {
 
 #[test]
 fn test_list_documents() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let docs = project.store.list_documents().unwrap();
     assert!(docs.len() >= 6);
 
@@ -87,7 +87,7 @@ fn test_list_documents() {
 
 #[test]
 fn test_search_documents() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let results = project.store.search_documents("architecture").unwrap();
     assert!(!results.is_empty(), "Search for 'architecture' returned nothing");
     assert!(results.iter().any(|d| d.title == "Architecture"));
@@ -95,7 +95,7 @@ fn test_search_documents() {
 
 #[test]
 fn test_get_document_by_path() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let doc = project.store.get_document_by_path(Path::new("Welcome.md")).unwrap();
     assert!(doc.is_some());
     let doc = doc.unwrap();
@@ -105,7 +105,7 @@ fn test_get_document_by_path() {
 
 #[test]
 fn test_find_document_by_slug() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let doc = project.store.find_document_by_slug("welcome").unwrap();
     assert!(doc.is_some());
     assert_eq!(doc.unwrap().title, "Welcome");
@@ -113,7 +113,7 @@ fn test_find_document_by_slug() {
 
 #[test]
 fn test_create_and_update_document() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
 
     // Create
     let path = Path::new("New Note.md");
@@ -137,7 +137,7 @@ fn test_create_and_update_document() {
 
 #[test]
 fn test_backlinks() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     // Architecture is linked from Welcome and Research/Graphs
     let arch = project.store.find_document_by_slug("architecture").unwrap().unwrap();
     let backlinks = project.store.get_backlinks(&arch.id).unwrap();
@@ -148,7 +148,7 @@ fn test_backlinks() {
 
 #[test]
 fn test_create_and_list_boards() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
 
     // No boards initially
     let boards = project.store.list_boards().unwrap();
@@ -166,7 +166,7 @@ fn test_create_and_list_boards() {
 
 #[test]
 fn test_get_board() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("My Board");
     project.store.save_board(&board).unwrap();
 
@@ -179,7 +179,7 @@ fn test_get_board() {
 
 #[test]
 fn test_create_and_list_tasks() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint 1");
     project.store.save_board(&board).unwrap();
 
@@ -208,7 +208,7 @@ fn test_create_and_list_tasks() {
 
 #[test]
 fn test_update_task() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -232,7 +232,7 @@ fn test_update_task() {
 
 #[test]
 fn test_archive_task() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -256,7 +256,7 @@ fn test_archive_task() {
 
 #[test]
 fn test_task_with_due_date_and_tags() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -274,7 +274,7 @@ fn test_task_with_due_date_and_tags() {
 
 #[test]
 fn test_graph_payload() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let graph = build_graph_payload(&*project.store).unwrap();
 
     // Should have nodes for all documents
@@ -295,7 +295,7 @@ fn test_graph_payload() {
 
 #[test]
 fn test_graph_with_boards_and_tasks() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint 1");
     project.store.save_board(&board).unwrap();
     let task = Task::new(board.id.clone(), "Backlog", "Test task");
@@ -309,7 +309,7 @@ fn test_graph_with_boards_and_tasks() {
 
 #[test]
 fn test_force_layout() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let graph = build_graph_payload(&*project.store).unwrap();
     let config = LayoutConfig::default();
     let positions = force_layout(&graph, &config);
@@ -325,7 +325,7 @@ fn test_force_layout() {
 
 #[test]
 fn test_render_graph_svg() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let graph = build_graph_payload(&*project.store).unwrap();
     let config = LayoutConfig { width: 400.0, height: 300.0, ..Default::default() };
     let svg = render_graph_svg(&graph, &config);
@@ -341,7 +341,7 @@ fn test_render_graph_svg() {
 
 #[test]
 fn test_orphan_nodes() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let graph = build_graph_payload(&*project.store).unwrap();
 
     // Orphan.md has no links — should have degree 0
@@ -359,7 +359,7 @@ fn test_orphan_nodes() {
 
 #[test]
 fn test_delete_document() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
 
     // Verify orphan exists
     let orphan = project.store.find_document_by_slug("orphan").unwrap();
@@ -380,7 +380,7 @@ fn test_delete_document() {
 
 #[test]
 fn test_store_memory_fact() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
     let path = project.store_memory_fact("testing", "Test Fact", "This is a test memory fact.").unwrap();
     assert!(tmp.path().join(&path).exists());
 
@@ -391,7 +391,7 @@ fn test_store_memory_fact() {
 
 #[test]
 fn test_store_communication() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
     let path = project.store_agent_communication("testing", "Test Comm", "Agent communication content.").unwrap();
     assert!(tmp.path().join(&path).exists());
 
@@ -403,29 +403,29 @@ fn test_store_communication() {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 #[test]
-fn test_vault_config() {
-    let (_tmp, project) = setup_vault();
-    assert_eq!(project.config.vault_name, "test-sandbox");
+fn test_project_config() {
+    let (_tmp, project) = setup_project();
+    assert_eq!(project.config.project_name, "test-sandbox");
     assert_eq!(project.config.sync, SyncConfig::None);
     assert_eq!(project.config.appearance.theme, "alpharius");
 }
 
 #[test]
 fn test_save_config() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let mut config = project.config.clone();
-    config.vault_name = "updated-sandbox".into();
+    config.project_name = "updated-sandbox".into();
     project.save_config(&config).unwrap();
 
-    let vault2 = Project::open(&project.root).unwrap();
-    assert_eq!(vault2.config.vault_name, "updated-sandbox");
+    let project2 = Project::open(&project.root).unwrap();
+    assert_eq!(project2.config.project_name, "updated-sandbox");
 }
 
 // ── Multiple boards ──────────────────────────────────────────────────────────
 
 #[test]
 fn test_multiple_boards_isolation() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
 
     let b1 = Board::default_sprint("Board A");
     let b2 = Board::default_sprint("Board B");
@@ -454,7 +454,7 @@ fn test_multiple_boards_isolation() {
 
 #[test]
 fn test_rename_document_updates_links() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
 
     // Welcome.md links to [[Projects]] and [[Architecture]]
     // Rename "Projects" to "Active Projects"
@@ -482,7 +482,7 @@ fn test_rename_document_updates_links() {
 
 #[test]
 fn test_rename_preserves_display_links() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
 
     // Create a doc with a display link
     write_doc(
@@ -574,7 +574,7 @@ fn test_decay_done_tasks_zero_relevance() {
 
 #[test]
 fn test_decay_persistence() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -601,7 +601,7 @@ fn test_decay_custom_rate() {
 
 #[test]
 fn test_push_and_read_notification() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     use flynt_core::models::*;
 
     let notif = Notification::new(
@@ -620,7 +620,7 @@ fn test_push_and_read_notification() {
 
 #[test]
 fn test_mark_notification_delivered() {
-    let (tmp, project) = setup_vault();
+    let (tmp, project) = setup_project();
     use flynt_core::models::*;
 
     let notif = Notification::new(NotificationKind::Decay, "Old task", "Fading", "test-sandbox");
@@ -640,7 +640,7 @@ fn test_mark_notification_delivered() {
 
 #[test]
 fn test_check_task_notifications_due_date() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -657,37 +657,37 @@ fn test_check_task_notifications_due_date() {
 // ── Project open / reindex ────────────────────────────────────────────────────
 
 #[test]
-fn test_vault_open_creates_flynt_dir() {
+fn test_project_open_creates_flynt_dir() {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
     let root = tmp.path().join("fresh-project");
     let project = Project::open(&root).unwrap();
     assert!(root.join(".flynt").exists());
     assert!(root.join(".flynt/config.toml").exists());
-    assert_eq!(project.config.vault_name, "fresh-project");
+    assert_eq!(project.config.project_name, "fresh-project");
 }
 
 #[test]
-fn test_vault_open_preserves_existing_config() {
+fn test_project_open_preserves_existing_config() {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
     let root = tmp.path().join("project");
     std::fs::create_dir_all(root.join(".flynt")).unwrap();
-    std::fs::write(root.join(".flynt/config.toml"), "vault_name = \"Custom Name\"\n[sync]\nbackend = \"none\"\n").unwrap();
+    std::fs::write(root.join(".flynt/config.toml"), "project_name = \"Custom Name\"\n[sync]\nbackend = \"none\"\n").unwrap();
     let project = Project::open(&root).unwrap();
-    assert_eq!(project.config.vault_name, "Custom Name");
+    assert_eq!(project.config.project_name, "Custom Name");
 }
 
 #[test]
 fn test_reindex_counts_files() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let (count, errors) = project.reindex().unwrap();
-    // setup_vault creates alpha.md and beta.md
+    // setup_project creates alpha.md and beta.md
     assert!(count >= 2);
     assert!(errors.is_empty());
 }
 
 #[test]
 fn test_reindex_skips_flynt_dir() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     // Create a file in .flynt that should be ignored
     std::fs::write(project.root.join(".flynt/internal.md"), "# Should be ignored").unwrap();
     project.reindex().unwrap();
@@ -700,7 +700,7 @@ fn test_reindex_skips_flynt_dir() {
 
 #[test]
 fn test_save_document_content() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let path = std::path::PathBuf::from("new-note.md");
     project.save_document_content(&path, "+++\ntitle = \"New\"\ntags = []\n+++\n\nContent here.").unwrap();
     let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
@@ -710,7 +710,7 @@ fn test_save_document_content() {
 
 #[test]
 fn test_save_document_creates_parent_dirs() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let path = std::path::PathBuf::from("nested/deep/note.md");
     project.save_document_content(&path, "# Deep Note").unwrap();
     assert!(project.root.join("nested/deep/note.md").exists());
@@ -720,16 +720,16 @@ fn test_save_document_creates_parent_dirs() {
 
 #[test]
 fn test_list_tags() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     project.reindex().unwrap();
     let tags = project.list_tags().unwrap();
-    // setup_vault creates docs with tags
+    // setup_project creates docs with tags
     assert!(!tags.is_empty());
 }
 
 #[test]
 fn test_rename_tag() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     // Create a note with a specific tag
     let path = std::path::PathBuf::from("tagged.md");
     project.save_document_content(&path, "+++\ntitle = \"Tagged\"\ntags = [\"old-tag\"]\n+++\n\nContent.").unwrap();
@@ -745,7 +745,7 @@ fn test_rename_tag() {
 
 #[test]
 fn test_rename_tag_nonexistent() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     project.reindex().unwrap();
     let count = project.rename_tag("nonexistent-tag-xyz", "new-tag").unwrap();
     assert_eq!(count, 0);
@@ -753,7 +753,7 @@ fn test_rename_tag_nonexistent() {
 
 #[test]
 fn test_delete_tag() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let path = std::path::PathBuf::from("to-delete-tag.md");
     project.save_document_content(&path, "+++\ntitle = \"Del\"\ntags = [\"remove-me\", \"keep\"]\n+++\n\nBody.").unwrap();
 
@@ -767,7 +767,7 @@ fn test_delete_tag() {
 
 #[test]
 fn test_merge_tags() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let p1 = std::path::PathBuf::from("merge1.md");
     let p2 = std::path::PathBuf::from("merge2.md");
     project.save_document_content(&p1, "+++\ntitle = \"M1\"\ntags = [\"src1\"]\n+++\n\nBody.").unwrap();
@@ -786,7 +786,7 @@ fn test_merge_tags() {
 
 #[test]
 fn test_push_and_list_notifications() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let n = Notification::new(NotificationKind::DueDate, "Test", "Body", "test-project");
     project.push_notification(&n).unwrap();
 
@@ -797,7 +797,7 @@ fn test_push_and_list_notifications() {
 
 #[test]
 fn test_mark_notification_delivered_clears_pending() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let n = Notification::new(NotificationKind::Decay, "Fading", "Task fading", "project");
     project.push_notification(&n).unwrap();
     assert_eq!(project.pending_notifications().unwrap().len(), 1);
@@ -808,7 +808,7 @@ fn test_mark_notification_delivered_clears_pending() {
 
 #[test]
 fn test_check_task_notifications_decay() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -827,7 +827,7 @@ fn test_check_task_notifications_decay() {
 
 #[test]
 fn test_check_task_notifications_skips_done() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let board = Board::default_sprint("Sprint");
     project.store.save_board(&board).unwrap();
 
@@ -845,7 +845,7 @@ fn test_check_task_notifications_skips_done() {
 
 #[test]
 fn test_search_documents_empty_query() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     project.reindex().unwrap();
     let results = project.store.search_documents("").unwrap();
     assert!(results.is_empty());
@@ -853,7 +853,7 @@ fn test_search_documents_empty_query() {
 
 #[test]
 fn test_search_documents_finds_match() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     // Fixtures have "Welcome", "Projects", "Architecture", etc.
     let results = project.store.search_documents("Welcome").unwrap();
     assert!(!results.is_empty(), "search for 'Welcome' should find the welcome doc");
@@ -861,7 +861,7 @@ fn test_search_documents_finds_match() {
 
 #[test]
 fn test_delete_document_removes_from_store() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     project.reindex().unwrap();
     let docs = project.store.list_documents().unwrap();
     let first = docs[0].id.clone();
@@ -871,7 +871,7 @@ fn test_delete_document_removes_from_store() {
 
 #[test]
 fn test_get_backlinks() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     // Welcome links to Projects, so Projects should have Welcome as a backlink
     let docs = project.store.list_documents().unwrap();
     let projects = docs.iter().find(|d| d.title == "Projects").unwrap();
@@ -883,12 +883,12 @@ fn test_get_backlinks() {
 // ── create_drawing ──────────────────────────────────────────────────────────
 
 /// Mirror of create_drawing from flynt-app (can't import it directly — UI crate)
-fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
-    let drawings_dir = vault_root.join("drawings");
+fn create_drawing(project_root: &std::path::Path, name: &str) -> anyhow::Result<std::path::PathBuf> {
+    let drawings_dir = project_root.join("drawings");
     std::fs::create_dir_all(&drawings_dir)?;
     let filename = format!("{name}.excalidraw");
     let rel_path = std::path::PathBuf::from("drawings").join(&filename);
-    let abs_path = vault_root.join(&rel_path);
+    let abs_path = project_root.join(&rel_path);
     let scene = r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#;
     std::fs::write(&abs_path, scene)?;
     Ok(rel_path)
@@ -926,7 +926,7 @@ fn test_create_drawing_idempotent_dir() {
 
 #[test]
 fn test_delete_document_removes_file_and_index() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
 
     // Get a document that exists
     let docs = project.store.list_documents().unwrap();
@@ -947,7 +947,7 @@ fn test_delete_document_removes_file_and_index() {
 
 #[test]
 fn test_delete_document_does_not_affect_others() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
 
     let docs = project.store.list_documents().unwrap();
     let initial_count = docs.len();
@@ -970,38 +970,38 @@ fn test_delete_document_does_not_affect_others() {
 // ── Project switching ─────────────────────────────────────────────────────────
 
 #[test]
-fn test_switch_vault_opens_different_content() {
-    // Create two separate vaults with different content
-    let tmp1 = tempfile::Builder::new().prefix("flynt-vault1-").tempdir().unwrap();
-    let tmp2 = tempfile::Builder::new().prefix("flynt-vault2-").tempdir().unwrap();
+fn test_switch_project_opens_different_content() {
+    // Create two separate projects with different content
+    let tmp1 = tempfile::Builder::new().prefix("flynt-project1-").tempdir().unwrap();
+    let tmp2 = tempfile::Builder::new().prefix("flynt-project2-").tempdir().unwrap();
 
-    let vault1 = Project::open(tmp1.path()).unwrap();
-    vault1.save_document_content(
-        &std::path::PathBuf::from("vault1-note.md"),
+    let project1 = Project::open(tmp1.path()).unwrap();
+    project1.save_document_content(
+        &std::path::PathBuf::from("project1-note.md"),
         "+++\ntitle = \"Project One Note\"\ntags = []\n+++\n\nContent from project 1.",
     ).unwrap();
-    vault1.reindex().unwrap();
+    project1.reindex().unwrap();
 
-    let vault2 = Project::open(tmp2.path()).unwrap();
-    vault2.save_document_content(
-        &std::path::PathBuf::from("vault2-note.md"),
+    let project2 = Project::open(tmp2.path()).unwrap();
+    project2.save_document_content(
+        &std::path::PathBuf::from("project2-note.md"),
         "+++\ntitle = \"Project Two Note\"\ntags = []\n+++\n\nContent from project 2.",
     ).unwrap();
-    vault2.reindex().unwrap();
+    project2.reindex().unwrap();
 
     // Project 1 should have its doc, not project 2's
-    let docs1 = vault1.store.list_documents().unwrap();
+    let docs1 = project1.store.list_documents().unwrap();
     assert!(docs1.iter().any(|d| d.title == "Project One Note"));
     assert!(!docs1.iter().any(|d| d.title == "Project Two Note"));
 
     // Project 2 should have its doc, not project 1's
-    let docs2 = vault2.store.list_documents().unwrap();
+    let docs2 = project2.store.list_documents().unwrap();
     assert!(docs2.iter().any(|d| d.title == "Project Two Note"));
     assert!(!docs2.iter().any(|d| d.title == "Project One Note"));
 }
 
 #[test]
-fn test_switch_vault_reindexes_correctly() {
+fn test_switch_project_reindexes_correctly() {
     let tmp = tempfile::Builder::new().prefix("flynt-switch-").tempdir().unwrap();
     let project = Project::open(tmp.path()).unwrap();
 
@@ -1051,7 +1051,7 @@ fn test_excalidraw_files_not_indexed_as_documents() {
 
 #[test]
 fn test_publication_unlisted_exported_but_marked_correctly() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let output = _tmp.path().join("pub-output");
 
     // Create an unlisted document
@@ -1076,7 +1076,7 @@ fn test_publication_unlisted_exported_but_marked_correctly() {
 
 #[test]
 fn test_publication_private_not_exported() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let output = _tmp.path().join("pub-output");
 
     project.save_document_content(
@@ -1098,7 +1098,7 @@ fn test_publication_private_not_exported() {
 
 #[test]
 fn test_publication_policy_rules_tag_match() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let output = _tmp.path().join("pub-output");
 
     // Set policy: default private, public if tagged "published"
@@ -1139,7 +1139,7 @@ fn test_publication_policy_rules_tag_match() {
 
 #[test]
 fn test_publication_policy_rules_path_prefix() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let output = _tmp.path().join("pub-output");
 
     let mut config = project.config.clone();
@@ -1179,7 +1179,7 @@ fn test_publication_policy_rules_path_prefix() {
 
 #[test]
 fn test_publication_wikilink_to_private_becomes_plain_text() {
-    let (_tmp, project) = setup_vault();
+    let (_tmp, project) = setup_project();
     let output = _tmp.path().join("pub-output");
 
     project.save_document_content(

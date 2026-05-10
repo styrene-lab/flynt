@@ -169,7 +169,7 @@ pub enum InboundCapability {
     /// Create full documents from detailed descriptions.
     CreateDocuments,
     /// Search the project and return relevant excerpts.
-    SearchVault,
+    SearchProject,
     /// Update existing notes with new information.
     EnrichNotes,
 }
@@ -184,7 +184,7 @@ impl InboundCapability {
             Self::AnswerQuestions,
             Self::DailyDigest,
             Self::CreateDocuments,
-            Self::SearchVault,
+            Self::SearchProject,
             Self::EnrichNotes,
         ]
     }
@@ -198,7 +198,7 @@ impl InboundCapability {
             Self::AnswerQuestions => "Answer Questions",
             Self::DailyDigest => "Daily Digest",
             Self::CreateDocuments => "Create Documents",
-            Self::SearchVault => "Search Project",
+            Self::SearchProject => "Search Project",
             Self::EnrichNotes => "Enrich Notes",
         }
     }
@@ -212,19 +212,19 @@ impl InboundCapability {
             Self::AnswerQuestions => "When the user asks a question about their project, notes, or projects, search the project and knowledge graph to provide accurate answers with references.",
             Self::DailyDigest => "When asked for a digest or summary, compile due tasks, decaying items needing attention, and recent project activity.",
             Self::CreateDocuments => "When the user describes something in detail that should be a document, create a properly structured markdown note with frontmatter.",
-            Self::SearchVault => "When the user asks to find something, search across documents, tasks, and the graph. Return relevant excerpts and links.",
+            Self::SearchProject => "When the user asks to find something, search across documents, tasks, and the graph. Return relevant excerpts and links.",
             Self::EnrichNotes => "When the user provides new information about an existing topic, find the relevant note and suggest updates or additions.",
         }
     }
 }
 
 /// Build the system prompt for the daemon agent based on enabled capabilities.
-pub fn build_daemon_system_prompt(config: &AgentDaemonConfig, vault_name: &str) -> String {
+pub fn build_daemon_system_prompt(config: &AgentDaemonConfig, project_name: &str) -> String {
     let mut prompt = format!(
         "You are the agent for the \"{}\" project in Flynt. \
          Messages come from the project operator via various channels (Signal, email, etc.). \
          Respond concisely. Use your project tools to take action.\n\n",
-        vault_name
+        project_name
     );
 
     if config.capabilities.is_empty() {
@@ -300,7 +300,7 @@ mod tests {
             InboundCapability::AnswerQuestions,
             InboundCapability::DailyDigest,
             InboundCapability::CreateDocuments,
-            InboundCapability::SearchVault,
+            InboundCapability::SearchProject,
             InboundCapability::EnrichNotes,
         ];
         for cap in &caps {
@@ -338,7 +338,7 @@ mod tests {
             port: 7842,
             capabilities: vec![
                 InboundCapability::ManageTasks,
-                InboundCapability::SearchVault,
+                InboundCapability::SearchProject,
             ],
             vox: VoxConfig::default(),
         };

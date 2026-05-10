@@ -5,7 +5,7 @@
 //! extension reads this file via its `get_ui_state` tool. Atomic write via
 //! tempfile + rename so the agent never sees a half-written document.
 
-use flynt_core::store::VaultStore;
+use flynt_core::store::ProjectStore;
 use flynt_store::project::Project;
 use serde::Serialize;
 use std::path::Path;
@@ -33,7 +33,7 @@ struct UiStateSnapshot<'a> {
     /// Which top-level view is shown (notes, kanban, graph, settings, search, welcome).
     current_view: &'static str,
     /// Absolute path of the project root the user is in.
-    vault_root: &'a str,
+    project_root: &'a str,
     /// ISO-8601 UTC timestamp of this snapshot.
     updated_at: String,
 }
@@ -98,12 +98,12 @@ pub fn write_snapshot(project: &Project, tabs: &TabState, route: &Route) {
         .filter_map(|(id, title)| resolve_doc_ref(project, id, title))
         .collect();
 
-    let vault_root_buf = project.root.to_string_lossy();
+    let project_root_buf = project.root.to_string_lossy();
     let snapshot = UiStateSnapshot {
         active_document,
         open_documents,
         current_view: route_label(route),
-        vault_root: vault_root_buf.as_ref(),
+        project_root: project_root_buf.as_ref(),
         updated_at: chrono::Utc::now().to_rfc3339(),
     };
 
@@ -112,8 +112,8 @@ pub fn write_snapshot(project: &Project, tabs: &TabState, route: &Route) {
     }
 }
 
-fn write_atomic(vault_root: &Path, snapshot: &UiStateSnapshot<'_>) -> std::io::Result<()> {
-    let dir = vault_root.join(".flynt-local").join("flynt");
+fn write_atomic(project_root: &Path, snapshot: &UiStateSnapshot<'_>) -> std::io::Result<()> {
+    let dir = project_root.join(".flynt-local").join("flynt");
     std::fs::create_dir_all(&dir)?;
     let final_path = dir.join("ui-state.json");
     let tmp_path = dir.join("ui-state.json.tmp");

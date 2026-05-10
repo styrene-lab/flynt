@@ -191,13 +191,13 @@ pub fn IdentitySettingsSection() -> Element {
                                 div { class: "identity-ssh-key",
                                     code { class: "identity-key-text", "{id.git_signing_pubkey}" }
                                 }
-                                if ctx.vault_root().join(".git").exists() {
+                                if ctx.project_root().join(".git").exists() {
                                 button {
                                     class: "btn btn-ghost btn-sm",
                                     onclick: {
                                         let ssh_key = id.git_signing_pubkey.clone();
                                         move |_| {
-                                            let vault_root = ctx.vault_root();
+                                            let project_root = ctx.project_root();
                                             let key = ssh_key.clone();
                                             let profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
                                             let manifest_id = profile.manifest_dir.as_ref()
@@ -210,7 +210,7 @@ pub fn IdentitySettingsSection() -> Element {
                                                 .filter(|i| !i.email.is_empty())
                                                 .map(|i| i.email.as_str());
                                             match identity::configure_git_signing(
-                                                &vault_root, &key, git_name, git_email,
+                                                &project_root, &key, git_name, git_email,
                                             ) {
                                                 Ok(()) => *error_msg.write() = Some("Git signing enabled for this project".into()),
                                                 Err(e) => *error_msg.write() = Some(format!("Failed: {e}")),

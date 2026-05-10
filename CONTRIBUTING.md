@@ -17,7 +17,7 @@ Guidelines for building, testing, branching, and collaborating.
 ### Branch naming
 
 ```
-feat/clone-vault-dialog
+feat/clone-project-dialog
 fix/editor-cursor-position
 refactor/sync-credentials
 chore/bump-dependencies
@@ -111,7 +111,7 @@ All JavaScript (CodeMirror 6, Excalidraw) is vendored as pre-built static bundle
 
 ### Markdown is canonical
 
-The SQLite index is derived from the `.md` files on disk. It rebuilds from scratch on every `vault.reindex()`. Never store authoritative data only in SQLite.
+The SQLite index is derived from the `.md` files on disk. It rebuilds from scratch on every `project.reindex()`. Never store authoritative data only in SQLite.
 
 ### No MCP
 
@@ -150,7 +150,7 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 Cargo.toml                  Workspace root
 crates/
   flynt-core/               Models, parser, query engine, templates, graph
-  flynt-store/              Vault I/O, SQLite, git/iCloud sync, file watching
+  flynt-store/              Project I/O, SQLite, git/iCloud sync, file watching
   flynt-app/                Desktop UI (Dioxus desktop)
   flynt-mobile/             iOS UI (Dioxus mobile)
   flynt-agent/              MCP extension binary for Omegon

@@ -1,39 +1,39 @@
-# Vault Sealing (Encryption at Rest)
+# Project Sealing (Encryption at Rest)
 
-Design document for Flynt vault encryption. Two modes: full vault seal and selective per-note seal.
+Design document for Flynt project encryption. Two modes: full project seal and selective per-note seal.
 
 ## Key Derivation
 
 All encryption keys derive from StyreneIdentity via HKDF:
 
 ```
-RootSecret (from IdentityVault / SignerChain)
-  └─ KeyDeriver::derive_vault_key(vault_id: &str)
-       ├─ vault_seal_key    — AES-256-GCM or ChaCha20-Poly1305 for full vault mode
+RootSecret (from IdentityProject / SignerChain)
+  └─ KeyDeriver::derive_project_key(project_id: &str)
+       ├─ project_seal_key    — AES-256-GCM or ChaCha20-Poly1305 for full project mode
        └─ note_seal_key(note_id: &str) — per-note key for selective mode
 ```
 
-The vault ID is the `id` field from `.flynt/config.toml` (a UUID assigned at vault creation). Per-note keys are derived from `vault_seal_key + note_id` so each note has a unique key but all keys trace back to the same root secret.
+The project ID is the `id` field from `.flynt/config.toml` (a UUID assigned at project creation). Per-note keys are derived from `project_seal_key + note_id` so each note has a unique key but all keys trace back to the same root secret.
 
 ### No Passphrase Stored
 
-The vault never stores the passphrase or root key. On unlock:
+The project never stores the passphrase or root key. On unlock:
 1. User provides passphrase (or biometric via StyreneIdentity Tier B/C)
 2. StyreneIdentity derives the root secret
-3. HKDF derives the vault key
-4. Vault unlocks in memory
+3. HKDF derives the project key
+4. Project unlocks in memory
 5. Key zeroed on lock
 
 If the user loses their passphrase and has no StyreneIdentity backup, sealed content is irrecoverable. This is by design.
 
-## Mode 1: Sealed Vault
+## Mode 1: Sealed Project
 
 ### UX
 
-- Settings > Security > "Seal this vault" toggle
-- First time: prompts for passphrase (stored via StyreneIdentity, not in vault)
-- On launch: vault is locked, shows unlock prompt
-- Cmd+L: lock vault (clears decrypted content from memory)
+- Settings > Security > "Seal this project" toggle
+- First time: prompts for passphrase (stored via StyreneIdentity, not in project)
+- On launch: project is locked, shows unlock prompt
+- Cmd+L: lock project (clears decrypted content from memory)
 - Auto-lock after configurable idle timeout (default: 15 minutes)
 
 ### How It Works
@@ -57,7 +57,7 @@ The `.sealed` file format:
 ```
 
 **On unlock:**
-- Walk vault, decrypt all `.sealed` files to memory
+- Walk project, decrypt all `.sealed` files to memory
 - SQLite index rebuilt from decrypted content
 - File watcher monitors the sealed files
 
@@ -75,7 +75,7 @@ The `.sealed` file format:
 - Git tracks `.sealed` files (binary blobs)
 - No meaningful diffs — commits show binary changes
 - Merge conflicts: last-write-wins (acceptable for single-user)
-- `.flynt/config.toml` remains unencrypted (contains vault name, sync config, seal mode flag — no sensitive data)
+- `.flynt/config.toml` remains unencrypted (contains project name, sync config, seal mode flag — no sensitive data)
 
 ### Config
 
@@ -85,7 +85,7 @@ The `.sealed` file format:
 mode = "sealed"          # "open" | "sealed" | "selective"
 algorithm = "chacha20"   # "chacha20" | "aes256gcm"
 auto_lock_minutes = 15   # 0 = never auto-lock
-vault_id = "a1b2c3..."   # UUID for key derivation
+project_id = "a1b2c3..."   # UUID for key derivation
 ```
 
 ## Mode 2: Selective Seal
@@ -95,7 +95,7 @@ vault_id = "a1b2c3..."   # UUID for key derivation
 - Right-click note > "Seal this note"
 - Or frontmatter: `sealed = true`
 - Sealed notes show a lock icon in the sidebar
-- Opening a sealed note prompts for unlock if vault is locked
+- Opening a sealed note prompts for unlock if project is locked
 - Unsealed notes remain plain markdown — fully diffable and syncable
 
 ### How It Works
@@ -122,7 +122,7 @@ The body below `+++` is replaced with a single line containing the encrypted pay
 
 **On seal:**
 - Read current body
-- Derive `note_seal_key(note_id)` from vault key
+- Derive `note_seal_key(note_id)` from project key
 - Encrypt body
 - Rewrite file with `sealed = true` in frontmatter + encrypted body
 - Reindex (title/tags still visible)
@@ -148,7 +148,7 @@ The body below `+++` is replaced with a single line containing the encrypted pay
 mode = "selective"
 algorithm = "chacha20"
 auto_lock_minutes = 15
-vault_id = "a1b2c3..."
+project_id = "a1b2c3..."
 ```
 
 ## Implementation Plan
@@ -164,11 +164,11 @@ pub enum SealMode {
     Selective,
 }
 
-pub struct VaultSealConfig {
+pub struct ProjectSealConfig {
     pub mode: SealMode,
     pub algorithm: SealAlgorithm,
     pub auto_lock_minutes: u32,
-    pub vault_id: String,
+    pub project_id: String,
 }
 
 pub enum SealAlgorithm {
@@ -199,25 +199,25 @@ impl SealedBody {
 
 ### Phase 2: Store (flynt-store)
 
-- `Vault::open()` checks `security.mode` in config
-- `Vault::seal_note()` / `Vault::unseal_note()` — per-note operations
-- `Vault::lock()` / `Vault::unlock(key)` — full vault operations
+- `Project::open()` checks `security.mode` in config
+- `Project::seal_note()` / `Project::unseal_note()` — per-note operations
+- `Project::lock()` / `Project::unlock(key)` — full project operations
 - `index_file()` skips body indexing for sealed notes (indexes frontmatter only)
 - `save_document_content()` encrypts body if note is sealed
 
 ### Phase 3: UI (flynt-app)
 
-- Lock screen component (shown when vault is locked)
+- Lock screen component (shown when project is locked)
 - Unlock dialog (passphrase input or biometric prompt)
 - Sidebar: lock icon on sealed notes
 - Context menu: "Seal this note" / "Unseal this note"
 - Settings > Security panel
-- Cmd+L: lock vault
+- Cmd+L: lock project
 - Status bar: lock/unlock indicator
 
 ### Phase 4: StyreneIdentity Integration
 
-- Key derivation via `KeyDeriver::derive_vault_key()`
+- Key derivation via `KeyDeriver::derive_project_key()`
 - Biometric unlock via `SecureEnclaveSigner` (Tier B)
 - Credential manager unlock via `CredentialManagerSigner` (Tier C)
 - Passphrase fallback via `FileSigner` (Tier D)
@@ -242,13 +242,13 @@ StyreneIdentity already provides:
 
 | Capability | StyreneIdentity API | Flynt usage |
 |-----------|-------------------|-------------|
-| Key derivation | `KeyDeriver::age_secret()` → 32-byte X25519 | Vault encryption key |
+| Key derivation | `KeyDeriver::age_secret()` → 32-byte X25519 | Project encryption key |
 | Passphrase stretching | `FileSigner` (Argon2id, 64 MiB, 3 iterations) | Identity unlock |
-| Tiered auth | `SignerChain` A→B→C→D fallback | Vault unlock |
+| Tiered auth | `SignerChain` A→B→C→D fallback | Project unlock |
 | Biometric | `SecureEnclaveSigner` (Tier B, planned) | Touch ID unlock |
 | Credential manager | `CredentialManagerSigner` (Tier C, planned) | 1Password/Bitwarden |
 | Memory safety | `zeroize` on all key material | Key cleanup on lock |
-| Backup | `IdentityVault::backup()` | Before key rotation |
+| Backup | `IdentityProject::backup()` | Before key rotation |
 
 **Flynt does NOT:**
 - Implement its own HKDF hierarchy
@@ -257,7 +257,7 @@ StyreneIdentity already provides:
 - Manage signer tiers
 
 **Flynt DOES:**
-- Call `IdentityVault::unlock()` → `KeyDeriver::age_secret()`
+- Call `IdentityProject::unlock()` → `KeyDeriver::age_secret()`
 - Pass the age secret to the `age` crate for file encryption
 - Manage which files are sealed vs open
 - Handle the git sync implications
@@ -281,7 +281,7 @@ ZGVyaXZlZCBrZXk=
 -----END AGE ENCRYPTED FILE-----
 ```
 
-**Sealed vault (per-file):**
+**Sealed project (per-file):**
 ```
 notes/my-note.md.age   ← age-encrypted .md file
 ```
@@ -296,16 +296,16 @@ Benefits over CDXS:
 ## Security Properties
 
 - **At rest:** sealed content is encrypted on disk
-- **In memory:** decrypted content exists only while vault is unlocked
-- **Key management:** delegated to StyreneIdentity (not stored in vault)
+- **In memory:** decrypted content exists only while project is unlocked
+- **Key management:** delegated to StyreneIdentity (not stored in project)
 - **Forward secrecy:** not provided (same key until rotated)
 - **Key rotation:** re-encrypt all sealed content with new key (manual operation)
-- **Metadata protection:** selective mode leaks title/tags; sealed vault mode protects everything except config.toml
+- **Metadata protection:** selective mode leaks title/tags; sealed project mode protects everything except config.toml
 - **No backdoor:** lost passphrase + lost StyreneIdentity = irrecoverable
 
 ## What This Does NOT Cover
 
 - In-transit encryption (handled by SSH/HTTPS for git sync)
-- Shared vault encryption (requires key exchange — future StyreneIdentity feature)
+- Shared project encryption (requires key exchange — future StyreneIdentity feature)
 - Plausible deniability / hidden volumes
 - Hardware key enforcement (YubiKey required — future via SignerChain Tier A)

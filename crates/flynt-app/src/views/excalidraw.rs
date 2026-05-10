@@ -323,8 +323,8 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 
 /// Create a new excalidraw drawing: a `.excalidraw` data file plus
 /// a `.md` wrapper that embeds it. Returns the `.md` path (indexable by Flynt).
-pub fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Result<PathBuf> {
-    let drawings_dir = vault_root.join("drawings");
+pub fn create_drawing(project_root: &std::path::Path, name: &str) -> anyhow::Result<PathBuf> {
+    let drawings_dir = project_root.join("drawings");
     std::fs::create_dir_all(&drawings_dir)?;
 
     // Create the .excalidraw data file
@@ -336,7 +336,7 @@ pub fn create_drawing(vault_root: &std::path::Path, name: &str) -> anyhow::Resul
     // Create a .md wrapper so the document is indexable and openable as a tab
     let md_file = format!("{name}.md");
     let md_rel = PathBuf::from("drawings").join(&md_file);
-    let md_abs = vault_root.join(&md_rel);
+    let md_abs = project_root.join(&md_rel);
     let md_content = format!("+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_file}]]\n");
     std::fs::write(&md_abs, md_content)?;
 

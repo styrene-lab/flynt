@@ -1,7 +1,7 @@
 # OpenSpec Integration — Auditability from Design to Test
 
 Design document for connecting design nodes, tasks, and OpenSpec scenarios
-into an auditable chain within Flynt vaults.
+into an auditable chain within Flynt projects.
 
 ## The Audit Chain
 
@@ -19,7 +19,7 @@ what scenarios validate it, and whether those scenarios pass.
 
 ### OpenSpecScenario Entity
 
-A new entity kind stored as markdown in the vault:
+A new entity kind stored as markdown in the project:
 
 ```toml
 +++
@@ -149,9 +149,9 @@ Scenarios appear as graph nodes with edges:
 
 ### Phase 2: Storage (flynt-store)
 
-- Index scenarios from vault (reindex picks up `kind = "openspec_scenario"`)
-- `vault.record_test_result()` writes to `.flynt/test-results.toml`
-- `vault.scenario_health(design_node_id)` aggregates scenario statuses
+- Index scenarios from project (reindex picks up `kind = "openspec_scenario"`)
+- `project.record_test_result()` writes to `.flynt/test-results.toml`
+- `project.scenario_health(design_node_id)` aggregates scenario statuses
 - Query engine: support `design_node` filter in WHERE clauses
 
 ### Phase 3: Agent Tools (flynt-agent)

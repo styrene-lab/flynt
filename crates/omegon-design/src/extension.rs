@@ -13,12 +13,12 @@ use std::path::PathBuf;
 use crate::{skill_install, style_guide};
 
 pub struct DesignExtension {
-    vault_root: PathBuf,
+    project_root: PathBuf,
 }
 
 impl DesignExtension {
-    pub fn new(vault_root: PathBuf) -> Self {
-        Self { vault_root }
+    pub fn new(project_root: PathBuf) -> Self {
+        Self { project_root }
     }
 }
 
@@ -153,7 +153,7 @@ impl DesignExtension {
     }
 
     fn presets_path(&self) -> PathBuf {
-        self.vault_root
+        self.project_root
             .join(".flynt-local")
             .join("flynt")
             .join("assets")
@@ -161,7 +161,7 @@ impl DesignExtension {
     }
 
     fn primitives_path(&self) -> PathBuf {
-        self.vault_root
+        self.project_root
             .join(".flynt-local")
             .join("flynt")
             .join("assets")
@@ -174,7 +174,7 @@ impl DesignExtension {
         if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             return None;
         }
-        let abs = self.vault_root.join(rel);
+        let abs = self.project_root.join(rel);
         let canvas = flynt_core::canvas::Canvas::load(&abs).ok()?;
         Some(canvas.theme)
     }
@@ -209,7 +209,7 @@ impl DesignExtension {
         };
 
         // Style guides.
-        let guide_report = style_guide::load_report(&self.vault_root)
+        let guide_report = style_guide::load_report(&self.project_root)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         let guide_value = if full {
             serde_json::to_value(&guide_report).unwrap_or(Value::Null)
@@ -268,7 +268,7 @@ impl DesignExtension {
     }
 
     fn execute_load_style_guide(&self) -> omegon_extension::Result<Value> {
-        let report = style_guide::load_report(&self.vault_root)
+        let report = style_guide::load_report(&self.project_root)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         serde_json::to_value(&report)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))
@@ -374,8 +374,8 @@ impl DesignExtension {
             include_metrics,
         };
 
-        let req_dir = capture_request_dir(&self.vault_root);
-        let resp_dir = capture_response_dir(&self.vault_root);
+        let req_dir = capture_request_dir(&self.project_root);
+        let resp_dir = capture_response_dir(&self.project_root);
         std::fs::create_dir_all(&req_dir)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         std::fs::create_dir_all(&resp_dir)
@@ -425,7 +425,7 @@ impl DesignExtension {
         if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             return Err(omegon_extension::Error::invalid_params("path must not contain '..'"));
         }
-        let abs = self.vault_root.join(rel);
+        let abs = self.project_root.join(rel);
         let canvas = flynt_core::canvas::Canvas::load(&abs)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
@@ -471,7 +471,7 @@ impl DesignExtension {
         }
 
         // Style-guide presence (just a heads-up, no rule application yet).
-        let guide = style_guide::load_report(&self.vault_root).ok();
+        let guide = style_guide::load_report(&self.project_root).ok();
         let guide_loaded = guide.as_ref().and_then(|g| g.merged.as_ref()).is_some();
         if !guide_loaded {
             suggestions.push(

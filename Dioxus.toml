@@ -11,5 +11,5 @@ short_description = "Notes and task tracker with Omegon agent surface."
 long_description = """
 Flynt is a markdown-native notes and kanban task manager.
 It exposes a full ACP tool surface to the Omegon AI harness, enabling
-the embedded agent sidebar to read, write, and search your vault.
+the embedded agent sidebar to read, write, and search your project.
 """

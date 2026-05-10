@@ -1,9 +1,9 @@
 +++
-id = "vault-scoping"
+id = "project-scoping"
 kind = "design_node"
-title = "Vault scoping — opt-in document management for combo directories"
+title = "Project scoping — opt-in document management for combo directories"
 status = "in_progress"
-tags = ["indexing", "vault", "code-repo", "frontmatter"]
+tags = ["indexing", "project", "code-repo", "frontmatter"]
 
 [data]
 parent = "flynt-core"
@@ -11,11 +11,11 @@ issue_type = "feature"
 priority = 1
 +++
 
-# Vault scoping — opt-in document management for combo directories
+# Project scoping — opt-in document management for combo directories
 
 ## Problem
 
-Flynt indexes every `.md` file under the vault root and stamps TOML frontmatter
+Flynt indexes every `.md` file under the project root and stamps TOML frontmatter
 (UUID, publication config) into each one. When Flynt is opened on a directory
 that is also a code repository, this modifies source-controlled files like
 `README.md`, `CONTRIBUTING.md`, and crate-level docs — producing hundreds of
@@ -44,7 +44,7 @@ Extend `IndexingConfig` in `.flynt/config.toml`:
 
 ```toml
 [indexing]
-write_frontmatter = false          # vault-wide default (safe for combo dirs)
+write_frontmatter = false          # project-wide default (safe for combo dirs)
 
 [[indexing.scopes]]
 prefix = "design/"
@@ -58,17 +58,17 @@ write_frontmatter = true
 ```
 
 Fields on each scope:
-- `prefix` (required) — path prefix relative to vault root, matched against `rel_path.starts_with(prefix)`
+- `prefix` (required) — path prefix relative to project root, matched against `rel_path.starts_with(prefix)`
 - `kind` (optional) — auto-assigned to files without an existing `kind` in their frontmatter
-- `write_frontmatter` (optional) — overrides the vault-wide default for files under this prefix
+- `write_frontmatter` (optional) — overrides the project-wide default for files under this prefix
 
-When no scopes are configured, behavior is identical to today: the vault-wide
+When no scopes are configured, behavior is identical to today: the project-wide
 `write_frontmatter` flag applies to all files.
 
 ### Code repo detection
 
-On first vault creation (not on subsequent opens), `Vault::open()` checks for
-code repo markers at the vault root:
+On first project creation (not on subsequent opens), `Project::open()` checks for
+code repo markers at the project root:
 
 **Required**: `.git/` directory exists
 
@@ -80,7 +80,7 @@ When detected, the default config is created with `write_frontmatter = false`
 instead of `true`. The user can then configure scopes for subdirectories they
 want Flynt to manage.
 
-Pure document vaults (no `.git` + build manifest) keep the current default of
+Pure document projects (no `.git` + build manifest) keep the current default of
 `write_frontmatter = true`.
 
 ### Scope resolution
@@ -89,7 +89,7 @@ Pure document vaults (no `.git` + build manifest) keep the current default of
 
 1. Find the matching scope: longest `prefix` that `rel_path.starts_with(prefix)` matches
 2. If a scope matches and has `write_frontmatter` set, use the scope's value
-3. Otherwise, fall back to the vault-wide `write_frontmatter`
+3. Otherwise, fall back to the project-wide `write_frontmatter`
 
 `IndexingConfig::scope_for_path(rel_path)`:
 
@@ -101,7 +101,7 @@ Returns `FileTier::Managed` if `should_write_frontmatter` is true, otherwise `Fi
 
 ### Changes to `index_file()`
 
-Current behavior at line 262-268 of vault.rs:
+Current behavior at line 262-268 of project.rs:
 ```rust
 if frontmatter.id.is_none() {
     frontmatter.id = Some(id.0);
@@ -136,8 +136,8 @@ The only difference is whether the source file is modified.
 
 - `scopes` uses `#[serde(default, skip_serializing_if = "Vec::is_empty")]`
 - Existing configs with no `[[indexing.scopes]]` deserialize with `scopes: vec![]`
-- Empty scopes = vault-wide `write_frontmatter` applies to all files (today's behavior)
-- Code repo detection only fires on first vault creation, not on existing vaults
+- Empty scopes = project-wide `write_frontmatter` applies to all files (today's behavior)
+- Code repo detection only fires on first project creation, not on existing projects
 
 ### What does NOT change
 
@@ -157,8 +157,8 @@ The only difference is whether the source file is modified.
 - Expand `IndexingConfig` with `scopes` field and helper methods
 
 ### Phase 2: Code repo detection
-- In `Vault::open()` default-config branch, detect `.git` + build manifest
-- Set `write_frontmatter = false` for new vaults in code repos
+- In `Project::open()` default-config branch, detect `.git` + build manifest
+- Set `write_frontmatter = false` for new projects in code repos
 
 ### Phase 3: Per-file frontmatter decision
 - Change `index_file()` to use `should_write_frontmatter(&rel_path)`
@@ -169,4 +169,4 @@ The only difference is whether the source file is modified.
 
 ### Phase 5: Settings UI (deferred)
 - Scope list editor in settings panel
-- Visual indicator for code-repo vaults
+- Visual indicator for code-repo projects

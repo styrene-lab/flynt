@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use flynt_core::{
     models::*,
     parser::parse_document_source,
-    store::VaultStore,
+    store::ProjectStore,
 };
 use chrono::Utc;
 use comrak::{markdown_to_html, Options};
@@ -18,7 +18,7 @@ use crate::task_file;
 
 /// Project manages the root directory layout:
 ///
-///   <vault_root>/
+///   <project_root>/
 ///     .flynt/
 ///       config.toml    ← sync + preferences
 ///     **/*.md          ← notes/documents
@@ -29,7 +29,7 @@ use crate::task_file;
 pub struct Project {
     pub root: PathBuf,
     pub store: Arc<SqliteStore>,
-    pub config: VaultConfig,
+    pub config: ProjectConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +80,7 @@ impl Project {
     pub fn open(root: &Path) -> Result<Self> {
         fs::create_dir_all(root)?;
 
-        // Auto-migrate from .codex/ → .flynt/ (pre-Flynt vaults)
+        // Auto-migrate from .codex/ → .flynt/ (pre-Flynt projects)
         let old_dir = root.join(".codex");
         let flynt_dir = root.join(".flynt");
         if old_dir.exists() && !flynt_dir.exists() {
@@ -117,8 +117,8 @@ impl Project {
                 IndexingConfig::default()
             };
 
-            let cfg = VaultConfig {
-                vault_name: default_name,
+            let cfg = ProjectConfig {
+                project_name: default_name,
                 sync: SyncConfig::None,
                 appearance: Default::default(),
                 local_runtime: Default::default(),
@@ -769,7 +769,7 @@ impl Project {
 
     /// One-shot migration: any task in sqlite without a `task_file_path`
     /// gets a markdown file written and its path recorded. Called from
-    /// `Project::open` so freshly-rebuilt vaults converge to the
+    /// `Project::open` so freshly-rebuilt projects converge to the
     /// every-task-is-a-file invariant on next launch.
     fn migrate_tasks_to_files(&self) -> Result<usize> {
         let unfiled = self.store.tasks_without_file()?;
@@ -789,7 +789,7 @@ impl Project {
 
     /// Write a new config to disk. Does not update `self.config` (the in-memory
     /// value is managed by callers via signals). Call this from the settings view.
-    pub fn save_config(&self, config: &VaultConfig) -> Result<()> {
+    pub fn save_config(&self, config: &ProjectConfig) -> Result<()> {
         let config_path = self.root.join(".flynt").join("config.toml");
         fs::write(&config_path, toml::to_string_pretty(config)?)?;
         Ok(())
@@ -1099,7 +1099,7 @@ impl Project {
         use flynt_core::models::*;
 
         let tasks = self.store.list_tasks(&flynt_core::store::TaskFilter::default())?;
-        let vault_name = self.config.vault_name.clone();
+        let project_name = self.config.project_name.clone();
         let today = chrono::Local::now().date_naive();
 
         // Collect task IDs that already have pending/delivered notifications to avoid duplicates
@@ -1130,7 +1130,7 @@ impl Project {
                         format!("\"{}\" is {} day(s) overdue", task.title, days)
                     };
                     notifications.push(
-                        Notification::new(NotificationKind::DueDate, &task.title, body, &vault_name)
+                        Notification::new(NotificationKind::DueDate, &task.title, body, &project_name)
                             .for_task(task.id.clone()),
                     );
                 }
@@ -1143,7 +1143,7 @@ impl Project {
                         NotificationKind::Decay,
                         &task.title,
                         format!("\"{}\" is losing relevance. Touch it or let it archive.", task.title),
-                        &vault_name,
+                        &project_name,
                     )
                     .for_task(task.id.clone()),
                 );
@@ -1626,7 +1626,7 @@ mod tests {
     use chrono::Utc;
     use flynt_core::{
         models::{Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue, PublicationRule, PublicationVisibility},
-        store::VaultStore,
+        store::ProjectStore,
     };
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -1668,7 +1668,7 @@ mod tests {
     #[test]
     fn imports_markdown_tree_into_references_with_provenance_and_links() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
+        let project_root = tmp.path().join("project");
         let source_root = tmp.path().join("obsidian");
         std::fs::create_dir_all(source_root.join("notes")).unwrap();
         std::fs::write(
@@ -1684,7 +1684,7 @@ See [[roadmap]].\n",
         )
         .unwrap();
 
-        let project = Project::open(&vault_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
         let report = project.import_markdown_tree(&source_root).unwrap();
         assert_eq!(report.imported, 1);
         assert!(report.errors.is_empty());
@@ -1713,8 +1713,8 @@ See [[roadmap]].\n",
     #[test]
     fn stores_agent_communication_under_references_comms_with_metadata_and_links() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        let project = Project::open(&project_root).unwrap();
 
         let relative_path = project
             .store_agent_communication("vox", "Standup Recall", "See [[design]].")
@@ -1738,8 +1738,8 @@ See [[roadmap]].\n",
     #[ignore = "metadata flatten roundtrip through TOML→SQLite drops extra keys — needs schema fix"]
     fn stores_memory_fact_under_ai_memory_with_metadata_and_links() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        let project = Project::open(&project_root).unwrap();
 
         let relative_path = project
             .store_memory_fact("storage", "Canonical vs Local", "Supports [[design]].")
@@ -1785,14 +1785,14 @@ See [[roadmap]].\n",
     #[test]
     fn publication_export_reports_duplicate_slugs() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
         let output_root = tmp.path().join("published");
-        let project = Project::open(&vault_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
         assert!(project.store.list_documents().unwrap().is_empty());
 
         for (name, title) in [("alpha.md", "Same"), ("beta.md", "Same")] {
-            let path = vault_root.join(name);
+            let path = project_root.join(name);
             std::fs::write(
                 &path,
                 format!(
@@ -1812,12 +1812,12 @@ See [[roadmap]].\n",
     #[test]
     fn publication_policy_rules_can_publish_selected_subset() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
         assert!(project.store.list_documents().unwrap().is_empty());
 
-        let public_path = vault_root.join("docs/public.md");
+        let public_path = project_root.join("docs/public.md");
         std::fs::create_dir_all(public_path.parent().unwrap()).unwrap();
         std::fs::write(
             &public_path,
@@ -1826,7 +1826,7 @@ See [[roadmap]].\n",
         .unwrap();
         project.index_file(&public_path).unwrap();
 
-        let private_path = vault_root.join("private.md");
+        let private_path = project_root.join("private.md");
         std::fs::write(
             &private_path,
             "+++\ntitle = \"Private\"\n[publication]\nenabled = true\n+++\n\n# Private\n",
@@ -1842,9 +1842,9 @@ See [[roadmap]].\n",
             visibility: PublicationVisibility::Public,
         }];
         project.save_config(&config).unwrap();
-        let filtered_vault = Project::open(&vault_root).unwrap();
+        let filtered_project = Project::open(&project_root).unwrap();
 
-        let report = filtered_vault
+        let report = filtered_project
             .export_publication_tree(&tmp.path().join("published"))
             .unwrap();
         assert_eq!(report.exported, 1);
@@ -1854,11 +1854,11 @@ See [[roadmap]].\n",
     #[test]
     fn exports_public_documents_with_resolved_wikilinks() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
+        let project_root = tmp.path().join("project");
         let output_root = tmp.path().join("published");
-        let project = Project::open(&vault_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
-        let roadmap_path = vault_root.join("roadmap.md");
+        let roadmap_path = project_root.join("roadmap.md");
         std::fs::write(
             &roadmap_path,
             "+++
@@ -1873,7 +1873,7 @@ visibility = \"public\"
         .unwrap();
         project.index_file(&roadmap_path).unwrap();
 
-        let design_path = vault_root.join("design.md");
+        let design_path = project_root.join("design.md");
         std::fs::write(
             &design_path,
             "+++
@@ -1941,9 +1941,9 @@ See [[roadmap|the roadmap]].\n",
         use flynt_core::datum::EntityKind;
 
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         let node_id = uuid::Uuid::new_v4();
         let parent_id = uuid::Uuid::new_v4();
@@ -1969,7 +1969,7 @@ Design for the authentication subsystem.
 "#
         );
 
-        let design_dir = vault_root.join("design");
+        let design_dir = project_root.join("design");
         std::fs::create_dir_all(&design_dir).unwrap();
         let file_path = design_dir.join("auth-subsystem.md");
         std::fs::write(&file_path, &design_md).unwrap();
@@ -2007,21 +2007,21 @@ Design for the authentication subsystem.
         use flynt_core::datum::EntityKind;
 
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         // Create a plain document with frontmatter
         let content = "+++\ntitle = \"My Note\"\ntags = [\"test\"]\n+++\n\n# My Note\n\nSome content.\n";
         let path = std::path::PathBuf::from("my-note.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
         project.reindex().unwrap();
 
         // Set kind to design_node
         project.set_document_kind(&path, Some("design_node")).unwrap();
 
         // Re-read the file and verify
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"design_node\""), "should contain kind field: {updated}");
         assert!(updated.contains("title = \"My Note\""), "should preserve title");
         assert!(updated.contains("tags = [\"test\"]"), "should preserve tags");
@@ -2037,17 +2037,17 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_replaces_existing_kind() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         let content = "+++\ntitle = \"Task Doc\"\nkind = \"task\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("task-doc.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         // Change kind from task to project
         project.set_document_kind(&path, Some("project")).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "should have new kind: {updated}");
         assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
     }
@@ -2055,17 +2055,17 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_clear_removes_kind() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         let content = "+++\ntitle = \"Typed\"\nkind = \"design_node\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("typed.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         // Clear the kind
         project.set_document_kind(&path, None).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
         assert!(updated.contains("title = \"Typed\""), "should preserve title");
     }
@@ -2073,16 +2073,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_no_frontmatter_creates_one() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         let content = "# Just a note\n\nNo frontmatter here.\n";
         let path = std::path::PathBuf::from("plain.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         project.set_document_kind(&path, Some("design_node")).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.starts_with("+++\n"), "should start with frontmatter");
         assert!(updated.contains("kind = \"design_node\""), "should contain kind");
         assert!(updated.contains("# Just a note"), "should preserve body");
@@ -2091,16 +2091,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_clear_on_plain_doc_is_noop() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         let content = "# Plain\n\nNo kind to clear.\n";
         let path = std::path::PathBuf::from("noop.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         project.set_document_kind(&path, None).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         // File gets reindexed (frontmatter added by indexer) but no kind field
         assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
         assert!(updated.contains("# Plain"), "should preserve body");
@@ -2109,17 +2109,17 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_preserves_data_table() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         let content = "+++\ntitle = \"Design\"\nkind = \"design_node\"\n\n[data]\nstatus = \"exploring\"\npriority = 5\n+++\n\n# Design\n";
         let path = std::path::PathBuf::from("with-data.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         // Change kind — [data] table should be preserved
         project.set_document_kind(&path, Some("project")).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "new kind: {updated}");
         assert!(updated.contains("[data]"), "should preserve data table: {updated}");
         assert!(updated.contains("status = \"exploring\""), "should preserve data fields: {updated}");
@@ -2129,17 +2129,17 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_does_not_match_similar_field_names() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         // "kind_of_thing" should NOT be matched as the "kind" field
         let content = "+++\ntitle = \"Test\"\nkind_of_thing = \"misc\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("similar.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         project.set_document_kind(&path, Some("project")).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "should have kind: {updated}");
         assert!(updated.contains("kind_of_thing = \"misc\""), "should preserve similar field: {updated}");
     }
@@ -2147,17 +2147,17 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_does_not_remove_kind_inside_data_table() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         // kind inside [data] should be preserved
         let content = "+++\ntitle = \"Node\"\nkind = \"design_node\"\n\n[data]\nkind = \"subtype-a\"\nstatus = \"active\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("nested-kind.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         project.set_document_kind(&path, Some("project")).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "should have new top-level kind: {updated}");
         // The [data] section's kind field should be preserved
         assert!(updated.contains("kind = \"subtype-a\""), "should preserve kind inside [data]: {updated}");
@@ -2166,17 +2166,17 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_handles_crlf_line_endings() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         // CRLF line endings
         let content = "+++\r\ntitle = \"CRLF\"\r\nkind = \"task\"\r\n+++\r\n\r\nBody\r\n";
         let path = std::path::PathBuf::from("crlf.md");
-        std::fs::write(vault_root.join(&path), content).unwrap();
+        std::fs::write(project_root.join(&path), content).unwrap();
 
         project.set_document_kind(&path, Some("design_node")).unwrap();
-        let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
+        let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"design_node\""), "should have new kind: {updated}");
         assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
         assert!(updated.contains("Body"), "should preserve body: {updated}");
@@ -2185,19 +2185,19 @@ Design for the authentication subsystem.
     #[test]
     fn graph_edges_from_wikilinks() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("project");
-        std::fs::create_dir_all(&vault_root).unwrap();
-        let project = Project::open(&vault_root).unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
 
         // Create two documents with wikilinks between them
         let id_a = uuid::Uuid::new_v4();
         let id_b = uuid::Uuid::new_v4();
         std::fs::write(
-            vault_root.join("alpha.md"),
+            project_root.join("alpha.md"),
             format!("+++\nid = \"{id_a}\"\ntitle = \"Alpha\"\n+++\n\n# Alpha\n\nSee [[Beta]] for details.\n"),
         ).unwrap();
         std::fs::write(
-            vault_root.join("beta.md"),
+            project_root.join("beta.md"),
             format!("+++\nid = \"{id_b}\"\ntitle = \"Beta\"\n+++\n\n# Beta\n\nRefer back to [[Alpha]].\n"),
         ).unwrap();
 
@@ -2227,7 +2227,7 @@ Design for the authentication subsystem.
 
     // ── save_any_task: every task becomes a file ────────────────────────────
 
-    fn vault_with_board() -> (TempDir, Project, flynt_core::models::Board) {
+    fn project_with_board() -> (TempDir, Project, flynt_core::models::Board) {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_path_buf();
         let project = Project::open(&root).unwrap();
@@ -2238,7 +2238,7 @@ Design for the authentication subsystem.
 
     #[test]
     fn save_any_task_writes_file_and_records_path() {
-        let (_tmp, project, board) = vault_with_board();
+        let (_tmp, project, board) = project_with_board();
         let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
         let rel = project.save_any_task(&task).unwrap();
         assert_eq!(rel, std::path::PathBuf::from("Tasks/sprint-1/auth-rewrite.md"));
@@ -2251,7 +2251,7 @@ Design for the authentication subsystem.
 
     #[test]
     fn save_any_task_renames_file_when_title_changes() {
-        let (_tmp, project, board) = vault_with_board();
+        let (_tmp, project, board) = project_with_board();
         let mut task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Initial");
         let first = project.save_any_task(&task).unwrap();
         assert!(project.root.join(&first).exists());
@@ -2265,7 +2265,7 @@ Design for the authentication subsystem.
 
     #[test]
     fn save_any_task_handles_collisions_with_numeric_suffix() {
-        let (_tmp, project, board) = vault_with_board();
+        let (_tmp, project, board) = project_with_board();
         let t1 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Same Title");
         let t2 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Same Title");
         let p1 = project.save_any_task(&t1).unwrap();
@@ -2301,7 +2301,7 @@ Design for the authentication subsystem.
         // Regression: notes-view edits used to wipe non-Frontmatter
         // fields (task kind + [data] block) because save_document_content
         // wrote body-only and the reindex injected default doc fields.
-        let (_tmp, project, board) = vault_with_board();
+        let (_tmp, project, board) = project_with_board();
         let mut t = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
         t.description = "Original body".into();
         let rel = project.save_any_task(&t).unwrap();
@@ -2361,7 +2361,7 @@ Design for the authentication subsystem.
 
     #[test]
     fn save_any_task_is_idempotent_when_called_twice_with_same_data() {
-        let (_tmp, project, board) = vault_with_board();
+        let (_tmp, project, board) = project_with_board();
         let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Steady");
         let p1 = project.save_any_task(&task).unwrap();
         let p2 = project.save_any_task(&task).unwrap();

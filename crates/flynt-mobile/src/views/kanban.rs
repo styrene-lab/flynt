@@ -1,6 +1,6 @@
 use flynt_core::{
     models::{BoardId, Priority, Task, TaskStatus},
-    store::{TaskFilter, VaultStore},
+    store::{TaskFilter, ProjectStore},
 };
 use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;

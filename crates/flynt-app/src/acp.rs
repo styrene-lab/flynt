@@ -311,7 +311,7 @@ impl AcpSession {
             .arg("--cwd")
             .arg(&cwd)
             .arg("-y")
-            .env("FLYNT_VAULT", &cwd)
+            .env("FLYNT_PROJECT", &cwd)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit());
@@ -610,8 +610,8 @@ impl AcpSession {
     }
 
     /// Project status.
-    pub async fn vault_status(&self) -> Result<serde_json::Value> {
-        self.control_call("vault_status", "").await
+    pub async fn project_status(&self) -> Result<serde_json::Value> {
+        self.control_call("project_status", "").await
     }
 
     /// Auth status.

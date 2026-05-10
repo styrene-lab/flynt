@@ -15,14 +15,14 @@ enum Tab {
 #[component]
 pub fn App() -> Element {
     // Check if a project exists — if not, show onboarding
-    let mut vault_ready = use_signal(|| crate::bootstrap::has_vault());
+    let mut project_ready = use_signal(|| crate::bootstrap::has_project());
 
-    if !*vault_ready.read() {
+    if !*project_ready.read() {
         return rsx! {
             style { {include_str!("../assets/mobile.css")} }
             onboarding::OnboardingView {
                 on_complete: move |_path: std::path::PathBuf| {
-                    *vault_ready.write() = true;
+                    *project_ready.write() = true;
                 },
             }
         };
@@ -43,9 +43,9 @@ pub fn App() -> Element {
     use_context_provider(|| Signal::new(rt.clone()));
 
     // Poll the share-extension inbox every 5 seconds
-    let vault_for_inbox = rt.project.clone();
+    let project_for_inbox = rt.project.clone();
     use_future(move || {
-        let project = vault_for_inbox.clone();
+        let project = project_for_inbox.clone();
         async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(5)).await;
@@ -90,7 +90,7 @@ pub fn App() -> Element {
                             h2 { "Settings" }
                             {
                                 let rt = use_context::<Signal<MobileRuntime>>();
-                                let vault_name = rt.read().project.config.vault_name.clone();
+                                let project_name = rt.read().project.config.project_name.clone();
                                 let sync_label = match &rt.read().project.config.sync {
                                     flynt_core::models::SyncConfig::None => "Off".to_string(),
                                     flynt_core::models::SyncConfig::Git { remote, branch, .. } => {
@@ -108,7 +108,7 @@ pub fn App() -> Element {
                                     div { class: "settings-section",
                                         div { class: "settings-row",
                                             span { class: "settings-label", "Project" }
-                                            span { class: "settings-value", "{vault_name}" }
+                                            span { class: "settings-value", "{project_name}" }
                                         }
                                         div { class: "settings-row",
                                             span { class: "settings-label", "Sync" }
@@ -116,7 +116,7 @@ pub fn App() -> Element {
                                         }
                                         div { class: "settings-row",
                                             span { class: "settings-label", "Path" }
-                                            span { class: "settings-value settings-path", "{rt.read().vault_root.display()}" }
+                                            span { class: "settings-value settings-path", "{rt.read().project_root.display()}" }
                                         }
                                     }
                                 }

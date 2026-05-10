@@ -72,7 +72,7 @@
 }
 
 /* ── Toolbar inner elements ───────────────────────────────────────────────── */
-.toolbar-vault-name {
+.toolbar-project-name {
   font-size:   var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   color:       var(--foreground);

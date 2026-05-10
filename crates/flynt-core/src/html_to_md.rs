@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn image_vault_protocol() {
+    fn image_project_protocol() {
         let html = r#"<img src="project://localhost/photo%20name.png" alt="photo name">"#;
         assert_eq!(html_to_markdown(html), "![[photo name.png]]\n");
     }

@@ -8,7 +8,7 @@ pub fn WelcomeView(
     on_choose_existing: EventHandler<()>,
     on_clone_remote: EventHandler<()>,
     on_import_markdown: EventHandler<()>,
-    on_cloud_vault: EventHandler<std::path::PathBuf>,
+    on_cloud_project: EventHandler<std::path::PathBuf>,
 ) -> Element {
     let mut show_advanced = use_signal(|| false);
     let mut show_sync_options = use_signal(|| false);
@@ -16,8 +16,8 @@ pub fn WelcomeView(
     let has_cloud = !cloud_providers.is_empty();
     // Auto-expand git section if no cloud providers available
     let mut show_git_options = use_signal(move || !has_cloud);
-    let has_existing_vault = launcher_profile.last_vault_root.is_some()
-        || !launcher_profile.known_vaults.is_empty();
+    let has_existing_project = launcher_profile.last_project_root.is_some()
+        || !launcher_profile.known_projects.is_empty();
 
     rsx! {
         div { class: "view-welcome",
@@ -39,7 +39,7 @@ pub fn WelcomeView(
                         onclick: move |_| on_get_started.call(()),
                         div { class: "welcome-path-icon", "\u{270F}" }
                         div { class: "welcome-path-content",
-                            if has_existing_vault {
+                            if has_existing_project {
                                 span { class: "welcome-path-title", "Open your notebook" }
                                 span { class: "welcome-path-desc",
                                     "Return to your notes."
@@ -88,13 +88,13 @@ pub fn WelcomeView(
                                                             button {
                                                                 class: "welcome-cloud-btn",
                                                                 onclick: move |_| {
-                                                                    let vault_path = flynt_store::sync::cloud::vault_path_for_provider(&provider, "Flynt");
-                                                                    if vault_path.join(".flynt").exists() {
+                                                                    let project_path = flynt_store::sync::cloud::project_path_for_provider(&provider, "Flynt");
+                                                                    if project_path.join(".flynt").exists() {
                                                                         // Already exists — just open it
-                                                                        on_cloud_vault.call(vault_path);
+                                                                        on_cloud_project.call(project_path);
                                                                     } else {
-                                                                        match flynt_store::sync::cloud::create_cloud_vault(&provider, "Flynt") {
-                                                                            Ok(root) => on_cloud_vault.call(root),
+                                                                        match flynt_store::sync::cloud::create_cloud_project(&provider, "Flynt") {
+                                                                            Ok(root) => on_cloud_project.call(root),
                                                                             Err(e) => tracing::error!("Cloud project failed: {e}"),
                                                                         }
                                                                     }
@@ -211,7 +211,7 @@ pub fn WelcomeView(
                                 onclick: move |_| on_choose_existing.call(()),
                                 span { class: "welcome-option-title", "Open an existing folder" }
                                 span { class: "welcome-option-desc",
-                                    "Use a folder of markdown files you already have (Obsidian vaults work too)"
+                                    "Use a folder of markdown files you already have (Obsidian projects work too)"
                                 }
                             }
                             button {

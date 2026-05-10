@@ -120,10 +120,10 @@ fn extract_pkl_field(content: &str, field: &str) -> Option<String> {
 pub fn PosturePicker(
     current: String,
     on_change: EventHandler<String>,
-    vault_root: PathBuf,
+    project_root: PathBuf,
 ) -> Element {
     let all_postures = use_resource(move || {
-        let root = vault_root.clone();
+        let root = project_root.clone();
         async move {
             let mut all = builtin_postures();
             let custom = tokio::task::spawn_blocking(move || discover_custom_postures(&root))

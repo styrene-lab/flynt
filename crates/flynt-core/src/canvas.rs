@@ -146,8 +146,8 @@ impl Canvas {
 /// Lives here in flynt-core so both flynt-app (UI menu/command palette)
 /// and flynt-agent (canvas_create ACP tool) can call into the same
 /// implementation. Refuses to overwrite an existing `.canvas` file.
-pub fn create_canvas(vault_root: &Path, name: &str) -> anyhow::Result<PathBuf> {
-    let canvases_dir = vault_root.join("canvases");
+pub fn create_canvas(project_root: &Path, name: &str) -> anyhow::Result<PathBuf> {
+    let canvases_dir = project_root.join("canvases");
     std::fs::create_dir_all(&canvases_dir)?;
 
     let canvas_file = format!("{name}.canvas");
@@ -159,7 +159,7 @@ pub fn create_canvas(vault_root: &Path, name: &str) -> anyhow::Result<PathBuf> {
 
     let md_file = format!("{name}.md");
     let md_rel = PathBuf::from("canvases").join(&md_file);
-    let md_abs = vault_root.join(&md_rel);
+    let md_abs = project_root.join(&md_rel);
     let escaped_name = name.replace('"', "\\\"");
     let md_content = format!(
         "+++\ntitle = \"{escaped_name}\"\ntags = [\"canvas\"]\n+++\n\n![[{canvas_file}]]\n"
@@ -222,12 +222,12 @@ pub struct CaptureResponse {
     pub error: Option<String>,
 }
 
-pub fn capture_request_dir(vault_root: &Path) -> PathBuf {
-    vault_root.join(".flynt-local").join("flynt").join("capture-requests")
+pub fn capture_request_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".flynt-local").join("flynt").join("capture-requests")
 }
 
-pub fn capture_response_dir(vault_root: &Path) -> PathBuf {
-    vault_root.join(".flynt-local").join("flynt").join("capture-responses")
+pub fn capture_response_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".flynt-local").join("flynt").join("capture-responses")
 }
 
 /// Operator-level canvas settings, persisted in `FlyntOperatorSettings.canvas`.

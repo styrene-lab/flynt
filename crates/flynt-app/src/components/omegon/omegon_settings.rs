@@ -143,7 +143,7 @@ pub fn OmegonSettingsSection() -> Element {
                                 spawn(async move { sess.set_config("posture", &v).await; });
                             }
                         },
-                        vault_root: ctx.vault_root(),
+                        project_root: ctx.project_root(),
                     }
                 }
 

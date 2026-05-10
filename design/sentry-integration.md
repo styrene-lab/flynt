@@ -57,7 +57,7 @@ Add `update_task` to the flynt-agent extension. Must support partial updates —
 
 **flynt-agent/src/extension.rs:**
 - Add `update_task` tool: accepts `task_id` + partial field map (status, column, priority, tags, description, due_date)
-- Route to a new `Vault::update_task()` or `VaultStore::update_task()` method
+- Route to a new `Project::update_task()` or `ProjectStore::update_task()` method
 
 **flynt-store/src/sqlite.rs:**
 - Add `update_task(&self, id: &TaskId, patch: &TaskPatch) -> Result<()>`
@@ -221,7 +221,7 @@ When fully implemented, the workflow looks like:
 1. User creates a task in Flynt UI (or via agent), places it in "Scheduled" column on a sentry-watched board
 2. User fills in execution metadata (model, turns, timeout) — either via UI fields or markdown frontmatter
 3. User sets triggers via `external_refs` (cron expressions, webhook names)
-4. `omegon sentry --flynt-vault ~/.flynt/vault` starts, discovers the board via config
+4. `omegon sentry --flynt-project ~/.flynt/project` starts, discovers the board via config
 5. Trigger evaluator matches a cron expression → calls `board.list_actionable()`
 6. Sentry claims the task → Flynt moves it to "Running" column
 7. Sentry reads `task_spec()` → prompt from description, params from execution metadata

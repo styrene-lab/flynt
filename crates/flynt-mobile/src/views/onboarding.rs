@@ -1,4 +1,4 @@
-use flynt_core::manifest::VaultManifest;
+use flynt_core::manifest::ProjectManifest;
 use dioxus::prelude::*;
 use std::path::PathBuf;
 
@@ -8,7 +8,7 @@ enum Step {
     SyncChoice,
     RepoInput,
     ManifestInput,
-    ManifestVaults,
+    ManifestProjects,
     Cloning,
     Done,
     Error,
@@ -21,11 +21,11 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
     let mut branch = use_signal(|| "main".to_string());
     let mut token = use_signal(|| String::new());
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
-    let mut vault_name = use_signal(|| String::new());
+    let mut project_name = use_signal(|| String::new());
 
     // Manifest state
-    let mut manifest: Signal<Option<VaultManifest>> = use_signal(|| None);
-    let mut selected_vault: Signal<Option<usize>> = use_signal(|| None);
+    let mut manifest: Signal<Option<ProjectManifest>> = use_signal(|| None);
+    let mut selected_project: Signal<Option<usize>> = use_signal(|| None);
     let mut manifest_dir: Signal<Option<PathBuf>> = use_signal(|| None);
 
     rsx! {
@@ -43,8 +43,8 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                             button {
                                 class: "onboarding-path primary",
                                 onclick: move |_| {
-                                    let vault_root = crate::bootstrap::default_vault_root();
-                                    on_complete.call(vault_root);
+                                    let project_root = crate::bootstrap::default_project_root();
+                                    on_complete.call(project_root);
                                 },
                                 span { class: "onboarding-path-title", "Start writing" }
                                 span { class: "onboarding-path-desc", "Create a local notebook" }
@@ -137,7 +137,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     *step.write() = Step::Cloning;
                                     *error_msg.write() = None;
 
-                                    let dest = crate::bootstrap::default_vault_root()
+                                    let dest = crate::bootstrap::default_project_root()
                                         .parent()
                                         .unwrap_or(&PathBuf::from("."))
                                         .join(".flynt-manifest");
@@ -151,7 +151,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                             Ok(Ok(m)) => {
                                                 *manifest.write() = Some(m);
                                                 *manifest_dir.write() = Some(dest_for_result);
-                                                *step.write() = Step::ManifestVaults;
+                                                *step.write() = Step::ManifestProjects;
                                             }
                                             Ok(Err(e)) => {
                                                 *error_msg.write() = Some(format!("{e}"));
@@ -175,9 +175,9 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                     }
                 },
 
-                Step::ManifestVaults => rsx! {
+                Step::ManifestProjects => rsx! {
                     div { class: "onboarding-card",
-                        h2 { class: "onboarding-title", "Your Vaults" }
+                        h2 { class: "onboarding-title", "Your Projects" }
                         if let Some(ref m) = *manifest.read() {
                             if !m.identity.name.is_empty() {
                                 p { class: "onboarding-desc",
@@ -185,16 +185,16 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                 }
                             }
                             div { class: "onboarding-project-list",
-                                for (idx, project) in m.vaults.iter().enumerate() {
+                                for (idx, project) in m.projects.iter().enumerate() {
                                     {
-                                        let is_selected = *selected_vault.read() == Some(idx);
+                                        let is_selected = *selected_project.read() == Some(idx);
                                         let name = project.name.clone();
                                         let role = project.role.label();
                                         rsx! {
                                             button {
                                                 key: "project-{idx}",
                                                 class: if is_selected { "onboarding-project-item selected" } else { "onboarding-project-item" },
-                                                onclick: move |_| *selected_vault.write() = Some(idx),
+                                                onclick: move |_| *selected_project.write() = Some(idx),
                                                 div { class: "onboarding-project-name", "{name}" }
                                                 div { class: "onboarding-project-meta",
                                                     span { class: "onboarding-project-role", "{role}" }
@@ -209,18 +209,18 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                         div { class: "onboarding-actions",
                             button {
                                 class: "btn btn-primary",
-                                disabled: selected_vault.read().is_none(),
+                                disabled: selected_project.read().is_none(),
                                 onclick: move |_| {
-                                    let Some(idx) = *selected_vault.read() else { return };
+                                    let Some(idx) = *selected_project.read() else { return };
                                     let Some(ref m) = *manifest.read() else { return };
-                                    let project = m.vaults[idx].clone();
+                                    let project = m.projects[idx].clone();
                                     let tk = token.read().trim().to_string();
 
-                                    *vault_name.write() = project.name.clone();
+                                    *project_name.write() = project.name.clone();
                                     *step.write() = Step::Cloning;
                                     *error_msg.write() = None;
 
-                                    let dest = crate::bootstrap::default_vault_root();
+                                    let dest = crate::bootstrap::default_project_root();
                                     let mdir = manifest_dir.read().clone();
                                     let mut manifest_clone = m.clone();
 
@@ -230,7 +230,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                                 &project.repo, &project.branch, &dest, &tk
                                             )?;
                                             if let Some(ref mdir) = mdir {
-                                                if let Some(v) = manifest_clone.vaults.iter_mut()
+                                                if let Some(v) = manifest_clone.projects.iter_mut()
                                                     .find(|v| v.name == project.name)
                                                 {
                                                     v.local_path = Some(dest.clone());
@@ -321,11 +321,11 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                         .unwrap_or("project")
                                         .trim_end_matches(".git")
                                         .to_string();
-                                    *vault_name.write() = name;
+                                    *project_name.write() = name;
                                     *step.write() = Step::Cloning;
                                     *error_msg.write() = None;
 
-                                    let dest = crate::bootstrap::default_vault_root();
+                                    let dest = crate::bootstrap::default_project_root();
                                     spawn(async move {
                                         match tokio::task::spawn_blocking(move || {
                                             crate::oauth::clone_with_token(&url, &br, &dest, &tk)
@@ -365,12 +365,12 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 Step::Done => rsx! {
                     div { class: "onboarding-card",
                         h2 { class: "onboarding-title", "You're all set" }
-                        p { class: "onboarding-desc", "Your project \"{vault_name}\" is ready." }
+                        p { class: "onboarding-desc", "Your project \"{project_name}\" is ready." }
                         button {
                             class: "btn btn-primary",
                             onclick: move |_| {
-                                let vault_root = crate::bootstrap::default_vault_root();
-                                on_complete.call(vault_root);
+                                let project_root = crate::bootstrap::default_project_root();
+                                on_complete.call(project_root);
                             },
                             "Open project"
                         }

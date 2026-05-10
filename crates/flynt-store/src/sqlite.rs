@@ -1,13 +1,13 @@
 use anyhow::Result;
 use flynt_core::{
     models::*,
-    store::{DocumentMetadataFilter, TaskFilter, VaultStore},
+    store::{DocumentMetadataFilter, TaskFilter, ProjectStore},
 };
 use rusqlite::{Connection, params};
 use std::{path::Path, sync::Mutex};
 
-/// SQLite-backed `VaultStore`.
-/// The database file lives at `<vault_root>/.flynt/state.db`.
+/// SQLite-backed `ProjectStore`.
+/// The database file lives at `<project_root>/.flynt/state.db`.
 /// Documents are stored as markdown files; the DB is an index + task store.
 pub struct SqliteStore {
     conn: Mutex<Connection>,
@@ -217,9 +217,9 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tasks ADD COLUMN task_file_path TEXT;",
 ];
 
-// ── VaultStore implementation ─────────────────────────────────────────────────
+// ── ProjectStore implementation ─────────────────────────────────────────────────
 
-impl VaultStore for SqliteStore {
+impl ProjectStore for SqliteStore {
     fn get_document(&self, id: &DocumentId) -> Result<Option<Document>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(

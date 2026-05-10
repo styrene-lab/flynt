@@ -5,7 +5,7 @@
 //! writes a new config at the destination, and returns the new root path.
 
 use anyhow::{Context, Result};
-use flynt_core::models::{SyncConfig, VaultConfig};
+use flynt_core::models::{SyncConfig, ProjectConfig};
 use std::path::{Path, PathBuf};
 
 /// Result of a successful migration.
@@ -25,16 +25,16 @@ pub struct MigrationResult {
 /// - `new_sync`: the desired sync configuration
 /// - `remove_old`: whether to delete the old project after migration
 ///
-/// For iCloud: destination is `~/Library/Mobile Documents/com~apple~CloudDocs/<vault_name>/`
+/// For iCloud: destination is `~/Library/Mobile Documents/com~apple~CloudDocs/<project_name>/`
 /// For Git: destination stays the same (just init a repo + set remote)
-/// For Local from iCloud: destination is `~/Documents/<vault_name>/`
-pub fn migrate_vault(
+/// For Local from iCloud: destination is `~/Documents/<project_name>/`
+pub fn migrate_project(
     current_root: &Path,
-    vault_name: &str,
+    project_name: &str,
     new_sync: &SyncConfig,
     remove_old: bool,
 ) -> Result<MigrationResult> {
-    let new_root = destination_for_sync(vault_name, new_sync, current_root)?;
+    let new_root = destination_for_sync(project_name, new_sync, current_root)?;
 
     if new_root == current_root {
         // Same location — just update the config in place
@@ -50,7 +50,7 @@ pub fn migrate_vault(
     }
 
     // Copy project contents to new location
-    let files_copied = copy_vault(current_root, &new_root)?;
+    let files_copied = copy_project(current_root, &new_root)?;
 
     // Update config at destination
     update_config_sync(&new_root, new_sync)?;
@@ -76,22 +76,22 @@ pub fn migrate_vault(
 
 /// Determine the destination path for a sync target.
 fn destination_for_sync(
-    vault_name: &str,
+    project_name: &str,
     sync: &SyncConfig,
     current_root: &Path,
 ) -> Result<PathBuf> {
     match sync {
         SyncConfig::ICloud => {
-            super::sync::icloud::icloud_vault_path(vault_name)
+            super::sync::icloud::icloud_project_path(project_name)
                 .ok_or_else(|| anyhow::anyhow!(
                     "iCloud Drive is not available. Enable it in System Settings > Apple ID > iCloud > iCloud Drive."
                 ))
         }
         SyncConfig::None => {
-            // Move to ~/Documents/<vault_name>
+            // Move to ~/Documents/<project_name>
             let docs = dirs::document_dir()
                 .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")));
-            Ok(docs.join(vault_name))
+            Ok(docs.join(project_name))
         }
         SyncConfig::Git { .. } | SyncConfig::S3 { .. } | SyncConfig::Forge { .. } => {
             // Git/S3/Forge: stay in current location, just change config
@@ -101,7 +101,7 @@ fn destination_for_sync(
 }
 
 /// Copy all project files to a new directory, excluding `.flynt-local/` and `.git/`.
-fn copy_vault(src: &Path, dst: &Path) -> Result<usize> {
+fn copy_project(src: &Path, dst: &Path) -> Result<usize> {
     if dst.exists() {
         // Check if destination is non-empty
         let has_content = std::fs::read_dir(dst)
@@ -148,9 +148,9 @@ fn copy_vault(src: &Path, dst: &Path) -> Result<usize> {
 }
 
 /// Update the sync field in the project's config.toml, preserving all other fields.
-fn update_config_sync(vault_root: &Path, sync: &SyncConfig) -> Result<()> {
-    let config_path = vault_root.join(".flynt/config.toml");
-    std::fs::create_dir_all(vault_root.join(".flynt"))?;
+fn update_config_sync(project_root: &Path, sync: &SyncConfig) -> Result<()> {
+    let config_path = project_root.join(".flynt/config.toml");
+    std::fs::create_dir_all(project_root.join(".flynt"))?;
 
     if config_path.exists() {
         // Preserve existing config — only replace [sync] section
@@ -166,8 +166,8 @@ fn update_config_sync(vault_root: &Path, sync: &SyncConfig) -> Result<()> {
         std::fs::write(&config_path, doc.to_string())?;
     } else {
         // No existing config — create from scratch
-        let config = VaultConfig {
-            vault_name: vault_root
+        let config = ProjectConfig {
+            project_name: project_root
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("Flynt")
@@ -181,18 +181,18 @@ fn update_config_sync(vault_root: &Path, sync: &SyncConfig) -> Result<()> {
 }
 
 /// Initialize a git repo at the project root if one doesn't exist.
-fn init_git_if_needed(vault_root: &Path, remote: &str, _branch: &str) -> Result<()> {
-    if vault_root.join(".git").exists() {
+fn init_git_if_needed(project_root: &Path, remote: &str, _branch: &str) -> Result<()> {
+    if project_root.join(".git").exists() {
         return Ok(());
     }
 
-    let repo = git2::Repository::init(vault_root)?;
+    let repo = git2::Repository::init(project_root)?;
 
     // Add remote
     repo.remote("origin", remote)?;
 
     // Create .gitignore if it doesn't exist
-    let gitignore = vault_root.join(".gitignore");
+    let gitignore = project_root.join(".gitignore");
     if !gitignore.exists() {
         std::fs::write(
             &gitignore,
@@ -215,7 +215,7 @@ mod tests {
         std::fs::create_dir_all(root.join(".flynt")).unwrap();
         std::fs::write(
             root.join(".flynt/config.toml"),
-            "vault_name = \"test\"\n\n[sync]\nbackend = \"none\"\n",
+            "project_name = \"test\"\n\n[sync]\nbackend = \"none\"\n",
         ).unwrap();
         std::fs::write(root.join("note.md"), "# Hello").unwrap();
 
@@ -225,7 +225,7 @@ mod tests {
             auto_commit_seconds: 60,
         };
         // Git migration stays in same directory — just inits repo + updates config
-        let result = migrate_vault(&root, "test", &sync, false).unwrap();
+        let result = migrate_project(&root, "test", &sync, false).unwrap();
         assert_eq!(result.new_root, root);
         assert_eq!(result.files_copied, 0);
         assert!(root.join(".git").exists());
@@ -241,11 +241,11 @@ mod tests {
         std::fs::create_dir_all(src.join(".flynt-local/db")).unwrap();
         std::fs::create_dir_all(src.join(".git/objects")).unwrap();
         std::fs::write(src.join("note.md"), "# Note").unwrap();
-        std::fs::write(src.join(".flynt/config.toml"), "vault_name = \"test\"").unwrap();
+        std::fs::write(src.join(".flynt/config.toml"), "project_name = \"test\"").unwrap();
         std::fs::write(src.join(".flynt-local/db/index.db"), "binary").unwrap();
         std::fs::write(src.join(".git/objects/abc"), "git obj").unwrap();
 
-        let count = copy_vault(&src, &dst).unwrap();
+        let count = copy_project(&src, &dst).unwrap();
         assert_eq!(count, 2); // note.md + config.toml
         assert!(dst.join("note.md").exists());
         assert!(dst.join(".flynt/config.toml").exists());
@@ -260,7 +260,7 @@ mod tests {
         std::fs::create_dir_all(root.join(".flynt")).unwrap();
         std::fs::write(
             root.join(".flynt/config.toml"),
-            "vault_name = \"test\"\n\n[sync]\nbackend = \"none\"\n",
+            "project_name = \"test\"\n\n[sync]\nbackend = \"none\"\n",
         ).unwrap();
 
         let sync = SyncConfig::Git {
@@ -268,7 +268,7 @@ mod tests {
             branch: "main".into(),
             auto_commit_seconds: 60,
         };
-        let result = migrate_vault(&root, "test", &sync, false).unwrap();
+        let result = migrate_project(&root, "test", &sync, false).unwrap();
         assert!(root.join(".git").exists());
         assert!(root.join(".gitignore").exists());
         assert_eq!(result.new_root, root);

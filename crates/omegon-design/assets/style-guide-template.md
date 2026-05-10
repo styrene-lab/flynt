@@ -1,7 +1,7 @@
 +++
 # Style guide for [project / company name].
 # This file is read by Flynt's design extension at canvas-design time.
-# Place at <vault>/.flynt/style-guide.md (project-level, version-controlled)
+# Place at <project>/.flynt/style-guide.md (project-level, version-controlled)
 # or ~/.flynt/style-guide.md (user-level default across all projects).
 # Project-level overrides user-level when both exist.
 

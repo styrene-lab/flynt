@@ -2,7 +2,7 @@ use crate::{bootstrap::AppContext, state::{Route, TabState}};
 use flynt_core::{
     graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind, GraphPayload},
     models::DocumentId,
-    store::VaultStore,
+    store::ProjectStore,
 };
 use dioxus::prelude::*;
 use std::str::FromStr;

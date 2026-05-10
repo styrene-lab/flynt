@@ -237,7 +237,7 @@ pub fn AgentRail() -> Element {
                 return;
             }
         };
-        let project = ctx.vault_root();
+        let project = ctx.project_root();
         tracing::info!("Connecting ACP session: project={}, binary={}", project.display(), binary.display());
         let operator_settings = ctx.omegon().load_operator_settings();
         let saved_config = operator_settings.acp_config.clone();
@@ -662,7 +662,7 @@ pub fn AgentRail() -> Element {
                                 let trimmed = prompt.trim();
                                 if trimmed == "/login" || trimmed.starts_with("/login ") {
                                     let provider = trimmed.strip_prefix("/login").unwrap().trim();
-                                    let project = use_context::<AppContext>().vault_root();
+                                    let project = use_context::<AppContext>().project_root();
                                     *agent_status.write() = AgentStatus::Thinking;
                                     sess.login(&binary, provider).await;
 

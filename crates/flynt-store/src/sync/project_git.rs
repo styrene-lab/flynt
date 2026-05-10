@@ -1,7 +1,7 @@
 //! Project-level git operations scoped to a sub-path within a repository.
 //!
 //! Unlike `GitSync` which operates on the entire project repo, `ProjectGit`
-//! stages and commits only files under a project's sub-path. For VaultRepo
+//! stages and commits only files under a project's sub-path. For ProjectRepo
 //! projects, flushing tasks to disk is the main job (project-level sync handles
 //! actual commits). For ExternalRepo projects, this module handles the full
 //! commit cycle independently.
@@ -19,7 +19,7 @@ pub struct ProjectGit {
     repo_root: PathBuf,
     /// Sub-path within the repo where project data lives.
     sub_path: PathBuf,
-    /// Remote + branch config (only for ExternalRepo; VaultRepo is None).
+    /// Remote + branch config (only for ExternalRepo; ProjectRepo is None).
     remote_config: Option<(String, String)>,
 }
 
@@ -33,13 +33,13 @@ pub struct StageReport {
 impl ProjectGit {
     /// Open a `ProjectGit` from a `GitBacking` configuration.
     ///
-    /// For `VaultRepo`, the `vault_root` is used as the repo root.
+    /// For `ProjectRepo`, the `project_root` is used as the repo root.
     /// For `ExternalRepo`, the `repo_root` field provides the path.
-    pub fn open(backing: &GitBacking, vault_root: &Path) -> Result<Self> {
+    pub fn open(backing: &GitBacking, project_root: &Path) -> Result<Self> {
         match backing {
-            GitBacking::VaultRepo { sub_path } => {
+            GitBacking::ProjectRepo { sub_path } => {
                 Ok(Self {
-                    repo_root: vault_root.to_owned(),
+                    repo_root: project_root.to_owned(),
                     sub_path: sub_path.clone(),
                     remote_config: None,
                 })
@@ -167,7 +167,7 @@ impl ProjectGit {
     /// Push to remote (only meaningful for ExternalRepo).
     pub fn push(&self) -> Result<()> {
         let (remote_name, branch) = self.remote_config.as_ref()
-            .context("push called on VaultRepo project — project-level sync handles this")?;
+            .context("push called on ProjectRepo project — project-level sync handles this")?;
         let repo = self.open_repo()?;
         let mut remote = repo.find_remote(remote_name)?;
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
@@ -194,19 +194,19 @@ mod tests {
     }
 
     #[test]
-    fn open_vault_repo_project() {
+    fn open_project_repo_project() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path();
-        init_repo(vault_root);
+        let project_root = tmp.path();
+        init_repo(project_root);
 
-        let backing = GitBacking::VaultRepo {
+        let backing = GitBacking::ProjectRepo {
             sub_path: PathBuf::from(".flynt/projects/test"),
         };
-        let pg = ProjectGit::open(&backing, vault_root).unwrap();
+        let pg = ProjectGit::open(&backing, project_root).unwrap();
         assert!(!pg.is_external());
         assert_eq!(
             pg.project_data_root(),
-            vault_root.join(".flynt/projects/test")
+            project_root.join(".flynt/projects/test")
         );
     }
 
@@ -240,7 +240,7 @@ mod tests {
         // Also create a file outside the sub-path
         std::fs::write(root.join("outside.md"), "# Outside").unwrap();
 
-        let backing = GitBacking::VaultRepo {
+        let backing = GitBacking::ProjectRepo {
             sub_path: PathBuf::from("projects/test"),
         };
         let pg = ProjectGit::open(&backing, root).unwrap();
@@ -262,7 +262,7 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(sub.join("task1.md"), "# Task 1\n").unwrap();
 
-        let backing = GitBacking::VaultRepo {
+        let backing = GitBacking::ProjectRepo {
             sub_path: PathBuf::from(".flynt/projects/test"),
         };
         let pg = ProjectGit::open(&backing, root).unwrap();
@@ -276,11 +276,11 @@ mod tests {
     }
 
     #[test]
-    fn push_errors_on_vault_repo() {
+    fn push_errors_on_project_repo() {
         let tmp = TempDir::new().unwrap();
         init_repo(tmp.path());
 
-        let backing = GitBacking::VaultRepo {
+        let backing = GitBacking::ProjectRepo {
             sub_path: PathBuf::from("data"),
         };
         let pg = ProjectGit::open(&backing, tmp.path()).unwrap();

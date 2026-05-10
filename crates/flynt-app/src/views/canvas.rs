@@ -373,17 +373,17 @@ pub fn CanvasView(path: PathBuf) -> Element {
     let mut refresh = use_signal(|| 0u64);
 
     {
-        let vault_events = ctx.vault_events();
+        let project_events = ctx.project_events();
         let watch_path = path.clone();
         use_effect(move || {
-            let mut rx = vault_events.subscribe();
+            let mut rx = project_events.subscribe();
             let watch_path = watch_path.clone();
             spawn(async move {
                 while let Ok(event) = rx.recv().await {
                     let changed = match event {
-                        flynt_store::watcher::VaultChangeEvent::FileCreated(p)
-                        | flynt_store::watcher::VaultChangeEvent::FileModified(p) => Some(p),
-                        flynt_store::watcher::VaultChangeEvent::FileDeleted(_) => None,
+                        flynt_store::watcher::ProjectChangeEvent::FileCreated(p)
+                        | flynt_store::watcher::ProjectChangeEvent::FileModified(p) => Some(p),
+                        flynt_store::watcher::ProjectChangeEvent::FileDeleted(_) => None,
                     };
                     let Some(changed) = changed else { continue; };
                     // Match by suffix — events carry absolute paths; our path
@@ -407,12 +407,12 @@ pub fn CanvasView(path: PathBuf) -> Element {
         let cap_ctx = ctx.clone();
         let canvas_path_for_handler = path.clone();
         use_effect(move || {
-            let vault_root = cap_ctx.project().root.clone();
+            let project_root = cap_ctx.project().root.clone();
             let canvas_rel = canvas_path_for_handler.clone();
             spawn(async move {
                 use crate::canvas_capture::*;
-                let req_dir = capture_request_dir(&vault_root);
-                let resp_dir = capture_response_dir(&vault_root);
+                let req_dir = capture_request_dir(&project_root);
+                let resp_dir = capture_response_dir(&project_root);
                 let _ = std::fs::create_dir_all(&req_dir);
                 let _ = std::fs::create_dir_all(&resp_dir);
                 loop {

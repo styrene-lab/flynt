@@ -7,18 +7,18 @@ use tracing::debug;
 use super::util;
 
 pub struct GitSync {
-    pub vault_root: PathBuf,
+    pub project_root: PathBuf,
     pub remote: String,
     pub branch: String,
 }
 
 impl GitSync {
-    pub fn new(vault_root: PathBuf, remote: impl Into<String>, branch: impl Into<String>) -> Self {
-        Self { vault_root, remote: remote.into(), branch: branch.into() }
+    pub fn new(project_root: PathBuf, remote: impl Into<String>, branch: impl Into<String>) -> Self {
+        Self { project_root, remote: remote.into(), branch: branch.into() }
     }
 
     fn open_repo(&self) -> Result<Repository> {
-        util::open_repo(&self.vault_root)
+        util::open_repo(&self.project_root)
     }
 
     /// Build credential callbacks that handle SSH agent, SSH key files, and HTTPS.
@@ -183,7 +183,7 @@ impl GitSync {
 
 /// A project tag (git tag wrapper).
 #[derive(Debug, Clone)]
-pub struct VaultTag {
+pub struct ProjectTag {
     pub name: String,
     pub message: Option<String>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -204,7 +204,7 @@ impl GitSync {
     }
 
     /// List all tags with timestamps.
-    pub fn list_tags(&self) -> Result<Vec<VaultTag>> {
+    pub fn list_tags(&self) -> Result<Vec<ProjectTag>> {
         let repo = self.open_repo()?;
         let mut tags = Vec::new();
         repo.tag_foreach(|oid, raw_name| {
@@ -227,7 +227,7 @@ impl GitSync {
                 })
                 .unwrap_or_default();
             let message = repo.find_tag(oid).ok().map(|t| t.message().unwrap_or("").to_string());
-            tags.push(VaultTag { name, message, timestamp });
+            tags.push(ProjectTag { name, message, timestamp });
             true
         })?;
         tags.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));

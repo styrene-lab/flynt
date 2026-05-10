@@ -1,6 +1,6 @@
 use crate::{
     models::{MetadataValue},
-    store::{TaskFilter, VaultStore},
+    store::{TaskFilter, ProjectStore},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -65,7 +65,7 @@ pub struct GraphPayload {
     pub all_tags: Vec<String>,
 }
 
-pub fn build_graph_payload(store: &dyn VaultStore) -> Result<GraphPayload> {
+pub fn build_graph_payload(store: &dyn ProjectStore) -> Result<GraphPayload> {
     let docs = store.list_documents()?;
     let mut nodes = Vec::with_capacity(docs.len());
     let mut edges = Vec::new();
@@ -492,7 +492,7 @@ mod tests {
     use super::{build_graph_payload, GraphEdgeKind, GraphNodeKind};
     use crate::{
         models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, MetadataField, MetadataProtection, MetadataValue, SearchResult, Task, TaskId, WikiLink},
-        store::{DocumentMetadataFilter, TaskFilter, VaultStore},
+        store::{DocumentMetadataFilter, TaskFilter, ProjectStore},
     };
     use anyhow::Result;
     use chrono::Utc;
@@ -505,7 +505,7 @@ mod tests {
         tasks: Vec<Task>,
     }
 
-    impl VaultStore for StubStore {
+    impl ProjectStore for StubStore {
         fn get_document(&self, id: &DocumentId) -> Result<Option<Document>> {
             Ok(self.full_docs.get(&id.0.to_string()).cloned())
         }

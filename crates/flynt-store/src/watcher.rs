@@ -6,19 +6,19 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub enum VaultChangeEvent {
+pub enum ProjectChangeEvent {
     FileModified(PathBuf),
     FileCreated(PathBuf),
     FileDeleted(PathBuf),
 }
 
-pub struct VaultWatcher {
+pub struct ProjectWatcher {
     _watcher: RecommendedWatcher,
-    pub rx: mpsc::Receiver<VaultChangeEvent>,
+    pub rx: mpsc::Receiver<ProjectChangeEvent>,
 }
 
-impl VaultWatcher {
-    pub fn new(vault_root: &Path) -> Result<Self> {
+impl ProjectWatcher {
+    pub fn new(project_root: &Path) -> Result<Self> {
         let (tx, rx) = mpsc::channel();
         // Canonicalize the project path before deriving the skip prefix and
         // before handing it to notify. macOS FSEvents emits paths against
@@ -26,7 +26,7 @@ impl VaultWatcher {
         // filter built from a symlinked input would silently miss every
         // event. Same hardening pass omegon shipped in 0.19.4's triggers.rs;
         // we have the same notify backend and the same exposure.
-        let canonical_root = std::fs::canonicalize(vault_root).unwrap_or_else(|_| vault_root.to_path_buf());
+        let canonical_root = std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
         let flynt_dir = canonical_root.join(".flynt");
 
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
@@ -36,9 +36,9 @@ impl VaultWatcher {
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                 if ext != "md" && ext != "excalidraw" && ext != "d2" && ext != "canvas" { continue; }
                 let evt = match event.kind {
-                    notify::EventKind::Create(_) => VaultChangeEvent::FileCreated(path),
-                    notify::EventKind::Modify(_) => VaultChangeEvent::FileModified(path),
-                    notify::EventKind::Remove(_) => VaultChangeEvent::FileDeleted(path),
+                    notify::EventKind::Create(_) => ProjectChangeEvent::FileCreated(path),
+                    notify::EventKind::Modify(_) => ProjectChangeEvent::FileModified(path),
+                    notify::EventKind::Remove(_) => ProjectChangeEvent::FileDeleted(path),
                     _ => continue,
                 };
                 let _ = tx.send(evt);

@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn repo_binding_omits_codex_fields() {
         // Sanity check that we dropped codex_project_id /
-        // codex_vault_root / codex_project_sub_path.
+        // codex_project_root / codex_project_sub_path.
         let b = RepoBinding::new("o", "r");
         let s = toml::to_string(&b).unwrap();
         assert!(!s.contains("codex"));

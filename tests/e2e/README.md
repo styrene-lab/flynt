@@ -28,7 +28,7 @@ python -m pytest -v
 1. Tests launch the `flynt` binary with `WEBKIT_INSPECTOR_SERVER` to enable CDP
 2. Playwright connects to the webview via Chrome DevTools Protocol
 3. Tests interact with the rendered HTML/CSS (same as what the user sees)
-4. Each test gets a fresh temporary vault via `FLYNT_VAULT` env var
+4. Each test gets a fresh temporary project via `FLYNT_PROJECT` env var
 
 ## Environment variables
 

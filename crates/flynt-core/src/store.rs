@@ -36,7 +36,7 @@ pub struct TaskFilter {
 
 /// The storage abstraction. Implementations live in `flynt-store`.
 /// Both the UI and the MCP agent go through this trait.
-pub trait VaultStore: Send + Sync {
+pub trait ProjectStore: Send + Sync {
     // ── Documents ─────────────────────────────────────────────────────────────
     fn get_document(&self, id: &DocumentId) -> Result<Option<Document>>;
     fn get_document_by_path(&self, path: &Path) -> Result<Option<Document>>;

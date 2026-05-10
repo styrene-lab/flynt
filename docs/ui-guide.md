@@ -7,16 +7,16 @@
 
 ## 1. First Launch (Welcome Screen)
 
-**Route:** `Welcome` | **Trigger:** No vault configured, or `Cmd+P → Welcome`
+**Route:** `Welcome` | **Trigger:** No project configured, or `Cmd+P → Welcome`
 
 ### Primary Actions
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **Start writing** | Click | Creates vault at `~/Documents/Flynt/`, writes Welcome.md, switches to Notes view |
-| **Open your notebook** (vault exists) | Click | Switches to last used vault, navigates to Notes |
+| **Start writing** | Click | Creates project at `~/Documents/Flynt/`, writes Welcome.md, switches to Notes view |
+| **Open your notebook** (project exists) | Click | Switches to last used project, navigates to Notes |
 | **Sync across devices** | Click | Expands sync options panel |
-| **Join a shared vault** | Click | Opens clone dialog modal |
+| **Join a shared project** | Click | Opens clone dialog modal |
 
 ### Sync Options (expanded)
 
@@ -24,10 +24,10 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **iCloud Drive** | Click | Creates vault in `~/Library/Mobile Documents/com~apple~CloudDocs/Flynt/`. If already exists, opens it. |
-| **Google Drive** | Click | Creates vault in Google Drive's local sync folder |
-| **Dropbox** | Click | Creates vault in `~/Dropbox/Flynt/` |
-| **OneDrive** | Click | Creates vault in OneDrive's local sync folder |
+| **iCloud Drive** | Click | Creates project in `~/Library/Mobile Documents/com~apple~CloudDocs/Flynt/`. If already exists, opens it. |
+| **Google Drive** | Click | Creates project in Google Drive's local sync folder |
+| **Dropbox** | Click | Creates project in `~/Dropbox/Flynt/` |
+| **OneDrive** | Click | Creates project in OneDrive's local sync folder |
 | No providers detected | | Cloud section hidden entirely. Git section auto-expands with label "Online sync". |
 
 **Error case:** Provider folder missing or permission denied → error logged but no UI feedback. **Known gap.**
@@ -46,11 +46,11 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Notebook URL | Text input | Placeholder: `https://github.com/you/your-vault.git`. On blur, auto-fills token from stored credentials if available. |
+| Notebook URL | Text input | Placeholder: `https://github.com/you/your-project.git`. On blur, auto-fills token from stored credentials if available. |
 | Branch | Text input, default "main" | |
 | Access token | Password input, optional | "Only needed for private notebooks". Token is persisted to `auth.json` on successful clone. |
 | Clone button | Click | Async (`spawn_blocking`), button shows "Cloning..." while working |
-| Clone success | | Vault opened, navigate to Notes, launcher profile updated |
+| Clone success | | Project opened, navigate to Notes, launcher profile updated |
 | Clone failure | | Error inline in dialog: network error, auth failure, path conflict |
 | Cancel button | Click | Closes dialog |
 | Overlay click | Click | Closes dialog |
@@ -60,9 +60,9 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| **Open an existing folder** | Click | File picker → vault opened with `write_frontmatter: false` |
+| **Open an existing folder** | Click | File picker → project opened with `write_frontmatter: false` |
 | **Clone from Git** | Click | Opens clone dialog |
-| **Import markdown files** | Click | File picker → copies files into current vault |
+| **Import markdown files** | Click | File picker → copies files into current project |
 
 ---
 
@@ -98,7 +98,7 @@
 | `Cmd+S` | Keydown | Immediate save |
 | `![[file.excalidraw]]` | Rendered | Inline SVG from `.svg` sidecar. Click opens Excalidraw editor. If no SVG: "[Drawing: file — open to render]" placeholder, click opens editor. |
 | `![[diagram.d2]]` | Rendered | Inline SVG from D2 render. If d2 CLI unavailable: "[Diagram: file — rendering not available]" placeholder. |
-| `![[image.png]]` | Rendered | Inline image via `vault://localhost/` protocol. Searches root, `assets/`, `images/`, `drawings/`. |
+| `![[image.png]]` | Rendered | Inline image via `project://localhost/` protocol. Searches root, `assets/`, `images/`, `drawings/`. |
 | `[[wikilink]]` | Click | Navigates to linked note, opens in new tab |
 
 ### Conflict Resolution Banner
@@ -213,10 +213,10 @@
 | New Drawing | Create | Excalidraw `.excalidraw` + wrapper `.md` |
 | Insert Drawing Here | Create | Inserts `![[drawing.excalidraw]]` at cursor (Notes view only, requires open note) |
 | Today's Note | Create | Daily note from template, or opens existing |
-| New from: `<template>` | Template | Creates timestamped note from vault template |
-| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags. **Silently no-ops on non-Git vaults.** |
+| New from: `<template>` | Template | Creates timestamped note from project template |
+| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags. **Silently no-ops on non-Git projects.** |
 | Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
-| Create Vault in iCloud | Create | Creates iCloud vault + opens new instance |
+| Create Project in iCloud | Create | Creates iCloud project + opens new instance |
 | `<note title>` | Open | Opens matching note in tab |
 
 ### Agent Mode (`Cmd+K`)
@@ -243,17 +243,17 @@
 |---------|-------|------|-------|
 | **Appearance** | Theme | Card grid | Currently: Alpharius only |
 | | Font size | Button group | Small / Medium / Large / XLarge |
-| **Vault** | Name | Text input | |
+| **Project** | Name | Text input | |
 | | Location | Read-only path | |
 | **Sync** | Backend | Radio group | None / iCloud / Git |
 | | Remote (Git) | Text input | Only shown for Git backend |
 | | Branch (Git) | Text input | |
 | | Auto-commit (Git) | Number input | Seconds, minimum 30, 0 = manual only |
 
-**Sync backend change on Save:** Triggers vault migration.
-- **None → iCloud:** Copies all vault files to iCloud Drive folder, updates config, switches runtime. **Synchronous — UI blocks during copy, no progress indicator.** Large vaults may appear to freeze.
+**Sync backend change on Save:** Triggers project migration.
+- **None → iCloud:** Copies all project files to iCloud Drive folder, updates config, switches runtime. **Synchronous — UI blocks during copy, no progress indicator.** Large projects may appear to freeze.
 - **None → Git:** Stays in current location, initializes git repo + adds remote.
-- **Any → None:** Copies to `~/Documents/<vault_name>/`, iCloud/git copy remains (not deleted).
+- **Any → None:** Copies to `~/Documents/<project_name>/`, iCloud/git copy remains (not deleted).
 
 ### Advanced ("Show advanced settings ▾")
 
@@ -312,7 +312,7 @@
 |---------|----------|-----------------|
 | Save changes | Click | Persists to `.flynt/config.toml` + `.flynt/operator-settings.json` + `.omegon/profile.json` |
 | Export local preview | Advanced only | Exports publication HTML |
-| Success message | Inline green text | "Settings saved" or "Vault migrated and sync updated." |
+| Success message | Inline green text | "Settings saved" or "Project migrated and sync updated." |
 | Error message | Inline red text | Validation failures, save errors |
 
 ---
@@ -321,7 +321,7 @@
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Vault name | Display | Current vault name |
+| Project name | Display | Current project name |
 | Build hash | Display | Tiny monospace, click-to-copy version hash |
 | Sync badge | ✓ (green) | Synced — Git auto-sync idle |
 | | ↻ (spinning blue) | Syncing — committing, pulling, or pushing |
@@ -333,19 +333,19 @@
 
 ---
 
-## 9. Sidebar — Vault Switcher
+## 9. Sidebar — Project Switcher
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
-| Current vault | Display | Name + path |
-| Other cloned vaults | Click | Switches runtime, navigates to Notes |
-| Vault × button | Hover to reveal | Confirmation with "Your notes are not deleted" hint |
-| Uncloned manifest vaults | ⤓ icon + role badge | Click clones to device (async) |
-| Add vault | Click | Inline form: name + repo URL, Enter adds to manifest + clones |
-| Open folder | Click | File picker → opens as vault |
+| Current project | Display | Name + path |
+| Other cloned projects | Click | Switches runtime, navigates to Notes |
+| Project × button | Hover to reveal | Confirmation with "Your notes are not deleted" hint |
+| Uncloned manifest projects | ⤓ icon + role badge | Click clones to device (async) |
+| Add project | Click | Inline form: name + repo URL, Enter adds to manifest + clones |
+| Open folder | Click | File picker → opens as project |
 | Error banner | Red inline | Shows clone/add errors with × dismiss |
 
-**Error case:** "Add vault" when no manifest configured → error: "No manifest configured. Connect a manifest first."
+**Error case:** "Add project" when no manifest configured → error: "No manifest configured. Connect a manifest first."
 
 ---
 
@@ -394,13 +394,13 @@
 
 | Screen | Elements | Notes |
 |--------|----------|-------|
-| Welcome | "Start writing" / "Sync across devices" / "Join a shared vault" | Same tier-based design as desktop |
-| Sync choice | "Connect a notebook" / "Connect all my notebooks" | Single vault vs manifest |
-| Manifest input | URL + token → clone manifest repo | Discovers all vaults |
-| Vault list | Select vault → clone | Shows name + role badge |
-| Single vault | URL + branch + token → clone | |
+| Welcome | "Start writing" / "Sync across devices" / "Join a shared project" | Same tier-based design as desktop |
+| Sync choice | "Connect a notebook" / "Connect all my notebooks" | Single project vs manifest |
+| Manifest input | URL + token → clone manifest repo | Discovers all projects |
+| Project list | Select project → clone | Shows name + role badge |
+| Single project | URL + branch + token → clone | |
 | Cloning | Spinner: "Setting up..." | Async |
-| Done | "You're all set" → "Open vault" | |
+| Done | "You're all set" → "Open project" | |
 | Error | Error message + "Start over" | |
 
 ### Tab Bar
@@ -411,7 +411,7 @@
 | Board | Kanban board (same layout as desktop) | |
 | Graph | Force-directed SVG graph (Rust-rendered, same as desktop) | |
 | Omegon | Agent chat view | |
-| Settings | Vault name, sync status, path | **Read-only** — no editable settings on mobile yet |
+| Settings | Project name, sync status, path | **Read-only** — no editable settings on mobile yet |
 
 ### Share Extension
 
@@ -419,13 +419,13 @@
 |---------|----------|-----------------|
 | Share from any app | SwiftUI sheet: edit title | |
 | Save | Writes `.md` to App Group inbox (`group.io.styrene.flynt`) | |
-| Main app polls | Every 5 seconds | `drain_inbox()` moves `.md` files + assets into vault, indexes |
+| Main app polls | Every 5 seconds | `drain_inbox()` moves `.md` files + assets into project, indexes |
 
-### First Vault
+### First Project
 
 | Condition | Behavior |
 |-----------|----------|
-| Fresh install | Vault created at `Documents/Flynt/` |
+| Fresh install | Project created at `Documents/Flynt/` |
 | No notes (reindex = 0) | Welcome.md auto-created with getting-started content |
 
 ---
@@ -434,22 +434,22 @@
 
 | File | Format | Location | Notes |
 |------|--------|----------|-------|
-| Vault config | TOML | `.flynt/config.toml` | Survives TestFlight upgrades (inside vault) |
+| Project config | TOML | `.flynt/config.toml` | Survives TestFlight upgrades (inside project) |
 | Operator settings | JSON | `.flynt/operator-settings.json` | Daemon config, persona, vox |
 | Omegon profile | JSON | `.omegon/profile.json` | Model, thinking level |
-| Notes | Markdown + TOML frontmatter (`+++`) | `*.md` anywhere in vault | |
+| Notes | Markdown + TOML frontmatter (`+++`) | `*.md` anywhere in project | |
 | Tasks | Markdown + TOML frontmatter (`kind = "task"`) | Project subdirectories | |
 | Drawings | JSON (Excalidraw scene) | `drawings/*.excalidraw` | `.md` wrapper for indexing, `.svg` sidecar for embedding |
 | D2 diagrams | D2 source language | `diagrams/*.d2` | `.md` wrapper, `.svg` sidecar |
 | Delegations | Markdown | `ai/delegations/*.md` | Hidden from sidebar, searchable |
 | Memory facts | Markdown | `ai/memory/**/*.md` | Hidden from sidebar |
 | Communications | Markdown | `references/comms/**/*.md` | Hidden from sidebar |
-| Vault manifest | TOML | `vaults.toml` in manifest repo | |
-| Local manifest sidecar | TOML | `vaults.local.toml` (gitignored) | Device-specific clone paths |
-| Launcher profile | JSON | `~/Library/Application Support/flynt/launcher-profile.json` | Known vaults, recent, wizard state |
+| Project manifest | TOML | `projects.toml` in manifest repo | |
+| Local manifest sidecar | TOML | `projects.local.toml` (gitignored) | Device-specific clone paths |
+| Launcher profile | JSON | `~/Library/Application Support/flynt/launcher-profile.json` | Known projects, recent, wizard state |
 | Auth tokens | JSON | `~/.config/omegon/auth.json` | 0600 permissions, atomic write + lock file |
 | Identity | Binary (argon2id + ChaCha20Poly1305) | `~/.config/styrene/identity.key` | 97 bytes, STID magic header |
-| SQLite index | SQLite WAL | `.flynt-local/flynt/flynt-index.db` | Ephemeral — rebuilt from vault files on reindex |
+| SQLite index | SQLite WAL | `.flynt-local/flynt/flynt-index.db` | Ephemeral — rebuilt from project files on reindex |
 
 ---
 
@@ -462,14 +462,14 @@
 | **Git** | Auto-commit + push/pull on configurable interval (min 30s) | Git merge conflicts produce markers → resolution banner in note view |
 | **Google Drive / Dropbox / OneDrive** | Provider's desktop client handles filesystem sync | Provider-specific conflict handling — Flynt treats the folder as local |
 
-### Vault Snapshots (Git only)
+### Project Snapshots (Git only)
 
 | Action | Trigger | Result |
 |--------|---------|--------|
 | Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags |
-| **Non-Git vault** | Same command | **Silently no-ops. No error, no feedback.** |
+| **Non-Git project** | Same command | **Silently no-ops. No error, no feedback.** |
 
-### Vault Migration
+### Project Migration
 
 | Transition | What happens |
 |-----------|-------------|
@@ -478,7 +478,7 @@
 | iCloud → Git | Stays in iCloud location. Adds git repo on top. |
 | Any → None | Copies to `~/Documents/<name>/`. Old location not deleted. |
 
-**Known limitation:** Migration is synchronous in the save handler. No progress indicator. Large vaults may freeze the UI for several seconds.
+**Known limitation:** Migration is synchronous in the save handler. No progress indicator. Large projects may freeze the UI for several seconds.
 
 ---
 
@@ -509,9 +509,9 @@
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `FLYNT_VAULT` | Override vault root directory | `~/Documents/Flynt` |
+| `FLYNT_PROJECT` | Override project root directory (legacy aliases: `FLYNT_VAULT`, `CODEX_VAULT`) | `~/Documents/Flynt` |
 | `OMEGON_BIN` | Override Omegon binary path | Channel-resolved from `~/.omegon/versions/` |
-| `OMEGON_HOME` | Override Omegon home directory | Derived from vault config |
+| `OMEGON_HOME` | Override Omegon home directory | Derived from project config |
 | `FLYNT_LAUNCHER_PROFILE` | Override launcher profile path | `~/Library/Application Support/flynt/launcher-profile.json` |
 | `OMEGON_AUTH_JSON` | Override auth.json path | `~/.config/omegon/auth.json` |
 | `FLYNT_LOCAL_STATE` | Override local state root | `~/.local/share/flynt/` |
@@ -522,11 +522,11 @@
 
 | Area | Gap | Severity |
 |------|-----|----------|
-| Cloud vault creation | No UI error feedback on failure | Low — error logged |
+| Cloud project creation | No UI error feedback on failure | Low — error logged |
 | iCloud conflicts | "Conflicted copy" files not detected | Medium — manual reconciliation needed |
-| Vault migration | Synchronous, blocks UI, no progress | Medium — large vaults freeze |
+| Project migration | Synchronous, blocks UI, no progress | Medium — large projects freeze |
 | Column rename | No empty-name validation | Low — cosmetic |
-| Create Snapshot | Silent no-op on non-Git vaults | Low — confusing but harmless |
+| Create Snapshot | Silent no-op on non-Git projects | Low — confusing but harmless |
 | Mobile settings | Read-only, no editing | Medium — must use desktop for config |
 | Delegation files | Accumulate without cleanup | Low — searchable, hidden from sidebar |
 | Sync status | Only for Git backend | Low — cloud providers handle their own |

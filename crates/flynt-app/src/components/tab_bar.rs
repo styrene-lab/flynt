@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use flynt_core::store::VaultStore;
+use flynt_core::store::ProjectStore;
 use crate::bootstrap::AppContext;
 use crate::state::TabState;
 

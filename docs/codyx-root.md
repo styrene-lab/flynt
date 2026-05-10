@@ -12,7 +12,7 @@ related: []
 
 ## Overview
 
-Single-user Rust/Dioxus 0.7 macOS desktop application. Obsidian-style markdown knowledge management with kanban task tracking, a typed entity system, and an MCP agent surface for Omegon AI integration. Vault root is a plain directory of markdown files; SQLite provides an indexed cache. Git backing provides durability and portability for project data. Publication pipeline renders read-only static output for external visibility.
+Single-user Rust/Dioxus 0.7 macOS desktop application. Obsidian-style markdown knowledge management with kanban task tracking, a typed entity system, and an MCP agent surface for Omegon AI integration. Project root is a plain directory of markdown files; SQLite provides an indexed cache. Git backing provides durability and portability for project data. Publication pipeline renders read-only static output for external visibility.
 
 Workspace: flynt-core (models + entities + traits) · flynt-store (SQLite + filesystem + git) · flynt-agent (MCP server binary) · flynt-app (Dioxus UI binary)
 
@@ -46,7 +46,7 @@ Workspace: flynt-core (models + entities + traits) · flynt-store (SQLite + file
 
 **Status:** accepted
 
-**Rationale:** Git backing serves durability, portability, and audit trail for the single user. Multi-user git sync was evaluated and rejected — it breaks down beyond a handful of developers, and a coordination server is premature. Projects can back to the vault repo (VaultRepo) or an external repo (ExternalRepo).
+**Rationale:** Git backing serves durability, portability, and audit trail for the single user. Multi-user git sync was evaluated and rejected — it breaks down beyond a handful of developers, and a coordination server is premature. Projects can back to the project repo (ProjectRepo) or an external repo (ExternalRepo).
 
 ### Agent integration: Flynt exposes MCP tools; Omegon is an embedded capability
 

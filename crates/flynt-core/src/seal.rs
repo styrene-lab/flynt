@@ -1,11 +1,11 @@
-//! Project sealing — encryption at rest for notes and vaults.
+//! Project sealing — encryption at rest for notes and projects.
 //!
 //! Two modes:
 //! - **Sealed project**: all files encrypted as `.md.age`, decrypted in memory while unlocked
 //! - **Selective seal**: individual notes marked `sealed = true`, body encrypted inline
 //!
 //! Encryption uses the `age` crate with keys derived from StyreneIdentity:
-//! `IdentityVault::unlock()` → `KeyDeriver::age_secret()` → age X25519 recipient.
+//! `IdentityProject::unlock()` → `KeyDeriver::age_secret()` → age X25519 recipient.
 //!
 //! This module provides configuration, format detection, and the sealed body
 //! container. It does NOT implement cryptographic primitives — those come from
@@ -81,7 +81,7 @@ pub const SEALED_VERSION: u8 = 0x01;
 pub struct SealedBody {
     pub version: u8,
     pub algorithm: SealAlgorithm,
-    /// Key derivation context — first 4 bytes of SHA-256(vault_id).
+    /// Key derivation context — first 4 bytes of SHA-256(project_id).
     /// Identifies which key encrypted this payload for key rotation.
     pub key_id: [u8; 4],
     pub nonce: [u8; 12],

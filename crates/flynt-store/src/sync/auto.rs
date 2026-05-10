@@ -1,7 +1,7 @@
-//! Background auto-sync loop for git-backed vaults.
+//! Background auto-sync loop for git-backed projects.
 //!
 //! Periodically commits local changes and syncs with the remote.
-//! Designed to keep phone and desktop vaults in sync via a shared git repo.
+//! Designed to keep phone and desktop projects in sync via a shared git repo.
 
 use super::git::GitSync;
 use flynt_core::sync::SyncBackend;
@@ -37,7 +37,7 @@ pub struct AutoSyncHandle {
 ///
 /// The loop runs until the handle is dropped.
 pub fn start_auto_sync(
-    vault_root: PathBuf,
+    project_root: PathBuf,
     remote: String,
     branch: String,
     interval: Duration,
@@ -47,7 +47,7 @@ pub fn start_auto_sync(
     let (status_tx, status_rx) = watch::channel(AutoSyncStatus::Idle);
 
     tokio::spawn(async move {
-        let git = GitSync::new(vault_root, &remote, &branch);
+        let git = GitSync::new(project_root, &remote, &branch);
         let mut cancel = cancel_rx;
         let mut consecutive_failures: u32 = 0;
         let max_backoff = Duration::from_secs(600); // 10 minute cap

@@ -5,32 +5,32 @@ use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{info, warn};
 
 /// Project root on mobile — uses the app's Documents directory.
-pub fn vault_root() -> PathBuf {
+pub fn project_root() -> PathBuf {
     dirs::document_dir()
         .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")))
         .join("Flynt")
 }
 
 /// Alias for use from onboarding view.
-pub fn default_vault_root() -> PathBuf { vault_root() }
+pub fn default_project_root() -> PathBuf { project_root() }
 
 /// Check if a project has been initialized (has at least a .flynt directory or any .md files).
-pub fn has_vault() -> bool {
-    let root = vault_root();
+pub fn has_project() -> bool {
+    let root = project_root();
     root.join(".flynt").exists() || root.join(".git").exists()
 }
 
 /// Mobile runtime state — simpler than desktop (no watcher, no omegon).
 #[derive(Clone)]
 pub struct MobileRuntime {
-    pub vault_root: PathBuf,
+    pub project_root: PathBuf,
     pub project: Arc<Project>,
     pub _sync_handle: Option<Arc<AutoSyncHandle>>,
 }
 
 /// Bootstrap the mobile project — open, index, start sync.
 pub fn bootstrap() -> Result<MobileRuntime> {
-    let root = vault_root();
+    let root = project_root();
     std::fs::create_dir_all(&root)?;
 
     let project = Arc::new(Project::open(&root)?);
@@ -41,7 +41,7 @@ pub fn bootstrap() -> Result<MobileRuntime> {
             for e in &errs {
                 warn!("Index error: {e}");
             }
-            // Create a welcome note for fresh vaults
+            // Create a welcome note for fresh projects
             if n == 0 {
                 let welcome = std::path::PathBuf::from("Welcome.md");
                 let content = "+++\ntitle = \"Welcome\"\ntags = []\n+++\n\n# Welcome to Flynt\n\nThis is your first note. Start writing, or explore the app.\n\n- **Notes** — write and organize your thoughts\n- **Board** — track tasks with kanban boards\n- **Graph** — see how your notes connect\n";
@@ -67,9 +67,9 @@ pub fn bootstrap() -> Result<MobileRuntime> {
             auto_commit_seconds,
         } if *auto_commit_seconds > 0 => {
             let interval = Duration::from_secs((*auto_commit_seconds).max(30));
-            let vault_for_reindex = Arc::clone(&project);
+            let project_for_reindex = Arc::clone(&project);
             let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-                if let Err(e) = vault_for_reindex.reindex() {
+                if let Err(e) = project_for_reindex.reindex() {
                     warn!("Post-pull reindex failed: {e}");
                 }
             });
@@ -90,7 +90,7 @@ pub fn bootstrap() -> Result<MobileRuntime> {
     };
 
     Ok(MobileRuntime {
-        vault_root: root,
+        project_root: root,
         project,
         _sync_handle: sync_handle,
     })
@@ -113,11 +113,11 @@ pub fn drain_inbox(project: &Project) -> Result<usize> {
     // Move shared assets first (images etc.)
     let inbox_assets = inbox.join("assets");
     if inbox_assets.is_dir() {
-        let vault_assets = project.root.join("assets");
-        fs::create_dir_all(&vault_assets)?;
+        let project_assets = project.root.join("assets");
+        fs::create_dir_all(&project_assets)?;
         for entry in fs::read_dir(&inbox_assets)? {
             let entry = entry?;
-            let dest = vault_assets.join(entry.file_name());
+            let dest = project_assets.join(entry.file_name());
             fs::rename(entry.path(), &dest)?;
         }
         let _ = fs::remove_dir(&inbox_assets);

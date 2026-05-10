@@ -1,7 +1,7 @@
 use chrono::Utc;
 use flynt_core::{
     models::{Board, BoardId, Column, Engagement, EngagementId, Priority, Task, TaskId, TaskStatus},
-    store::{TaskFilter, VaultStore},
+    store::{TaskFilter, ProjectStore},
 };
 use dioxus::prelude::*;
 use crate::bootstrap::AppContext;
@@ -304,7 +304,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                 // Engagement scope selector — sits with the filter pills
                 // because operators reach for it for the same reason
                 // (narrow what's on screen). Hidden when no engagements
-                // exist so empty vaults don't show a useless dropdown.
+                // exist so empty projects don't show a useless dropdown.
                 {
                     let engs = engagements.read();
                     let list: Vec<Engagement> = engs.clone().unwrap_or_default();

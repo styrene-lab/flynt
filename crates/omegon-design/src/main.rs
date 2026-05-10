@@ -19,7 +19,10 @@ mod extension;
 mod skill_install;
 mod style_guide;
 
-fn vault_root() -> PathBuf {
+fn project_root() -> PathBuf {
+    if let Ok(v) = std::env::var("FLYNT_PROJECT") {
+        return PathBuf::from(v);
+    }
     if let Ok(v) = std::env::var("FLYNT_VAULT") {
         return PathBuf::from(v);
     }
@@ -48,7 +51,7 @@ async fn main() -> Result<()> {
         tracing::warn!("skill install failed: {e} — continuing without it");
     }
 
-    let root = vault_root();
+    let root = project_root();
     if let Err(e) = std::fs::create_dir_all(&root) {
         tracing::warn!("project dir create failed: {} — {e}", root.display());
     }

@@ -1,4 +1,4 @@
-use flynt_core::store::VaultStore;
+use flynt_core::store::ProjectStore;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;

@@ -48,8 +48,8 @@ pub struct StyleGuideReport {
     pub setup_hint: Option<String>,
 }
 
-pub fn project_path(vault_root: &Path) -> PathBuf {
-    vault_root.join(".flynt").join("style-guide.md")
+pub fn project_path(project_root: &Path) -> PathBuf {
+    project_root.join(".flynt").join("style-guide.md")
 }
 
 pub fn user_path() -> PathBuf {
@@ -120,8 +120,8 @@ fn load_level(path: PathBuf, level: &'static str) -> StyleGuideLevel {
 
 /// Build the full report. Reads both levels, computes the merged content,
 /// emits a setup hint when no guide is configured at all.
-pub fn load_report(vault_root: &Path) -> Result<StyleGuideReport> {
-    let project = load_level(project_path(vault_root), "project");
+pub fn load_report(project_root: &Path) -> Result<StyleGuideReport> {
+    let project = load_level(project_path(project_root), "project");
     let user = load_level(user_path(), "user");
 
     let merged = match (project.content.as_ref(), user.content.as_ref()) {

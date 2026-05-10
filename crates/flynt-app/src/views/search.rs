@@ -1,4 +1,4 @@
-use flynt_core::{models::SearchResult, store::VaultStore};
+use flynt_core::{models::SearchResult, store::ProjectStore};
 use dioxus::prelude::*;
 use crate::{bootstrap::AppContext, state::{Route, TabState}};
 

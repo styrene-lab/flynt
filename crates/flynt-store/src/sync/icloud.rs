@@ -1,4 +1,4 @@
-//! iCloud Drive sync for Flynt vaults.
+//! iCloud Drive sync for Flynt projects.
 //!
 //! The simplest sync path: the project folder lives inside iCloud Drive.
 //! Apple handles all file sync transparently. No server, no tokens, no git.
@@ -21,8 +21,8 @@ pub fn icloud_drive_root() -> Option<PathBuf> {
 }
 
 /// Get the default Flynt project path inside iCloud Drive.
-pub fn icloud_vault_path(vault_name: &str) -> Option<PathBuf> {
-    icloud_drive_root().map(|root| root.join(vault_name))
+pub fn icloud_project_path(project_name: &str) -> Option<PathBuf> {
+    icloud_drive_root().map(|root| root.join(project_name))
 }
 
 /// Check if a path is inside iCloud Drive.
@@ -41,10 +41,10 @@ pub fn is_icloud_available() -> bool {
 /// Download any .icloud placeholder files in the project.
 /// On macOS, files in iCloud Drive may be evicted (replaced with .icloud stubs).
 /// This triggers download of all markdown files.
-pub fn ensure_downloaded(vault_root: &Path) -> Result<usize> {
+pub fn ensure_downloaded(project_root: &Path) -> Result<usize> {
     let mut count = 0;
 
-    for entry in walkdir::WalkDir::new(vault_root)
+    for entry in walkdir::WalkDir::new(project_root)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -83,10 +83,10 @@ pub fn ensure_downloaded(vault_root: &Path) -> Result<usize> {
 /// Detect iCloud conflict files and list them.
 /// iCloud creates files like "Note 2.md" when conflicts occur.
 /// Returns pairs of (original_path, conflict_path).
-pub fn detect_conflicts(vault_root: &Path) -> Vec<(PathBuf, PathBuf)> {
+pub fn detect_conflicts(project_root: &Path) -> Vec<(PathBuf, PathBuf)> {
     let mut conflicts = Vec::new();
 
-    for entry in walkdir::WalkDir::new(vault_root)
+    for entry in walkdir::WalkDir::new(project_root)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -111,12 +111,12 @@ pub fn detect_conflicts(vault_root: &Path) -> Vec<(PathBuf, PathBuf)> {
 }
 
 /// Create a new project in iCloud Drive.
-pub fn create_icloud_vault(vault_name: &str) -> Result<PathBuf> {
-    let root = icloud_vault_path(vault_name)
+pub fn create_icloud_project(project_name: &str) -> Result<PathBuf> {
+    let root = icloud_project_path(project_name)
         .ok_or_else(|| anyhow::anyhow!("iCloud Drive not available"))?;
 
     if root.exists() {
-        anyhow::bail!("Project '{}' already exists in iCloud Drive", vault_name);
+        anyhow::bail!("Project '{}' already exists in iCloud Drive", project_name);
     }
 
     std::fs::create_dir_all(&root)?;
@@ -124,7 +124,7 @@ pub fn create_icloud_vault(vault_name: &str) -> Result<PathBuf> {
 
     // Write config with iCloud sync
     let config = format!(
-        r#"vault_name = "{vault_name}"
+        r#"project_name = "{project_name}"
 
 [sync]
 backend = "icloud"

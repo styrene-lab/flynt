@@ -2,13 +2,18 @@ use anyhow::Result;
 use flynt_store::project::Project;
 use std::{path::PathBuf, sync::Arc};
 
-fn env_with_fallback(new_name: &str, old_name: &str) -> Option<String> {
+/// Resolve project root from env, accepting the new name first then any
+/// legacy fallbacks (in order). Emits a deprecation warning when a
+/// legacy name is the one that hits.
+fn env_with_fallback(new_name: &str, legacy: &[&str]) -> Option<String> {
     if let Ok(val) = std::env::var(new_name) {
         return Some(val);
     }
-    if let Ok(val) = std::env::var(old_name) {
-        tracing::warn!("{old_name} is deprecated, use {new_name} instead");
-        return Some(val);
+    for old in legacy {
+        if let Ok(val) = std::env::var(old) {
+            tracing::warn!("{old} is deprecated, use {new_name} instead");
+            return Some(val);
+        }
     }
     None
 }
@@ -26,7 +31,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let mode = args.get(1).map(|s| s.as_str());
 
-    let vault_root = env_with_fallback("FLYNT_VAULT", "CODEX_VAULT")
+    let project_root = env_with_fallback("FLYNT_PROJECT", &["FLYNT_VAULT", "CODEX_VAULT"])
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             dirs::document_dir()
@@ -34,10 +39,10 @@ async fn main() -> Result<()> {
                 .join("Flynt")
         });
 
-    std::fs::create_dir_all(&vault_root)?;
-    let project = Arc::new(Project::open(&vault_root)?);
+    std::fs::create_dir_all(&project_root)?;
+    let project = Arc::new(Project::open(&project_root)?);
 
-    tracing::info!("flynt-agent ready, project={}", vault_root.display());
+    tracing::info!("flynt-agent ready, project={}", project_root.display());
 
     let ext = flynt_agent::extension::FlyntExtension::new(project);
 
@@ -58,7 +63,8 @@ async fn main() -> Result<()> {
             println!("  flynt-agent --help         Show this help");
             println!();
             println!("ENVIRONMENT:");
-            println!("  FLYNT_VAULT                Project directory (default: ~/Documents/Flynt)");
+            println!("  FLYNT_PROJECT              Project directory (default: ~/Documents/Flynt)");
+            println!("                             Legacy aliases (deprecated): FLYNT_VAULT, CODEX_VAULT");
         }
         Some("--rpc") | _ => {
             // Default: run as omegon extension (v2 bidirectional protocol)

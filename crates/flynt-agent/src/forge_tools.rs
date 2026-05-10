@@ -25,7 +25,7 @@
 use chrono::{DateTime, Utc};
 use flynt_core::{
     models::{BoardId, Task, TaskId},
-    store::{TaskFilter, VaultStore},
+    store::{TaskFilter, ProjectStore},
 };
 use flynt_forge::{
     GitHubForgeClient, IssueMap, ListOpts, SyncEngine, SyncOp, SyncStore,
@@ -797,7 +797,7 @@ mod tests {
     use flynt_store::project::Project;
     use tempfile::TempDir;
 
-    fn fresh_vault() -> (TempDir, Arc<Project>) {
+    fn fresh_project() -> (TempDir, Arc<Project>) {
         let tmp = TempDir::new().unwrap();
         let project = Arc::new(Project::open(tmp.path()).unwrap());
         (tmp, project)
@@ -820,7 +820,7 @@ mod tests {
 
     #[test]
     fn engagement_create_then_list_then_status() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
 
@@ -836,7 +836,7 @@ mod tests {
 
     #[test]
     fn engagement_create_rejects_missing_forge() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let bad = json!({ "name": "x" });
         let err = engagement_create(&project, bad).unwrap_err();
         // Error::invalid_params messages are conventionally fine to assert against
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn forge_status_reflects_token_presence() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let secrets = SecretBag::new();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap();
@@ -883,7 +883,7 @@ mod tests {
 
     #[test]
     fn log_work_then_timeline_returns_entries() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap();
 
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn log_work_rejects_missing_engagement() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let phantom = Uuid::new_v4().to_string();
         let err = log_work(&project, json!({
             "engagement_id": phantom,
@@ -940,7 +940,7 @@ mod tests {
 
     #[test]
     fn engagement_create_rejects_empty_repo_strings() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let bad = json!({
             "name": "x",
             "forge": { "kind": "github", "base_url": "https://api.github.com" },
@@ -953,7 +953,7 @@ mod tests {
 
     #[test]
     fn resolve_board_column_rejects_unknown_board() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let phantom = Uuid::new_v4().to_string();
         let err = resolve_board_column(&project, &json!({ "board_id": phantom })).unwrap_err();
         let msg = format!("{err:?}");
@@ -962,7 +962,7 @@ mod tests {
 
     #[test]
     fn resolve_board_column_rejects_unknown_column() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let board = flynt_core::models::Board::default_sprint("Sprint");
         project.store.save_board(&board).unwrap();
         let err = resolve_board_column(&project, &json!({
@@ -975,7 +975,7 @@ mod tests {
 
     #[test]
     fn resolve_board_column_defaults_to_first_when_omitted() {
-        let (_tmp, project) = fresh_vault();
+        let (_tmp, project) = fresh_project();
         let board = flynt_core::models::Board::default_sprint("Sprint");
         let board_id_str = board.id.0.to_string();
         let first = board.columns[0].name.clone();
@@ -989,7 +989,7 @@ mod tests {
     // ── materialize_sync_ops: end-to-end without a forge client ────────────
 
     fn fixture_for_sync() -> (TempDir, Arc<Project>, EngagementId, BoardId, SyncStore) {
-        let (tmp, project) = fresh_vault();
+        let (tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = EngagementId(Uuid::parse_str(
             created.get("id").and_then(|v| v.as_str()).unwrap()

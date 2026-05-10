@@ -1,5 +1,5 @@
 use crate::{
-    bootstrap::{AppContext, OmegonRuntimeContext, PendingVaultSetup},
+    bootstrap::{AppContext, OmegonRuntimeContext, PendingProjectSetup},
     components::daemon_settings::DaemonSettingsSection,
     components::identity_settings::IdentitySettingsSection,
     components::provider_settings::ProviderSettingsSection,
@@ -8,7 +8,7 @@ use crate::{
 };
 use flynt_core::models::{
     AppearanceConfig, FlyntOperatorSettings, FontSizePreset, IndexingConfig,
-    LocalRuntimeConfig, OmegonProfile, SyncConfig, VaultConfig, VisualizationConfig,
+    LocalRuntimeConfig, OmegonProfile, SyncConfig, ProjectConfig, VisualizationConfig,
 };
 use dioxus::prelude::*;
 
@@ -49,7 +49,7 @@ pub fn SettingsView() -> Element {
     let mut font_sz = use_context::<Signal<FontSizePreset>>();
 
     // Project + sync — local form state; persisted on explicit Save.
-    let mut vault_name = use_signal(|| ctx.project().config.vault_name.clone());
+    let mut project_name = use_signal(|| ctx.project().config.project_name.clone());
     let mut sync_config = use_signal(|| ctx.project().config.sync.clone());
     let mut local_state_root = use_signal(|| {
         ctx.project()
@@ -118,9 +118,9 @@ pub fn SettingsView() -> Element {
 
     // Raw config editor
     let mut show_raw_config = use_signal(|| false);
-    let config_path = ctx.vault_root().join(".flynt/config.toml");
+    let config_path = ctx.project_root().join(".flynt/config.toml");
     let mut raw_config_text = use_signal(|| {
-        std::fs::read_to_string(ctx.vault_root().join(".flynt/config.toml")).unwrap_or_default()
+        std::fs::read_to_string(ctx.project_root().join(".flynt/config.toml")).unwrap_or_default()
     });
     let mut raw_config_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
 
@@ -142,14 +142,14 @@ pub fn SettingsView() -> Element {
     let project = ctx.project();
     let omegon = ctx.omegon();
     let omegon_for_save = omegon.clone();
-    let publish_vault = ctx.project();
+    let publish_project = ctx.project();
     let mut publish_msg_signal = publish_msg;
     let publish_preview = move |_| {
-        match OmegonRuntimeContext::export_publication_preview(&publish_vault) {
+        match OmegonRuntimeContext::export_publication_preview(&publish_project) {
             Ok(output_path) => {
                 let mut profile = OmegonRuntimeContext::load_launcher_profile();
-                let target = OmegonRuntimeContext::publication_target(&publish_vault);
-                profile.pending_setup = Some(PendingVaultSetup::PublishPreview {
+                let target = OmegonRuntimeContext::publication_target(&publish_project);
+                profile.pending_setup = Some(PendingProjectSetup::PublishPreview {
                     output_path: output_path.clone(),
                     repo: target.as_ref().map(|target| target.repo.clone()).unwrap_or_default(),
                     branch: target.as_ref().map(|target| target.branch.clone()).unwrap_or_default(),
@@ -202,8 +202,8 @@ pub fn SettingsView() -> Element {
             omegon_channel: omegon_channel.read().clone(),
             omegon_bin_override: string_from_input(omegon_bin_override.read().as_str()),
         };
-        let config = VaultConfig {
-            vault_name: vault_name.read().clone(),
+        let config = ProjectConfig {
+            project_name: project_name.read().clone(),
             sync: sync_config.read().clone(),
             appearance: AppearanceConfig {
                 theme: theme.read().0.clone(),
@@ -235,22 +235,22 @@ pub fn SettingsView() -> Element {
         let old_sync = &project.config.sync;
         let new_sync = &config.sync;
         if old_sync != new_sync {
-            let vault_name = config.vault_name.clone();
+            let project_name = config.project_name.clone();
             let current_root = project.root.clone();
             let sync_for_migrate = new_sync.clone();
-            match flynt_store::migrate::migrate_vault(
-                &current_root, &vault_name, &sync_for_migrate, false,
+            match flynt_store::migrate::migrate_project(
+                &current_root, &project_name, &sync_for_migrate, false,
             ) {
                 Ok(result) => {
                     if result.new_root != current_root {
                         // Project moved — update launcher profile and switch runtime
                         let mut profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
-                        crate::bootstrap::OmegonRuntimeContext::register_known_vault(
-                            &mut profile, &result.new_root, &vault_name,
+                        crate::bootstrap::OmegonRuntimeContext::register_known_project(
+                            &mut profile, &result.new_root, &project_name,
                         );
                         let _ = crate::bootstrap::OmegonRuntimeContext::save_launcher_profile(&profile);
                         let mut migrate_ctx = ctx;
-                        migrate_ctx.set_runtime(crate::bootstrap::runtime_state_for_vault_root(result.new_root));
+                        migrate_ctx.set_runtime(crate::bootstrap::runtime_state_for_project_root(result.new_root));
                         *save_msg.write() = Some(("ok", "Project migrated and sync updated."));
                         return; // config already written by migrate
                     }
@@ -338,12 +338,12 @@ pub fn SettingsView() -> Element {
                         input {
                             class: "input settings-input",
                             r#type: "text",
-                            value: "{vault_name}",
-                            oninput: move |e| *vault_name.write() = e.value(),
+                            value: "{project_name}",
+                            oninput: move |e| *project_name.write() = e.value(),
                         }
                     }
                     SettingsRow { label: "Location",
-                        span { class: "settings-path muted", "{ctx.vault_root().display()}" }
+                        span { class: "settings-path muted", "{ctx.project_root().display()}" }
                     }
                 }
 
@@ -678,7 +678,7 @@ pub fn SettingsView() -> Element {
                                         let cp = config_path.clone();
                                         move |_| {
                                             let text = raw_config_text.read().clone();
-                                            match toml::from_str::<VaultConfig>(&text) {
+                                            match toml::from_str::<ProjectConfig>(&text) {
                                                 Ok(_) => {
                                                     if let Err(e) = std::fs::write(&cp, &text) {
                                                         *raw_config_msg.write() = Some(("err", "Write failed — check permissions."));

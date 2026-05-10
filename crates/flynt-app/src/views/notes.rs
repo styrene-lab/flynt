@@ -1,4 +1,4 @@
-use flynt_core::store::VaultStore;
+use flynt_core::store::ProjectStore;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
 use crate::{bootstrap::AppContext, state::{Route, TabState}};
@@ -14,7 +14,7 @@ fn render_html(content: &str) -> String {
     render_html_with_store(content, None, None)
 }
 
-fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::VaultStore>, vault_root: Option<&std::path::Path>) -> String {
+fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::ProjectStore>, project_root: Option<&std::path::Path>) -> String {
     let mut opts = Options::default();
     opts.extension.table                      = true;
     opts.extension.strikethrough              = true;
@@ -48,7 +48,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::V
 
     // Embed Excalidraw drawings: ![[file.excalidraw]] → inline SVG
     // Also handles image embeds: ![[image.png]] → <img src="project://...">
-    if let Some(root) = vault_root {
+    if let Some(root) = project_root {
         // Pattern: ![[something.excalidraw]] (may appear as text or inside <p> tags)
         while let Some(start) = html.find("![[") {
             let Some(end) = html[start..].find("]]") else { break; };
@@ -1436,11 +1436,11 @@ pub fn NotesView() -> Element {
 
     // If this document is an excalidraw wrapper, render ExcalidrawView directly
     if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&body) {
-        let vault_root = ctx.vault_root();
+        let project_root = ctx.project_root();
         // Resolve the .excalidraw file relative to the document's directory
         let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));
         let excalidraw_path = doc_dir.join(&excalidraw_file);
-        let abs = vault_root.join(&excalidraw_path);
+        let abs = project_root.join(&excalidraw_path);
         if abs.exists() {
             is_drawing.set(true);
             return rsx! {
@@ -1470,10 +1470,10 @@ pub fn NotesView() -> Element {
         None
     };
     if let Some(canvas_file) = canvas_file_from_body.or(canvas_file_from_recovery) {
-        let vault_root = ctx.vault_root();
+        let project_root = ctx.project_root();
         let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));
         let canvas_path = doc_dir.join(&canvas_file);
-        let abs = vault_root.join(&canvas_path);
+        let abs = project_root.join(&canvas_path);
         if abs.exists() {
             is_drawing.set(true);
             return rsx! {

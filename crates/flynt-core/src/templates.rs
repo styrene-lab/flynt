@@ -17,8 +17,8 @@ pub struct Template {
 }
 
 /// List all templates in the project's .flynt/templates/ directory.
-pub fn list_templates(vault_root: &Path) -> Vec<Template> {
-    let dir = vault_root.join(".flynt/templates");
+pub fn list_templates(project_root: &Path) -> Vec<Template> {
+    let dir = project_root.join(".flynt/templates");
     if !dir.exists() { return vec![]; }
 
     let mut templates = Vec::new();
@@ -40,7 +40,7 @@ pub fn list_templates(vault_root: &Path) -> Vec<Template> {
 }
 
 /// Expand a template with the given title and project name.
-pub fn expand(template: &str, title: &str, vault_name: &str) -> String {
+pub fn expand(template: &str, title: &str, project_name: &str) -> String {
     let now = Local::now();
     template
         .replace("{{title}}", title)
@@ -50,12 +50,12 @@ pub fn expand(template: &str, title: &str, vault_name: &str) -> String {
         .replace("{{month}}", &now.format("%m").to_string())
         .replace("{{day}}", &now.format("%d").to_string())
         .replace("{{weekday}}", &now.format("%A").to_string())
-        .replace("{{project}}", vault_name)
+        .replace("{{project}}", project_name)
 }
 
 /// Create the default templates if the templates directory doesn't exist.
-pub fn ensure_default_templates(vault_root: &Path) -> Result<()> {
-    let dir = vault_root.join(".flynt/templates");
+pub fn ensure_default_templates(project_root: &Path) -> Result<()> {
+    let dir = project_root.join(".flynt/templates");
     if dir.exists() { return Ok(()); }
 
     fs::create_dir_all(&dir)?;
@@ -116,7 +116,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn list_templates_empty_vault() {
+    fn list_templates_empty_project() {
         let tmp = TempDir::new().unwrap();
         let templates = list_templates(tmp.path());
         assert!(templates.is_empty());
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn expand_replaces_title_and_vault() {
+    fn expand_replaces_title_and_project() {
         let result = expand("Hello {{title}} in {{project}}", "My Note", "My Project");
         assert!(result.contains("My Note"));
         assert!(result.contains("My Project"));

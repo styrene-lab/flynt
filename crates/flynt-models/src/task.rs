@@ -140,7 +140,7 @@ impl ExecutionSpec {
 
 // ── TaskPatch ───────────────────────────────────────────────────────────────
 //
-// Partial-update payload for `VaultStore::update_task`. Only the `Some(_)`
+// Partial-update payload for `ProjectStore::update_task`. Only the `Some(_)`
 // fields are applied; `None` means "leave unchanged." This is the contract
 // the sentry integration relies on (see flynt/design/sentry-integration.md
 // — claim/release/complete need to mutate status + column without

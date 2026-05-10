@@ -10,14 +10,14 @@
 //! LIMIT 10
 //! ```
 //!
-//! Queries run against the VaultStore and return rendered HTML tables/lists.
+//! Queries run against the ProjectStore and return rendered HTML tables/lists.
 
 use crate::models::*;
-use crate::store::VaultStore;
+use crate::store::ProjectStore;
 use anyhow::Result;
 
 /// Parse and execute a query block, returning rendered HTML.
-pub fn execute_query(source: &str, store: &dyn VaultStore) -> Result<String> {
+pub fn execute_query(source: &str, store: &dyn ProjectStore) -> Result<String> {
     let lines: Vec<&str> = source.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
     if lines.is_empty() {
         return Ok("<em>Empty query</em>".into());
@@ -34,7 +34,7 @@ pub fn execute_query(source: &str, store: &dyn VaultStore) -> Result<String> {
     }
 }
 
-fn execute_document_query(lines: &[&str], store: &dyn VaultStore) -> Result<String> {
+fn execute_document_query(lines: &[&str], store: &dyn ProjectStore) -> Result<String> {
     let first = lines[0].to_uppercase();
     let is_table = first.starts_with("TABLE");
 
@@ -123,7 +123,7 @@ fn execute_document_query(lines: &[&str], store: &dyn VaultStore) -> Result<Stri
     }
 }
 
-fn execute_task_query(lines: &[&str], store: &dyn VaultStore) -> Result<String> {
+fn execute_task_query(lines: &[&str], store: &dyn ProjectStore) -> Result<String> {
     let mut tasks = store.list_tasks(&crate::store::TaskFilter::default())?;
 
     // Parse filters
@@ -242,7 +242,7 @@ mod tests {
         tasks: Vec<Task>,
     }
 
-    impl VaultStore for MockStore {
+    impl ProjectStore for MockStore {
         fn get_document(&self, _id: &DocumentId) -> Result<Option<Document>> { Ok(None) }
         fn get_document_by_path(&self, _path: &std::path::Path) -> Result<Option<Document>> { Ok(None) }
         fn find_document_by_slug(&self, _slug: &str) -> Result<Option<DocumentMeta>> { Ok(None) }

@@ -12,7 +12,7 @@ A desktop + mobile app for notes, tasks, drawings, and knowledge graphs — buil
 
 ## What it does
 
-Your vault is a folder of `.md` files. Flynt indexes them, links them, and gets out of the way.
+Your project is a folder of `.md` files. Flynt indexes them, links them, and gets out of the way.
 
 - **Wikilinks & backlinks** — `[[note]]` creates connections. The knowledge graph shows how ideas relate.
 - **Live markdown preview** — Obsidian-style live editing with CodeMirror 6. Headings, tables, bold, links render inline; click to reveal raw syntax.
@@ -21,8 +21,8 @@ Your vault is a folder of `.md` files. Flynt indexes them, links them, and gets 
 - **Query blocks** — `TABLE`, `LIST`, `TASK` queries inline in your documents (like Dataview).
 - **Daily notes & templates** — date-indexed journals with variable expansion.
 - **Git sync** — auto-commit + push/pull in the background. Multi-device, no server.
-- **AI agent** — Omegon in the sidebar with full vault read/write access.
-- **iOS Share Extension** — share links, text, and images from any iOS app into your vault.
+- **AI agent** — Omegon in the sidebar with full project read/write access.
+- **iOS Share Extension** — share links, text, and images from any iOS app into your project.
 - **Cross-platform** — macOS (DMG + TestFlight), iOS (TestFlight), Linux amd64/aarch64.
 
 ---
@@ -64,11 +64,11 @@ cd crates/flynt-mobile && IPHONEOS_DEPLOYMENT_TARGET=17.0 dx build --platform io
 ## Quick start
 
 1. Open Flynt
-2. Choose **Clone remote vault**
-3. Enter `https://github.com/styrene-lab/flynt-demo-vault.git`, branch `main`
-4. The demo vault opens with documentation and a live knowledge graph
+2. Choose **Clone remote project**
+3. Enter `https://github.com/styrene-lab/flynt-demo-project.git`, branch `main`
+4. The demo project opens with documentation and a live knowledge graph
 
-Or choose **Create local vault** to start fresh.
+Or choose **Create local project** to start fresh.
 
 ---
 
@@ -76,10 +76,10 @@ Or choose **Create local vault** to start fresh.
 
 ```
 flynt-core     Pure Rust models, query engine, parser, templates, graph layout
-flynt-store    Vault I/O, SQLite index, git/iCloud sync, file watching
+flynt-store    Project I/O, SQLite index, git/iCloud sync, file watching
 flynt-app      macOS/Linux desktop UI (Dioxus + wry + muda)
 flynt-mobile   iOS companion app (Dioxus mobile)
-flynt-agent    MCP extension for Omegon (vault tools)
+flynt-agent    MCP extension for Omegon (project tools)
 ```
 
 All crates share a workspace at the repo root. The desktop and mobile apps depend on `flynt-core` and `flynt-store`. The agent extension is a standalone binary.
@@ -89,16 +89,16 @@ All crates share a workspace at the repo root. The desktop and mobile apps depen
 - **Markdown is canonical.** No database is the source of truth — the `.md` files are. The SQLite index is derived and rebuilds from disk on every launch.
 - **Local-first.** Everything works offline. Sync is optional and Git-based.
 - **No Node.js.** All JS (CodeMirror, Excalidraw) is vendored as static bundles. No npm, no node_modules, no build step for frontend code.
-- **No MCP for integration.** The agent extension provides vault tools via ACP (Agent Client Protocol), not MCP.
+- **No MCP for integration.** The agent extension provides project tools via ACP (Agent Client Protocol), not MCP.
 
 ---
 
-## Vault structure
+## Project structure
 
 ```
-my-vault/
+my-project/
   .flynt/
-    config.toml          # vault settings (name, sync, appearance)
+    config.toml          # project settings (name, sync, appearance)
     templates/           # note templates (Note.md, Daily.md, Meeting.md)
     notifications/       # git-synced notification queue
   .flynt-local/          # SQLite index (auto-generated, gitignored)
@@ -140,7 +140,7 @@ Flynt auto-commits, pulls, and pushes on a timer. Merge conflicts are detected a
 cargo test -p flynt-core -p flynt-store
 ```
 
-269 tests covering: document parsing, query DSL, task decay math, vault lifecycle, tag operations, notifications, git sync (status, commit, pull, push, clone, conflicts), and integration tests.
+269 tests covering: document parsing, query DSL, task decay math, project lifecycle, tag operations, notifications, git sync (status, commit, pull, push, clone, conflicts), and integration tests.
 
 ---
 
@@ -149,7 +149,7 @@ cargo test -p flynt-core -p flynt-store
 | URL | What |
 |-----|------|
 | [flynt.styrene.io](https://flynt.styrene.io) | Landing page |
-| [demo.flynt.styrene.io](https://demo.flynt.styrene.io) | Demo vault (clone this to get started) |
+| [demo.flynt.styrene.io](https://demo.flynt.styrene.io) | Demo project (clone this to get started) |
 | [demo.flynt.styrene.io/graph](https://demo.flynt.styrene.io/graph/) | Interactive knowledge graph |
 
 ---
@@ -159,7 +159,7 @@ cargo test -p flynt-core -p flynt-store
 Flynt is part of the [Styrene](https://styrene.io) stack:
 
 - **[Omegon](https://omegon.styrene.io)** — terminal-native AI agent harness (powers the Flynt agent sidebar)
-- **[Styrene Identity](https://github.com/styrene-lab/styrene-rs)** — cross-device identity, key derivation, and vault encryption (planned integration)
+- **[Styrene Identity](https://github.com/styrene-lab/styrene-rs)** — cross-device identity, key derivation, and project encryption (planned integration)
 
 ---
 

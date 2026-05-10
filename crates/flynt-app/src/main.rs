@@ -2,7 +2,7 @@ use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use std::{borrow::Cow, path::PathBuf};
 use wry::http::{Request as HttpRequest, Response as HttpResponse};
 
-fn vault_root() -> PathBuf {
+fn project_root() -> PathBuf {
     std::env::args()
         .skip(1)
         .collect::<Vec<_>>()
@@ -14,7 +14,13 @@ fn vault_root() -> PathBuf {
                 None
             }
         })
-        .or_else(|| std::env::var("FLYNT_VAULT").or_else(|_| std::env::var("CODEX_VAULT")).map(PathBuf::from).ok())
+        .or_else(|| {
+            std::env::var("FLYNT_PROJECT")
+                .or_else(|_| std::env::var("FLYNT_VAULT"))
+                .or_else(|_| std::env::var("CODEX_VAULT"))
+                .map(PathBuf::from)
+                .ok()
+        })
         .unwrap_or_else(|| {
             dirs::document_dir()
                 .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
@@ -33,7 +39,7 @@ fn main() {
         )
         .init();
 
-    let root = vault_root();
+    let root = project_root();
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(

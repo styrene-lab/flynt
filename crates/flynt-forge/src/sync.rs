@@ -72,7 +72,7 @@ pub struct IssueMap {
 ///
 /// Engine never writes to the project — it just reports what should
 /// happen. Caller is responsible for materializing each op against
-/// flynt's `VaultStore` and updating the corresponding `IssueMap`.
+/// flynt's `ProjectStore` and updating the corresponding `IssueMap`.
 #[derive(Debug, Clone)]
 pub enum SyncOp {
     /// Forge has an issue we don't know about — create a flynt task.

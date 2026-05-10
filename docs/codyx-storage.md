@@ -13,4 +13,4 @@ related: []
 
 ## Overview
 
-SqliteStore + Vault filesystem indexer. SQLite is the index/cache; markdown files on disk are the source of truth. FTS5 full-text search. WAL mode. VaultWatcher via notify/FSEvents for live re-indexing on file changes. VaultStore trait allows future alternative backends.
+SqliteStore + Project filesystem indexer. SQLite is the index/cache; markdown files on disk are the source of truth. FTS5 full-text search. WAL mode. ProjectWatcher via notify/FSEvents for live re-indexing on file changes. ProjectStore trait allows future alternative backends.

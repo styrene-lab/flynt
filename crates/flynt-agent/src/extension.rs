@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use flynt_core::{
     graph::{build_graph_payload, format_kind},
     models::{Board, Task},
-    store::{TaskFilter, VaultStore},
+    store::{TaskFilter, ProjectStore},
 };
 use flynt_store::project::Project;
 use omegon_extension::Extension;
@@ -393,7 +393,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "get_ui_state",
                     "label": "Get UI State",
-                    "description": "Return what the user is currently looking at in Flynt: the active document (if any), other open document tabs, and the current view (notes/kanban/graph/settings/search/welcome). Call this BEFORE asking the user clarifying questions about 'what they have open' or 'what they're working on' — Flynt mirrors this state to disk on every tab/view change so the answer is always current. Returns {active_document, open_documents, current_view, vault_root, updated_at}. The active_document.path can be passed straight to get_document.",
+                    "description": "Return what the user is currently looking at in Flynt: the active document (if any), other open document tabs, and the current view (notes/kanban/graph/settings/search/welcome). Call this BEFORE asking the user clarifying questions about 'what they have open' or 'what they're working on' — Flynt mirrors this state to disk on every tab/view change so the answer is always current. Returns {active_document, open_documents, current_view, project_root, updated_at}. The active_document.path can be passed straight to get_document.",
                     "parameters": { "type": "object", "properties": {} }
                 },
                 {
@@ -1284,7 +1284,7 @@ impl Extension for FlyntExtension {
                         "active_document": null,
                         "open_documents": [],
                         "current_view": null,
-                        "vault_root": self.project.root.to_string_lossy(),
+                        "project_root": self.project.root.to_string_lossy(),
                         "updated_at": null,
                         "note": "ui-state.json not yet written — flynt-app may not be running, or no view has rendered yet"
                     })),
@@ -1878,12 +1878,12 @@ mod tests {
                 "active_document": {"id": "x", "title": "x", "path": p},
                 "open_documents": [],
                 "current_view": "notes",
-                "vault_root": tmp.path().to_string_lossy(),
+                "project_root": tmp.path().to_string_lossy(),
                 "updated_at": "now"
             }),
             None => json!({
                 "active_document": null, "open_documents": [],
-                "current_view": "notes", "vault_root": tmp.path().to_string_lossy(),
+                "current_view": "notes", "project_root": tmp.path().to_string_lossy(),
                 "updated_at": "now"
             }),
         };
@@ -2206,7 +2206,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn canvas_list_primitives_reads_vault_assets() {
+    async fn canvas_list_primitives_reads_project_assets() {
         let (tmp, ext) = test_extension();
         let dir = tmp.path().join(".flynt-local/flynt/assets");
         std::fs::create_dir_all(&dir).unwrap();
