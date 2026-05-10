@@ -3,3 +3,4 @@
 #![recursion_limit = "512"]
 
 pub mod extension;
+pub mod forge_tools;

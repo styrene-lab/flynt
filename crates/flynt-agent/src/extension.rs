@@ -9,13 +9,23 @@ use omegon_extension::Extension;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+use crate::forge_tools::{self, SecretBag};
+
 pub struct FlyntExtension {
     vault: Arc<Vault>,
+    /// In-process secret bag — populated by `bootstrap_secrets` (omegon
+    /// push) and seeded from the `FLYNT_GITHUB_TOKEN` env var on
+    /// construction. Forge clients resolve tokens through this bag, so
+    /// the same bag is reachable from every tool handler that needs
+    /// authenticated access.
+    secrets: SecretBag,
 }
 
 impl FlyntExtension {
     pub fn new(vault: Arc<Vault>) -> Self {
-        Self { vault }
+        let secrets = SecretBag::new();
+        secrets.seed_from_env();
+        Self { vault, secrets }
     }
 }
 
@@ -58,7 +68,8 @@ impl Extension for FlyntExtension {
             }
 
             // ── Discovery ────────────────────────────────────────────────────
-            "get_tools" | "tools/list" => Ok(json!([
+            "get_tools" | "tools/list" => {
+                let mut tools = json!([
                 {
                     "name": "search_documents",
                     "label": "Search Documents",
@@ -469,7 +480,13 @@ impl Extension for FlyntExtension {
                     "description": "Resolve the canvas the user is currently viewing. Reads the ui-state mirror, checks whether the active document is a canvas wrapper (.md whose body is exactly `![[X.canvas]]`), and returns the resolved .canvas path you can pass to canvas_get. Returns null if no canvas is active. Cheaper than running get_ui_state + parsing the body yourself.",
                     "parameters": { "type": "object", "properties": {} }
                 }
-            ])),
+                ]);
+                // Append forge / engagement tools (Phase 3 — scribe absorption).
+                if let Some(arr) = tools.as_array_mut() {
+                    arr.extend(forge_tools::tool_definitions());
+                }
+                Ok(tools)
+            }
 
             // ── Tool execution ────────────────────────────────────────────────
             "execute_search_documents" => {
@@ -1281,6 +1298,29 @@ impl Extension for FlyntExtension {
             "execute_canvas_list_primitives" => self.execute_canvas_list_primitives(),
             "execute_canvas_active" => self.execute_canvas_active(),
             "execute_canvas_create" => self.execute_canvas_create(params),
+
+            // ── Forge / engagement tools (Phase 3) ────────────────────────
+            // The omegon-pushed secret hand-off. Falls through to env fallback
+            // (FLYNT_GITHUB_TOKEN) seeded at extension construction, so this
+            // RPC is optional from omegon's side and the ACP/Zed launch path
+            // works without it.
+            "bootstrap_secrets" => forge_tools::bootstrap_secrets(&self.secrets, params),
+
+            "execute_engagement_create" => forge_tools::engagement_create(&self.vault, params),
+            "execute_engagement_list"   => forge_tools::engagement_list(&self.vault, params),
+            "execute_engagement_status" => forge_tools::engagement_status(&self.vault, params),
+            "execute_forge_status"      => forge_tools::forge_status(&self.vault, &self.secrets, params),
+            "execute_forge_list_issues" => {
+                forge_tools::forge_list_issues(&self.vault, &self.secrets, params).await
+            }
+            "execute_forge_sync_issues" => {
+                forge_tools::forge_sync_issues(&self.vault, &self.secrets, params).await
+            }
+            "execute_forge_create_issue" => {
+                forge_tools::forge_create_issue(&self.vault, &self.secrets, params).await
+            }
+            "execute_log_work"          => forge_tools::log_work(&self.vault, params),
+            "execute_timeline"          => forge_tools::timeline(&self.vault, params),
 
             _ => Err(omegon_extension::Error::method_not_found(method)),
         }
