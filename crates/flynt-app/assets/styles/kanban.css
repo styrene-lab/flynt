@@ -214,6 +214,22 @@
   border-color: var(--primary);
 }
 
+/* Engagement scope dropdown — sits on the same row as the filter pills.
+   margin-left:auto pushes it to the right so the lifecycle pills stay
+   left-anchored. Hidden when no engagements exist. */
+.kanban-engagement-select {
+  margin-left:    auto;
+  padding:        3px var(--space-2);
+  border-radius:  var(--radius);
+  border:         1px solid var(--border);
+  background:     var(--background);
+  color:          var(--foreground);
+  font-size:      var(--font-size-xs);
+  font-weight:    var(--font-weight-medium);
+  cursor:         pointer;
+  max-width:      220px;
+}
+
 /* ── Board: horizontal column strip ──────────────────────────────────────── */
 .kanban-board {
   display:        flex;
@@ -520,6 +536,10 @@
   border-color: rgba(6, 182, 212, 0.4);
   color: rgba(80, 200, 220, 0.95);
 }
+.task-chip-engagement {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: rgba(120, 220, 150, 0.95);
+}
 
 /* ── Sentry / Lifecycle inline section ──────────────────────────────── */
 /*
@@ -574,6 +594,18 @@
   text-transform: uppercase;
   color:          var(--text-muted, #888);
   margin-bottom:  2px;
+}
+
+/* Empty-state hint inside a sentry-group (e.g. "no engagements yet"). */
+.task-sentry-empty {
+  margin:    0;
+  font-size: var(--font-size-xs);
+}
+.task-sentry-empty code {
+  padding:        1px 4px;
+  border-radius:  3px;
+  background:     rgba(255, 255, 255, 0.06);
+  font-family:    var(--font-mono, monospace);
 }
 
 .task-sentry-fields .field input[type="text"],

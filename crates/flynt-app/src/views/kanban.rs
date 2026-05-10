@@ -1,6 +1,6 @@
 use chrono::Utc;
 use flynt_core::{
-    models::{Board, BoardId, Column, Priority, Task, TaskId, TaskStatus},
+    models::{Board, BoardId, Column, Engagement, EngagementId, Priority, Task, TaskId, TaskStatus},
     store::{TaskFilter, VaultStore},
 };
 use dioxus::prelude::*;
@@ -262,10 +262,27 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
         }
     });
 
+    // Engagement records — populates the scope dropdown above the
+    // columns and the engagement picker in the inline task editor.
+    // Refreshes alongside tasks; small enough that polling per refresh
+    // is fine.
+    let engagements = use_resource(move || {
+        let _ = refresh();
+        let vault = ctx.vault();
+        async move {
+            tokio::task::spawn_blocking(move || vault.store.list_engagements().unwrap_or_default())
+                .await
+                .unwrap_or_default()
+        }
+    });
+
     let dragging: Signal<Option<TaskId>> = use_signal(|| None);
     // Active filter pill — All by default. Persists for the board view's
     // lifetime; resets when switching boards (KanbanBoard re-mounts).
     let mut active_filter = use_signal(|| TaskFilterKind::All);
+    // Engagement scope — None = all engagements (and unscoped tasks).
+    // Layered with active_filter as an intersection, applied per-column.
+    let mut active_engagement: Signal<Option<EngagementId>> = use_signal(|| None);
 
     let mut adding_col = use_signal(|| false);
     let mut new_col_name = use_signal(String::new);
@@ -295,6 +312,43 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                         }
                     }
                 }
+
+                // Engagement scope selector — sits with the filter pills
+                // because operators reach for it for the same reason
+                // (narrow what's on screen). Hidden when no engagements
+                // exist so empty vaults don't show a useless dropdown.
+                {
+                    let engs = engagements.read();
+                    let list: Vec<Engagement> = engs.clone().unwrap_or_default();
+                    (!list.is_empty()).then(|| {
+                        let active_str = active_engagement.read()
+                            .as_ref()
+                            .map(|e| e.0.to_string())
+                            .unwrap_or_default();
+                        rsx! {
+                            select {
+                                class: "kanban-engagement-select",
+                                title: "Scope to one engagement (or All).",
+                                value: "{active_str}",
+                                onchange: move |e| {
+                                    let v = e.value();
+                                    *active_engagement.write() = if v.is_empty() {
+                                        None
+                                    } else {
+                                        uuid::Uuid::parse_str(&v).ok().map(EngagementId)
+                                    };
+                                },
+                                option { value: "", "All engagements" }
+                                for eng in list.iter() {
+                                    option {
+                                        value: "{eng.id.0}",
+                                        "{eng.name}"
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
             }
             div { class: "kanban-board",
                 match &*tasks.read() {
@@ -303,14 +357,36 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                     for col in board.columns.iter().cloned() {
                         {
                             let filter = *active_filter.read();
+                            let scope = active_engagement.read().clone();
                             let col_tasks: Vec<Task> = all.iter()
-                                .filter(|t| t.column == col.name && filter.matches(t))
+                                .filter(|t| {
+                                    if t.column != col.name { return false; }
+                                    if !filter.matches(t) { return false; }
+                                    // Engagement scope: when set, only
+                                    // matching tasks pass. Unscoped tasks
+                                    // are excluded — operator picked an
+                                    // engagement explicitly.
+                                    match &scope {
+                                        Some(eid) => t.engagement_id.as_ref() == Some(eid),
+                                        None => true,
+                                    }
+                                })
                                 .cloned()
                                 .collect();
                             let col_empty = col_tasks.is_empty();
                             let board_for_remove = board.clone();
                             let col_name_remove = col.name.clone();
                             let col_name_rename = col.name.clone();
+                            // (id, name) pairs for the inline editor's
+                            // engagement dropdown — same data as the
+                            // top-of-board scope selector.
+                            let engagement_options: Vec<(String, String)> = engagements
+                                .read()
+                                .clone()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|e| (e.id.0.to_string(), e.name))
+                                .collect();
                             rsx! {
                                 KanbanColumn {
                                     board_id: board.id.clone(),
@@ -320,6 +396,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                     dragging,
                                     refresh,
                                     can_remove: col_empty,
+                                    engagement_options,
                                     on_remove: move |_| {
                                         let c = ctx.clone();
                                         let mut b = board_for_remove.clone();
@@ -431,6 +508,11 @@ fn KanbanColumn(
     can_remove: bool,
     on_remove:  EventHandler<()>,
     on_rename:  EventHandler<String>,
+    /// (id_string, name) pairs for the inline editor's engagement
+    /// dropdown. Plain strings rather than `Vec<Engagement>` so the
+    /// component prop type stays PartialEq (Engagement isn't —
+    /// ForgeEndpoint upstream doesn't impl it).
+    engagement_options: Vec<(String, String)>,
 ) -> Element {
     let ctx         = use_context::<AppContext>();
     let col_name    = column.name.clone();
@@ -566,7 +648,13 @@ fn KanbanColumn(
 
             div { class: "kanban-column-body",
                 for task in tasks.iter().cloned() {
-                    TaskCard { task, project_id, dragging, refresh }
+                    TaskCard {
+                        task,
+                        project_id,
+                        dragging,
+                        refresh,
+                        engagement_options: engagement_options.clone(),
+                    }
                 }
 
                 if *adding.read() {
@@ -605,7 +693,16 @@ fn KanbanColumn(
 // ── Task card ────────────────────────────────────────────────────────────────
 
 #[component]
-fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
+fn TaskCard(
+    task: Task,
+    project_id: Option<uuid::Uuid>,
+    dragging: Signal<Option<TaskId>>,
+    mut refresh: Signal<u64>,
+    /// (id_string, name) pairs for the engagement picker. Empty when
+    /// no engagements exist; the Forge subsection still renders so the
+    /// operator sees a hint to create one via the agent.
+    engagement_options: Vec<(String, String)>,
+) -> Element {
     let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
     let mut inline_title = use_signal(|| task.title.clone());
@@ -613,12 +710,26 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
     let mut inline_priority = use_signal(|| task.priority);
     let mut inline_due = use_signal(|| task.due_date.map(|d| d.to_string()).unwrap_or_default());
 
+    // ── Forge / Engagement state ──────────────────────────────────────────
+    let mut inline_engagement = use_signal(|| {
+        task.engagement_id.as_ref().map(|e| e.0.to_string()).unwrap_or_default()
+    });
+
     // ── Sentry / Lifecycle inline-edit state ──────────────────────────────
     // Auto-expand on first render for tasks that already carry sentry
     // signals — the section is the operator's reason to open the editor at
     // all in those cases. Otherwise the section stays collapsed and
     // hand-tracked tasks see the simple editor unchanged.
-    let mut sentry_open = use_signal(|| task.is_sentry_managed());
+    // Auto-expand the section if the task carries any of the metadata
+    // it edits — sentry signals, lifecycle linkage, OR an engagement.
+    // Otherwise the operator would have to remember to open the toggle
+    // to see / change an engagement scope they already set.
+    let mut sentry_open = use_signal(|| {
+        task.is_sentry_managed()
+            || task.design_node_id.is_some()
+            || task.openspec_change.is_some()
+            || task.engagement_id.is_some()
+    });
     let mut inline_cron = use_signal(|| task.cron_trigger().unwrap_or("").to_string());
     let mut inline_webhook = use_signal(|| task.webhook_trigger().unwrap_or("").to_string());
     let mut inline_other_refs = use_signal(|| {
@@ -690,7 +801,19 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                     let has_model = task.execution.as_ref().and_then(|e| e.model.as_deref()).is_some();
                     let has_design = task.design_node_id.is_some();
                     let has_spec = task.openspec_change.is_some();
-                    let any = has_cron || has_webhook || has_model || has_design || has_spec;
+                    // Engagement chip resolves the engagement_id to a
+                    // human-readable name via the same options list the
+                    // dropdown uses; falls back to "engagement" if the
+                    // record is missing (deleted out of band).
+                    let engagement_label = task.engagement_id.as_ref().map(|eid| {
+                        let id_str = eid.0.to_string();
+                        engagement_options.iter()
+                            .find(|(id, _)| *id == id_str)
+                            .map(|(_, name)| name.clone())
+                            .unwrap_or_else(|| "engagement".to_string())
+                    });
+                    let has_engagement = engagement_label.is_some();
+                    let any = has_cron || has_webhook || has_model || has_design || has_spec || has_engagement;
                     any.then(|| {
                         let cron_text = task.cron_trigger().map(String::from);
                         let webhook_text = task.webhook_trigger().map(String::from);
@@ -700,6 +823,13 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                         let spec_text = task.openspec_change.clone();
                         rsx! {
                             div { class: "task-card-chips",
+                                if let Some(name) = engagement_label {
+                                    span {
+                                        class: "task-chip task-chip-engagement",
+                                        title: "engagement: {name}",
+                                        "◆ {name}"
+                                    }
+                                }
                                 if let Some(cron) = cron_text {
                                     span {
                                         class: "task-chip task-chip-trigger",
@@ -929,6 +1059,35 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                                         }
                                     }
                                 }
+
+                                // ── Forge / Engagement ──────────────────
+                                // Lets the operator scope this task to one
+                                // of the engagements created via the agent
+                                // (engagement_create tool). Empty list ⇒
+                                // hint to create one. Saved alongside the
+                                // sentry/lifecycle fields below.
+                                div { class: "task-sentry-group",
+                                    span { class: "task-sentry-group-label", "Forge / Engagement" }
+                                    if engagement_options.is_empty() {
+                                        p { class: "muted task-sentry-empty",
+                                            "No engagements yet. Use the agent's "
+                                            code { "engagement_create" }
+                                            " tool to scope tasks to a multi-repo project."
+                                        }
+                                    } else {
+                                        label { class: "field",
+                                            span { "Engagement" }
+                                            select {
+                                                value: "{inline_engagement}",
+                                                onchange: move |e| *inline_engagement.write() = e.value(),
+                                                option { value: "", "(none)" }
+                                                for (id, name) in engagement_options.iter() {
+                                                    option { value: "{id}", "{name}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -957,6 +1116,7 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                                 let env_raw = inline_env.read().clone();
                                 let design_node_s = inline_design_node.read().trim().to_string();
                                 let openspec = inline_openspec.read().trim().to_string();
+                                let engagement_s = inline_engagement.read().trim().to_string();
                                 spawn(async move {
                                     let vault = c.vault();
                                     let _ = tokio::task::spawn_blocking(move || {
@@ -1003,6 +1163,11 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                                             // Lifecycle linkage: empty input clears.
                                             t.design_node_id = uuid::Uuid::parse_str(&design_node_s).ok();
                                             t.openspec_change = if openspec.is_empty() { None } else { Some(openspec) };
+                                            t.engagement_id = if engagement_s.is_empty() {
+                                                None
+                                            } else {
+                                                uuid::Uuid::parse_str(&engagement_s).ok().map(EngagementId)
+                                            };
 
                                             if let Some(pid) = project_id {
                                                 vault.save_project_task(&t, &pid)
