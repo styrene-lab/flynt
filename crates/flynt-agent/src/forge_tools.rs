@@ -28,7 +28,7 @@ use flynt_core::{
     store::{TaskFilter, VaultStore},
 };
 use flynt_forge::{
-    GitHubForgeClient, IssueMap, ListOpts, StaticToken, SyncEngine, SyncOp, SyncStore,
+    GitHubForgeClient, IssueMap, ListOpts, SyncEngine, SyncOp, SyncStore,
     TokenResolver, issue_hash,
 };
 use flynt_models::engagement::{Engagement, EngagementId, RepoBinding};
@@ -278,14 +278,15 @@ fn load_binding<'a>(eng: &'a Engagement, org: &str, repo: &str) -> ExtResult<&'a
 /// Build a forge client appropriate for the engagement. Today: GitHub
 /// only. Other forges (Forgejo, GitLab) return invalid_params until
 /// their flynt-forge clients land.
+///
+/// Always uses the polling resolver (not `StaticToken` snapshot) so a
+/// later `bootstrap_secrets` call rotates the token under the live
+/// client without requiring rebuild.
 fn build_client(eng: &Engagement, secrets: &SecretBag) -> ExtResult<Box<dyn ForgeClient>> {
     match eng.forge.kind {
         ForgeKind::GitHub => {
             let secret_name = eng.forge.token_secret.as_deref().unwrap_or("GITHUB_TOKEN");
-            let token = match secrets.get(secret_name) {
-                Some(t) => Arc::new(StaticToken::new(t)) as Arc<dyn TokenResolver>,
-                None => secrets.resolver(secret_name),
-            };
+            let token = secrets.resolver(secret_name);
             Ok(Box::new(GitHubForgeClient::new(eng.forge.clone(), token)))
         }
         other => Err(ExtError::invalid_params(format!(
@@ -388,6 +389,13 @@ pub fn engagement_create(vault: &Vault, params: Value) -> ExtResult<Value> {
                 .ok_or_else(|| ExtError::invalid_params("repos[].forge_org is required"))?;
             let name = r.get("forge_repo").and_then(|v| v.as_str())
                 .ok_or_else(|| ExtError::invalid_params("repos[].forge_repo is required"))?;
+            // Reject empty strings up-front so downstream parse_repo
+            // doesn't surface a confusing 'org/' or '/repo' error later.
+            if org.trim().is_empty() || name.trim().is_empty() {
+                return Err(ExtError::invalid_params(
+                    "repos[].forge_org and forge_repo must be non-empty"
+                ));
+            }
             let mut b = RepoBinding::new(org, name);
             if let Some(v) = r.get("sync_issues").and_then(|v| v.as_bool()) { b.sync_issues = v; }
             if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) { b.sync_prs = v; }
@@ -498,8 +506,9 @@ pub async fn forge_sync_issues(
     let eng = load_engagement(vault, &eid)?;
     let (org, repo) = parse_repo(&params)?;
     let binding = load_binding(&eng, &org, &repo)?.clone();
-    let board_id = parse_board_id(&params)?;
-    let column = params.get("column").and_then(|v| v.as_str()).unwrap_or("Backlog").to_string();
+    // Validate board + column up-front so we don't silently write tasks
+    // that the kanban will never render.
+    let (board_id, column) = resolve_board_column(vault, &params)?;
     let client = build_client(&eng, secrets)?;
     let store = sync_store_for(vault)?;
 
@@ -509,12 +518,30 @@ pub async fn forge_sync_issues(
     let ops = engine.pull_issues(&binding, &existing).await
         .map_err(|e| ExtError::internal_error(format!("sync: {e}")))?;
 
+    materialize_sync_ops(vault, &store, &eid, &board_id, &column, &org, &repo, &ops)
+}
+
+/// Apply pre-computed `SyncOp`s to the vault and the sync store.
+/// Split out so tests can hand-craft op slices and exercise the
+/// CreateLocal / UpdateLocal / orphan paths without spinning up a
+/// real or mock forge client.
+fn materialize_sync_ops(
+    vault: &Vault,
+    store: &SyncStore,
+    eid: &EngagementId,
+    board_id: &BoardId,
+    column: &str,
+    org: &str,
+    repo: &str,
+    ops: &[SyncOp],
+) -> ExtResult<Value> {
     let mut created = 0_usize;
     let mut updated = 0_usize;
-    for op in &ops {
+    let mut orphans: Vec<u64> = Vec::new();
+    for op in ops {
         match op {
             SyncOp::CreateLocal { issue, local_id } => {
-                let mut t = Task::new(board_id.clone(), &column, issue.title.clone());
+                let mut t = Task::new(board_id.clone(), column, issue.title.clone());
                 t.id = TaskId(*local_id);
                 t.description = issue.body.clone();
                 t.tags = issue.labels.clone();
@@ -525,8 +552,8 @@ pub async fn forge_sync_issues(
                 store.upsert(&IssueMap {
                     local_id: *local_id,
                     board_id: board_id.0,
-                    forge_org: org.clone(),
-                    forge_repo: repo.clone(),
+                    forge_org: org.to_string(),
+                    forge_repo: repo.to_string(),
                     forge_issue_number: issue.number,
                     last_synced: Utc::now(),
                     last_hash: Some(issue_hash(issue)),
@@ -535,13 +562,28 @@ pub async fn forge_sync_issues(
                 created += 1;
             }
             SyncOp::UpdateLocal { local_id, issue, new_hash } => {
+                // Task may have been deleted out-of-band — vault.store
+                // returns Ok(false) in that case. Drop the orphaned
+                // IssueMap so next sync sees the issue as new and
+                // re-creates. Orphan numbers are surfaced in the result
+                // so the operator can spot drift.
                 let mut patch = flynt_models::TaskPatch::default();
                 patch.title = Some(issue.title.clone());
                 patch.description = Some(issue.body.clone());
                 patch.tags = Some(issue.labels.clone());
-                vault.store.update_task(&TaskId(*local_id), &patch)
+                let exists = vault.store.update_task(&TaskId(*local_id), &patch)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
-                if let Some(mut m) = store.get_by_issue(&org, &repo, issue.number)
+                if !exists {
+                    tracing::warn!(
+                        local_id = %local_id, issue = issue.number,
+                        "UpdateLocal target task missing — clearing orphan IssueMap"
+                    );
+                    store.delete_by_local(local_id)
+                        .map_err(|e| ExtError::internal_error(e.to_string()))?;
+                    orphans.push(issue.number);
+                    continue;
+                }
+                if let Some(mut m) = store.get_by_issue(org, repo, issue.number)
                     .map_err(|e| ExtError::internal_error(e.to_string()))? {
                     m.last_synced = Utc::now();
                     m.last_hash = Some(new_hash.clone());
@@ -559,6 +601,7 @@ pub async fn forge_sync_issues(
         "repo": format!("{org}/{repo}"),
         "created": created,
         "updated": updated,
+        "orphans": orphans,
         "ops": ops.len(),
     }))
 }
@@ -579,8 +622,7 @@ pub async fn forge_create_issue(
     let labels: Vec<String> = params.get("labels").and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
-    let board_id = parse_board_id(&params)?;
-    let column = params.get("column").and_then(|v| v.as_str()).unwrap_or("Backlog").to_string();
+    let (board_id, column) = resolve_board_column(vault, &params)?;
 
     let client = build_client(&eng, secrets)?;
     let issue = client.create_issue(&org, &repo, &ForgeCreateIssue {
@@ -698,6 +740,33 @@ fn parse_board_id(params: &Value) -> ExtResult<BoardId> {
         .ok_or_else(|| ExtError::invalid_params("board_id is required"))?;
     let u = Uuid::parse_str(s).map_err(|_| ExtError::invalid_params("board_id: not a UUID"))?;
     Ok(BoardId(u))
+}
+
+/// Resolve a board_id + column from params, validating both. Loads
+/// the board (returns invalid_params if missing) and either checks the
+/// caller-supplied column exists on it or defaults to the first column.
+/// Used by both `forge_sync_issues` and `forge_create_issue` so they
+/// produce tasks the kanban will actually render.
+fn resolve_board_column(vault: &Vault, params: &Value) -> ExtResult<(BoardId, String)> {
+    let board_id = parse_board_id(params)?;
+    let board = vault.store.get_board(&board_id)
+        .map_err(|e| ExtError::internal_error(e.to_string()))?
+        .ok_or_else(|| ExtError::invalid_params(format!("board {} not found", board_id.0)))?;
+    let column = match params.get("column").and_then(|v| v.as_str()) {
+        Some(c) => {
+            if !board.columns.iter().any(|bc| bc.name == c) {
+                return Err(ExtError::invalid_params(
+                    format!("column '{c}' not on board (have: {})",
+                        board.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "))
+                ));
+            }
+            c.to_string()
+        }
+        None => board.columns.first()
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| "Backlog".to_string()),
+    };
+    Ok((board_id, column))
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -847,6 +916,173 @@ mod tests {
         assert_eq!(r.resolve().as_deref(), Some("v1"));
         bag.set("GITHUB_TOKEN", "v2");
         assert_eq!(r.resolve().as_deref(), Some("v2"));
+    }
+
+    #[test]
+    fn engagement_create_rejects_empty_repo_strings() {
+        let (_tmp, vault) = fresh_vault();
+        let bad = json!({
+            "name": "x",
+            "forge": { "kind": "github", "base_url": "https://api.github.com" },
+            "repos": [{ "forge_org": "", "forge_repo": "anything" }]
+        });
+        let err = engagement_create(&vault, bad).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("non-empty"), "expected non-empty validation, got: {msg}");
+    }
+
+    #[test]
+    fn resolve_board_column_rejects_unknown_board() {
+        let (_tmp, vault) = fresh_vault();
+        let phantom = Uuid::new_v4().to_string();
+        let err = resolve_board_column(&vault, &json!({ "board_id": phantom })).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("not found"), "got: {msg}");
+    }
+
+    #[test]
+    fn resolve_board_column_rejects_unknown_column() {
+        let (_tmp, vault) = fresh_vault();
+        let board = flynt_core::models::Board::default_sprint("Sprint");
+        vault.store.save_board(&board).unwrap();
+        let err = resolve_board_column(&vault, &json!({
+            "board_id": board.id.0.to_string(),
+            "column": "Nonexistent"
+        })).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("not on board"), "got: {msg}");
+    }
+
+    #[test]
+    fn resolve_board_column_defaults_to_first_when_omitted() {
+        let (_tmp, vault) = fresh_vault();
+        let board = flynt_core::models::Board::default_sprint("Sprint");
+        let board_id_str = board.id.0.to_string();
+        let first = board.columns[0].name.clone();
+        vault.store.save_board(&board).unwrap();
+        let (_bid, col) = resolve_board_column(&vault, &json!({
+            "board_id": board_id_str
+        })).unwrap();
+        assert_eq!(col, first);
+    }
+
+    // ── materialize_sync_ops: end-to-end without a forge client ────────────
+
+    fn fixture_for_sync() -> (TempDir, Arc<Vault>, EngagementId, BoardId, SyncStore) {
+        let (tmp, vault) = fresh_vault();
+        let created = engagement_create(&vault, engagement_create_params()).unwrap();
+        let eid = EngagementId(Uuid::parse_str(
+            created.get("id").and_then(|v| v.as_str()).unwrap()
+        ).unwrap());
+        let board = flynt_core::models::Board::default_sprint("Sprint");
+        let bid = board.id.clone();
+        vault.store.save_board(&board).unwrap();
+        let store = sync_store_for(&vault).unwrap();
+        (tmp, vault, eid, bid, store)
+    }
+
+    fn fake_issue(number: u64, title: &str) -> styrene_forge::ForgeIssue {
+        styrene_forge::ForgeIssue {
+            number,
+            title: title.into(),
+            body: format!("body for #{number}"),
+            state: styrene_forge::IssueState::Open,
+            labels: vec!["bug".into()],
+            milestone: None,
+            assignees: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            closed_at: None,
+            url: format!("https://github.com/anthropics/claude-code/issues/{number}"),
+        }
+    }
+
+    #[test]
+    fn materialize_create_local_writes_task_and_issue_map() {
+        let (_tmp, vault, eid, bid, store) = fixture_for_sync();
+        let local = Uuid::new_v4();
+        let ops = vec![SyncOp::CreateLocal { issue: fake_issue(7, "First"), local_id: local }];
+
+        let result = materialize_sync_ops(
+            &vault, &store, &eid, &bid, "Backlog",
+            "anthropics", "claude-code", &ops,
+        ).unwrap();
+        assert_eq!(result["created"], 1);
+        assert_eq!(result["updated"], 0);
+        assert_eq!(result["orphans"].as_array().unwrap().len(), 0);
+
+        // Task landed with engagement linkage.
+        let t = vault.store.get_task(&TaskId(local)).unwrap().expect("task should exist");
+        assert_eq!(t.title, "First");
+        assert_eq!(t.engagement_id, Some(eid.clone()));
+        assert!(t.external_refs[0].contains("/issues/7"));
+
+        // IssueMap recorded.
+        let m = store.get_by_issue("anthropics", "claude-code", 7).unwrap();
+        assert!(m.is_some());
+        assert_eq!(m.unwrap().local_id, local);
+    }
+
+    #[test]
+    fn materialize_update_local_refreshes_task_and_hash() {
+        let (_tmp, vault, eid, bid, store) = fixture_for_sync();
+        let local = Uuid::new_v4();
+
+        // Seed: pretend we sync'd #9 once already.
+        let _ = materialize_sync_ops(
+            &vault, &store, &eid, &bid, "Backlog",
+            "anthropics", "claude-code",
+            &[SyncOp::CreateLocal { issue: fake_issue(9, "Original"), local_id: local }],
+        ).unwrap();
+
+        // Now an UpdateLocal arrives with a new title.
+        let new_issue = fake_issue(9, "Updated");
+        let new_hash = issue_hash(&new_issue);
+        let result = materialize_sync_ops(
+            &vault, &store, &eid, &bid, "Backlog",
+            "anthropics", "claude-code",
+            &[SyncOp::UpdateLocal { local_id: local, issue: new_issue, new_hash: new_hash.clone() }],
+        ).unwrap();
+        assert_eq!(result["updated"], 1);
+        assert_eq!(result["orphans"].as_array().unwrap().len(), 0);
+        let t = vault.store.get_task(&TaskId(local)).unwrap().unwrap();
+        assert_eq!(t.title, "Updated");
+        let m = store.get_by_issue("anthropics", "claude-code", 9).unwrap().unwrap();
+        assert_eq!(m.last_hash.as_deref(), Some(new_hash.as_str()));
+    }
+
+    #[test]
+    fn materialize_orphan_clears_issue_map_and_skips_update() {
+        let (_tmp, vault, eid, bid, store) = fixture_for_sync();
+        let local = Uuid::new_v4();
+
+        // Seed an IssueMap whose task was never created (simulates
+        // a task that was deleted out-of-band between syncs).
+        store.upsert(&IssueMap {
+            local_id: local,
+            board_id: bid.0,
+            forge_org: "anthropics".into(),
+            forge_repo: "claude-code".into(),
+            forge_issue_number: 11,
+            last_synced: Utc::now(),
+            last_hash: Some("stale".into()),
+            forge_url: None,
+        }).unwrap();
+
+        // UpdateLocal arrives — task is missing.
+        let issue = fake_issue(11, "Updated");
+        let result = materialize_sync_ops(
+            &vault, &store, &eid, &bid, "Backlog",
+            "anthropics", "claude-code",
+            &[SyncOp::UpdateLocal { local_id: local, issue, new_hash: "new".into() }],
+        ).unwrap();
+        assert_eq!(result["updated"], 0, "missing task must not count as updated");
+        let orphans = result["orphans"].as_array().unwrap();
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0], 11);
+
+        // IssueMap was cleared — next sync would treat #11 as new.
+        assert!(store.get_by_issue("anthropics", "claude-code", 11).unwrap().is_none());
     }
 }
 

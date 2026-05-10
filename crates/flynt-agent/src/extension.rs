@@ -1774,6 +1774,35 @@ mod tests {
         assert!(names.contains(&"create_task".to_string()));
         assert!(names.contains(&"get_board".to_string()));
         assert!(names.contains(&"create_board".to_string()));
+        // Phase 3 — scribe-absorbed forge / engagement tools.
+        for n in [
+            "engagement_create", "engagement_list", "engagement_status",
+            "forge_status", "forge_list_issues", "forge_sync_issues",
+            "forge_create_issue", "log_work", "timeline",
+        ] {
+            assert!(names.contains(&n.to_string()), "expected {n} in tools/list");
+        }
+        // bootstrap_secrets is intentionally NOT a tool — it's an out-
+        // of-band omegon→extension secret-push RPC. Surfacing it as a
+        // tool would let an MCP client try to call it via tools/call,
+        // which would route to execute_bootstrap_secrets and 404.
+        assert!(!names.contains(&"bootstrap_secrets".to_string()));
+    }
+
+    #[tokio::test]
+    async fn bootstrap_secrets_is_top_level_only_not_a_tool() {
+        let (_tmp, ext) = test_extension();
+        // Direct top-level call: succeeds.
+        let r = ext
+            .handle_rpc("bootstrap_secrets", json!({"GITHUB_TOKEN": "x"}))
+            .await
+            .unwrap();
+        assert_eq!(r["acknowledged"], true);
+
+        // Via the execute_ prefix that tools/call would route to:
+        // intentionally NOT registered, so it resolves to method_not_found.
+        let r = ext.handle_rpc("execute_bootstrap_secrets", json!({})).await;
+        assert!(r.is_err(), "execute_bootstrap_secrets must not be wired");
     }
 
     #[tokio::test]
