@@ -12,11 +12,7 @@ async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: Str
     let vault = ctx.vault();
     let _ = tokio::task::spawn_blocking(move || {
         let task = Task::new(board_id, col, title);
-        if let Some(pid) = project_id {
-            vault.save_project_task(&task, &pid)
-        } else {
-            vault.store.save_task(&task)
-        }
+        vault.persist_task(&task, project_id)
     })
     .await;
 }
@@ -27,11 +23,7 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Op
         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.column     = col;
             t.updated_at = Utc::now();
-            if let Some(pid) = project_id {
-                vault.save_project_task(&t, &pid)
-            } else {
-                vault.store.save_task(&t)
-            }
+            vault.persist_task(&t, project_id)
         } else {
             Ok(())
         }
@@ -45,11 +37,7 @@ async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid:
         if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
             t.status     = TaskStatus::Archived;
             t.updated_at = Utc::now();
-            if let Some(pid) = project_id {
-                vault.save_project_task(&t, &pid)
-            } else {
-                vault.store.save_task(&t)
-            }
+            vault.persist_task(&t, project_id)
         } else {
             Ok(())
         }
@@ -452,7 +440,10 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                                     })?;
                                                     for mut t in tasks {
                                                         t.column = new_name.clone();
-                                                        vault.store.save_task(&t)?;
+                                                        // project_id is the board's; pass through
+                                                        // so project-backed boards keep writing to
+                                                        // git-backing.
+                                                        vault.persist_task(&t, b.project_id)?;
                                                     }
                                                     Ok::<_, anyhow::Error>(())
                                                 }).await;
@@ -1230,11 +1221,7 @@ fn TaskCard(
                                                 uuid::Uuid::parse_str(&engagement_s).ok().map(EngagementId)
                                             };
 
-                                            if let Some(pid) = project_id {
-                                                vault.save_project_task(&t, &pid)
-                                            } else {
-                                                vault.store.save_task(&t)
-                                            }
+                                            vault.persist_task(&t, project_id)
                                         } else {
                                             Ok(())
                                         }

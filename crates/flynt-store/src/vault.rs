@@ -866,6 +866,15 @@ impl Vault {
                     }
                     fs::write(&abs_path, &md)?;
 
+                    // Record vault-relative path so the migration sweep
+                    // at next vault.open doesn't see this as unfiled and
+                    // write a duplicate at Tasks/<board>/...
+                    let abs_root = self.root.canonicalize().unwrap_or(self.root.clone());
+                    let abs_full = abs_path.canonicalize().unwrap_or(abs_path.clone());
+                    if let Ok(rel) = abs_full.strip_prefix(&abs_root) {
+                        let _ = self.store.set_task_file_path(&task.id, &rel.to_string_lossy());
+                    }
+
                     // Mark as committed immediately (written to disk)
                     let now = Utc::now();
                     self.store.mark_committed(&[task.id.clone()], &[], now)?;
@@ -873,6 +882,57 @@ impl Vault {
             }
         }
         Ok(())
+    }
+
+    /// Apply a TaskPatch then write the task to disk via persist_task.
+    /// Use instead of `store.update_task` whenever the caller wants the
+    /// file representation refreshed (almost always — the file is the
+    /// canonical surface for the operator now). Returns false if no
+    /// task with that id exists.
+    pub fn update_any_task(
+        &self,
+        id: &TaskId,
+        patch: &flynt_models::TaskPatch,
+    ) -> Result<bool> {
+        let Some(mut task) = self.store.get_task(id)? else { return Ok(false) };
+        // Apply the patch in-place — duplicates the inner logic of
+        // SqliteStore::update_task to keep that contract a sqlite-only
+        // concern. If patch grows new fields, mirror them here.
+        if let Some(v) = &patch.column { task.column = v.clone(); }
+        if let Some(v) = &patch.title { task.title = v.clone(); }
+        if let Some(v) = &patch.description { task.description = v.clone(); }
+        if let Some(v) = patch.priority { task.priority = v; }
+        if let Some(v) = patch.status { task.status = v; }
+        if let Some(v) = &patch.tags { task.tags = v.clone(); }
+        if let Some(v) = patch.due_date { task.due_date = v; }
+        if let Some(v) = &patch.external_refs { task.external_refs = v.clone(); }
+        if let Some(v) = &patch.document_refs { task.document_refs = v.clone(); }
+        if let Some(v) = patch.position { task.position = v; }
+        if let Some(v) = patch.decay { task.decay = v; }
+        if let Some(v) = patch.design_node_id { task.design_node_id = v; }
+        if let Some(v) = &patch.openspec_change { task.openspec_change = v.clone(); }
+        if let Some(v) = &patch.engagement_id { task.engagement_id = v.clone(); }
+        if let Some(v) = &patch.execution { task.execution = v.clone(); }
+        task.updated_at = Utc::now();
+        // project_id from the board (boards table) drives routing.
+        let project_id = self.store
+            .get_board(&task.board_id)?
+            .and_then(|b| b.project_id);
+        self.persist_task(&task, project_id)?;
+        Ok(true)
+    }
+
+    /// Single entry point for persisting a task. Routes based on project
+    /// association: project-backed tasks go through `save_project_task`
+    /// (writes under the project's git-backing); everything else goes
+    /// through `save_any_task` (writes under `Tasks/<board>/<slug>.md`).
+    /// Either way the file_path column is updated so the next startup
+    /// migration doesn't double-write.
+    pub fn persist_task(&self, task: &Task, project_id: Option<Uuid>) -> Result<()> {
+        match project_id {
+            Some(pid) => self.save_project_task(task, &pid),
+            None => self.save_any_task(task).map(|_| ()),
+        }
     }
 
     /// Persist a task: write `.md` file to disk + sqlite + remember the

@@ -705,9 +705,10 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'title'"))?;
                 let task = Task::new(board_id, column, title);
+                // Route through vault.persist_task so the new task lands
+                // as a .md file alongside the sqlite row.
                 self.vault
-                    .store
-                    .save_task(&task)
+                    .persist_task(&task, None)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(serde_json::to_value(&task).unwrap_or(json!({})))
             }
@@ -780,8 +781,7 @@ impl Extension for FlyntExtension {
 
                 let updated = self
                     .vault
-                    .store
-                    .update_task(&task_id, &patch)
+                    .update_any_task(&task_id, &patch)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "updated": updated, "task_id": id_str }))
             }

@@ -569,7 +569,10 @@ fn materialize_sync_ops(
                 t.tags = issue.labels.clone();
                 t.external_refs = vec![issue.url.clone()];
                 t.engagement_id = Some(eid.clone());
-                vault.store.save_task(&t)
+                // Use persist_task so the issue lands as a .md file
+                // under Tasks/<board>/<slug>.md (board has no
+                // project_id in the typical sync flow).
+                vault.persist_task(&t, None)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 store.upsert(&IssueMap {
                     local_id: *local_id,
@@ -593,7 +596,10 @@ fn materialize_sync_ops(
                 patch.title = Some(issue.title.clone());
                 patch.description = Some(issue.body.clone());
                 patch.tags = Some(issue.labels.clone());
-                let exists = vault.store.update_task(&TaskId(*local_id), &patch)
+                // update_any_task applies the patch + persists via the
+                // vault path so the .md file gets refreshed (forge sync
+                // is the canonical path for issue→task updates).
+                let exists = vault.update_any_task(&TaskId(*local_id), &patch)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 if !exists {
                     tracing::warn!(
@@ -673,7 +679,8 @@ pub async fn forge_create_issue(
     t.tags = labels;
     t.external_refs = vec![canonical.url.clone()];
     t.engagement_id = Some(eid.clone());
-    vault.store.save_task(&t)
+    // persist_task writes the .md file alongside sqlite.
+    vault.persist_task(&t, None)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     let store = sync_store_for(vault)?;
