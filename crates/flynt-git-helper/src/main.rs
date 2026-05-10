@@ -18,13 +18,26 @@
 //!
 //! Looks up tokens by host, in order:
 //!   1. `FLYNT_<HOST_UPPER>_TOKEN` — e.g. FLYNT_GITHUB_COM_TOKEN
+//!     Dots and hyphens in the host become underscores, so
+//!     `git-codecommit.us-east-1.amazonaws.com` resolves to
+//!     `FLYNT_GIT_CODECOMMIT_US_EAST_1_AMAZONAWS_COM_TOKEN`.
 //!   2. for github.com specifically, `FLYNT_GITHUB_TOKEN` (matches
 //!      what flynt-agent's bootstrap_secrets path uses)
 //!   3. for github.com, `GITHUB_TOKEN` (CI convention)
 //!
-//! Only HTTPS is served; ssh has its own auth path. Tokens are
-//! returned as `username=x-access-token` per GitHub's PAT-over-HTTPS
-//! convention; that works for GitLab and Forgejo too.
+//! Only HTTPS is served; ssh has its own auth path. Username is
+//! returned as `x-access-token` — GitHub's documented PAT-over-HTTPS
+//! convention. **This is github-correct only.** GitLab PAT auth
+//! conventionally expects `oauth2`; Forgejo accepts the literal
+//! username. For now this helper is github-shaped; add a per-host
+//! username override if you wire up a non-github forge that needs
+//! it.
+//!
+//! `store` and `erase` are accepted but no-ops — we don't persist
+//! tokens. If git asks the helper to ERASE a rejected token, we say
+//! OK and the next request retries with the same env-derived token,
+//! producing the same auth failure. The fix is to update the env
+//! var; this is documented behaviour, not a bug.
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -69,8 +82,13 @@ fn handle_get() -> Result<()> {
 pub(crate) fn lookup_token(host: &str) -> Option<String> {
     let host_only = host.split(':').next().unwrap_or(host);
 
-    // Per-host explicit env: dots → underscores, uppercase.
-    let host_env = format!("FLYNT_{}_TOKEN", host_only.replace('.', "_").to_uppercase());
+    // Per-host explicit env: dots and hyphens → underscores, then
+    // uppercased. AWS CodeCommit, hyphenated subdomains, etc., need
+    // the hyphen substitution to produce a legal env var name.
+    let host_env = format!(
+        "FLYNT_{}_TOKEN",
+        host_only.replace(['.', '-'], "_").to_uppercase(),
+    );
     if let Ok(v) = std::env::var(&host_env)
         && !v.is_empty()
     {
@@ -166,6 +184,23 @@ mod tests {
                 assert_eq!(
                     lookup_token("forgejo.example.com").as_deref(),
                     Some("forge-token")
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn lookup_handles_hyphenated_host() {
+        // AWS CodeCommit + many self-hosted forges have hyphens.
+        // Our env-var derivation must convert '-' as well as '.'.
+        with_env(
+            &[
+                ("FLYNT_GIT_CODECOMMIT_US_EAST_1_AMAZONAWS_COM_TOKEN", Some("aws-token")),
+            ],
+            || {
+                assert_eq!(
+                    lookup_token("git-codecommit.us-east-1.amazonaws.com").as_deref(),
+                    Some("aws-token")
                 );
             },
         );
