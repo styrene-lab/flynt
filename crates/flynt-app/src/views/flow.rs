@@ -39,15 +39,29 @@
 //! new content into the `loaded` signal — which the mount effect
 //! observes and remounts the bundle.
 //!
-//! ## Known limitations carried over from ExcalidrawView
+//! Path canonicalization: we canonicalize the project ROOT once at
+//! subscribe-time (always exists) and join the relative path against
+//! it, rather than canonicalizing the file directly (which fails
+//! before the file is created — common when an agent will produce it).
+//! FSEvents emits canonicalized paths so this keeps comparison cheap.
 //!
-//! - Single-tab assumption: the mount target id is hardcoded
+//! ## Known limitations
+//!
+//! - **Single-tab assumption**: the mount target id is hardcoded
 //!   (`flynt-flow`). Two `.flow` tabs open simultaneously will collide.
-//! - Conflict policy: external writes win. If the operator has
-//!   unsaved local changes when an agent's write lands, the operator's
-//!   in-memory state is replaced. No CRDT, no merge UI yet — the
-//!   working contract is "agent waits for tool result before issuing
-//!   the next write," which keeps the operator + agent from racing.
+//! - **External writes win when idle**: if the operator has unsaved
+//!   local changes when an agent's write lands, the operator's
+//!   in-memory state is replaced. The working contract is "agent
+//!   waits for tool result before issuing the next write," which
+//!   keeps the operator + agent from racing in practice.
+//! - **Save-in-flight reloads are dropped**: if an external write
+//!   arrives while our save loop is mid-write, the reload is skipped
+//!   (otherwise the operator's pending content races with disk and
+//!   the agent's write loses anyway, with extra UI flicker). Net
+//!   effect: a narrow class of agent writes can be silently
+//!   overwritten by a concurrently-completing operator save. Operator
+//!   can resync by triggering any further save (or by closing/
+//!   reopening the tab).
 
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
@@ -325,40 +339,59 @@ pub fn FlowView(path: PathBuf) -> Element {
         let last_self_save_ro = last_self_save_at;
 
         spawn(async move {
-            // Pre-canonicalize our path once so the per-event match is a
-            // PathBuf compare rather than two filesystem syscalls per
-            // event. Falls back to the joined path if canonicalize fails
-            // (file didn't exist yet) — ProjectWatcher uses the same
-            // fallback so the comparison stays consistent.
+            // Pre-canonicalize the project ROOT once and join the
+            // relative path to that. Canonicalizing `our_abs` directly
+            // would fall back to a non-canonical path if the file
+            // doesn't yet exist (e.g. operator opens a tab the agent
+            // will create), and FSEvents would emit a canonicalized
+            // path that wouldn't match. Project root is always present.
             let project = c.project();
-            let our_abs = project.root.join(&p);
-            let our_canonical = std::fs::canonicalize(&our_abs).unwrap_or_else(|_| our_abs.clone());
+            let canonical_root = std::fs::canonicalize(&project.root)
+                .unwrap_or_else(|_| project.root.clone());
+            let our_canonical = canonical_root.join(&p);
+
+            // Helper: canonicalize an event path against the same root,
+            // falling back to the path as-emitted. Centralized so the
+            // recv + drain branches use identical comparison logic.
+            let matches_ours = |evt_path: &Path, ours: &Path| -> bool {
+                let pc = std::fs::canonicalize(evt_path)
+                    .unwrap_or_else(|_| evt_path.to_path_buf());
+                pc == *ours
+            };
 
             loop {
                 let Ok(first_evt) = rx.recv().await else { break };
-                let evt_path = event_path(&first_evt);
-                let evt_canonical = std::fs::canonicalize(evt_path)
-                    .unwrap_or_else(|_| evt_path.to_path_buf());
-                if evt_canonical != our_canonical {
+                if !matches_ours(event_path(&first_evt), &our_canonical) {
                     continue;
                 }
 
-                // Debounce: drain any further events for our path that
-                // arrive in the next 200ms before reloading.
+                // Debounce: drain any further events that arrive in the
+                // next 200ms. Both matching and non-matching are
+                // discarded from THIS subscriber's queue — non-matching
+                // events stay in other subscribers' queues (broadcast
+                // semantics), so the sidebar etc. still see them.
                 tokio::time::sleep(Duration::from_millis(200)).await;
-                while let Ok(evt) = rx.try_recv() {
-                    let p = event_path(&evt);
-                    let pc = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-                    if pc != our_canonical { /* not ours, ignore — we'll get it via the next outer recv if needed */ }
-                }
+                while rx.try_recv().is_ok() {}
 
-                // Own-save echo filter — if we just wrote within the
-                // window, this watcher event is our own write coming
-                // back. Skip the reload.
+                // Own-save echo filter — FSEvents fires for our writes
+                // too. If we just wrote within the window, skip.
                 if let Some(t) = *last_self_save_ro.read() {
                     if t.elapsed() < SELF_SAVE_ECHO_WINDOW {
                         continue;
                     }
+                }
+
+                // Save-in-flight guard — if we're mid-save, reloading
+                // would clobber the operator's pending content with
+                // disk state, then the in-flight save would land and
+                // overwrite again, eating the external write. Skip;
+                // the operator can observe the agent's write by saving
+                // (which clears save_state) and triggering a fresh
+                // round of events.
+                let saving = *save_state.read() == "saving";
+                if saving {
+                    tracing::debug!("FlowView: skipping watcher reload while save in flight");
+                    continue;
                 }
 
                 // External write — reload from disk and push into
