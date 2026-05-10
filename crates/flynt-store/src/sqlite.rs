@@ -24,16 +24,6 @@ impl SqliteStore {
         Ok(Self { conn: Mutex::new(conn) })
     }
 
-    /// Associate a task with a git-backed project.
-    pub fn set_task_project(&self, task_id: &TaskId, project_id: &uuid::Uuid) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE tasks SET project_id = ?1 WHERE id = ?2",
-            params![project_id.to_string(), task_id.0.to_string()],
-        )?;
-        Ok(())
-    }
-
     /// Read the on-disk file path for a task (project-relative). None when
     /// the task hasn't been written as a file yet — the migration sweep
     /// at Project::open populates these for legacy sqlite-only tasks.
@@ -748,113 +738,6 @@ impl ProjectStore for SqliteStore {
         Ok(n > 0)
     }
 
-    // ── Project dirty tracking ───────────────────────────────────────────────
-
-    fn list_dirty_tasks(&self, project_id: &uuid::Uuid) -> Result<Vec<Task>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            r#"SELECT id, board_id, column_name, title, description, priority, status,
-                      tags, document_refs, due_date, position, created_at, updated_at,
-                      decay, last_touched_at, external_refs, design_node_id,
-                      execution, openspec_change, engagement_id
-               FROM tasks
-               WHERE project_id = ?1
-                 AND (last_committed_at IS NULL OR updated_at > last_committed_at)
-               ORDER BY position ASC"#,
-        )?;
-        let rows = stmt.query_map(params![project_id.to_string()], row_to_task)?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    }
-
-    fn list_dirty_documents(&self, project_id: &uuid::Uuid) -> Result<Vec<Document>> {
-        // Documents belonging to a project are identified by having a path that
-        // starts with the project's sub_path. We look up the project entity to
-        // find its sub_path, but for now we use a simpler approach: the caller
-        // knows the sub_path and passes the project_id. We match documents whose
-        // frontmatter data.project field matches.
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            r#"SELECT id, path, title, content, frontmatter, created_at, updated_at
-               FROM documents
-               WHERE json_extract(frontmatter, '$.data.project') = ?1
-                 AND (last_committed_at IS NULL OR updated_at > last_committed_at)
-               ORDER BY updated_at DESC"#,
-        )?;
-        let pid = project_id.to_string();
-        let mut results = Vec::new();
-        let mut rows = stmt.query(params![pid])?;
-        while let Some(row) = rows.next()? {
-            results.push(row_to_document(&conn, row)?);
-        }
-        Ok(results)
-    }
-
-    fn mark_committed(
-        &self,
-        task_ids: &[TaskId],
-        doc_ids: &[DocumentId],
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let ts = at.to_rfc3339();
-        for tid in task_ids {
-            conn.execute(
-                "UPDATE tasks SET last_committed_at = ?1 WHERE id = ?2",
-                params![ts, tid.0.to_string()],
-            )?;
-        }
-        for did in doc_ids {
-            conn.execute(
-                "UPDATE documents SET last_committed_at = ?1 WHERE id = ?2",
-                params![ts, did.0.to_string()],
-            )?;
-        }
-        Ok(())
-    }
-
-    fn record_project_deletion(
-        &self,
-        entity_id: &uuid::Uuid,
-        entity_kind: &str,
-        project_id: &uuid::Uuid,
-    ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            r#"INSERT OR REPLACE INTO project_deletions (entity_id, entity_kind, project_id, deleted_at, committed)
-               VALUES (?1, ?2, ?3, ?4, 0)"#,
-            params![
-                entity_id.to_string(),
-                entity_kind,
-                project_id.to_string(),
-                chrono::Utc::now().to_rfc3339(),
-            ],
-        )?;
-        Ok(())
-    }
-
-    fn list_pending_deletions(&self, project_id: &uuid::Uuid) -> Result<Vec<(uuid::Uuid, String)>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT entity_id, entity_kind FROM project_deletions WHERE project_id = ?1 AND committed = 0",
-        )?;
-        let rows = stmt.query_map(params![project_id.to_string()], |row| {
-            let id: String = row.get(0)?;
-            let kind: String = row.get(1)?;
-            Ok((id.parse::<uuid::Uuid>().unwrap_or_default(), kind))
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    }
-
-    fn mark_deletions_committed(&self, entity_ids: &[uuid::Uuid]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        for eid in entity_ids {
-            conn.execute(
-                "UPDATE project_deletions SET committed = 1 WHERE entity_id = ?1",
-                params![eid.to_string()],
-            )?;
-        }
-        Ok(())
-    }
 }
 
 // ── Row deserializers ─────────────────────────────────────────────────────────

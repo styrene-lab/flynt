@@ -5,20 +5,18 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::task::{BoardId, DecayRate, DocumentId, Priority, Task, TaskId, TaskStatus};
 
 /// Serialize a `Task` to its canonical markdown file content.
-pub fn serialize_task_to_markdown(task: &Task, project_id: &Uuid) -> String {
+pub fn serialize_task_to_markdown(task: &Task) -> String {
     let mut fm = String::new();
     fm.push_str("+++\n");
     fm.push_str(&format!("id = \"{}\"\n", task.id.0));
     fm.push_str("kind = \"task\"\n\n");
     fm.push_str("[data]\n");
     fm.push_str(&format!("title = {}\n", toml_quote(&task.title)));
-    fm.push_str(&format!("project = \"{project_id}\"\n"));
     fm.push_str(&format!("board = \"{}\"\n", task.board_id.0));
     fm.push_str(&format!("column = {}\n", toml_quote(&task.column)));
     fm.push_str(&format!("priority = {}\n", priority_to_int(&task.priority)));
@@ -221,11 +219,6 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
     })
 }
 
-/// Return the relative file path for a task within a project sub-path.
-pub fn task_file_path(sub_path: &Path, task_id: &TaskId) -> PathBuf {
-    sub_path.join("tasks").join(format!("{}.md", task_id.0))
-}
-
 // ── Public helpers ──────────────────────────────────────────────────────────
 
 pub fn toml_quote(s: &str) -> String {
@@ -309,11 +302,10 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let project_id = Uuid::new_v4();
         let task = sample_task();
         let original_id = task.id.clone();
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         let parsed = parse_task_from_markdown(&md).unwrap();
 
         assert_eq!(parsed.id, original_id);
@@ -326,11 +318,10 @@ mod tests {
 
     #[test]
     fn roundtrip_external_refs() {
-        let project_id = Uuid::new_v4();
         let mut task = sample_task();
         task.external_refs = vec!["https://github.com/org/repo/issues/42".into()];
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert_eq!(parsed.external_refs, vec!["https://github.com/org/repo/issues/42"]);
     }
@@ -350,7 +341,6 @@ mod tests {
 
     #[test]
     fn roundtrip_execution_minimal() {
-        let project_id = Uuid::new_v4();
         let mut task = sample_task();
         task.execution = Some(crate::task::ExecutionSpec {
             model: Some("anthropic:claude-sonnet-4-6".into()),
@@ -358,7 +348,7 @@ mod tests {
             ..Default::default()
         });
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         let parsed = parse_task_from_markdown(&md).unwrap();
         let exec = parsed.execution.expect("execution should round-trip");
         assert_eq!(exec.model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
@@ -370,7 +360,6 @@ mod tests {
         // env: BTreeMap<String, String> serializes to a TOML sub-table.
         // If our [data.execution] section is followed by an [env] block at
         // the wrong scope, this round-trip silently drops env entries.
-        let project_id = Uuid::new_v4();
         let mut task = sample_task();
         let mut env = std::collections::BTreeMap::new();
         env.insert("SCAN_DEPTH".to_string(), "deep".to_string());
@@ -381,7 +370,7 @@ mod tests {
             ..Default::default()
         });
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         let parsed = parse_task_from_markdown(&md).unwrap_or_else(|e| {
             panic!("parse failed:\n=== md ===\n{md}\n=== err ===\n{e}");
         });
@@ -395,23 +384,21 @@ mod tests {
 
     #[test]
     fn roundtrip_openspec_change() {
-        let project_id = Uuid::new_v4();
         let mut task = sample_task();
         task.openspec_change = Some("auth-rewrite".into());
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert_eq!(parsed.openspec_change.as_deref(), Some("auth-rewrite"));
     }
 
     #[test]
     fn roundtrip_engagement_id() {
-        let project_id = Uuid::new_v4();
         let mut task = sample_task();
         let eid = crate::engagement::EngagementId::new();
         task.engagement_id = Some(eid.clone());
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         assert!(md.contains("engagement = "), "expected engagement field in:\n{md}");
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert_eq!(parsed.engagement_id, Some(eid));
@@ -419,9 +406,8 @@ mod tests {
 
     #[test]
     fn missing_engagement_round_trips_as_none() {
-        let project_id = Uuid::new_v4();
         let task = sample_task();
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         assert!(!md.contains("engagement"), "expected no engagement field in:\n{md}");
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert!(parsed.engagement_id.is_none());
@@ -431,11 +417,10 @@ mod tests {
     fn empty_execution_block_does_not_emit_section() {
         // is_empty() check should prevent us from writing
         // `[data.execution]\n` for a task with no meaningful exec params.
-        let project_id = Uuid::new_v4();
         let mut task = sample_task();
         task.execution = Some(crate::task::ExecutionSpec::default());
 
-        let md = serialize_task_to_markdown(&task, &project_id);
+        let md = serialize_task_to_markdown(&task);
         assert!(!md.contains("[data.execution]"), "got: {md}");
     }
 }

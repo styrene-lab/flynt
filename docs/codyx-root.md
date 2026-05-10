@@ -46,7 +46,7 @@ Workspace: flynt-core (models + entities + traits) · flynt-store (SQLite + file
 
 **Status:** accepted
 
-**Rationale:** Git backing serves durability, portability, and audit trail for the single user. Multi-user git sync was evaluated and rejected — it breaks down beyond a handful of developers, and a coordination server is premature. Projects can back to the project repo (ProjectRepo) or an external repo (ExternalRepo).
+**Rationale:** Git backing serves durability, portability, and audit trail for the single user. Multi-user git sync was evaluated and rejected — it breaks down beyond a handful of developers, and a coordination server is premature. A project's git story is just: if the top-level directory has a `.git`, sync it.
 
 ### Agent integration: Flynt exposes MCP tools; Omegon is an embedded capability
 

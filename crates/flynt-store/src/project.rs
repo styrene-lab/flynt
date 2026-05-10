@@ -740,14 +740,10 @@ impl Project {
             suffix += 1;
         }
 
-        // Step 4: write file. project_id passed to the serializer is
-        // only used for the [data.project] frontmatter; for non-project
-        // tasks we use the task id as a stand-in (the serializer needs
-        // a uuid arg but doesn't fail on synthetic values).
+        // Step 4: write file.
         std::fs::create_dir_all(&desired_dir)
             .with_context(|| format!("create Tasks dir {}", desired_dir.display()))?;
-        let project_id_for_fm = uuid::Uuid::nil();
-        let md = task_file::serialize_task_to_markdown(task, &project_id_for_fm);
+        let md = task_file::serialize_task_to_markdown(task);
         std::fs::write(&abs, &md)
             .with_context(|| format!("write task file {}", abs.display()))?;
 

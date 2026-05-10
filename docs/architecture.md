@@ -33,7 +33,7 @@ Flynt is a **single-user** knowledge management and task tracking desktop applic
 | Crate | Role |
 |---|---|
 | `flynt-core` | Domain models, `ProjectStore` trait, `SyncBackend` trait, entity/datum type system, markdown/wikilink parser |
-| `flynt-store` | `SqliteStore` (FTS5, WAL), `Project` (filesystem indexer + project flush), `ProjectWatcher` (FSEvents), task file serialization, `ProjectGit`, git sync |
+| `flynt-store` | `SqliteStore` (FTS5, WAL), `Project` (filesystem indexer), `ProjectWatcher` (FSEvents), task file serialization, `GitSync` |
 | `flynt-agent` | Standalone MCP stdio binary; `omegon-extension` 0.15; 14 tools exposed to Omegon |
 | `flynt-app` | Dioxus 0.7 desktop binary; views: notes, graph, kanban, search, settings, publication rules |
 
@@ -69,16 +69,14 @@ Entity data lives in the `[data]` table within TOML frontmatter. The `kind` fiel
 ```toml
 +++
 id = "uuid"
-kind = "project"
+kind = "task"
 
 [data]
-title = "My Project"
-status = "active"
-columns = ["Backlog", "In Progress", "Done"]
-
-[data.git_backing]
-type = "project_repo"
-sub_path = "projects/my-project"
+title = "Fix the indexer"
+board = "uuid"
+column = "Backlog"
+status = "todo"
+priority = 2
 +++
 ```
 
@@ -91,19 +89,17 @@ sub_path = "projects/my-project"
 
 ### Project git backing
 
-Each project is optionally backed 1:1 by a git repository. Two modes:
-
-- **ProjectRepo**: project data lives inside the project's own git repo at a sub-path. Project-level auto-commit handles git operations.
-- **ExternalRepo**: project data lives in a separate git repo (e.g. `styrene-lab/flynt-projects`). `ProjectGit` handles its own commit cycle.
+A project is its top-level directory. If that directory has a `.git`,
+`GitSync` (top-level) handles auto-commit and push/pull. There is no
+sub-path scoping or external-repo routing — one project per top-level
+directory, full stop.
 
 ### Task lifecycle
 
-| Scenario | Storage |
-|---|---|
-| Personal scratch board, no project | DB-only (lightweight, no files) |
-| Task under a git-backed project | DB + markdown file at `<sub_path>/tasks/<uuid>.md` |
-
-**Flush cycle**: dirty tasks (tracked via `last_committed_at`) are serialized to markdown, written to disk, and committed. On launch or pull, task files are parsed back into SQLite via `reindex_project()`.
+Every task is a markdown file at `Tasks/<board-slug>/<title-slug>.md`,
+mirrored into SQLite via `Project::persist_task` for query-time speed.
+The file on disk is canonical; SQLite is rebuildable from a fresh
+reindex.
 
 ## Publication Pipeline
 

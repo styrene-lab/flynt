@@ -541,12 +541,6 @@ mod tests {
             &self,
             _id: &flynt_models::engagement::EngagementId,
         ) -> Result<bool> { Ok(true) }
-        fn list_dirty_tasks(&self, _project_id: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
-        fn list_dirty_documents(&self, _project_id: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
-        fn mark_committed(&self, _task_ids: &[TaskId], _doc_ids: &[DocumentId], _at: chrono::DateTime<chrono::Utc>) -> Result<()> { Ok(()) }
-        fn record_project_deletion(&self, _entity_id: &uuid::Uuid, _entity_kind: &str, _project_id: &uuid::Uuid) -> Result<()> { Ok(()) }
-        fn list_pending_deletions(&self, _project_id: &uuid::Uuid) -> Result<Vec<(uuid::Uuid, String)>> { Ok(vec![]) }
-        fn mark_deletions_committed(&self, _entity_ids: &[uuid::Uuid]) -> Result<()> { Ok(()) }
     }
 
     #[test]

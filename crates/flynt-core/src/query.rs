@@ -272,12 +272,6 @@ mod tests {
             &self,
             _id: &flynt_models::engagement::EngagementId,
         ) -> Result<bool> { Ok(true) }
-        fn list_dirty_tasks(&self, _pid: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
-        fn list_dirty_documents(&self, _pid: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
-        fn mark_committed(&self, _t: &[TaskId], _d: &[DocumentId], _at: DateTime<Utc>) -> Result<()> { Ok(()) }
-        fn record_project_deletion(&self, _eid: &uuid::Uuid, _kind: &str, _pid: &uuid::Uuid) -> Result<()> { Ok(()) }
-        fn list_pending_deletions(&self, _pid: &uuid::Uuid) -> Result<Vec<(uuid::Uuid, String)>> { Ok(vec![]) }
-        fn mark_deletions_committed(&self, _eids: &[uuid::Uuid]) -> Result<()> { Ok(()) }
     }
 
     fn doc(title: &str, tags: &[&str]) -> DocumentMeta {
