@@ -107,6 +107,11 @@ pub fn tool_definitions() -> Vec<Value> {
                     "name": { "type": "string" },
                     "description": { "type": "string" },
                     "partnership_id": { "type": "string", "description": "Optional partnership UUID." },
+                    "auto_create_issues": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Whether to auto-create upstream issues for tasks linked to this engagement. Default false (local-first): tasks stay local until the operator explicitly mirrors them. Set true to opt in to seamless auto-push on every save."
+                    },
                     "forge": {
                         "type": "object",
                         "required": ["kind", "base_url"],
@@ -378,6 +383,9 @@ pub fn engagement_create(project: &Project, params: Value) -> ExtResult<Value> {
 
     let mut e = Engagement::new(name, endpoint);
     e.description = params.get("description").and_then(|v| v.as_str()).map(String::from);
+    if let Some(b) = params.get("auto_create_issues").and_then(|v| v.as_bool()) {
+        e.auto_create_issues = b;
+    }
     if let Some(p) = params.get("partnership_id").and_then(|v| v.as_str()) {
         let u = Uuid::parse_str(p)
             .map_err(|_| ExtError::invalid_params("partnership_id: not a UUID"))?;

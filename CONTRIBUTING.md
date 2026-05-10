@@ -144,6 +144,26 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 # 4. CI builds Linux + creates GitHub Release
 ```
 
+## Secrets / token trust model
+
+Forge tokens (GitHub PAT, GitLab token, Forgejo token) are held in a
+single process-level `SecretBag` shared between the desktop client
+and the embedded Omegon agent. Both surfaces — the GUI's metadata
+strip pickers that push to upstream issues, and the agent tools
+that call the same APIs — read tokens from the same source.
+
+**The implication:** if you trust the agent with your forge tokens
+(which you must, to use any forge integration), you trust the GUI
+client with the same tokens. There's no adversarial boundary between
+them. They're both operator-driven; both run with operator
+permissions; both write through the same `flynt-forge::push_task`
+seam.
+
+Practical note: tokens come from `bootstrap_secrets` (omegon pushes
+them at session start) or, as a fallback, from `FLYNT_GITHUB_TOKEN`
+in the environment. They're never written to disk by Flynt itself —
+the SecretBag is in-memory only.
+
 ## Project layout
 
 ```

@@ -84,6 +84,19 @@ pub struct Engagement {
     pub forge: ForgeEndpoint,
     #[serde(default)]
     pub status: EngagementStatus,
+    /// Whether to auto-create upstream issues for tasks linked to this
+    /// engagement.
+    ///
+    /// Default `false` (local-first): a task can carry this engagement's
+    /// id without ever being mirrored upstream until the operator opts
+    /// in. When `true`, the push pipeline creates a new issue the first
+    /// time a task with this engagement_id is saved.
+    ///
+    /// The flag governs only first-time creation. Once an `IssueMap`
+    /// exists, subsequent edits push regardless — the link has been
+    /// made explicit.
+    #[serde(default)]
+    pub auto_create_issues: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -109,6 +122,7 @@ impl Engagement {
             repos: Vec::new(),
             forge,
             status: EngagementStatus::Active,
+            auto_create_issues: false,
             created_at: now,
             updated_at: now,
         }

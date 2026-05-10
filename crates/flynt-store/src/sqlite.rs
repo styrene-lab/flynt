@@ -209,6 +209,11 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE documents DROP COLUMN last_committed_at;",
     "ALTER TABLE boards DROP COLUMN project_id;",
     "DROP TABLE IF EXISTS project_deletions;",
+    // v10: engagement.auto_create_issues — drives the push pipeline's
+    // first-time mirror-up. Default 0 (local-first) so existing
+    // engagements opt OUT of auto-push until the operator flips the
+    // flag via engagement_create (or future engagement_update).
+    "ALTER TABLE engagements ADD COLUMN auto_create_issues INTEGER NOT NULL DEFAULT 0;",
 ];
 
 // ── ProjectStore implementation ─────────────────────────────────────────────────
@@ -676,7 +681,7 @@ impl ProjectStore for SqliteStore {
     ) -> Result<Option<flynt_models::engagement::Engagement>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, partnership_id, name, description, repos, forge, status, created_at, updated_at
+            "SELECT id, partnership_id, name, description, repos, forge, status, auto_create_issues, created_at, updated_at
              FROM engagements WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
@@ -687,7 +692,7 @@ impl ProjectStore for SqliteStore {
     fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, partnership_id, name, description, repos, forge, status, created_at, updated_at
+            "SELECT id, partnership_id, name, description, repos, forge, status, auto_create_issues, created_at, updated_at
              FROM engagements ORDER BY name ASC",
         )?;
         let rows = stmt.query_map([], row_to_engagement)?;
@@ -697,16 +702,17 @@ impl ProjectStore for SqliteStore {
     fn save_engagement(&self, engagement: &flynt_models::engagement::Engagement) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            r#"INSERT INTO engagements (id, partnership_id, name, description, repos, forge, status, created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            r#"INSERT INTO engagements (id, partnership_id, name, description, repos, forge, status, auto_create_issues, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                ON CONFLICT(id) DO UPDATE SET
-                 partnership_id = excluded.partnership_id,
-                 name           = excluded.name,
-                 description    = excluded.description,
-                 repos          = excluded.repos,
-                 forge          = excluded.forge,
-                 status         = excluded.status,
-                 updated_at     = excluded.updated_at"#,
+                 partnership_id     = excluded.partnership_id,
+                 name               = excluded.name,
+                 description        = excluded.description,
+                 repos              = excluded.repos,
+                 forge              = excluded.forge,
+                 status             = excluded.status,
+                 auto_create_issues = excluded.auto_create_issues,
+                 updated_at         = excluded.updated_at"#,
             params![
                 engagement.id.0.to_string(),
                 engagement.partnership_id.as_ref().map(|p| p.0.to_string()),
@@ -715,6 +721,7 @@ impl ProjectStore for SqliteStore {
                 serde_json::to_string(&engagement.repos)?,
                 serde_json::to_string(&engagement.forge)?,
                 serde_json::to_string(&engagement.status)?,
+                engagement.auto_create_issues as i64,
                 engagement.created_at.to_rfc3339(),
                 engagement.updated_at.to_rfc3339(),
             ],
@@ -837,8 +844,9 @@ fn row_to_engagement(
     let repos_json: String = row.get(4)?;
     let forge_json: String = row.get(5)?;
     let status_json: String = row.get(6)?;
-    let created_at: String = row.get(7)?;
-    let updated_at: String = row.get(8)?;
+    let auto_create: i64 = row.get(7)?;
+    let created_at: String = row.get(8)?;
+    let updated_at: String = row.get(9)?;
     Ok(Engagement {
         id: EngagementId(id.parse().map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -853,6 +861,7 @@ fn row_to_engagement(
             rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
         })?,
         status: serde_json::from_str(&status_json).unwrap_or(EngagementStatus::Active),
+        auto_create_issues: auto_create != 0,
         created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
         updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
