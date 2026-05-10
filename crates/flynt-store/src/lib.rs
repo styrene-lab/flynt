@@ -1,5 +1,6 @@
 pub mod conflicts;
 pub mod migrate;
+pub mod save_hook;
 pub mod sqlite;
 pub mod sync;
 pub mod task_file;

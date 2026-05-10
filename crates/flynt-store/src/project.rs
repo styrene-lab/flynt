@@ -30,6 +30,12 @@ pub struct Project {
     pub root: PathBuf,
     pub store: Arc<SqliteStore>,
     pub config: ProjectConfig,
+    /// Set by higher layers (flynt-app's bootstrap) to subscribe to
+    /// save events. The save paths fan out to `SaveHook::on_task_saved`
+    /// when a task file is written; the desktop's push pipeline uses
+    /// this to feed its `PushDebouncer`. None until set; flynt-store
+    /// itself stays dep-light.
+    pub save_hook: std::sync::OnceLock<Arc<dyn crate::save_hook::SaveHook>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,7 +152,12 @@ impl Project {
         let store = Arc::new(SqliteStore::open(&db_path)?);
 
         info!("Project opened at {:?}, store ready at {:?}", root, db_path);
-        let project = Self { root: root.to_owned(), store, config };
+        let project = Self {
+            root: root.to_owned(),
+            store,
+            config,
+            save_hook: std::sync::OnceLock::new(),
+        };
 
         // Migration: every task becomes a file. Legacy sqlite-only tasks
         // get a `.md` written under `Tasks/<board-slug>/`. Idempotent —
@@ -163,6 +174,24 @@ impl Project {
         }
 
         Ok(project)
+    }
+
+    /// Register a save hook (typically the push pipeline's debouncer).
+    /// Idempotent — first set wins. flynt-app calls this once during
+    /// bootstrap; subsequent calls are no-ops.
+    pub fn install_save_hook(&self, hook: Arc<dyn crate::save_hook::SaveHook>) {
+        let _ = self.save_hook.set(hook);
+    }
+
+    /// Fire the save hook for a task file at `rel_path`. No-op when no
+    /// hook is installed (tests, headless agents). Looks up the doc
+    /// from sqlite to confirm it's a task before firing — we never
+    /// notify on plain notes.
+    fn notify_task_saved(&self, rel_path: &Path) {
+        let Some(hook) = self.save_hook.get() else { return };
+        let Ok(Some(doc)) = self.store.get_document_by_path(rel_path) else { return };
+        if doc.frontmatter.kind.as_deref() != Some("task") { return }
+        hook.on_task_saved(doc.id.0);
     }
 
     /// Create a "Default" minimalist board if no boards exist yet.
@@ -304,7 +333,9 @@ impl Project {
             None => content.to_string(),
         };
         fs::write(&abs_path, &to_write)?;
-        self.index_file(&abs_path)
+        self.index_file(&abs_path)?;
+        self.notify_task_saved(rel_path);
+        Ok(())
     }
 
     /// Set or clear the `kind` field in a document's TOML frontmatter.
@@ -449,6 +480,9 @@ impl Project {
         fs::write(&abs_path, &new_raw)
             .with_context(|| format!("write {}", abs_path.display()))?;
         self.index_file(&abs_path)?;
+        // Fan out to the save hook (push debouncer when installed).
+        // No-op when no hook is registered (tests, headless agents).
+        self.notify_task_saved(rel_path);
         Ok(())
     }
 
@@ -1770,6 +1804,100 @@ Original body content.
 "#).unwrap();
         project.index_file(&abs).unwrap();
         path
+    }
+
+    // ── save hook ────────────────────────────────────────────────────
+
+    /// Recording hook for tests — pushes every notified id into a Vec.
+    struct RecordingHook(std::sync::Mutex<Vec<uuid::Uuid>>);
+    impl crate::save_hook::SaveHook for RecordingHook {
+        fn on_task_saved(&self, task_id: uuid::Uuid) {
+            self.0.lock().unwrap().push(task_id);
+        }
+    }
+    impl RecordingHook {
+        fn new() -> std::sync::Arc<Self> {
+            std::sync::Arc::new(Self(std::sync::Mutex::new(Vec::new())))
+        }
+        fn fired(&self) -> Vec<uuid::Uuid> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    #[test]
+    fn set_data_field_fires_save_hook_for_task_files() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let path = write_task_file(&project, "Tasks/x/t.md");
+        project.set_data_field(&path, "status", toml_edit::Value::from("in_progress")).unwrap();
+
+        let fired = hook.fired();
+        assert_eq!(fired.len(), 1, "hook fires exactly once per set_data_field");
+        // The fired id is the document/task UUID from frontmatter.
+        let expected = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        assert_eq!(fired[0], expected);
+    }
+
+    #[test]
+    fn save_hook_does_not_fire_for_plain_notes() {
+        // save_document_content on a non-task `.md` shouldn't fire
+        // the task-saved hook — push pipeline only cares about tasks.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let path = std::path::PathBuf::from("note.md");
+        let abs = project.root.join(&path);
+        std::fs::write(&abs, "# Just a plain note\n\nBody.\n").unwrap();
+        project.index_file(&abs).unwrap();
+        project.save_document_content(&path, "Updated body").unwrap();
+
+        assert!(hook.fired().is_empty(), "no task-saved fire for plain notes");
+    }
+
+    #[test]
+    fn save_hook_fires_on_save_document_content_for_tasks() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let path = write_task_file(&project, "Tasks/x/t.md");
+        project.save_document_content(&path, "New description").unwrap();
+
+        assert_eq!(hook.fired().len(), 1, "save_document_content fires once for task files");
+    }
+
+    #[test]
+    fn save_hook_install_is_idempotent() {
+        // First install wins; second call is a no-op (OnceLock).
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook1 = RecordingHook::new();
+        let hook2 = RecordingHook::new();
+        project.install_save_hook(hook1.clone());
+        project.install_save_hook(hook2.clone());
+
+        let path = write_task_file(&project, "Tasks/x/t.md");
+        project.set_data_field(&path, "status", toml_edit::Value::from("done")).unwrap();
+
+        assert_eq!(hook1.fired().len(), 1, "first hook still fires");
+        assert!(hook2.fired().is_empty(), "second hook never installed");
+    }
+
+    #[test]
+    fn project_without_save_hook_save_succeeds() {
+        // No hook installed — saves work normally, just no fan-out.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let path = write_task_file(&project, "Tasks/x/t.md");
+        project.set_data_field(&path, "status", toml_edit::Value::from("done")).unwrap();
+        // No panic, no error. The point of the test is that we don't
+        // require a hook for set_data_field to function.
     }
 
     #[test]
