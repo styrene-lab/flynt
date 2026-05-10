@@ -4,6 +4,8 @@ description = "Core data types for Flynt — Task, Board, Engagement, and task f
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "MIT"
+repository = "https://github.com/styrene-lab/flynt"
 
 [dependencies]
 serde = { workspace = true }

@@ -68,7 +68,7 @@ dirs = "5"
 dioxus = { version = "0.7", features = ["launch", "devtools", "logger", "lib", "desktop"] }
 
 # Forge contract (shared types across styrene ecosystem)
-styrene-forge = { path = "../styrene-rs/crates/libs/styrene-forge" }
+styrene-forge = { version = "0.1.0", path = "../styrene-rs/crates/libs/styrene-forge" }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Internal crates

@@ -329,7 +329,6 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                             select {
                                 class: "kanban-engagement-select",
                                 title: "Scope to one engagement (or All).",
-                                value: "{active_str}",
                                 onchange: move |e| {
                                     let v = e.value();
                                     *active_engagement.write() = if v.is_empty() {
@@ -338,11 +337,23 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                         uuid::Uuid::parse_str(&v).ok().map(EngagementId)
                                     };
                                 },
-                                option { value: "", "All engagements" }
+                                // `selected` on each option is the canonical
+                                // way to pre-select; `value` on <select> isn't
+                                // honored at hydration time by the WebView,
+                                // so the dropdown would silently default to
+                                // the first option on remount.
+                                option { value: "", selected: active_str.is_empty(), "All engagements" }
                                 for eng in list.iter() {
-                                    option {
-                                        value: "{eng.id.0}",
-                                        "{eng.name}"
+                                    {
+                                        let id_str = eng.id.0.to_string();
+                                        let is_sel = id_str == active_str;
+                                        rsx! {
+                                            option {
+                                                value: "{id_str}",
+                                                selected: is_sel,
+                                                "{eng.name}"
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -805,6 +816,17 @@ fn TaskCard(
             div { class: "task-card-top",
                 div { class: "task-priority {priority_class}" }
                 div { class: "task-title", "{task.title}" }
+                button {
+                    class: "task-menu-btn",
+                    title: if *open.read() { "Close details" } else { "Open details" },
+                    onclick: move |_| {
+                        let is_open = *open.read();
+                        *open.write() = !is_open;
+                    },
+                    if *open.read() { "−" } else { "+" }
+                }
+            }
+            div { class: "task-card-meta",
                 if !task.tags.is_empty() {
                     div { class: "task-tags-inline",
                         for tag in task.tags.iter() {
@@ -896,15 +918,6 @@ fn TaskCard(
                         }
                     })
                 }
-                button {
-                    class: "task-menu-btn",
-                    title: if *open.read() { "Close details" } else { "Open details" },
-                    onclick: move |_| {
-                        let is_open = *open.read();
-                        *open.write() = !is_open;
-                    },
-                    if *open.read() { "−" } else { "+" }
-                }
             }
 
             if *open.read() {
@@ -931,15 +944,19 @@ fn TaskCard(
                     div { class: "task-detail-row",
                         label { class: "field",
                             span { "Priority" }
-                            select {
-                                value: "{priority_to_str(*inline_priority.read())}",
-                                onchange: move |e| {
-                                    *inline_priority.write() = str_to_priority(&e.value());
-                                },
-                                option { value: "low", "Low" }
-                                option { value: "medium", "Medium" }
-                                option { value: "high", "High" }
-                                option { value: "critical", "Critical" }
+                            {
+                                let cur = priority_to_str(*inline_priority.read());
+                                rsx! {
+                                    select {
+                                        onchange: move |e| {
+                                            *inline_priority.write() = str_to_priority(&e.value());
+                                        },
+                                        option { value: "low",      selected: cur == "low",      "Low" }
+                                        option { value: "medium",   selected: cur == "medium",   "Medium" }
+                                        option { value: "high",     selected: cur == "high",     "High" }
+                                        option { value: "critical", selected: cur == "critical", "Critical" }
+                                    }
+                                }
                             }
                         }
 
@@ -1107,12 +1124,26 @@ fn TaskCard(
                                     } else {
                                         label { class: "field",
                                             span { "Engagement" }
-                                            select {
-                                                value: "{inline_engagement}",
-                                                onchange: move |e| *inline_engagement.write() = e.value(),
-                                                option { value: "", "(none)" }
-                                                for (id, name) in engagement_options.iter() {
-                                                    option { value: "{id}", "{name}" }
+                                            {
+                                                let cur = inline_engagement.read().clone();
+                                                rsx! {
+                                                    select {
+                                                        onchange: move |e| *inline_engagement.write() = e.value(),
+                                                        option { value: "", selected: cur.is_empty(), "(none)" }
+                                                        for (id, name) in engagement_options.iter() {
+                                                            {
+                                                                let id_str = id.clone();
+                                                                let is_sel = id_str == cur;
+                                                                rsx! {
+                                                                    option {
+                                                                        value: "{id_str}",
+                                                                        selected: is_sel,
+                                                                        "{name}"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
