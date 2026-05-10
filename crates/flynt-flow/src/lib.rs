@@ -33,5 +33,8 @@
 pub mod io;
 pub mod schema;
 
-pub use schema::{Flow, FlowEdge, FlowEndpoint, FlowMeta, FlowNode, NodeKind, Socket, SocketDir};
-pub use io::{load_flow, parse_flow, save_flow, serialize_flow, SCHEMA_VERSION};
+pub use schema::{
+    Flow, FlowEdge, FlowEndpoint, FlowMeta, FlowNode, NodeKind, Socket, SocketDir,
+    ValidationReport,
+};
+pub use io::{load_flow, parse_flow, save_flow, serialize_flow, FlowDocument, SCHEMA_VERSION};

@@ -24,7 +24,12 @@ pub struct Flow {
     /// just the body.
     #[serde(default)]
     pub meta: FlowMeta,
+    /// `default` so a minimal agent-authored body like `{"meta": {...}}`
+    /// or even `{}` parses cleanly. Empty graphs are valid (just-created
+    /// files, scaffolded skeletons).
+    #[serde(default)]
     pub nodes: Vec<FlowNode>,
+    #[serde(default)]
     pub edges: Vec<FlowEdge>,
 }
 
@@ -141,37 +146,120 @@ impl Flow {
         self.nodes.iter().find(|n| &n.id == id)
     }
 
-    /// Lightweight integrity check used by the I/O layer. Returns the list
-    /// of edges whose endpoints reference nodes that don't exist, plus the
-    /// list of duplicate node ids. This is best-effort — we never refuse
-    /// to load a Flow because of these (the editor is the right place to
-    /// surface bad references); the caller decides what to do with the
-    /// report.
+    /// Lightweight integrity check used by the editor and agent tools.
+    /// Best-effort — we never refuse to load a Flow because of these
+    /// findings (the editor is the right place to surface bad references);
+    /// the caller decides what to do with the report.
+    ///
+    /// Edge sockets are checked against declared sockets only when the
+    /// referenced node *has* declared sockets. Nodes that omit sockets
+    /// entirely (typical for `Note`) accept any socket name on edges
+    /// terminating at them, including the empty string.
     pub fn validate(&self) -> ValidationReport {
-        let known: std::collections::HashSet<&Uuid> = self.nodes.iter().map(|n| &n.id).collect();
-        let mut dangling = Vec::new();
-        for edge in &self.edges {
-            if !known.contains(&edge.source.node) || !known.contains(&edge.target.node) {
-                dangling.push(edge.id);
+        // Index nodes by id for O(1) lookups during edge validation.
+        let nodes_by_id: BTreeMap<Uuid, &FlowNode> =
+            self.nodes.iter().map(|n| (n.id, n)).collect();
+
+        // Duplicate node ids — detected via the index size mismatch.
+        let mut duplicate_node_ids = Vec::new();
+        if nodes_by_id.len() != self.nodes.len() {
+            let mut counts: BTreeMap<Uuid, usize> = BTreeMap::new();
+            for n in &self.nodes {
+                *counts.entry(n.id).or_default() += 1;
+            }
+            duplicate_node_ids = counts.into_iter()
+                .filter(|(_, c)| *c > 1)
+                .map(|(id, _)| id)
+                .collect();
+        }
+
+        // Duplicate socket names within a node. Reported as (node_id,
+        // socket_name) pairs so the editor can highlight the offending
+        // node without the operator having to scan a list.
+        let mut duplicate_socket_names = Vec::new();
+        for n in &self.nodes {
+            let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+            for s in &n.sockets {
+                *seen.entry(s.name.as_str()).or_default() += 1;
+            }
+            for (name, count) in seen {
+                if count > 1 {
+                    duplicate_socket_names.push((n.id, name.to_string()));
+                }
             }
         }
-        let mut counts: BTreeMap<Uuid, usize> = BTreeMap::new();
-        for n in &self.nodes {
-            *counts.entry(n.id).or_default() += 1;
+
+        let mut dangling_edges = Vec::new();
+        let mut edges_with_unknown_sockets = Vec::new();
+        let mut duplicate_edge_ids = Vec::new();
+        let mut edge_id_seen: BTreeMap<Uuid, usize> = BTreeMap::new();
+
+        for edge in &self.edges {
+            *edge_id_seen.entry(edge.id).or_default() += 1;
+
+            // Endpoint reaches a non-existent node → fully dangling.
+            let source_node = nodes_by_id.get(&edge.source.node);
+            let target_node = nodes_by_id.get(&edge.target.node);
+            if source_node.is_none() || target_node.is_none() {
+                dangling_edges.push(edge.id);
+                continue;
+            }
+
+            // Socket-name check: only enforced when the referenced node
+            // declares sockets at all. Nodes with no declared sockets
+            // (typical for Note) match any socket name including "".
+            let unknown_source = source_node
+                .map(|n| !n.sockets.is_empty()
+                    && !n.sockets.iter().any(|s| s.name == edge.source.socket))
+                .unwrap_or(false);
+            let unknown_target = target_node
+                .map(|n| !n.sockets.is_empty()
+                    && !n.sockets.iter().any(|s| s.name == edge.target.socket))
+                .unwrap_or(false);
+            if unknown_source || unknown_target {
+                edges_with_unknown_sockets.push(edge.id);
+            }
         }
-        let duplicate_node_ids = counts.into_iter().filter(|(_, c)| *c > 1).map(|(id, _)| id).collect();
-        ValidationReport { dangling_edges: dangling, duplicate_node_ids }
+
+        for (id, count) in edge_id_seen {
+            if count > 1 { duplicate_edge_ids.push(id); }
+        }
+
+        ValidationReport {
+            dangling_edges,
+            duplicate_node_ids,
+            duplicate_edge_ids,
+            duplicate_socket_names,
+            edges_with_unknown_sockets,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ValidationReport {
+    /// Edges whose source or target points at a non-existent node id.
     pub dangling_edges: Vec<Uuid>,
+    /// Node ids that appear more than once in `Flow::nodes`.
     pub duplicate_node_ids: Vec<Uuid>,
+    /// Edge ids that appear more than once in `Flow::edges`.
+    pub duplicate_edge_ids: Vec<Uuid>,
+    /// `(node_id, socket_name)` pairs where a node declared the same
+    /// socket name twice. The editor should rename or remove one.
+    pub duplicate_socket_names: Vec<(Uuid, String)>,
+    /// Edges whose source or target socket name is not declared on the
+    /// referenced node. Nodes that declare no sockets are exempt — the
+    /// edge accepts any socket name (including ""). Important for agent
+    /// tool calls that may invent a socket name without first patching
+    /// the node.
+    pub edges_with_unknown_sockets: Vec<Uuid>,
 }
 
 impl ValidationReport {
     pub fn is_clean(&self) -> bool {
-        self.dangling_edges.is_empty() && self.duplicate_node_ids.is_empty()
+        self.dangling_edges.is_empty()
+            && self.duplicate_node_ids.is_empty()
+            && self.duplicate_edge_ids.is_empty()
+            && self.duplicate_socket_names.is_empty()
+            && self.edges_with_unknown_sockets.is_empty()
     }
 }

@@ -24,10 +24,37 @@ use uuid::Uuid;
 use crate::schema::Flow;
 
 /// Bumped when the JSON body shape changes in a non-additive way. Loaders
-/// emit a warning when they read a higher version than they were built
-/// against; we don't refuse to load (be liberal in what we accept) but
-/// the editor should refuse to save back.
+/// stay liberal (parse higher versions) but the `FlowDocument` returned
+/// carries the observed value so callers can decide whether to refuse to
+/// save back.
 pub const SCHEMA_VERSION: u32 = 1;
+
+/// Parsed `.flow` file: graph payload plus frontmatter metadata the
+/// caller needs to make decisions (document identity, version
+/// compatibility).
+///
+/// Returned by `parse_flow` / `load_flow`. Holds everything callers might
+/// reasonably need so they don't have to re-parse the frontmatter
+/// separately. `schema_version` lets a caller detect a future-version
+/// file and refuse to overwrite it (the indexer should still surface it
+/// in the sidebar — the right policy is "show, but make the operator
+/// upgrade before editing").
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlowDocument {
+    pub id: Uuid,
+    /// Schema version observed in the file. Compare to [`SCHEMA_VERSION`]
+    /// to decide if this loader fully understands the body.
+    pub schema_version: u32,
+    pub flow: Flow,
+}
+
+impl FlowDocument {
+    /// True when this loader's `SCHEMA_VERSION` matches what was on disk.
+    /// Future versions return false; callers typically refuse to save.
+    pub fn schema_matches(&self) -> bool {
+        self.schema_version == SCHEMA_VERSION
+    }
+}
 
 /// Frontmatter for a `.flow` file. Kept private; callers use
 /// `serialize_flow` / `parse_flow` and never see this directly.
@@ -58,26 +85,17 @@ fn default_schema_version() -> u32 { SCHEMA_VERSION }
 /// The JSON body is pretty-printed with 2-space indent so git diffs are
 /// useful; this trades a few KB on disk for human-readable history.
 pub fn serialize_flow(flow: &Flow, id: Uuid) -> String {
-    let fm = Frontmatter {
-        id,
-        kind: "flow".into(),
-        data: FrontmatterData {
-            title: flow.meta.title.clone(),
-            schema_version: SCHEMA_VERSION,
-        },
-    };
-
-    // Hand-build the frontmatter — `toml::to_string` would flatten the
-    // [data] sub-table inline, which makes diffs noisy. Mirror the
-    // task-file approach.
+    // Hand-build the frontmatter so the [data] sub-table renders on its
+    // own line (toml::to_string flattens nested tables inline, which makes
+    // diffs noisy). Mirrors the task-file approach.
     let mut out = String::from("+++\n");
-    out.push_str(&format!("id = \"{}\"\n", fm.id));
-    out.push_str(&format!("kind = \"{}\"\n\n", fm.kind));
+    out.push_str(&format!("id = \"{}\"\n", id));
+    out.push_str("kind = \"flow\"\n\n");
     out.push_str("[data]\n");
-    if let Some(title) = &fm.data.title {
-        out.push_str(&format!("title = {}\n", toml_quote(title)));
+    if let Some(title) = &flow.meta.title {
+        out.push_str(&format!("title = {}\n", toml_basic_string(title)));
     }
-    out.push_str(&format!("schema_version = {}\n", fm.data.schema_version));
+    out.push_str(&format!("schema_version = {}\n", SCHEMA_VERSION));
     out.push_str("+++\n");
 
     // Body: pretty JSON. 2-space indent matches react-flow's developer
@@ -106,13 +124,14 @@ pub fn save_flow(path: &Path, flow: &Flow, id: Option<Uuid>) -> Result<()> {
 
 // ── Parsing ─────────────────────────────────────────────────────────────────
 
-/// Parse a `.flow` file's raw contents. Returns the `Flow` plus the
-/// document id from frontmatter (caller decides whether to trust it or
-/// stamp a fresh one — the indexer wants the existing id; a "clone"
-/// operation wants a new one).
-pub fn parse_flow(raw: &str) -> Result<(Flow, Uuid)> {
-    // Locate the frontmatter block. Reuse the same delimiter convention
-    // as task files (`+++` on its own line).
+/// Parse a `.flow` file's raw contents into a [`FlowDocument`].
+///
+/// Errors only on structural problems (missing/unclosed frontmatter,
+/// non-flow `kind`, malformed TOML/JSON). Higher schema versions parse
+/// successfully — callers inspect [`FlowDocument::schema_matches`].
+/// Per-graph integrity (dangling edges, duplicate ids) is reported via
+/// [`Flow::validate`] separately, never as a parse error.
+pub fn parse_flow(raw: &str) -> Result<FlowDocument> {
     let trimmed = raw.trim_start();
     let rest = trimmed
         .strip_prefix("+++")
@@ -132,10 +151,6 @@ pub fn parse_flow(raw: &str) -> Result<(Flow, Uuid)> {
         anyhow::bail!("expected kind = \"flow\", got kind = \"{}\"", fm.kind);
     }
 
-    // Be liberal on schema_version: accept higher versions but the editor
-    // is responsible for refusing to overwrite an unknown-shape file.
-    let _ = fm.data.schema_version;
-
     let body = body.trim();
     let flow: Flow = if body.is_empty() {
         Flow::default()
@@ -143,11 +158,15 @@ pub fn parse_flow(raw: &str) -> Result<(Flow, Uuid)> {
         serde_json::from_str(body).context("invalid JSON body in flow file")?
     };
 
-    Ok((flow, fm.id))
+    Ok(FlowDocument {
+        id: fm.id,
+        schema_version: fm.data.schema_version,
+        flow,
+    })
 }
 
 /// Read and parse a `.flow` file from disk.
-pub fn load_flow(path: &Path) -> Result<(Flow, Uuid)> {
+pub fn load_flow(path: &Path) -> Result<FlowDocument> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read flow file {}", path.display()))?;
     parse_flow(&raw)
@@ -155,6 +174,31 @@ pub fn load_flow(path: &Path) -> Result<(Flow, Uuid)> {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn toml_quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+/// Quote a string as a TOML basic string (`"…"`), escaping the characters
+/// that would break the format.
+///
+/// TOML basic strings forbid raw control characters except `\t`. Without
+/// escaping, an agent-generated multiline title (e.g. "Line 1\nLine 2")
+/// produces invalid TOML at the next save. The wider codebase has the
+/// same bug in `flynt_models::task_file::toml_quote`; harmonizing those
+/// is a separate cross-crate cleanup.
+fn toml_basic_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\x08' => out.push_str("\\b"),
+            '\x0c' => out.push_str("\\f"),
+            // Other C0 controls — TOML allows them only via \uXXXX escape.
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04X}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
