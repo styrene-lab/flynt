@@ -351,52 +351,61 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                 }
             }
             div { class: "kanban-board",
-                match &*tasks.read() {
-                    None => rsx! { div { class: "kanban-loading muted", "Loading tasks…" } },
-                    Some(all) => rsx! {
-                    for col in board.columns.iter().cloned() {
-                        {
-                            let filter = *active_filter.read();
-                            let scope = active_engagement.read().clone();
-                            let col_tasks: Vec<Task> = all.iter()
-                                .filter(|t| {
-                                    if t.column != col.name { return false; }
-                                    if !filter.matches(t) { return false; }
-                                    // Engagement scope: when set, only
-                                    // matching tasks pass. Unscoped tasks
-                                    // are excluded — operator picked an
-                                    // engagement explicitly.
-                                    match &scope {
-                                        Some(eid) => t.engagement_id.as_ref() == Some(eid),
-                                        None => true,
-                                    }
-                                })
-                                .cloned()
-                                .collect();
-                            let col_empty = col_tasks.is_empty();
-                            let board_for_remove = board.clone();
-                            let col_name_remove = col.name.clone();
-                            let col_name_rename = col.name.clone();
-                            // (id, name) pairs for the inline editor's
-                            // engagement dropdown — same data as the
-                            // top-of-board scope selector.
-                            let engagement_options: Vec<(String, String)> = engagements
-                                .read()
-                                .clone()
-                                .unwrap_or_default()
-                                .into_iter()
-                                .map(|e| (e.id.0.to_string(), e.name))
-                                .collect();
-                            rsx! {
-                                KanbanColumn {
-                                    board_id: board.id.clone(),
-                                    project_id,
-                                    column: col,
-                                    tasks: col_tasks,
-                                    dragging,
-                                    refresh,
-                                    can_remove: col_empty,
-                                    engagement_options,
+                {
+                    // Hoist (id_string, name) pairs once per render —
+                    // every column + card threads the same Vec down,
+                    // so rebuilding it inside the for-loop was N×
+                    // wasteful. `loaded` is None during the first
+                    // engagements fetch; downstream UI uses that to
+                    // suppress placeholder chips while data flows in.
+                    let engs_view = engagements.read();
+                    let loaded = engs_view.is_some();
+                    let engagement_options: Vec<(String, String)> = engs_view
+                        .clone()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|e| (e.id.0.to_string(), e.name))
+                        .collect();
+                    drop(engs_view);
+                    rsx! {
+                        match &*tasks.read() {
+                            None => rsx! { div { class: "kanban-loading muted", "Loading tasks…" } },
+                            Some(all) => rsx! {
+                            for col in board.columns.iter().cloned() {
+                                {
+                                    let filter = *active_filter.read();
+                                    let scope = active_engagement.read().clone();
+                                    let col_tasks: Vec<Task> = all.iter()
+                                        .filter(|t| {
+                                            if t.column != col.name { return false; }
+                                            if !filter.matches(t) { return false; }
+                                            // Engagement scope: when set, only
+                                            // matching tasks pass. Unscoped tasks
+                                            // are excluded — operator picked an
+                                            // engagement explicitly.
+                                            match &scope {
+                                                Some(eid) => t.engagement_id.as_ref() == Some(eid),
+                                                None => true,
+                                            }
+                                        })
+                                        .cloned()
+                                        .collect();
+                                    let col_empty = col_tasks.is_empty();
+                                    let board_for_remove = board.clone();
+                                    let col_name_remove = col.name.clone();
+                                    let col_name_rename = col.name.clone();
+                                    let engagement_options = engagement_options.clone();
+                                    rsx! {
+                                        KanbanColumn {
+                                            board_id: board.id.clone(),
+                                            project_id,
+                                            column: col,
+                                            tasks: col_tasks,
+                                            dragging,
+                                            refresh,
+                                            can_remove: col_empty,
+                                            engagement_options,
+                                            engagements_loaded: loaded,
                                     on_remove: move |_| {
                                         let c = ctx.clone();
                                         let mut b = board_for_remove.clone();
@@ -488,12 +497,14 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                             "+ Add column"
                         }
                     }
-                },
-                }
-            }
-        }
-    }
-}
+                },     // close Some(all) arm
+                }      // close match arms
+            }          // close outer rsx!
+                }      // close the let-binding block
+            }          // close div kanban-board
+        }              // close div kanban-board-shell
+    }                  // close rsx!
+}                      // close fn KanbanBoard
 
 // ── Column ────────────────────────────────────────────────────────────────────
 
@@ -513,6 +524,10 @@ fn KanbanColumn(
     /// component prop type stays PartialEq (Engagement isn't —
     /// ForgeEndpoint upstream doesn't impl it).
     engagement_options: Vec<(String, String)>,
+    /// True once the engagements list has loaded at least once. Cards
+    /// suppress the engagement chip while this is false to avoid the
+    /// "engagement" placeholder flashing on first render.
+    engagements_loaded: bool,
 ) -> Element {
     let ctx         = use_context::<AppContext>();
     let col_name    = column.name.clone();
@@ -654,6 +669,7 @@ fn KanbanColumn(
                         dragging,
                         refresh,
                         engagement_options: engagement_options.clone(),
+                        engagements_loaded,
                     }
                 }
 
@@ -699,9 +715,14 @@ fn TaskCard(
     dragging: Signal<Option<TaskId>>,
     mut refresh: Signal<u64>,
     /// (id_string, name) pairs for the engagement picker. Empty when
-    /// no engagements exist; the Forge subsection still renders so the
-    /// operator sees a hint to create one via the agent.
+    /// no engagements exist; the Engagement subsection still renders
+    /// so the operator sees a hint to create one via the agent.
     engagement_options: Vec<(String, String)>,
+    /// True once the parent's engagements list has loaded at least
+    /// once. Suppresses the engagement chip on first render so we
+    /// don't flash "engagement" placeholder text while waiting for
+    /// the list to arrive.
+    engagements_loaded: bool,
 ) -> Element {
     let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
@@ -804,14 +825,20 @@ fn TaskCard(
                     // Engagement chip resolves the engagement_id to a
                     // human-readable name via the same options list the
                     // dropdown uses; falls back to "engagement" if the
-                    // record is missing (deleted out of band).
-                    let engagement_label = task.engagement_id.as_ref().map(|eid| {
-                        let id_str = eid.0.to_string();
-                        engagement_options.iter()
-                            .find(|(id, _)| *id == id_str)
-                            .map(|(_, name)| name.clone())
-                            .unwrap_or_else(|| "engagement".to_string())
-                    });
+                    // record is missing (deleted out of band). Suppressed
+                    // entirely until engagements_loaded so we don't show
+                    // the placeholder during the first-render fetch.
+                    let engagement_label = if engagements_loaded {
+                        task.engagement_id.as_ref().map(|eid| {
+                            let id_str = eid.0.to_string();
+                            engagement_options.iter()
+                                .find(|(id, _)| *id == id_str)
+                                .map(|(_, name)| name.clone())
+                                .unwrap_or_else(|| "engagement".to_string())
+                        })
+                    } else {
+                        None
+                    };
                     let has_engagement = engagement_label.is_some();
                     let any = has_cron || has_webhook || has_model || has_design || has_spec || has_engagement;
                     any.then(|| {
@@ -1060,14 +1087,17 @@ fn TaskCard(
                                     }
                                 }
 
-                                // ── Forge / Engagement ──────────────────
+                                // ── Engagement ──────────────────────────
                                 // Lets the operator scope this task to one
                                 // of the engagements created via the agent
                                 // (engagement_create tool). Empty list ⇒
                                 // hint to create one. Saved alongside the
-                                // sentry/lifecycle fields below.
+                                // sentry/lifecycle fields below. Forge
+                                // sync state (last_synced, diverged) is
+                                // a separate operator surface — agent
+                                // tools cover it for now.
                                 div { class: "task-sentry-group",
-                                    span { class: "task-sentry-group-label", "Forge / Engagement" }
+                                    span { class: "task-sentry-group-label", "Engagement" }
                                     if engagement_options.is_empty() {
                                         p { class: "muted task-sentry-empty",
                                             "No engagements yet. Use the agent's "
