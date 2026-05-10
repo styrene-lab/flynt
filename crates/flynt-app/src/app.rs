@@ -417,6 +417,11 @@ pub fn App() -> Element {
             src: asset!("/assets/vendor/flynt-excalidraw-headless.js"),
         }
         document::Stylesheet { href: asset!("/assets/vendor/excalidraw.css") }
+        // react-flow — loaded eagerly so .flow files mount instantly.
+        // Bundle is built from crates/flynt-app/build/flow/ (see README).
+        document::Script {
+            src: asset!("/assets/vendor/flow.bundle.js"),
+        }
         document::Stylesheet { href: asset!("/assets/themes/alpharius.css") }
         document::Stylesheet { href: asset!("/assets/styles/reset.css") }
         document::Stylesheet { href: asset!("/assets/styles/layout.css") }

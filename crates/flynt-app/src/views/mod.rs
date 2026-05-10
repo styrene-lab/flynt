@@ -1,5 +1,6 @@
 pub mod canvas;
 pub mod excalidraw;
+pub mod flow;
 pub mod graph;
 pub mod indexing_scopes;
 pub mod kanban;
@@ -11,6 +12,7 @@ pub mod welcome;
 
 pub use canvas::CanvasView;
 pub use excalidraw::ExcalidrawView;
+pub use flow::{is_flow, FlowView};
 pub use graph::GraphView;
 pub use indexing_scopes::IndexingScopesEditor;
 pub use kanban::KanbanView;

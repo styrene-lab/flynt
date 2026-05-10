@@ -1703,17 +1703,22 @@ pub fn NotesView() -> Element {
             }
 
             div { class: "notes-scroll",
-            // Excalidraw files get their own editor
+            // Excalidraw and .flow files get their own editor; everything
+            // else goes through the markdown editor.
             {
             let check_path = rel_path.clone();
-            let check_path2 = rel_path.clone();
+            let is_special =
+                crate::views::excalidraw::is_excalidraw(&check_path)
+                || crate::views::flow::is_flow(&check_path);
             rsx! {
             if crate::views::excalidraw::is_excalidraw(&check_path) {
                 crate::views::ExcalidrawView { path: rel_path.clone() }
+            } else if crate::views::flow::is_flow(&check_path) {
+                crate::views::FlowView { path: rel_path.clone() }
             }
 
             match *mode.read() {
-                EditMode::Live if !crate::views::excalidraw::is_excalidraw(&check_path2) => {
+                EditMode::Live if !is_special => {
                     rsx! {
                         div {
                             id: "flynt-cm-editor",
