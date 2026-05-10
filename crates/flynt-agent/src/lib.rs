@@ -3,4 +3,5 @@
 #![recursion_limit = "512"]
 
 pub mod extension;
+pub mod flow_tools;
 pub mod forge_tools;

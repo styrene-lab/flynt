@@ -2230,6 +2230,7 @@ dependencies = [
  "clap",
  "dirs 5.0.1",
  "flynt-core",
+ "flynt-flow",
  "flynt-forge",
  "flynt-models",
  "flynt-store",

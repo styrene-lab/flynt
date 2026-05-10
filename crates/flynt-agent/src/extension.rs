@@ -9,6 +9,7 @@ use omegon_extension::Extension;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+use crate::flow_tools;
 use crate::forge_tools::{self, SecretBag};
 
 pub struct FlyntExtension {
@@ -484,6 +485,8 @@ impl Extension for FlyntExtension {
                 // Append forge / engagement tools (Phase 3 — scribe absorption).
                 if let Some(arr) = tools.as_array_mut() {
                     arr.extend(forge_tools::tool_definitions());
+                    // Append flow tools (Phase 4 — node-flow editor).
+                    arr.extend(flow_tools::tool_definitions());
                 }
                 Ok(tools)
             }
@@ -1322,6 +1325,11 @@ impl Extension for FlyntExtension {
             "execute_log_work"          => forge_tools::log_work(&self.project, params),
             "execute_timeline"          => forge_tools::timeline(&self.project, params),
 
+            // ── Flow tools (Phase 4 — node-flow editor) ───────────────────
+            "execute_flow_create" => flow_tools::flow_create(&self.project, params),
+            "execute_flow_get"    => flow_tools::flow_get(&self.project, params),
+            "execute_flow_patch"  => flow_tools::flow_patch(&self.project, params),
+
             _ => Err(omegon_extension::Error::method_not_found(method)),
         }
     }
@@ -1780,6 +1788,10 @@ mod tests {
             "forge_status", "forge_list_issues", "forge_sync_issues",
             "forge_create_issue", "log_work", "timeline",
         ] {
+            assert!(names.contains(&n.to_string()), "expected {n} in tools/list");
+        }
+        // Phase 4 — node-flow editor tools.
+        for n in ["flow_create", "flow_get", "flow_patch"] {
             assert!(names.contains(&n.to_string()), "expected {n} in tools/list");
         }
         // bootstrap_secrets is intentionally NOT a tool — it's an out-

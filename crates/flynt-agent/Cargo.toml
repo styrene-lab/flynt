@@ -12,6 +12,7 @@ flynt-core   = { workspace = true }
 flynt-models = { workspace = true }
 flynt-store  = { workspace = true }
 flynt-forge  = { workspace = true }
+flynt-flow   = { workspace = true }
 styrene-forge = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
