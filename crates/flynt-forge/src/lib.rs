@@ -22,6 +22,7 @@
 pub mod auth;
 pub mod clients;
 pub mod mapping;
+pub mod push;
 pub mod store;
 pub mod sync;
 
@@ -36,5 +37,6 @@ pub use styrene_forge::{
 pub use auth::{StaticToken, TokenResolver};
 pub use clients::GitHubForgeClient;
 pub use mapping::{MappingConfig, TaskFieldMapper};
+pub use push::{push_task, PushDebouncer, PushInput, SyncStatus};
 pub use store::{IssueMap, SyncStore};
 pub use sync::{SyncEngine, SyncOp, content_hash, issue_hash};
