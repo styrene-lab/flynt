@@ -33,6 +33,48 @@ impl SqliteStore {
         )?;
         Ok(())
     }
+
+    /// Read the on-disk file path for a task (vault-relative). None when
+    /// the task hasn't been written as a file yet — the migration sweep
+    /// at Vault::open populates these for legacy sqlite-only tasks.
+    pub fn task_file_path(&self, task_id: &TaskId) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let path: Option<String> = conn.query_row(
+            "SELECT task_file_path FROM tasks WHERE id = ?1",
+            params![task_id.0.to_string()],
+            |row| row.get(0),
+        ).ok().flatten();
+        Ok(path)
+    }
+
+    /// Update the on-disk file path for a task. Called by Vault after
+    /// it writes (or renames) the markdown file.
+    pub fn set_task_file_path(&self, task_id: &TaskId, path: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tasks SET task_file_path = ?1 WHERE id = ?2",
+            params![path, task_id.0.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// All tasks lacking an on-disk file (task_file_path IS NULL).
+    /// Used by the migration sweep to find legacy sqlite-only rows.
+    pub fn tasks_without_file(&self) -> Result<Vec<TaskId>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id FROM tasks WHERE task_file_path IS NULL",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            let s = r?;
+            if let Ok(u) = uuid::Uuid::parse_str(&s) {
+                out.push(TaskId(u));
+            }
+        }
+        Ok(out)
+    }
 }
 
 const SCHEMA: &str = r#"
@@ -167,6 +209,12 @@ const MIGRATIONS: &[&str] = &[
     );"#,
     "CREATE INDEX IF NOT EXISTS idx_engagements_partnership ON engagements (partnership_id);",
     "CREATE INDEX IF NOT EXISTS idx_tasks_engagement ON tasks (engagement_id);",
+    // v8: tasks-as-files. Every task gets a `.md` file at a vault-relative
+    // path; this column stores the latest path so we can rename the file
+    // when the title changes (slug-based filenames). NULL means the task
+    // has not yet been migrated to disk — the one-shot migration in
+    // Vault::open populates these.
+    "ALTER TABLE tasks ADD COLUMN task_file_path TEXT;",
 ];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────

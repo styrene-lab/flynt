@@ -174,7 +174,15 @@ impl Vault {
         let store = Arc::new(SqliteStore::open(&db_path)?);
 
         info!("Vault opened at {:?}, store ready at {:?}", root, db_path);
-        Ok(Self { root: root.to_owned(), store, config })
+        let vault = Self { root: root.to_owned(), store, config };
+
+        // Migration: every task becomes a file. Legacy sqlite-only tasks
+        // get a `.md` written under `Tasks/<board-slug>/`. Idempotent —
+        // tasks with task_file_path already set are skipped.
+        if let Err(e) = vault.migrate_tasks_to_files() {
+            warn!("task→file migration failed (continuing): {e}");
+        }
+        Ok(vault)
     }
 
     /// Index all markdown files under the vault root into the SQLite store.
@@ -865,6 +873,100 @@ impl Vault {
             }
         }
         Ok(())
+    }
+
+    /// Persist a task: write `.md` file to disk + sqlite + remember the
+    /// path for future renames. Every task becomes a file in the vault.
+    ///
+    /// File path: `Tasks/<board-slug>/<title-slug>.md`. If the title
+    /// changed since last save (slug differs from stored path), the
+    /// previous file is removed so the rename leaves no orphan. On
+    /// title-collision within a board, a numeric suffix is appended.
+    pub fn save_any_task(&self, task: &Task) -> Result<PathBuf> {
+        // Step 1: resolve the desired path from the current title +
+        // board name. Board name is needed for the directory.
+        let board_slug = match self.store.get_board(&task.board_id)? {
+            Some(b) => slugify_title(&b.name),
+            None => "unfiled".into(),
+        };
+        let title_slug = slugify_title(&task.title);
+        let desired_dir = self.root.join("Tasks").join(&board_slug);
+        let mut desired_rel = PathBuf::from("Tasks").join(&board_slug).join(format!("{title_slug}.md"));
+
+        // Step 2: if there's an existing file path stored for this task
+        // and the title slug changed, plan a rename. The previous file
+        // gets removed after the new one is written so a crash mid-
+        // operation leaves the operator with both rather than neither.
+        let prior = self.store.task_file_path(&task.id)?;
+        let prior_abs = prior.as_ref().map(|p| self.root.join(p));
+
+        // Step 3: collision handling. Two tasks on the same board with
+        // the same title slug get -2, -3, ... suffix. Prior path is
+        // its own file → not a collision.
+        let mut abs = self.root.join(&desired_rel);
+        let mut suffix = 2;
+        while abs.exists() && Some(&abs) != prior_abs.as_ref() {
+            // Confirm it's a different task (don't treat our own file
+            // as a collision if it happens to live at this exact path
+            // already).
+            if let Ok(raw) = std::fs::read_to_string(&abs)
+                && let Ok(existing) = task_file::parse_task_from_markdown(&raw)
+                && existing.id == task.id
+            {
+                break;
+            }
+            desired_rel = PathBuf::from("Tasks")
+                .join(&board_slug)
+                .join(format!("{title_slug}-{suffix}.md"));
+            abs = self.root.join(&desired_rel);
+            suffix += 1;
+        }
+
+        // Step 4: write file. project_id passed to the serializer is
+        // only used for the [data.project] frontmatter; for non-project
+        // tasks we use the task id as a stand-in (the serializer needs
+        // a uuid arg but doesn't fail on synthetic values).
+        std::fs::create_dir_all(&desired_dir)
+            .with_context(|| format!("create Tasks dir {}", desired_dir.display()))?;
+        let project_id_for_fm = uuid::Uuid::nil();
+        let md = task_file::serialize_task_to_markdown(task, &project_id_for_fm);
+        std::fs::write(&abs, &md)
+            .with_context(|| format!("write task file {}", abs.display()))?;
+
+        // Step 5: remove the prior file if we renamed.
+        if let Some(prior_path) = prior_abs.as_ref()
+            && prior_path != &abs
+            && prior_path.exists()
+        {
+            let _ = std::fs::remove_file(prior_path);
+        }
+
+        // Step 6: persist sqlite + remember the path.
+        self.store.save_task(task)?;
+        let rel_str = desired_rel.to_string_lossy().to_string();
+        self.store.set_task_file_path(&task.id, &rel_str)?;
+
+        Ok(desired_rel)
+    }
+
+    /// One-shot migration: any task in sqlite without a `task_file_path`
+    /// gets a markdown file written and its path recorded. Called from
+    /// `Vault::open` so freshly-rebuilt vaults converge to the
+    /// every-task-is-a-file invariant on next launch.
+    fn migrate_tasks_to_files(&self) -> Result<usize> {
+        let unfiled = self.store.tasks_without_file()?;
+        let mut migrated = 0;
+        for tid in unfiled {
+            let Some(task) = self.store.get_task(&tid)? else { continue };
+            match self.save_any_task(&task) {
+                Ok(_) => migrated += 1,
+                Err(e) => warn!("migrate task {} to file: {e}", tid.0),
+            }
+        }
+        if migrated > 0 {
+            info!("migrated {migrated} task(s) from sqlite-only to .md files");
+        }
+        Ok(migrated)
     }
 
     /// Delete a task that belongs to a project. Records the deletion for
@@ -2660,5 +2762,90 @@ Design for the authentication subsystem.
             .filter(|e| matches!(e.kind, flynt_core::graph::GraphEdgeKind::Wikilink))
             .collect();
         assert_eq!(wikilink_edges.len(), 2, "should have 2 wikilink edges (A→B and B→A), got {}", wikilink_edges.len());
+    }
+
+    // ── save_any_task: every task becomes a file ────────────────────────────
+
+    fn vault_with_board() -> (TempDir, Vault, flynt_core::models::Board) {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_path_buf();
+        let vault = Vault::open(&root).unwrap();
+        let board = flynt_core::models::Board::default_sprint("Sprint 1");
+        vault.store.save_board(&board).unwrap();
+        (tmp, vault, board)
+    }
+
+    #[test]
+    fn save_any_task_writes_file_and_records_path() {
+        let (_tmp, vault, board) = vault_with_board();
+        let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
+        let rel = vault.save_any_task(&task).unwrap();
+        assert_eq!(rel, std::path::PathBuf::from("Tasks/sprint-1/auth-rewrite.md"));
+        assert!(vault.root.join(&rel).exists(), "file must exist on disk");
+        assert_eq!(
+            vault.store.task_file_path(&task.id).unwrap().as_deref(),
+            Some(rel.to_string_lossy().as_ref()),
+        );
+    }
+
+    #[test]
+    fn save_any_task_renames_file_when_title_changes() {
+        let (_tmp, vault, board) = vault_with_board();
+        let mut task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Initial");
+        let first = vault.save_any_task(&task).unwrap();
+        assert!(vault.root.join(&first).exists());
+
+        task.title = "Renamed".into();
+        let second = vault.save_any_task(&task).unwrap();
+        assert_ne!(first, second, "rename must produce a different path");
+        assert!(vault.root.join(&second).exists(), "new file must exist");
+        assert!(!vault.root.join(&first).exists(), "old file must be removed");
+    }
+
+    #[test]
+    fn save_any_task_handles_collisions_with_numeric_suffix() {
+        let (_tmp, vault, board) = vault_with_board();
+        let t1 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Same Title");
+        let t2 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Same Title");
+        let p1 = vault.save_any_task(&t1).unwrap();
+        let p2 = vault.save_any_task(&t2).unwrap();
+        assert!(p1.to_string_lossy().ends_with("same-title.md"));
+        assert!(p2.to_string_lossy().ends_with("same-title-2.md"));
+        assert!(vault.root.join(&p1).exists());
+        assert!(vault.root.join(&p2).exists());
+    }
+
+    #[test]
+    fn migrate_tasks_to_files_writes_legacy_sqlite_only_tasks() {
+        // Simulate a legacy vault: task in sqlite without task_file_path.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_path_buf();
+        let vault = Vault::open(&root).unwrap();
+        let board = flynt_core::models::Board::default_sprint("Backlog Board");
+        vault.store.save_board(&board).unwrap();
+        let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Legacy task");
+        // Bypass save_any_task — write directly via store, mimicking pre-migration state.
+        vault.store.save_task(&task).unwrap();
+        assert!(vault.store.task_file_path(&task.id).unwrap().is_none());
+
+        let n = vault.migrate_tasks_to_files().unwrap();
+        assert_eq!(n, 1);
+        let path = vault.store.task_file_path(&task.id).unwrap().unwrap();
+        assert!(vault.root.join(&path).exists());
+        assert!(path.starts_with("Tasks/backlog-board/"));
+    }
+
+    #[test]
+    fn save_any_task_is_idempotent_when_called_twice_with_same_data() {
+        let (_tmp, vault, board) = vault_with_board();
+        let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Steady");
+        let p1 = vault.save_any_task(&task).unwrap();
+        let p2 = vault.save_any_task(&task).unwrap();
+        assert_eq!(p1, p2);
+        // Only one file under Tasks/sprint-1/
+        let entries: Vec<_> = std::fs::read_dir(vault.root.join("Tasks/sprint-1")).unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert_eq!(entries.len(), 1, "no duplicate files on resave");
     }
 }
