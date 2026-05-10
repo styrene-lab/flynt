@@ -187,9 +187,14 @@ impl Project {
         let rel_path = path.strip_prefix(&self.root)?.to_owned();
         let (body, mut frontmatter, links) = parse_document_source(&raw);
 
-        // Derive title: H1 > frontmatter title > filename stem
+        // Derive title: H1 > frontmatter.title > [data].title > filename
+        // stem. The `[data].title` step matters for entity-typed docs
+        // (tasks especially) — they store title in the entity payload,
+        // not at the top level. Without this step, indexed tasks
+        // surface the filename slug everywhere.
         let title = extract_h1(&body)
             .or_else(|| frontmatter.title.clone())
+            .or_else(|| extract_data_title(&frontmatter.data))
             .unwrap_or_else(|| {
                 path.file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -1201,6 +1206,25 @@ fn extract_h1(body: &str) -> Option<String> {
     None
 }
 
+/// Pull a title out of the entity payload (`[data].title`).
+///
+/// Entity-typed documents (tasks especially) store their title in the
+/// `[data]` block rather than at the top level of frontmatter. Without
+/// this fallback, indexed tasks fall through to the filename stem —
+/// "flynt-dogfood-ami-bake-pipeline-produces-drifted-manifest" instead
+/// of the human title — and the notes view, sidebar, and search all
+/// surface the slug.
+fn extract_data_title(data: &Option<toml::Value>) -> Option<String> {
+    let data = data.as_ref()?;
+    let table = data.as_table()?;
+    let title = table.get("title")?.as_str()?.trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
+    }
+}
+
 fn canonical_document_source(document: &Document) -> String {
     let frontmatter = toml::to_string(&document.frontmatter).unwrap_or_default();
     let body = document.content.trim_end();
@@ -1626,6 +1650,110 @@ mod tests {
     };
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn task_files_index_with_data_title_not_filename_slug() {
+        // Tasks store their title in [data].title, not at the top level
+        // of frontmatter. Without the data-title fallback step in
+        // index_file, the indexer fell through to the filename stem,
+        // surfacing slugs like "ami-bake-pipeline-produces-drifted-
+        // manifest" everywhere in the UI instead of the human title.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("project");
+        let project = Project::open(&root).unwrap();
+
+        let task_path = PathBuf::from("Tasks/sprint/ami-bake-pipeline-produces-drifted-manifest.md");
+        let abs = project.root.join(&task_path);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        // Real shape produced by `task_file::serialize_task_to_markdown`:
+        // title in [data], empty body for description-less tasks.
+        std::fs::write(&abs, r#"+++
+id = "550e8400-e29b-41d4-a716-446655440000"
+kind = "task"
+
+[data]
+title = "AMI bake pipeline produces drifted manifest"
+board = "550e8400-e29b-41d4-a716-446655440001"
+column = "Backlog"
+priority = 2
+status = "todo"
+position = 0
++++
+"#).unwrap();
+
+        project.index_file(&abs).unwrap();
+
+        let indexed = project
+            .store
+            .get_document_by_path(&task_path)
+            .unwrap()
+            .expect("task is indexed");
+        assert_eq!(
+            indexed.title,
+            "AMI bake pipeline produces drifted manifest",
+            "task title should come from [data].title, not filename slug"
+        );
+    }
+
+    #[test]
+    fn frontmatter_top_level_title_still_wins_over_data_title() {
+        // Document with both top-level title and [data].title — top
+        // level wins, matching prior behavior. Guards against regressing
+        // the resolution order when adding the data-title step.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("project");
+        let project = Project::open(&root).unwrap();
+
+        let doc_path = PathBuf::from("note.md");
+        let abs = project.root.join(&doc_path);
+        std::fs::write(&abs, r#"+++
+id = "550e8400-e29b-41d4-a716-446655440000"
+title = "Top level wins"
+kind = "design_node"
+
+[data]
+title = "Data block loses"
++++
+
+Body
+"#).unwrap();
+
+        project.index_file(&abs).unwrap();
+
+        let indexed = project.store.get_document_by_path(&doc_path).unwrap().unwrap();
+        assert_eq!(indexed.title, "Top level wins");
+    }
+
+    #[test]
+    fn empty_data_title_falls_through_to_filename() {
+        // Edge: [data].title is an empty string. The fallback should
+        // skip it (treating empty as None) and continue to the filename
+        // stem — otherwise we'd index a doc with title="".
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("project");
+        let project = Project::open(&root).unwrap();
+
+        let doc_path = PathBuf::from("Tasks/sprint/empty-title.md");
+        let abs = project.root.join(&doc_path);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, r#"+++
+id = "550e8400-e29b-41d4-a716-446655440000"
+kind = "task"
+
+[data]
+title = ""
+board = "550e8400-e29b-41d4-a716-446655440001"
+column = "Backlog"
+priority = 2
+status = "todo"
+position = 0
++++
+"#).unwrap();
+
+        project.index_file(&abs).unwrap();
+        let indexed = project.store.get_document_by_path(&doc_path).unwrap().unwrap();
+        assert_eq!(indexed.title, "empty-title");
+    }
 
     #[test]
     fn uses_explicit_absolute_index_db_path_when_configured() {
