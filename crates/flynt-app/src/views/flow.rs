@@ -5,6 +5,11 @@
 //! selected elements via Backspace/Delete; changes flow back to disk via
 //! a debounced (~500ms) save loop. Cmd+S triggers an immediate flush.
 //!
+//! Phase 4-followup: file-watch reactivity. When an external process
+//! (agent tool, second editor, file sync) writes to the open `.flow`
+//! file, the viewer reloads automatically. Own-save echoes are filtered
+//! out (the watcher fires for our own writes too).
+//!
 //! The bundle (`assets/vendor/flow.bundle.js`) is built externally and
 //! committed; see `crates/flynt-app/build/flow/README.md` for the build
 //! commands. It exposes `window.FlyntFlow.{mount, unmount}` — the API
@@ -21,23 +26,34 @@
 //!    queue every 200ms via `dioxus.send`, parse, build a `Flow`, write
 //!    via `flynt_flow::save_flow`. The document id from the original
 //!    parse is reused so the indexer's identity stays stable.
-//! 4. Save status (`""` | `"saving"` | `"saved"` | `"error"`) is held
-//!    in a Dioxus signal and rendered as a small badge above the canvas.
+//! 4. Save status (`""` | `"saving"` | `"saved"` | `"refreshed"` |
+//!    `"error"`) is held in a Dioxus signal and rendered as a small
+//!    badge above the canvas.
+//!
+//! ## Watcher subscription
+//!
+//! Subscribed to `ctx.project_events()`. When an event fires for our
+//! path, the subscriber waits 200ms (debounce, also covers the
+//! save→fsync→FSEvents lag), checks `last_self_save_at` to suppress
+//! own-save echoes (1500ms window), reloads the file, and writes the
+//! new content into the `loaded` signal — which the mount effect
+//! observes and remounts the bundle.
 //!
 //! ## Known limitations carried over from ExcalidrawView
 //!
 //! - Single-tab assumption: the mount target id is hardcoded
 //!   (`flynt-flow`). Two `.flow` tabs open simultaneously will collide.
-//! - File-watch reactivity: an external write (e.g., Phase 4 agent
-//!   tool) does not refresh the open viewer; the operator must close
-//!   and reopen.
-//! - Last-writer-wins: if the agent and operator edit the same file
-//!   concurrently, the in-memory state of whoever flushes second wins.
-//!   No CRDT, no merge UI yet.
+//! - Conflict policy: external writes win. If the operator has
+//!   unsaved local changes when an agent's write lands, the operator's
+//!   in-memory state is replaced. No CRDT, no merge UI yet — the
+//!   working contract is "agent waits for tool result before issuing
+//!   the next write," which keeps the operator + agent from racing.
 
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
-use std::path::PathBuf;
+use flynt_store::watcher::ProjectChangeEvent;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// Whether a path points at a `.flow` file. Used by the notes view to
@@ -48,9 +64,15 @@ pub fn is_flow(path: &std::path::Path) -> bool {
 
 const EMPTY_FLOW_JSON: &str = r#"{"meta":{},"nodes":[],"edges":[]}"#;
 
+/// How long after an own-save to suppress incoming watcher events. The
+/// FSEvents round-trip is typically <500ms; 1500ms is a comfortable
+/// margin without making the viewer feel laggy when an external write
+/// arrives a moment after our own save.
+const SELF_SAVE_ECHO_WINDOW: Duration = Duration::from_millis(1500);
+
 /// Loaded body + the id we need to preserve on save so the indexer
-/// keeps the same document identity. `PartialEq` is required by Dioxus'
-/// `Memo` so dependents only re-run when content actually changes.
+/// keeps the same document identity. `PartialEq` so a `Signal` doesn't
+/// re-trigger dependents when reloads produce identical content.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LoadedFlow {
     /// JSON body to hand to the bundle.
@@ -61,47 +83,66 @@ struct LoadedFlow {
     id: Option<Uuid>,
 }
 
+/// Read + parse a `.flow` file into the shape we hand the bundle.
+/// Errors collapse to an empty body + None id; the bundle still mounts
+/// (renders an empty canvas) and the operator can fix the file
+/// out-of-band. Logs at warn level so a parse regression is visible
+/// in the trace stream.
+fn read_and_parse_flow(project_root: &Path, rel_path: &Path) -> LoadedFlow {
+    let abs = project_root.join(rel_path);
+    let raw = match std::fs::read_to_string(&abs) {
+        Ok(s) => s,
+        Err(_) => {
+            return LoadedFlow {
+                body_json: EMPTY_FLOW_JSON.to_string(),
+                id: None,
+            }
+        }
+    };
+    match flynt_flow::parse_flow(&raw) {
+        Ok(doc) => LoadedFlow {
+            body_json: serde_json::to_string(&doc.flow)
+                .unwrap_or_else(|_| EMPTY_FLOW_JSON.to_string()),
+            id: Some(doc.id),
+        },
+        Err(e) => {
+            tracing::warn!(error = %e, path = %abs.display(), "failed to parse .flow file");
+            LoadedFlow {
+                body_json: EMPTY_FLOW_JSON.to_string(),
+                id: None,
+            }
+        }
+    }
+}
+
 #[component]
 pub fn FlowView(path: PathBuf) -> Element {
     let ctx = use_context::<AppContext>();
     let path_load = path.clone();
 
-    // Load + parse once per FlowView mount. We keep both the body JSON
-    // (for the bundle) and the document id (for save).
-    let loaded: Memo<LoadedFlow> = use_memo(move || {
+    // `loaded` is now a Signal (was Memo) so the watcher effect can write
+    // to it when an external write lands. Initial value comes from the
+    // first read; subsequent updates either originate from external
+    // file-watch events or from the operator opening a different file
+    // (which triggers a fresh FlowView mount).
+    let mut loaded = use_signal(|| {
         let project = ctx.project();
-        let abs = project.root.join(&path_load);
-        let raw = match std::fs::read_to_string(&abs) {
-            Ok(s) => s,
-            Err(_) => {
-                return LoadedFlow {
-                    body_json: EMPTY_FLOW_JSON.to_string(),
-                    id: None,
-                }
-            }
-        };
-        match flynt_flow::parse_flow(&raw) {
-            Ok(doc) => LoadedFlow {
-                body_json: serde_json::to_string(&doc.flow)
-                    .unwrap_or_else(|_| EMPTY_FLOW_JSON.to_string()),
-                id: Some(doc.id),
-            },
-            Err(e) => {
-                tracing::warn!(error = %e, path = %abs.display(), "failed to parse .flow file");
-                LoadedFlow {
-                    body_json: EMPTY_FLOW_JSON.to_string(),
-                    id: None,
-                }
-            }
-        }
+        read_and_parse_flow(&project.root, &path_load)
     });
 
-    // Status badge state. Three transitions: idle ("") → "saving" while
-    // a write is in flight → "saved" for ~2s → idle. "error" sticks
-    // until the next successful save.
+    // Status badge: idle ("") → "saving" while a write is in flight →
+    // "saved" for ~2s → idle. "refreshed" fires when an external write
+    // landed and we reloaded. "error" sticks until the next clean op.
     let mut save_state = use_signal(|| "");
 
-    // Layout fixes + cleanup hook (same approach as Excalidraw).
+    // Tracks when WE last wrote to disk. The watcher subscription uses
+    // this to filter out own-save echoes (FSEvents fires for any write,
+    // including ours). `Instant` isn't `PartialEq` for our purposes
+    // since we only compare via elapsed; storing as Option keeps the
+    // initial "haven't saved yet" state explicit.
+    let last_self_save_at = use_signal(|| Option::<Instant>::None);
+
+    // ── Layout fixes + cleanup hook ────────────────────────────────────────
     use_effect(move || {
         document::eval(
             r#"
@@ -118,11 +159,6 @@ pub fn FlowView(path: PathBuf) -> Element {
                 if (window.FlyntFlow) { try { window.FlyntFlow.unmount(); } catch(e) {} }
                 window._flowSaveQueue = [];
                 window._flowOnChange = null;
-                // Signal the drain loop to exit on its next iteration.
-                // Without this the loop runs forever (JS leak across
-                // every FlowView open/close) — the Rust-side spawn task
-                // is cancelled by Dioxus scope drop, but the JS poller
-                // has no scope-binding.
                 window._flowDrainActive = false;
                 var mc = document.querySelector('.main-content');
                 if (mc) { mc.style.overflow = ''; mc.style.display = ''; mc.style.flexDirection = ''; }
@@ -143,12 +179,12 @@ pub fn FlowView(path: PathBuf) -> Element {
         );
     });
 
-    // Mount the bundle with an onChange callback. The callback enqueues
-    // the JSON body into `window._flowSaveQueue`; the Rust drain loop
-    // (next effect) picks it up. Going through a queue rather than a
-    // direct `dioxus.send` keeps the JS callback synchronous (so
-    // react-flow's debounce doesn't await the Rust round-trip) and
-    // gives us a single point to flush from at unmount.
+    // ── Mount the bundle ───────────────────────────────────────────────────
+    //
+    // This effect re-runs whenever `loaded` changes — which is intended:
+    // an external write should remount the bundle with the new content.
+    // Operator's unsaved local edits are replaced (last-write-wins,
+    // documented above).
     use_effect(move || {
         let data = loaded.read().body_json.clone();
         let escaped = serde_json::to_string(&data).unwrap_or_else(|_| "\"{}\"".into());
@@ -184,10 +220,7 @@ pub fn FlowView(path: PathBuf) -> Element {
         document::eval(&js);
     });
 
-    // Drain loop: pulls JSON bodies off the JS queue, writes them to
-    // disk via flynt-flow's serializer. Keeps the bundle's onChange
-    // synchronous and lets us batch redundant writes (only the latest
-    // queued body matters; older ones drop).
+    // ── Save loop ──────────────────────────────────────────────────────────
     //
     // Lifetime contract — important for future maintainers:
     //   * The JS drain function is scope-less; we terminate it via the
@@ -206,8 +239,6 @@ pub fn FlowView(path: PathBuf) -> Element {
             (async function drain() {
                 while (window._flowDrainActive) {
                     if (window._flowSaveQueue && window._flowSaveQueue.length > 0) {
-                        // Keep only the latest queued body — older ones
-                        // are stale snapshots of the same edit session.
                         var latest = window._flowSaveQueue[window._flowSaveQueue.length - 1];
                         window._flowSaveQueue = [];
                         try { dioxus.send(latest); }
@@ -222,12 +253,11 @@ pub fn FlowView(path: PathBuf) -> Element {
 
         let p = path_save.clone();
         let c = ctx;
-        let l = loaded;
+        let mut last_self_save = last_self_save_at;
         spawn(async move {
             // Document id captured from the initial parse. If the file
-            // didn't exist on first read, allocate fresh once and reuse
-            // — the indexer treats the resulting identity as canonical.
-            let mut doc_id: Option<Uuid> = l.read().id;
+            // didn't exist on first read, allocate fresh once and reuse.
+            let mut doc_id: Option<Uuid> = loaded.read().id;
 
             loop {
                 let Ok(body_json) = bridge.recv::<String>().await else {
@@ -236,10 +266,6 @@ pub fn FlowView(path: PathBuf) -> Element {
 
                 *save_state.write() = "saving";
 
-                // Build a Flow from the body JSON. If the bundle ever
-                // sends an unparseable payload we surface "error" rather
-                // than silently dropping — Phase 3 trusts the bundle but
-                // we want the bug to be visible.
                 let flow: flynt_flow::Flow = match serde_json::from_str(&body_json) {
                     Ok(f) => f,
                     Err(e) => {
@@ -261,8 +287,13 @@ pub fn FlowView(path: PathBuf) -> Element {
 
                 match result {
                     Ok(Ok(())) => {
+                        // Stamp the self-save timestamp BEFORE the badge
+                        // transitions — the watcher subscription will
+                        // fire imminently with this write's event, and
+                        // we want the suppression window already open.
+                        *last_self_save.write() = Some(Instant::now());
                         *save_state.write() = "saved";
-                        tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                        tokio::time::sleep(Duration::from_millis(2000)).await;
                         if *save_state.read() == "saved" {
                             *save_state.write() = "";
                         }
@@ -280,12 +311,78 @@ pub fn FlowView(path: PathBuf) -> Element {
         });
     });
 
+    // ── Watcher subscription ───────────────────────────────────────────────
+    //
+    // Subscribe to project_events. On event for our path, debounce
+    // (200ms — covers FSEvents emit lag and lets us coalesce rapid
+    // writes), filter own-save echoes, then reload + push into `loaded`.
+    let path_watch = path.clone();
+    use_effect(move || {
+        let project_events = ctx.project_events();
+        let mut rx = project_events.subscribe();
+        let p = path_watch.clone();
+        let c = ctx;
+        let last_self_save_ro = last_self_save_at;
+
+        spawn(async move {
+            // Pre-canonicalize our path once so the per-event match is a
+            // PathBuf compare rather than two filesystem syscalls per
+            // event. Falls back to the joined path if canonicalize fails
+            // (file didn't exist yet) — ProjectWatcher uses the same
+            // fallback so the comparison stays consistent.
+            let project = c.project();
+            let our_abs = project.root.join(&p);
+            let our_canonical = std::fs::canonicalize(&our_abs).unwrap_or_else(|_| our_abs.clone());
+
+            loop {
+                let Ok(first_evt) = rx.recv().await else { break };
+                let evt_path = event_path(&first_evt);
+                let evt_canonical = std::fs::canonicalize(evt_path)
+                    .unwrap_or_else(|_| evt_path.to_path_buf());
+                if evt_canonical != our_canonical {
+                    continue;
+                }
+
+                // Debounce: drain any further events for our path that
+                // arrive in the next 200ms before reloading.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                while let Ok(evt) = rx.try_recv() {
+                    let p = event_path(&evt);
+                    let pc = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+                    if pc != our_canonical { /* not ours, ignore — we'll get it via the next outer recv if needed */ }
+                }
+
+                // Own-save echo filter — if we just wrote within the
+                // window, this watcher event is our own write coming
+                // back. Skip the reload.
+                if let Some(t) = *last_self_save_ro.read() {
+                    if t.elapsed() < SELF_SAVE_ECHO_WINDOW {
+                        continue;
+                    }
+                }
+
+                // External write — reload from disk and push into
+                // `loaded`. The mount effect observes the change and
+                // remounts the bundle with the new content.
+                let project = c.project();
+                let new_loaded = read_and_parse_flow(&project.root, &p);
+                let changed = *loaded.read() != new_loaded;
+                if changed {
+                    *loaded.write() = new_loaded;
+                    *save_state.write() = "refreshed";
+                    tokio::time::sleep(Duration::from_millis(2000)).await;
+                    if *save_state.read() == "refreshed" {
+                        *save_state.write() = "";
+                    }
+                }
+            }
+        });
+    });
+
     rsx! {
         div {
             class: "flow-pane",
             style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;position:relative;background:#020617;",
-            // Status badge — same visual idiom as the Excalidraw view's
-            // "saved" pill so the muscle memory is consistent.
             div {
                 class: "flow-overlay-actions",
                 style: "position:absolute;top:8px;right:12px;z-index:5;pointer-events:none;",
@@ -302,5 +399,13 @@ pub fn FlowView(path: PathBuf) -> Element {
                 style: "flex:1;min-height:0;width:100%;",
             }
         }
+    }
+}
+
+fn event_path(evt: &ProjectChangeEvent) -> &Path {
+    match evt {
+        ProjectChangeEvent::FileModified(p)
+        | ProjectChangeEvent::FileCreated(p)
+        | ProjectChangeEvent::FileDeleted(p) => p,
     }
 }

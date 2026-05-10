@@ -34,7 +34,7 @@ impl ProjectWatcher {
             for path in event.paths {
                 if path.starts_with(&flynt_dir) { continue; }
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if ext != "md" && ext != "excalidraw" && ext != "d2" && ext != "canvas" { continue; }
+                if ext != "md" && ext != "excalidraw" && ext != "d2" && ext != "canvas" && ext != "flow" { continue; }
                 let evt = match event.kind {
                     notify::EventKind::Create(_) => ProjectChangeEvent::FileCreated(path),
                     notify::EventKind::Modify(_) => ProjectChangeEvent::FileModified(path),
