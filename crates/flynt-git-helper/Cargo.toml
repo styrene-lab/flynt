@@ -1,0 +1,13 @@
+[package]
+name = "flynt-git-helper"
+description = "Git credential helper for Flynt — minimum viable RFC 6579 implementation, env-driven"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "flynt-git-helper"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }

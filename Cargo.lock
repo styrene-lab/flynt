@@ -2322,6 +2322,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "flynt-git-helper"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "flynt-mobile"
 version = "0.9.0"
 dependencies = [

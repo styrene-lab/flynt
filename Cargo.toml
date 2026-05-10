@@ -6,6 +6,7 @@ members = [
     "crates/flynt-forge",
     "crates/flynt-app",
     "crates/flynt-agent",
+    "crates/flynt-git-helper",
     "crates/flynt-mobile",
     "crates/omegon-design",
 ]
