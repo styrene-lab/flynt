@@ -1727,6 +1727,13 @@ pub fn NotesView() -> Element {
                     }
                 },
                 EditMode::Live => rsx! {},
+                // Source mode is disabled for special files — the markdown
+                // editor would rewrite a .flow JSON body (or .excalidraw
+                // scene) as plain text on save, corrupting the file. The
+                // mode toggle is still rendered (`EditMode::Source` is the
+                // user's stated intent) but the source-editor body
+                // short-circuits to empty for these kinds.
+                EditMode::Source if is_special => rsx! {},
                 EditMode::Source => {
                     let path_save = rel_path.clone();
                     rsx! {

@@ -71,20 +71,27 @@ interface MountOptions {
 // them as a single bundled handle on each side of the node, which keeps
 // the visual minimal until we wire per-socket handles in Phase 3.
 
+// Defensive: agents (Phase 4) may send partial nodes — missing position,
+// missing data, missing sockets. We default rather than throw so a
+// malformed flow renders as best-effort rather than crashing the view.
 function toRfNode(n: FlowNodeJson): Node {
+  const pos = Array.isArray(n.position) ? n.position : [0, 0];
   return {
     id: n.id,
-    type: "flynt", // single custom node type — see FlyntNode below
-    position: { x: n.position[0], y: n.position[1] },
+    type: "flynt",
+    position: { x: Number(pos[0]) || 0, y: Number(pos[1]) || 0 },
     data: {
-      kind: n.kind,
+      kind: n.kind ?? "custom",
       payload: n.data ?? {},
-      sockets: n.sockets ?? [],
+      sockets: Array.isArray(n.sockets) ? n.sockets : [],
     },
   };
 }
 
 function toRfEdge(e: FlowEdgeJson): Edge {
+  // Edges with no source/target ids would cascade-crash react-flow's
+  // diff. Filter at the caller; this function trusts its input but
+  // guards socket fields against `undefined`.
   return {
     id: e.id,
     source: e.source.node,
@@ -218,7 +225,7 @@ function injectStyles() {
   if (document.getElementById("flynt-flow-styles")) return;
   const style = document.createElement("style");
   style.id = "flynt-flow-styles";
-  style.textContent = reactFlowCss as unknown as string;
+  style.textContent = reactFlowCss;
   document.head.appendChild(style);
 }
 
@@ -239,9 +246,24 @@ const api: FlyntFlowGlobal = {
       return;
     }
     // Defensive defaults — Rust guarantees these via #[serde(default)],
-    // but the tool surface in Phase 4 may pass partial bodies.
-    parsed.nodes = parsed.nodes ?? [];
-    parsed.edges = parsed.edges ?? [];
+    // but the tool surface in Phase 4 may pass partial bodies, and a
+    // hand-edited .flow file might omit either array entirely.
+    parsed.nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+    parsed.edges = Array.isArray(parsed.edges) ? parsed.edges : [];
+    // Drop edges referencing non-existent or unset endpoints — react-flow
+    // tolerates dangling refs but the diff log gets noisy. Validation
+    // (Flow::validate) happens server-side; this is just a render-time
+    // guard so the canvas doesn't show ghost edges.
+    const nodeIds = new Set(parsed.nodes.map((n) => n.id));
+    parsed.edges = parsed.edges.filter(
+      (e) =>
+        e &&
+        e.id &&
+        e.source?.node &&
+        e.target?.node &&
+        nodeIds.has(e.source.node) &&
+        nodeIds.has(e.target.node)
+    );
 
     if (api._root) api._root.unmount();
     api._root = createRoot(container);

@@ -10,6 +10,16 @@
 //! commands. It exposes `window.FlyntFlow.{mount, unmount}` — the API
 //! shape mirrors `window.FlyntExcalidraw` so the mount pattern below is
 //! a near-copy of the Excalidraw view's first 80 lines.
+//!
+//! ## Known limitations carried over from ExcalidrawView
+//!
+//! - Single-tab assumption: the mount target id is hardcoded
+//!   (`flynt-flow`). Two `.flow` tabs open simultaneously will collide
+//!   on `getElementById`. Multi-tab support is a cross-view refactor.
+//! - File-watch reactivity: an external write to the open file (e.g.,
+//!   from an agent tool in Phase 4) does not refresh the view; the
+//!   operator must close and reopen the tab. Wiring the project
+//!   watcher into the memo lands when Phase 4 actually exercises it.
 
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
@@ -20,6 +30,8 @@ use std::path::PathBuf;
 pub fn is_flow(path: &std::path::Path) -> bool {
     path.extension().map(|e| e == "flow").unwrap_or(false)
 }
+
+const EMPTY_FLOW_JSON: &str = r#"{"meta":{},"nodes":[],"edges":[]}"#;
 
 #[component]
 pub fn FlowView(path: PathBuf) -> Element {
@@ -35,22 +47,23 @@ pub fn FlowView(path: PathBuf) -> Element {
         let abs = project.root.join(&path_load);
         let raw = match std::fs::read_to_string(&abs) {
             Ok(s) => s,
-            Err(_) => return r#"{"meta":{},"nodes":[],"edges":[]}"#.to_string(),
+            Err(_) => return EMPTY_FLOW_JSON.to_string(),
         };
         match flynt_flow::parse_flow(&raw) {
             Ok(doc) => serde_json::to_string(&doc.flow)
-                .unwrap_or_else(|_| r#"{"meta":{},"nodes":[],"edges":[]}"#.to_string()),
+                .unwrap_or_else(|_| EMPTY_FLOW_JSON.to_string()),
             Err(e) => {
                 tracing::warn!(error = %e, path = %abs.display(), "failed to parse .flow file");
-                r#"{"meta":{},"nodes":[],"edges":[]}"#.to_string()
+                EMPTY_FLOW_JSON.to_string()
             }
         }
     });
 
-    // Force-fit the layout so react-flow can measure its container.
-    // Same pattern as `ExcalidrawView::use_effect` — the host page's
-    // layout primitives don't grant the bundle the height it needs by
-    // default; the dispatched `resize` event nudges react-flow to remount.
+    // Define the cleanup-on-unmount JS once. Pre-existing pattern in
+    // `ExcalidrawView` defined `window._excalidrawCleanup` but never
+    // invoked it — layout overrides leaked across navigation, the React
+    // tree never unmounted. We do better here by invoking the cleanup
+    // from `use_drop` below so it actually runs when the view unmounts.
     use_effect(move || {
         document::eval(
             r#"
@@ -63,7 +76,6 @@ pub fn FlowView(path: PathBuf) -> Element {
                 setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 200);
             })();
 
-            // Cleanup hook fires on view unmount via dioxus' effect drop.
             window._flowCleanup = function() {
                 if (window.FlyntFlow) { try { window.FlyntFlow.unmount(); } catch(e) {} }
                 var mc = document.querySelector('.main-content');
@@ -75,20 +87,42 @@ pub fn FlowView(path: PathBuf) -> Element {
         );
     });
 
+    // Run the cleanup when the view unmounts (route change, tab close,
+    // app shutdown). Without this, repeated open/close of `.flow` tabs
+    // accumulated React roots in the DOM and leaked the layout overrides.
+    use_drop(|| {
+        document::eval(
+            r#"
+            if (typeof window._flowCleanup === 'function') {
+                try { window._flowCleanup(); } catch (e) { console.warn('[FlowView] cleanup error', e); }
+            }
+            "#,
+        );
+    });
+
     // Mount the bundle once the DOM has the target node and the bundle
-    // global is ready. Polling pattern matches `FlyntExcalidraw` — the
-    // bundle script is loaded eagerly via `document::Script` in app.rs,
-    // but the global may attach a tick later than the view renders.
+    // global is ready. Polling pattern matches `FlyntExcalidraw` with
+    // one improvement: bounded retries so a missing/broken bundle fails
+    // loudly rather than spinning forever (caught a 1.2MB bundle file
+    // server stall during testing — without the cap it just hangs).
     use_effect(move || {
         let data = flow_json.read().clone();
-        // Embed the JSON as a JS string literal — JSON.parse handles the
-        // unescape, and we avoid template-string interpolation footguns.
+        // Double-encode: serde_json wraps the JSON-string in another
+        // JSON-string literal so it can be safely embedded in JS source.
+        // The bundle does `JSON.parse(escaped)` to recover the original.
         let escaped = serde_json::to_string(&data).unwrap_or_else(|_| "\"{}\"".into());
 
         let js = format!(
             r#"
             (function() {{
+                var attempts = 0;
+                var MAX_ATTEMPTS = 100; // ≈10s at 100ms — well past app boot
                 function tryMount() {{
+                    if (++attempts > MAX_ATTEMPTS) {{
+                        console.error('[FlowView] bundle did not become available after',
+                            MAX_ATTEMPTS, 'attempts — flow.bundle.js may be missing or broken');
+                        return;
+                    }}
                     var container = document.getElementById('flynt-flow');
                     if (!container) {{ setTimeout(tryMount, 50); return; }}
                     if (!window.FlyntFlow) {{ setTimeout(tryMount, 100); return; }}
