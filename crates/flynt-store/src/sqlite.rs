@@ -133,6 +133,40 @@ const MIGRATIONS: &[&str] = &[
     // v3: task decay
     "ALTER TABLE tasks ADD COLUMN decay TEXT NOT NULL DEFAULT '\"natural\"';",
     "ALTER TABLE tasks ADD COLUMN last_touched_at TEXT;",
+    // v4: sentry integration prerequisites — external_refs and design_node_id
+    // are model fields with #[serde(default)] but were never persisted to
+    // SQLite, so they were silently lost across process restarts. The TODOs
+    // at row_to_task hardcoded empty/None. See flynt/design/sentry-integration.md.
+    "ALTER TABLE tasks ADD COLUMN external_refs TEXT NOT NULL DEFAULT '[]';",
+    "ALTER TABLE tasks ADD COLUMN design_node_id TEXT;",
+    // v5: sentry integration priority 3 — execution metadata + openspec_change.
+    // Mirrors omegon::sentry::types::TaskSpec (model, skill, max_turns, etc.)
+    // so the planned FlyntTaskBoard adapter is a thin pass-through. Stored as
+    // JSON blob in a single column; openspec_change is a bare string.
+    "ALTER TABLE tasks ADD COLUMN execution TEXT;",
+    "ALTER TABLE tasks ADD COLUMN openspec_change TEXT;",
+    // v6: scribe absorption — engagement scope on tasks. Stored as TEXT
+    // (UUID string). Soft-coupled to v7's engagements table: a task may
+    // carry an engagement_id whose row doesn't exist (yet, or any more)
+    // — callers treat that as "no engagement," not an error.
+    "ALTER TABLE tasks ADD COLUMN engagement_id TEXT;",
+    // v7: engagements table — multi-repo work scope records. `repos` and
+    // `forge` round-trip as JSON blobs (RepoBinding[] and ForgeEndpoint
+    // respectively); `partnership_id` is loose so we can defer
+    // partnership persistence until something actually needs it.
+    r#"CREATE TABLE IF NOT EXISTS engagements (
+        id              TEXT PRIMARY KEY,
+        partnership_id  TEXT,
+        name            TEXT NOT NULL,
+        description     TEXT,
+        repos           TEXT NOT NULL DEFAULT '[]',
+        forge           TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT '"active"',
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    );"#,
+    "CREATE INDEX IF NOT EXISTS idx_engagements_partnership ON engagements (partnership_id);",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_engagement ON tasks (engagement_id);",
 ];
 
 // ── VaultStore implementation ─────────────────────────────────────────────────
@@ -398,7 +432,7 @@ impl VaultStore for SqliteStore {
     fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE id = ?1",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id FROM tasks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -407,7 +441,11 @@ impl VaultStore for SqliteStore {
 
     fn list_tasks(&self, filter: &TaskFilter) -> Result<Vec<Task>> {
         let conn = self.conn.lock().unwrap();
-        // Build query dynamically
+        // Build a parameterized query. Predicates AND together. Tags are
+        // matched via SQLite's json_each — task must contain ALL filter tags
+        // (intersection). Status compares against the JSON-encoded form
+        // ("todo" / "in_progress" / etc., quotes included) since that's
+        // exactly how save_task writes it.
         let mut conds = vec!["1=1".to_string()];
         let mut values: Vec<String> = Vec::new();
         if let Some(ref bid) = filter.board_id {
@@ -418,8 +456,26 @@ impl VaultStore for SqliteStore {
             conds.push(format!("column_name = ?{}", values.len() + 1));
             values.push(col.clone());
         }
+        if let Some(status) = filter.status {
+            // serde_json::to_string yields a quoted form like "\"todo\""
+            // — the same form save_task writes into the column. Match
+            // by string equality, no JSON parsing needed.
+            conds.push(format!("status = ?{}", values.len() + 1));
+            values.push(serde_json::to_string(&status)?);
+        }
+        if let Some(ref eng) = filter.engagement_id {
+            conds.push(format!("engagement_id = ?{}", values.len() + 1));
+            values.push(eng.0.to_string());
+        }
+        for tag in &filter.tags {
+            conds.push(format!(
+                "EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?{})",
+                values.len() + 1
+            ));
+            values.push(tag.clone());
+        }
         let sql = format!(
-            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at FROM tasks WHERE {} ORDER BY position ASC",
+            "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id FROM tasks WHERE {} ORDER BY position ASC",
             conds.join(" AND ")
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -431,9 +487,15 @@ impl VaultStore for SqliteStore {
 
     fn save_task(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let execution_json = task
+            .execution
+            .as_ref()
+            .filter(|e| !e.is_empty())
+            .map(|e| serde_json::to_string(e))
+            .transpose()?;
         conn.execute(
-            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+            r#"INSERT INTO tasks (id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)
                ON CONFLICT(id) DO UPDATE SET
                  board_id=excluded.board_id, column_name=excluded.column_name,
                  title=excluded.title, description=excluded.description,
@@ -441,7 +503,10 @@ impl VaultStore for SqliteStore {
                  tags=excluded.tags, document_refs=excluded.document_refs,
                  due_date=excluded.due_date, position=excluded.position,
                  updated_at=excluded.updated_at,
-                 decay=excluded.decay, last_touched_at=excluded.last_touched_at"#,
+                 decay=excluded.decay, last_touched_at=excluded.last_touched_at,
+                 external_refs=excluded.external_refs, design_node_id=excluded.design_node_id,
+                 execution=excluded.execution, openspec_change=excluded.openspec_change,
+                 engagement_id=excluded.engagement_id"#,
             params![
                 task.id.0.to_string(),
                 task.board_id.0.to_string(),
@@ -458,9 +523,51 @@ impl VaultStore for SqliteStore {
                 task.updated_at.to_rfc3339(),
                 serde_json::to_string(&task.decay)?,
                 task.last_touched_at.map(|t| t.to_rfc3339()),
+                serde_json::to_string(&task.external_refs)?,
+                task.design_node_id.map(|u| u.to_string()),
+                execution_json,
+                task.openspec_change,
+                task.engagement_id.as_ref().map(|e| e.0.to_string()),
             ],
         )?;
         Ok(())
+    }
+
+    fn update_task(&self, id: &TaskId, patch: &flynt_models::TaskPatch) -> Result<bool> {
+        if patch.is_empty() {
+            // No-op patch — caller didn't provide any changes. Still return
+            // true if the task exists (for caller convenience), false if not.
+            return Ok(self.get_task(id)?.is_some());
+        }
+
+        // Read-modify-write strategy: load the existing task, merge the
+        // patch onto it, write back. Keeps the SQL simple (one UPDATE that
+        // touches every column) at the cost of one extra SELECT. Tasks are
+        // small; this is fine.
+        let mut task = match self.get_task(id)? {
+            Some(t) => t,
+            None => return Ok(false),
+        };
+
+        if let Some(v) = &patch.column { task.column = v.clone(); }
+        if let Some(v) = &patch.title { task.title = v.clone(); }
+        if let Some(v) = &patch.description { task.description = v.clone(); }
+        if let Some(v) = patch.priority.clone() { task.priority = v; }
+        if let Some(v) = patch.status.clone() { task.status = v; }
+        if let Some(v) = &patch.tags { task.tags = v.clone(); }
+        if let Some(v) = patch.due_date { task.due_date = v; }
+        if let Some(v) = &patch.external_refs { task.external_refs = v.clone(); }
+        if let Some(v) = &patch.document_refs { task.document_refs = v.clone(); }
+        if let Some(v) = patch.position { task.position = v; }
+        if let Some(v) = patch.decay.clone() { task.decay = v; }
+        if let Some(v) = patch.design_node_id { task.design_node_id = v; }
+        if let Some(v) = &patch.openspec_change { task.openspec_change = v.clone(); }
+        if let Some(v) = &patch.engagement_id { task.engagement_id = v.clone(); }
+        if let Some(v) = &patch.execution { task.execution = v.clone(); }
+        task.updated_at = chrono::Utc::now();
+
+        self.save_task(&task)?;
+        Ok(true)
     }
 
     fn delete_task(&self, id: &TaskId) -> Result<()> {
@@ -520,6 +627,76 @@ impl VaultStore for SqliteStore {
         Ok(())
     }
 
+    // ── Engagements ──────────────────────────────────────────────────────────
+
+    fn get_engagement(
+        &self,
+        id: &flynt_models::engagement::EngagementId,
+    ) -> Result<Option<flynt_models::engagement::Engagement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, partnership_id, name, description, repos, forge, status, created_at, updated_at
+             FROM engagements WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id.0.to_string()])?;
+        let Some(row) = rows.next()? else { return Ok(None) };
+        Ok(Some(row_to_engagement(row)?))
+    }
+
+    fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, partnership_id, name, description, repos, forge, status, created_at, updated_at
+             FROM engagements ORDER BY name ASC",
+        )?;
+        let rows = stmt.query_map([], row_to_engagement)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn save_engagement(&self, engagement: &flynt_models::engagement::Engagement) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT INTO engagements (id, partnership_id, name, description, repos, forge, status, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+               ON CONFLICT(id) DO UPDATE SET
+                 partnership_id = excluded.partnership_id,
+                 name           = excluded.name,
+                 description    = excluded.description,
+                 repos          = excluded.repos,
+                 forge          = excluded.forge,
+                 status         = excluded.status,
+                 updated_at     = excluded.updated_at"#,
+            params![
+                engagement.id.0.to_string(),
+                engagement.partnership_id.as_ref().map(|p| p.0.to_string()),
+                engagement.name,
+                engagement.description,
+                serde_json::to_string(&engagement.repos)?,
+                serde_json::to_string(&engagement.forge)?,
+                serde_json::to_string(&engagement.status)?,
+                engagement.created_at.to_rfc3339(),
+                engagement.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn delete_engagement(
+        &self,
+        id: &flynt_models::engagement::EngagementId,
+    ) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "DELETE FROM engagements WHERE id = ?1",
+            params![id.0.to_string()],
+        )?;
+        // Tasks keep their engagement_id pointing at a now-missing row;
+        // callers treat dangling refs as "no engagement" per the trait
+        // doc. We don't NULL them out here because that's a policy
+        // decision (cascade vs orphan) the caller may want to override.
+        Ok(n > 0)
+    }
+
     // ── Project dirty tracking ───────────────────────────────────────────────
 
     fn list_dirty_tasks(&self, project_id: &uuid::Uuid) -> Result<Vec<Task>> {
@@ -527,7 +704,8 @@ impl VaultStore for SqliteStore {
         let mut stmt = conn.prepare(
             r#"SELECT id, board_id, column_name, title, description, priority, status,
                       tags, document_refs, due_date, position, created_at, updated_at,
-                      decay, last_touched_at
+                      decay, last_touched_at, external_refs, design_node_id,
+                      execution, openspec_change, engagement_id
                FROM tasks
                WHERE project_id = ?1
                  AND (last_committed_at IS NULL OR updated_at > last_committed_at)
@@ -694,8 +872,55 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         updated_at: parse_dt(updated_at),
         decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
         last_touched_at: last_touched.and_then(|s| s.parse().ok()),
-        external_refs: Vec::new(), // TODO: persist in SQLite schema
-        design_node_id: None, // TODO: persist in SQLite schema
+        external_refs: {
+            let json: String = row.get(15)?;
+            serde_json::from_str(&json).unwrap_or_default()
+        },
+        design_node_id: {
+            let id_str: Option<String> = row.get(16)?;
+            id_str.and_then(|s| s.parse().ok())
+        },
+        execution: {
+            let json: Option<String> = row.get(17)?;
+            json.and_then(|s| serde_json::from_str(&s).ok())
+        },
+        openspec_change: row.get(18)?,
+        engagement_id: {
+            let id_str: Option<String> = row.get(19)?;
+            id_str
+                .and_then(|s| uuid::Uuid::parse_str(&s).ok())
+                .map(flynt_models::engagement::EngagementId)
+        },
+    })
+}
+
+fn row_to_engagement(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<flynt_models::engagement::Engagement> {
+    use flynt_models::engagement::{Engagement, EngagementId, EngagementStatus, PartnershipId};
+    let id: String = row.get(0)?;
+    let partnership_id: Option<String> = row.get(1)?;
+    let repos_json: String = row.get(4)?;
+    let forge_json: String = row.get(5)?;
+    let status_json: String = row.get(6)?;
+    let created_at: String = row.get(7)?;
+    let updated_at: String = row.get(8)?;
+    Ok(Engagement {
+        id: EngagementId(id.parse().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        partnership_id: partnership_id
+            .and_then(|s| s.parse().ok())
+            .map(PartnershipId),
+        name: row.get(2)?,
+        description: row.get(3)?,
+        repos: serde_json::from_str(&repos_json).unwrap_or_default(),
+        forge: serde_json::from_str(&forge_json).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        status: serde_json::from_str(&status_json).unwrap_or(EngagementStatus::Active),
+        created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
+        updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
 }
 
@@ -787,5 +1012,405 @@ fn metadata_protection_label(protection: &MetadataProtection) -> &'static str {
     match protection {
         MetadataProtection::PlaintextIndexed => "plaintext_indexed",
         MetadataProtection::EncryptedOpaque => "encrypted_opaque",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Adversarial / end-to-end tests for the sentry-integration changes.
+    //! Each test below probes a specific concern from the assessment pass:
+    //! cold-restart persistence, migration safety on existing data, filter
+    //! correctness against a populated DB, and TaskPatch field-level
+    //! independence.
+
+    use super::*;
+    use flynt_core::{
+        models::{BoardId, ExecutionSpec, Priority, Task, TaskId, TaskPatch, TaskStatus},
+        store::TaskFilter,
+    };
+
+    fn fresh_store() -> (tempfile::TempDir, SqliteStore) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+        let store = SqliteStore::open(&db).unwrap();
+        (tmp, store)
+    }
+
+    fn seed_board(store: &SqliteStore) -> BoardId {
+        let mut board = flynt_core::models::Board::default_sprint("Sentry");
+        board.columns = vec![
+            flynt_core::models::Column { name: "Backlog".into(), wip_limit: None },
+            flynt_core::models::Column { name: "Scheduled".into(), wip_limit: None },
+            flynt_core::models::Column { name: "Running".into(), wip_limit: Some(1) },
+        ];
+        let bid = board.id.clone();
+        store.save_board(&board).unwrap();
+        bid
+    }
+
+    #[test]
+    fn task_with_execution_and_openspec_persists_across_reopen() {
+        // Cold restart durability: write a fully populated task, drop the
+        // store, reopen the same DB, and verify every field survives.
+        // Catches the entire class of "I forgot to add a column to SELECT
+        // or save_task" bugs.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let board_id;
+
+        // ── First open: write
+        {
+            let store = SqliteStore::open(&db).unwrap();
+            board_id = seed_board(&store);
+
+            let mut env = std::collections::BTreeMap::new();
+            env.insert("API_TOKEN".into(), "redacted".into());
+            let mut t = Task::new(board_id.clone(), "Scheduled", "Recurring scan");
+            t.id = task_id.clone();
+            t.tags = vec!["sentry".into(), "recurring".into()];
+            t.external_refs = vec!["cron:0 */4 * * *".into(), "webhook:gh-pr".into()];
+            t.design_node_id = Some(uuid::Uuid::new_v4());
+            t.openspec_change = Some("auth-rewrite".into());
+            t.execution = Some(ExecutionSpec {
+                model: Some("anthropic:claude-sonnet-4-6".into()),
+                max_turns: Some(20),
+                env,
+                ..Default::default()
+            });
+            store.save_task(&t).unwrap();
+        }
+
+        // ── Second open: read
+        let store = SqliteStore::open(&db).unwrap();
+        let loaded = store.get_task(&task_id).unwrap().expect("task exists");
+        assert_eq!(loaded.tags, vec!["sentry", "recurring"]);
+        assert_eq!(loaded.external_refs, vec!["cron:0 */4 * * *", "webhook:gh-pr"]);
+        assert!(loaded.design_node_id.is_some());
+        assert_eq!(loaded.openspec_change.as_deref(), Some("auth-rewrite"));
+        let exec = loaded.execution.expect("execution preserved");
+        assert_eq!(exec.model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
+        assert_eq!(exec.max_turns, Some(20));
+        assert_eq!(exec.env.get("API_TOKEN").map(String::as_str), Some("redacted"));
+    }
+
+    #[test]
+    fn migration_v4_v5_is_idempotent_on_reopen() {
+        // The migration runner re-applies all ALTER TABLE statements on every
+        // open. Re-running on a DB that already has the columns must not
+        // error or destroy data. This proves the runner's `let _ = ...; //
+        // ignore duplicate column errors` strategy actually works.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        {
+            let store = SqliteStore::open(&db).unwrap();
+            let board_id = seed_board(&store);
+            let mut t = Task::new(board_id, "Backlog", "T");
+            t.id = task_id.clone();
+            t.openspec_change = Some("change-x".into());
+            store.save_task(&t).unwrap();
+        }
+        // Reopen multiple times — exercises migration idempotency.
+        for _ in 0..3 {
+            let store = SqliteStore::open(&db).unwrap();
+            let loaded = store.get_task(&task_id).unwrap().expect("task survives reopens");
+            assert_eq!(loaded.openspec_change.as_deref(), Some("change-x"));
+        }
+    }
+
+    #[test]
+    fn update_task_with_only_status_does_not_clobber_other_fields() {
+        // The TaskPatch contract: untouched fields must be preserved. If
+        // update_task accidentally read the patch's None-as-clear instead of
+        // None-as-leave-unchanged for any field, the side effect would land
+        // here.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "Original");
+        t.id = task_id.clone();
+        t.tags = vec!["a".into(), "b".into()];
+        t.priority = Priority::High;
+        t.openspec_change = Some("change-x".into());
+        t.execution = Some(ExecutionSpec { model: Some("m".into()), ..Default::default() });
+        store.save_task(&t).unwrap();
+
+        let patch = TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            ..Default::default()
+        };
+        let updated = store.update_task(&task_id, &patch).unwrap();
+        assert!(updated);
+
+        let after = store.get_task(&task_id).unwrap().unwrap();
+        assert_eq!(after.status, TaskStatus::InProgress);
+        // Everything else preserved.
+        assert_eq!(after.title, "Original");
+        assert_eq!(after.tags, vec!["a", "b"]);
+        assert_eq!(after.priority, Priority::High);
+        assert_eq!(after.openspec_change.as_deref(), Some("change-x"));
+        assert!(after.execution.is_some());
+        assert_eq!(after.execution.unwrap().model.as_deref(), Some("m"));
+    }
+
+    #[test]
+    fn list_tasks_tag_filter_uses_intersection_against_real_data() {
+        // Sentry's discovery query: column + status + multi-tag against a
+        // populated DB. Ensures the json_each-based SQL is actually correct
+        // when there are tasks with overlapping but not identical tag sets.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+
+        let bid = board_id.clone();
+        let mk = |col: &str, tags: &[&str], st: TaskStatus| {
+            let mut t = Task::new(bid.clone(), col, format!("T-{col}-{:?}", st));
+            t.tags = tags.iter().map(|s| (*s).to_string()).collect();
+            t.status = st;
+            store.save_task(&t).unwrap();
+            t.id
+        };
+
+        let _a = mk("Scheduled", &["sentry", "recurring"], TaskStatus::Todo);
+        let _b = mk("Scheduled", &["sentry"],              TaskStatus::Todo);
+        let _c = mk("Scheduled", &["recurring"],           TaskStatus::Todo);
+        let _d = mk("Backlog",   &["sentry", "recurring"], TaskStatus::InProgress);
+
+        let intersection = store.list_tasks(&TaskFilter {
+            board_id: Some(board_id),
+            column: Some("Scheduled".into()),
+            tags: vec!["sentry".into(), "recurring".into()],
+            status: Some(TaskStatus::Todo),
+            ..Default::default()
+        }).unwrap();
+        assert_eq!(intersection.len(), 1, "only A matches all four predicates");
+        assert_eq!(intersection[0].tags, vec!["sentry", "recurring"]);
+    }
+
+    #[test]
+    fn update_task_clear_sentinels_actually_clear() {
+        // Some(None) on Option<Option<T>> patch fields means CLEAR. Verify
+        // that's what happens, not "preserve" or "set to default".
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.id = task_id.clone();
+        t.design_node_id = Some(uuid::Uuid::new_v4());
+        t.openspec_change = Some("change-x".into());
+        t.execution = Some(ExecutionSpec { model: Some("m".into()), ..Default::default() });
+        store.save_task(&t).unwrap();
+
+        let patch = TaskPatch {
+            design_node_id: Some(None),
+            openspec_change: Some(None),
+            execution: Some(None),
+            ..Default::default()
+        };
+        store.update_task(&task_id, &patch).unwrap();
+
+        let after = store.get_task(&task_id).unwrap().unwrap();
+        assert!(after.design_node_id.is_none());
+        assert!(after.openspec_change.is_none());
+        assert!(after.execution.is_none());
+    }
+
+    #[test]
+    fn update_task_returns_false_for_missing_id_without_creating() {
+        // Soft-failure path: missing id → false return, no insert.
+        let (_tmp, store) = fresh_store();
+        let phantom = TaskId(uuid::Uuid::new_v4());
+        let patch = TaskPatch {
+            title: Some("Should not be inserted".into()),
+            ..Default::default()
+        };
+        let result = store.update_task(&phantom, &patch).unwrap();
+        assert!(!result);
+        assert!(store.get_task(&phantom).unwrap().is_none());
+    }
+
+    #[test]
+    fn empty_patch_returns_true_when_task_exists_no_write() {
+        // The is_empty() short-circuit. Verify no spurious updated_at bump.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.id = task_id.clone();
+        store.save_task(&t).unwrap();
+        let original_ts = store.get_task(&task_id).unwrap().unwrap().updated_at;
+
+        let patch = TaskPatch::default();
+        let result = store.update_task(&task_id, &patch).unwrap();
+        assert!(result);
+        let after = store.get_task(&task_id).unwrap().unwrap();
+        assert_eq!(after.updated_at, original_ts, "empty patch must not bump updated_at");
+    }
+
+    #[test]
+    fn engagement_id_round_trips_through_sqlite() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        let eid = EngagementId::new();
+        t.engagement_id = Some(eid.clone());
+        store.save_task(&t).unwrap();
+
+        let loaded = store.get_task(&t.id).unwrap().unwrap();
+        assert_eq!(loaded.engagement_id, Some(eid));
+    }
+
+    #[test]
+    fn list_tasks_filters_by_engagement() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let eid_a = EngagementId::new();
+        let eid_b = EngagementId::new();
+
+        let mut a1 = Task::new(board_id.clone(), "Backlog", "A1");
+        a1.engagement_id = Some(eid_a.clone());
+        let mut a2 = Task::new(board_id.clone(), "Backlog", "A2");
+        a2.engagement_id = Some(eid_a.clone());
+        let mut b1 = Task::new(board_id.clone(), "Backlog", "B1");
+        b1.engagement_id = Some(eid_b.clone());
+        let unscoped = Task::new(board_id.clone(), "Backlog", "Unscoped");
+
+        for t in [&a1, &a2, &b1, &unscoped] { store.save_task(t).unwrap(); }
+
+        let only_a = store.list_tasks(&TaskFilter {
+            engagement_id: Some(eid_a),
+            ..Default::default()
+        }).unwrap();
+        assert_eq!(only_a.len(), 2, "expected only the two A-engagement tasks");
+        assert!(only_a.iter().all(|t| t.title == "A1" || t.title == "A2"));
+    }
+
+    #[test]
+    fn update_task_engagement_id_set_and_clear() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.id = task_id.clone();
+        store.save_task(&t).unwrap();
+
+        // Set
+        let eid = EngagementId::new();
+        let patch = TaskPatch {
+            engagement_id: Some(Some(eid.clone())),
+            ..Default::default()
+        };
+        store.update_task(&task_id, &patch).unwrap();
+        assert_eq!(
+            store.get_task(&task_id).unwrap().unwrap().engagement_id,
+            Some(eid),
+        );
+
+        // Clear via Some(None)
+        let patch = TaskPatch {
+            engagement_id: Some(None),
+            ..Default::default()
+        };
+        store.update_task(&task_id, &patch).unwrap();
+        assert!(store.get_task(&task_id).unwrap().unwrap().engagement_id.is_none());
+    }
+
+    // ── Engagement table persistence (migration v7) ────────────────────────
+
+    fn sample_engagement() -> flynt_models::engagement::Engagement {
+        use flynt_models::engagement::{Engagement, RepoBinding};
+        use styrene_forge::{ForgeEndpoint, ForgeKind};
+        let mut e = Engagement::new(
+            "Q2 Migration",
+            ForgeEndpoint {
+                id: "github".into(),
+                kind: ForgeKind::GitHub,
+                base_url: "https://api.github.com".into(),
+                token_secret: Some("GITHUB_TOKEN".into()),
+            },
+        );
+        e.description = Some("Audit + migration of legacy auth path".into());
+        e.repos.push(RepoBinding::new("anthropics", "claude-code"));
+        e.repos.push(RepoBinding::new("anthropics", "claude-sdk"));
+        e
+    }
+
+    #[test]
+    fn engagement_round_trips_through_sqlite() {
+        let (_tmp, store) = fresh_store();
+        let e = sample_engagement();
+        store.save_engagement(&e).unwrap();
+        let loaded = store.get_engagement(&e.id).unwrap().expect("engagement should load");
+        assert_eq!(loaded.id, e.id);
+        assert_eq!(loaded.name, "Q2 Migration");
+        assert_eq!(loaded.description.as_deref(), Some("Audit + migration of legacy auth path"));
+        assert_eq!(loaded.repos.len(), 2);
+        assert_eq!(loaded.repos[0].full_name(), "anthropics/claude-code");
+        assert_eq!(loaded.forge.kind, styrene_forge::ForgeKind::GitHub);
+        assert!(matches!(loaded.status, flynt_models::engagement::EngagementStatus::Active));
+    }
+
+    #[test]
+    fn list_engagements_returns_sorted_by_name() {
+        let (_tmp, store) = fresh_store();
+        let mut a = sample_engagement(); a.name = "Beta".into();
+        let mut b = sample_engagement(); b.name = "Alpha".into();
+        store.save_engagement(&a).unwrap();
+        store.save_engagement(&b).unwrap();
+        let list = store.list_engagements().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "Alpha");
+        assert_eq!(list[1].name, "Beta");
+    }
+
+    #[test]
+    fn delete_engagement_returns_true_for_existing_false_for_missing() {
+        use flynt_models::engagement::EngagementId;
+        let (_tmp, store) = fresh_store();
+        let e = sample_engagement();
+        store.save_engagement(&e).unwrap();
+        assert!(store.delete_engagement(&e.id).unwrap());
+        assert!(store.get_engagement(&e.id).unwrap().is_none());
+        // Second delete: nothing to remove → false.
+        assert!(!store.delete_engagement(&EngagementId::new()).unwrap());
+    }
+
+    #[test]
+    fn delete_engagement_does_not_cascade_to_tasks() {
+        // Soft-coupling: tasks keep their engagement_id pointing at a
+        // now-missing record. Callers treat it as "no engagement," not
+        // an error — matches the trait doc and avoids data loss.
+        let (_tmp, store) = fresh_store();
+        let board_id = seed_board(&store);
+        let e = sample_engagement();
+        let eid = e.id.clone();
+        store.save_engagement(&e).unwrap();
+
+        let mut t = Task::new(board_id.clone(), "Backlog", "T");
+        t.engagement_id = Some(eid.clone());
+        store.save_task(&t).unwrap();
+
+        assert!(store.delete_engagement(&eid).unwrap());
+        let after = store.get_task(&t.id).unwrap().unwrap();
+        assert_eq!(after.engagement_id, Some(eid), "task should still carry the dangling id");
+        assert!(store.get_engagement(&after.engagement_id.unwrap()).unwrap().is_none());
+    }
+
+    #[test]
+    fn save_engagement_is_upsert() {
+        // Same id, mutated name → row is updated, not duplicated.
+        let (_tmp, store) = fresh_store();
+        let mut e = sample_engagement();
+        store.save_engagement(&e).unwrap();
+        e.name = "Renamed".into();
+        store.save_engagement(&e).unwrap();
+        let list = store.list_engagements().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Renamed");
     }
 }

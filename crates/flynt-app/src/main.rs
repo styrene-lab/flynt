@@ -110,6 +110,7 @@ fn mime_type(path: &std::path::Path) -> &'static str {
         Some("mp4")              => "video/mp4",
         Some("css")              => "text/css",
         Some("js")               => "application/javascript",
+        Some("html")             => "text/html",
         _                        => "application/octet-stream",
     }
 }

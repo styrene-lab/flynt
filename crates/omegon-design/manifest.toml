@@ -1,0 +1,13 @@
+[extension]
+name        = "omegon-design"
+version     = "0.1.0"
+description = "Design canvas helpers for Flynt — style-guide loader, theme suggester, critique, and influence disclosure. Pairs with the flynt-design skill."
+sdk_version = "0.15"
+
+[runtime]
+type   = "native"
+binary = "omegon-design"
+
+[startup]
+ping_method = "get_tools"
+timeout_ms  = 5000

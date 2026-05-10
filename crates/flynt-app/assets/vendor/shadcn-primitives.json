@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "cell_authoring_guidance": [
+    "Each cell renders inside a sandboxed iframe whose body inherits the canvas theme's --background color. ANY pixels your HTML doesn't visually cover will show that background through.",
+    "When using a primitive as the outermost element of a grid cell, wrap it in `<div class=\"h-full ...\">` (or apply h-full directly to the primitive) so it fills the cell's full vertical space. Otherwise the cell's body background shows below your content as empty space.",
+    "Match the visual language of the chosen theme. If the canvas is using a 'light' theme but your design wants dark surfaces, switch the theme to 'default'/'amber'/'ocean' (all dark) via canvas_apply_theme rather than fighting it with per-cell overrides — half-overridden themes leak in empty regions.",
+    "Don't rely on Tailwind arbitrary-value classes like `bg-[#FF1493]` — Flynt ships a curated Tailwind subset that doesn't include the JIT compiler. Stick to theme-token classes (`bg-primary`, `text-foreground`, `border-border`) plus the included spacing/layout/typography utilities.",
+    "Cell sizing: prefer h: 1 for single-row content (badges, buttons, headlines), h: 2 for headers with subhead, h: 3+ for content-heavy cards. A tall cell with short content will show empty body background — either reduce h or expand content to fill."
+  ],
+  "primitives": [
+    {
+      "id": "button",
+      "name": "Button",
+      "category": "input",
+      "description": "Primary action button.",
+      "usage_notes": "Inline-flex element. Center inside a cell with a flex parent: `<div class=\"flex items-center justify-center h-full p-4\"><button…/></div>`.",
+      "html": "<button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 transition\">Click me</button>"
+    },
+    {
+      "id": "button-secondary",
+      "name": "Button (secondary)",
+      "category": "input",
+      "description": "Secondary action button with muted styling.",
+      "usage_notes": "Same layout posture as primary button — needs a flex parent for cell centering.",
+      "html": "<button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 bg-secondary text-secondary-foreground border border-border hover:opacity-90 transition\">Cancel</button>"
+    },
+    {
+      "id": "button-ghost",
+      "name": "Button (ghost)",
+      "category": "input",
+      "description": "Borderless button for tertiary actions.",
+      "usage_notes": "Same layout posture as primary button.",
+      "html": "<button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 text-foreground hover:bg-muted transition\">More</button>"
+    },
+    {
+      "id": "input",
+      "name": "Input",
+      "category": "input",
+      "description": "Text input field with label.",
+      "usage_notes": "Block element with w-full input. Wrap in `<div class=\"p-4 h-full\">…</div>` if used as a cell's outermost element so it fills the cell.",
+      "html": "<div class=\"flex flex-col gap-1.5\"><label class=\"text-sm font-medium text-foreground\">Email</label><input type=\"email\" placeholder=\"name@example.com\" class=\"flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm placeholder:text-muted-foreground\"></div>"
+    },
+    {
+      "id": "textarea",
+      "name": "Textarea",
+      "category": "input",
+      "description": "Multi-line text area.",
+      "usage_notes": "Block element. Pair with a parent that has explicit padding and h-full for cell use.",
+      "html": "<div class=\"flex flex-col gap-1.5\"><label class=\"text-sm font-medium text-foreground\">Description</label><textarea rows=\"4\" class=\"flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground\" placeholder=\"Tell us more…\"></textarea></div>"
+    },
+    {
+      "id": "card",
+      "name": "Card",
+      "category": "container",
+      "description": "Card with header, body, and footer slots.",
+      "usage_notes": "When used as a cell's outermost element, ADD `h-full` to the card's root div so it fills the cell's vertical space. Otherwise the cell's body background shows below the card as empty space — this is the most common cause of unwanted whitespace in canvas designs.",
+      "html": "<div class=\"rounded-lg border border-border bg-card text-card-foreground shadow h-full flex flex-col\"><div class=\"flex flex-col gap-1.5 p-6\"><h3 class=\"font-semibold leading-none tracking-tight\">Card title</h3><p class=\"text-sm text-muted-foreground\">A short description.</p></div><div class=\"p-6 pt-0 flex-1\"><p class=\"text-sm\">Card content goes here.</p></div><div class=\"flex items-center p-6 pt-0\"><button class=\"inline-flex items-center justify-center rounded-md text-sm font-medium px-4 py-2 bg-primary text-primary-foreground\">Action</button></div></div>"
+    },
+    {
+      "id": "badge",
+      "name": "Badge",
+      "category": "display",
+      "description": "Small status pill.",
+      "usage_notes": "Inline element — flow with text or use multiple in a flex container with `gap-2`.",
+      "html": "<span class=\"inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground\">Beta</span>"
+    },
+    {
+      "id": "alert",
+      "name": "Alert",
+      "category": "display",
+      "description": "Inline notification with title and description.",
+      "usage_notes": "Block element — pairs naturally with `h-full` to fill a cell. The alert's own background covers the cell body.",
+      "html": "<div class=\"relative w-full h-full rounded-lg border border-border bg-background p-4 text-foreground\"><h5 class=\"mb-1 font-medium leading-none tracking-tight\">Heads up</h5><p class=\"text-sm text-muted-foreground\">You can add components and dependencies to your app using the cli.</p></div>"
+    },
+    {
+      "id": "avatar",
+      "name": "Avatar",
+      "category": "display",
+      "description": "Circular avatar with initials fallback.",
+      "usage_notes": "Fixed 40×40 (h-10 w-10). Center in a cell with a flex parent: `<div class=\"flex items-center justify-center h-full\"><avatar/></div>`.",
+      "html": "<div class=\"relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted items-center justify-center text-sm font-medium text-muted-foreground\">CW</div>"
+    },
+    {
+      "id": "separator",
+      "name": "Separator",
+      "category": "layout",
+      "description": "Horizontal divider.",
+      "usage_notes": "1px high. Place between sibling content within a cell, not as the cell's outermost element.",
+      "html": "<div class=\"shrink-0 bg-border h-px w-full\"></div>"
+    },
+    {
+      "id": "label",
+      "name": "Label",
+      "category": "input",
+      "description": "Form field label.",
+      "usage_notes": "Inline. Pair with associated input via flex-col + gap.",
+      "html": "<label class=\"text-sm font-medium leading-none\">Label text</label>"
+    },
+    {
+      "id": "switch",
+      "name": "Switch",
+      "category": "input",
+      "description": "On/off toggle (visual only — wire onclick if interactive).",
+      "usage_notes": "Static visual — needs onclick + state in cell.js if you want it interactive.",
+      "html": "<button role=\"switch\" aria-checked=\"true\" class=\"peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent bg-primary transition-colors\"><span class=\"pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform translate-x-5\"></span></button>"
+    }
+  ]
+}

@@ -3,9 +3,12 @@ members = [
     "crates/flynt-models",
     "crates/flynt-core",
     "crates/flynt-store",
+    "crates/flynt-forge",
     "crates/flynt-app",
     "crates/flynt-agent",
+    "crates/flynt-git-helper",
     "crates/flynt-mobile",
+    "crates/omegon-design",
 ]
 resolver = "2"
 
@@ -30,7 +33,7 @@ anyhow = "1"
 thiserror = "2"
 
 # IDs + time
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Logging
@@ -64,8 +67,13 @@ tokio-util = { version = "0.7", features = ["compat"] }
 dirs = "5"
 dioxus = { version = "0.7", features = ["launch", "devtools", "logger", "lib", "desktop"] }
 
+# Forge contract (shared types across styrene ecosystem)
+styrene-forge = { path = "../styrene-rs/crates/libs/styrene-forge" }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
 # Internal crates
 flynt-models = { path = "crates/flynt-models" }
 flynt-core = { path = "crates/flynt-core" }
 flynt-store = { path = "crates/flynt-store" }
+flynt-forge = { path = "crates/flynt-forge" }
 flynt-agent = { path = "crates/flynt-agent" }

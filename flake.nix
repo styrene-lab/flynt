@@ -94,7 +94,7 @@
 
           buildPhase = ''
             # dx build handles asset hashing + bundling
-            cd crates/codex-app
+            cd crates/flynt-app
             dx build --platform desktop --release
             cd ../..
           '';
@@ -109,26 +109,15 @@
             mkdir -p $out/bin $out/lib/flynt
 
             # Find the dx output directory
-            DX_OUT=""
-            for candidate in \
-              target/dx/flynt/release/linux/app \
-              target/dx/codex-app/release/linux/app; do
-              if [ -d "$candidate" ]; then
-                DX_OUT="$candidate"
-                break
-              fi
-            done
-
-            if [ -z "$DX_OUT" ]; then
-              echo "ERROR: dx build output not found"
-              find target/dx/ -type f \( -name "flynt" -o -name "codex-app" \) 2>/dev/null
+            DX_OUT="target/dx/flynt/release/linux/app"
+            if [ ! -d "$DX_OUT" ]; then
+              echo "ERROR: dx build output not found at $DX_OUT"
+              find target/dx/ -type f -name "flynt" 2>/dev/null
               exit 1
             fi
 
             # Copy binary
-            BIN="$DX_OUT/flynt"
-            [ -f "$BIN" ] || BIN="$DX_OUT/codex-app"
-            cp "$BIN" $out/bin/flynt
+            cp "$DX_OUT/flynt" $out/bin/flynt
             chmod +x $out/bin/flynt
 
             # Copy hashed assets to lib/flynt/ — Dioxus get_asset_root() on Linux
@@ -149,7 +138,7 @@
             DESKTOP
 
             mkdir -p $out/share/icons/hicolor/512x512/apps
-            cp crates/codex-app/assets/icon.png $out/share/icons/hicolor/512x512/apps/flynt.png
+            cp crates/flynt-app/assets/icon.png $out/share/icons/hicolor/512x512/apps/flynt.png
           '';
 
           meta = with pkgs.lib; {

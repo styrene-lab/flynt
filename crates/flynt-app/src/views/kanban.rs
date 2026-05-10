@@ -1,6 +1,6 @@
 use chrono::Utc;
 use flynt_core::{
-    models::{Board, BoardId, Column, Priority, Task, TaskId, TaskStatus},
+    models::{Board, BoardId, Column, Engagement, EngagementId, Priority, Task, TaskId, TaskStatus},
     store::{TaskFilter, VaultStore},
 };
 use dioxus::prelude::*;
@@ -187,6 +187,59 @@ pub fn KanbanView() -> Element {
 
 // ── Board ─────────────────────────────────────────────────────────────────────
 
+/// Filter slice applied above the kanban columns. `All` is the default
+/// (non-archived everywhere); the others are the operator's view-modes
+/// for working with sentry-managed tasks. `Archived` is opt-in only —
+/// archived tasks are otherwise hidden everywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskFilterKind {
+    All,
+    Actionable,
+    LifecycleLinked,
+    Manual,
+    Archived,
+}
+
+impl TaskFilterKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Actionable => "Actionable",
+            Self::LifecycleLinked => "Lifecycle",
+            Self::Manual => "Manual",
+            Self::Archived => "Archived",
+        }
+    }
+    fn title(&self) -> &'static str {
+        match self {
+            Self::All => "All non-archived tasks",
+            Self::Actionable => "Tasks that sentry would pick up next: column=Scheduled, status=Todo",
+            Self::LifecycleLinked => "Tasks linked to a design node or openspec change",
+            Self::Manual => "Hand-tracked tasks (no sentry triggers or execution metadata)",
+            Self::Archived => "Archived tasks (otherwise hidden everywhere)",
+        }
+    }
+    /// Apply the filter to a single task. Caller still applies the
+    /// per-column name match separately.
+    fn matches(&self, task: &Task) -> bool {
+        match self {
+            Self::All => task.status != TaskStatus::Archived,
+            Self::Actionable => {
+                task.column == "Scheduled"
+                    && task.status == TaskStatus::Todo
+            }
+            Self::LifecycleLinked => {
+                task.status != TaskStatus::Archived
+                    && (task.design_node_id.is_some() || task.openspec_change.is_some())
+            }
+            Self::Manual => {
+                task.status != TaskStatus::Archived && !task.is_sentry_managed()
+            }
+            Self::Archived => task.status == TaskStatus::Archived,
+        }
+    }
+}
+
 #[component]
 fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let ctx     = use_context::<AppContext>();
@@ -209,7 +262,27 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
         }
     });
 
+    // Engagement records — populates the scope dropdown above the
+    // columns and the engagement picker in the inline task editor.
+    // Refreshes alongside tasks; small enough that polling per refresh
+    // is fine.
+    let engagements = use_resource(move || {
+        let _ = refresh();
+        let vault = ctx.vault();
+        async move {
+            tokio::task::spawn_blocking(move || vault.store.list_engagements().unwrap_or_default())
+                .await
+                .unwrap_or_default()
+        }
+    });
+
     let dragging: Signal<Option<TaskId>> = use_signal(|| None);
+    // Active filter pill — All by default. Persists for the board view's
+    // lifetime; resets when switching boards (KanbanBoard re-mounts).
+    let mut active_filter = use_signal(|| TaskFilterKind::All);
+    // Engagement scope — None = all engagements (and unscoped tasks).
+    // Layered with active_filter as an intersection, applied per-column.
+    let mut active_engagement: Signal<Option<EngagementId>> = use_signal(|| None);
 
     let mut adding_col = use_signal(|| false);
     let mut new_col_name = use_signal(String::new);
@@ -218,29 +291,121 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     let board_for_add = board.clone();
 
     rsx! {
-        div { class: "kanban-board",
-            match &*tasks.read() {
-                None => rsx! { div { class: "kanban-loading muted", "Loading tasks…" } },
-                Some(all) => rsx! {
-                    for col in board.columns.iter().cloned() {
-                        {
-                            let col_tasks: Vec<Task> = all.iter()
-                                .filter(|t| t.column == col.name && t.status != TaskStatus::Archived)
-                                .cloned()
-                                .collect();
-                            let col_empty = col_tasks.is_empty();
-                            let board_for_remove = board.clone();
-                            let col_name_remove = col.name.clone();
-                            let col_name_rename = col.name.clone();
-                            rsx! {
-                                KanbanColumn {
-                                    board_id: board.id.clone(),
-                                    project_id,
-                                    column: col,
-                                    tasks: col_tasks,
-                                    dragging,
-                                    refresh,
-                                    can_remove: col_empty,
+        div { class: "kanban-board-shell",
+            div { class: "kanban-filter-pills",
+                for kind in [
+                    TaskFilterKind::All,
+                    TaskFilterKind::Actionable,
+                    TaskFilterKind::LifecycleLinked,
+                    TaskFilterKind::Manual,
+                    TaskFilterKind::Archived,
+                ] {
+                    {
+                        let is_active = *active_filter.read() == kind;
+                        rsx! {
+                            button {
+                                class: if is_active { "kanban-filter-pill active" } else { "kanban-filter-pill" },
+                                title: kind.title(),
+                                onclick: move |_| *active_filter.write() = kind,
+                                "{kind.label()}"
+                            }
+                        }
+                    }
+                }
+
+                // Engagement scope selector — sits with the filter pills
+                // because operators reach for it for the same reason
+                // (narrow what's on screen). Hidden when no engagements
+                // exist so empty vaults don't show a useless dropdown.
+                {
+                    let engs = engagements.read();
+                    let list: Vec<Engagement> = engs.clone().unwrap_or_default();
+                    (!list.is_empty()).then(|| {
+                        let active_str = active_engagement.read()
+                            .as_ref()
+                            .map(|e| e.0.to_string())
+                            .unwrap_or_default();
+                        rsx! {
+                            select {
+                                class: "kanban-engagement-select",
+                                title: "Scope to one engagement (or All).",
+                                value: "{active_str}",
+                                onchange: move |e| {
+                                    let v = e.value();
+                                    *active_engagement.write() = if v.is_empty() {
+                                        None
+                                    } else {
+                                        uuid::Uuid::parse_str(&v).ok().map(EngagementId)
+                                    };
+                                },
+                                option { value: "", "All engagements" }
+                                for eng in list.iter() {
+                                    option {
+                                        value: "{eng.id.0}",
+                                        "{eng.name}"
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+            div { class: "kanban-board",
+                {
+                    // Hoist (id_string, name) pairs once per render —
+                    // every column + card threads the same Vec down,
+                    // so rebuilding it inside the for-loop was N×
+                    // wasteful. `loaded` is None during the first
+                    // engagements fetch; downstream UI uses that to
+                    // suppress placeholder chips while data flows in.
+                    let engs_view = engagements.read();
+                    let loaded = engs_view.is_some();
+                    let engagement_options: Vec<(String, String)> = engs_view
+                        .clone()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|e| (e.id.0.to_string(), e.name))
+                        .collect();
+                    drop(engs_view);
+                    rsx! {
+                        match &*tasks.read() {
+                            None => rsx! { div { class: "kanban-loading muted", "Loading tasks…" } },
+                            Some(all) => rsx! {
+                            for col in board.columns.iter().cloned() {
+                                {
+                                    let filter = *active_filter.read();
+                                    let scope = active_engagement.read().clone();
+                                    let col_tasks: Vec<Task> = all.iter()
+                                        .filter(|t| {
+                                            if t.column != col.name { return false; }
+                                            if !filter.matches(t) { return false; }
+                                            // Engagement scope: when set, only
+                                            // matching tasks pass. Unscoped tasks
+                                            // are excluded — operator picked an
+                                            // engagement explicitly.
+                                            match &scope {
+                                                Some(eid) => t.engagement_id.as_ref() == Some(eid),
+                                                None => true,
+                                            }
+                                        })
+                                        .cloned()
+                                        .collect();
+                                    let col_empty = col_tasks.is_empty();
+                                    let board_for_remove = board.clone();
+                                    let col_name_remove = col.name.clone();
+                                    let col_name_rename = col.name.clone();
+                                    let engagement_options = engagement_options.clone();
+                                    rsx! {
+                                        KanbanColumn {
+                                            board_id: board.id.clone(),
+                                            project_id,
+                                            column: col,
+                                            tasks: col_tasks,
+                                            dragging,
+                                            refresh,
+                                            can_remove: col_empty,
+                                            engagement_options,
+                                            engagements_loaded: loaded,
                                     on_remove: move |_| {
                                         let c = ctx.clone();
                                         let mut b = board_for_remove.clone();
@@ -332,11 +497,14 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                             "+ Add column"
                         }
                     }
-                },
-            }
-        }
-    }
-}
+                },     // close Some(all) arm
+                }      // close match arms
+            }          // close outer rsx!
+                }      // close the let-binding block
+            }          // close div kanban-board
+        }              // close div kanban-board-shell
+    }                  // close rsx!
+}                      // close fn KanbanBoard
 
 // ── Column ────────────────────────────────────────────────────────────────────
 
@@ -351,6 +519,15 @@ fn KanbanColumn(
     can_remove: bool,
     on_remove:  EventHandler<()>,
     on_rename:  EventHandler<String>,
+    /// (id_string, name) pairs for the inline editor's engagement
+    /// dropdown. Plain strings rather than `Vec<Engagement>` so the
+    /// component prop type stays PartialEq (Engagement isn't —
+    /// ForgeEndpoint upstream doesn't impl it).
+    engagement_options: Vec<(String, String)>,
+    /// True once the engagements list has loaded at least once. Cards
+    /// suppress the engagement chip while this is false to avoid the
+    /// "engagement" placeholder flashing on first render.
+    engagements_loaded: bool,
 ) -> Element {
     let ctx         = use_context::<AppContext>();
     let col_name    = column.name.clone();
@@ -486,7 +663,14 @@ fn KanbanColumn(
 
             div { class: "kanban-column-body",
                 for task in tasks.iter().cloned() {
-                    TaskCard { task, project_id, dragging, refresh }
+                    TaskCard {
+                        task,
+                        project_id,
+                        dragging,
+                        refresh,
+                        engagement_options: engagement_options.clone(),
+                        engagements_loaded,
+                    }
                 }
 
                 if *adding.read() {
@@ -525,13 +709,86 @@ fn KanbanColumn(
 // ── Task card ────────────────────────────────────────────────────────────────
 
 #[component]
-fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<TaskId>>, mut refresh: Signal<u64>) -> Element {
+fn TaskCard(
+    task: Task,
+    project_id: Option<uuid::Uuid>,
+    dragging: Signal<Option<TaskId>>,
+    mut refresh: Signal<u64>,
+    /// (id_string, name) pairs for the engagement picker. Empty when
+    /// no engagements exist; the Engagement subsection still renders
+    /// so the operator sees a hint to create one via the agent.
+    engagement_options: Vec<(String, String)>,
+    /// True once the parent's engagements list has loaded at least
+    /// once. Suppresses the engagement chip on first render so we
+    /// don't flash "engagement" placeholder text while waiting for
+    /// the list to arrive.
+    engagements_loaded: bool,
+) -> Element {
     let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
     let mut inline_title = use_signal(|| task.title.clone());
     let mut inline_desc = use_signal(|| task.description.clone());
     let mut inline_priority = use_signal(|| task.priority);
     let mut inline_due = use_signal(|| task.due_date.map(|d| d.to_string()).unwrap_or_default());
+
+    // ── Forge / Engagement state ──────────────────────────────────────────
+    let mut inline_engagement = use_signal(|| {
+        task.engagement_id.as_ref().map(|e| e.0.to_string()).unwrap_or_default()
+    });
+
+    // ── Sentry / Lifecycle inline-edit state ──────────────────────────────
+    // Auto-expand on first render for tasks that already carry sentry
+    // signals — the section is the operator's reason to open the editor at
+    // all in those cases. Otherwise the section stays collapsed and
+    // hand-tracked tasks see the simple editor unchanged.
+    // Auto-expand the section if the task carries any of the metadata
+    // it edits — sentry signals, lifecycle linkage, OR an engagement.
+    // Otherwise the operator would have to remember to open the toggle
+    // to see / change an engagement scope they already set.
+    let mut sentry_open = use_signal(|| {
+        task.is_sentry_managed()
+            || task.design_node_id.is_some()
+            || task.openspec_change.is_some()
+            || task.engagement_id.is_some()
+    });
+    let mut inline_cron = use_signal(|| task.cron_trigger().unwrap_or("").to_string());
+    let mut inline_webhook = use_signal(|| task.webhook_trigger().unwrap_or("").to_string());
+    let mut inline_other_refs = use_signal(|| {
+        // Refs that aren't cron:/webhook: — preserve them through edits.
+        task.external_refs
+            .iter()
+            .filter(|r| !r.starts_with("cron:") && !r.starts_with("webhook:"))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    });
+    let mut inline_model = use_signal(|| {
+        task.execution.as_ref().and_then(|e| e.model.clone()).unwrap_or_default()
+    });
+    let mut inline_skill = use_signal(|| {
+        task.execution.as_ref().and_then(|e| e.skill.clone()).unwrap_or_default()
+    });
+    let mut inline_max_turns = use_signal(|| {
+        task.execution.as_ref().and_then(|e| e.max_turns).map(|v| v.to_string()).unwrap_or_default()
+    });
+    let mut inline_timeout = use_signal(|| {
+        task.execution.as_ref().and_then(|e| e.timeout_secs).map(|v| v.to_string()).unwrap_or_default()
+    });
+    let mut inline_token_budget = use_signal(|| {
+        task.execution.as_ref().and_then(|e| e.token_budget).map(|v| v.to_string()).unwrap_or_default()
+    });
+    let mut inline_cwd = use_signal(|| {
+        task.execution.as_ref().and_then(|e| e.cwd.as_ref()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+    });
+    let mut inline_env = use_signal(|| {
+        task.execution.as_ref()
+            .map(|e| e.env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default()
+    });
+    let mut inline_design_node = use_signal(|| {
+        task.design_node_id.map(|u| u.to_string()).unwrap_or_default()
+    });
+    let mut inline_openspec = use_signal(|| task.openspec_change.clone().unwrap_or_default());
 
     let tid_drag = task.id.clone();
     let tid_archive = task.id.clone();
@@ -554,6 +811,90 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                             span { class: "task-tag", "{tag}" }
                         }
                     }
+                }
+                // ── Sentry-aware chips ────────────────────────────────────
+                // Predicate-driven, not flag-driven. Cards self-correct as
+                // fields populate. Each chip is small + low-contrast until
+                // hover; full content goes in the title attr for tooltip.
+                {
+                    let has_cron = task.cron_trigger().is_some();
+                    let has_webhook = task.webhook_trigger().is_some();
+                    let has_model = task.execution.as_ref().and_then(|e| e.model.as_deref()).is_some();
+                    let has_design = task.design_node_id.is_some();
+                    let has_spec = task.openspec_change.is_some();
+                    // Engagement chip resolves the engagement_id to a
+                    // human-readable name via the same options list the
+                    // dropdown uses; falls back to "engagement" if the
+                    // record is missing (deleted out of band). Suppressed
+                    // entirely until engagements_loaded so we don't show
+                    // the placeholder during the first-render fetch.
+                    let engagement_label = if engagements_loaded {
+                        task.engagement_id.as_ref().map(|eid| {
+                            let id_str = eid.0.to_string();
+                            engagement_options.iter()
+                                .find(|(id, _)| *id == id_str)
+                                .map(|(_, name)| name.clone())
+                                .unwrap_or_else(|| "engagement".to_string())
+                        })
+                    } else {
+                        None
+                    };
+                    let has_engagement = engagement_label.is_some();
+                    let any = has_cron || has_webhook || has_model || has_design || has_spec || has_engagement;
+                    any.then(|| {
+                        let cron_text = task.cron_trigger().map(String::from);
+                        let webhook_text = task.webhook_trigger().map(String::from);
+                        let model_text = task.execution.as_ref()
+                            .and_then(|e| e.model.as_deref())
+                            .map(short_model_label);
+                        let spec_text = task.openspec_change.clone();
+                        rsx! {
+                            div { class: "task-card-chips",
+                                if let Some(name) = engagement_label {
+                                    span {
+                                        class: "task-chip task-chip-engagement",
+                                        title: "engagement: {name}",
+                                        "◆ {name}"
+                                    }
+                                }
+                                if let Some(cron) = cron_text {
+                                    span {
+                                        class: "task-chip task-chip-trigger",
+                                        title: "cron trigger: {cron}",
+                                        "cron"
+                                    }
+                                }
+                                if let Some(webhook) = webhook_text {
+                                    span {
+                                        class: "task-chip task-chip-trigger",
+                                        title: "webhook trigger: {webhook}",
+                                        "webhook"
+                                    }
+                                }
+                                if let Some(model) = model_text {
+                                    span {
+                                        class: "task-chip task-chip-model",
+                                        title: "execution.model",
+                                        "{model}"
+                                    }
+                                }
+                                if has_design {
+                                    span {
+                                        class: "task-chip task-chip-design",
+                                        title: "linked to a design tree node",
+                                        "→ design"
+                                    }
+                                }
+                                if let Some(spec) = spec_text {
+                                    span {
+                                        class: "task-chip task-chip-spec",
+                                        title: "openspec change: {spec}",
+                                        "↪ {spec}"
+                                    }
+                                }
+                            }
+                        }
+                    })
                 }
                 button {
                     class: "task-menu-btn",
@@ -612,6 +953,175 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                         }
                     }
 
+                    // ── Sentry / Lifecycle (collapsible) ──────────────────
+                    div { class: "task-sentry-section",
+                        button {
+                            class: "task-sentry-toggle",
+                            onclick: move |_| {
+                                let v = *sentry_open.read();
+                                *sentry_open.write() = !v;
+                            },
+                            if *sentry_open.read() { "− Sentry / Lifecycle" } else { "+ Sentry / Lifecycle" }
+                        }
+
+                        if *sentry_open.read() {
+                            div { class: "task-sentry-fields",
+
+                                // ── Triggers ────────────────────────────
+                                div { class: "task-sentry-group",
+                                    span { class: "task-sentry-group-label", "Triggers" }
+                                    label { class: "field",
+                                        span { "Cron" }
+                                        input {
+                                            placeholder: "0 */4 * * *",
+                                            value: "{inline_cron}",
+                                            oninput: move |e| *inline_cron.write() = e.value(),
+                                        }
+                                    }
+                                    label { class: "field",
+                                        span { "Webhook name" }
+                                        input {
+                                            placeholder: "gh-pr",
+                                            value: "{inline_webhook}",
+                                            oninput: move |e| *inline_webhook.write() = e.value(),
+                                        }
+                                    }
+                                    label { class: "field",
+                                        span { "Other external refs (one per line)" }
+                                        textarea {
+                                            rows: "2",
+                                            placeholder: "https://github.com/org/repo/issues/42",
+                                            value: "{inline_other_refs}",
+                                            oninput: move |e| *inline_other_refs.write() = e.value(),
+                                        }
+                                    }
+                                }
+
+                                // ── Execution ───────────────────────────
+                                div { class: "task-sentry-group",
+                                    span { class: "task-sentry-group-label", "Execution" }
+                                    div { class: "task-detail-row",
+                                        label { class: "field",
+                                            span { "Model" }
+                                            input {
+                                                placeholder: "anthropic:claude-sonnet-4-6",
+                                                value: "{inline_model}",
+                                                oninput: move |e| *inline_model.write() = e.value(),
+                                            }
+                                        }
+                                        label { class: "field",
+                                            span { "Skill" }
+                                            input {
+                                                placeholder: "security",
+                                                value: "{inline_skill}",
+                                                oninput: move |e| *inline_skill.write() = e.value(),
+                                            }
+                                        }
+                                    }
+                                    div { class: "task-detail-row",
+                                        label { class: "field",
+                                            span { "Max turns" }
+                                            input {
+                                                r#type: "number",
+                                                min: "1",
+                                                value: "{inline_max_turns}",
+                                                oninput: move |e| *inline_max_turns.write() = e.value(),
+                                            }
+                                        }
+                                        label { class: "field",
+                                            span { "Timeout (sec)" }
+                                            input {
+                                                r#type: "number",
+                                                min: "1",
+                                                value: "{inline_timeout}",
+                                                oninput: move |e| *inline_timeout.write() = e.value(),
+                                            }
+                                        }
+                                        label { class: "field",
+                                            span { "Token budget" }
+                                            input {
+                                                r#type: "number",
+                                                min: "1",
+                                                value: "{inline_token_budget}",
+                                                oninput: move |e| *inline_token_budget.write() = e.value(),
+                                            }
+                                        }
+                                    }
+                                    label { class: "field",
+                                        span { "cwd" }
+                                        input {
+                                            placeholder: "/path/to/project",
+                                            value: "{inline_cwd}",
+                                            oninput: move |e| *inline_cwd.write() = e.value(),
+                                        }
+                                    }
+                                    label { class: "field",
+                                        span { "Env (KEY=value, one per line)" }
+                                        textarea {
+                                            rows: "2",
+                                            placeholder: "SCAN_DEPTH=deep\nAPI_TOKEN=xyz",
+                                            value: "{inline_env}",
+                                            oninput: move |e| *inline_env.write() = e.value(),
+                                        }
+                                    }
+                                }
+
+                                // ── Lifecycle ───────────────────────────
+                                div { class: "task-sentry-group",
+                                    span { class: "task-sentry-group-label", "Lifecycle" }
+                                    label { class: "field",
+                                        span { "Design node UUID" }
+                                        input {
+                                            placeholder: "00000000-0000-0000-0000-000000000000",
+                                            value: "{inline_design_node}",
+                                            oninput: move |e| *inline_design_node.write() = e.value(),
+                                        }
+                                    }
+                                    label { class: "field",
+                                        span { "OpenSpec change" }
+                                        input {
+                                            placeholder: "auth-rewrite",
+                                            value: "{inline_openspec}",
+                                            oninput: move |e| *inline_openspec.write() = e.value(),
+                                        }
+                                    }
+                                }
+
+                                // ── Engagement ──────────────────────────
+                                // Lets the operator scope this task to one
+                                // of the engagements created via the agent
+                                // (engagement_create tool). Empty list ⇒
+                                // hint to create one. Saved alongside the
+                                // sentry/lifecycle fields below. Forge
+                                // sync state (last_synced, diverged) is
+                                // a separate operator surface — agent
+                                // tools cover it for now.
+                                div { class: "task-sentry-group",
+                                    span { class: "task-sentry-group-label", "Engagement" }
+                                    if engagement_options.is_empty() {
+                                        p { class: "muted task-sentry-empty",
+                                            "No engagements yet. Use the agent's "
+                                            code { "engagement_create" }
+                                            " tool to scope tasks to a multi-repo project."
+                                        }
+                                    } else {
+                                        label { class: "field",
+                                            span { "Engagement" }
+                                            select {
+                                                value: "{inline_engagement}",
+                                                onchange: move |e| *inline_engagement.write() = e.value(),
+                                                option { value: "", "(none)" }
+                                                for (id, name) in engagement_options.iter() {
+                                                    option { value: "{id}", "{name}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     div { class: "row gap-2",
                         button {
                             class: "btn btn-primary",
@@ -622,6 +1132,21 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                                 let new_desc = inline_desc.read().clone();
                                 let new_priority = *inline_priority.read();
                                 let new_due = inline_due.read().clone();
+                                // Snapshot all sentry-section signals for the
+                                // background save. Parsing happens off-thread.
+                                let cron = inline_cron.read().trim().to_string();
+                                let webhook = inline_webhook.read().trim().to_string();
+                                let other_refs = inline_other_refs.read().clone();
+                                let model = inline_model.read().trim().to_string();
+                                let skill = inline_skill.read().trim().to_string();
+                                let max_turns_s = inline_max_turns.read().trim().to_string();
+                                let timeout_s = inline_timeout.read().trim().to_string();
+                                let token_budget_s = inline_token_budget.read().trim().to_string();
+                                let cwd = inline_cwd.read().trim().to_string();
+                                let env_raw = inline_env.read().clone();
+                                let design_node_s = inline_design_node.read().trim().to_string();
+                                let openspec = inline_openspec.read().trim().to_string();
+                                let engagement_s = inline_engagement.read().trim().to_string();
                                 spawn(async move {
                                     let vault = c.vault();
                                     let _ = tokio::task::spawn_blocking(move || {
@@ -631,6 +1156,49 @@ fn TaskCard(task: Task, project_id: Option<uuid::Uuid>, dragging: Signal<Option<
                                             t.priority   = new_priority;
                                             t.due_date   = chrono::NaiveDate::parse_from_str(&new_due, "%Y-%m-%d").ok();
                                             t.updated_at = Utc::now();
+
+                                            // Recombine external_refs from the
+                                            // structured trigger fields plus the
+                                            // free-form "other" textarea.
+                                            let mut refs: Vec<String> = Vec::new();
+                                            if !cron.is_empty() { refs.push(format!("cron:{cron}")); }
+                                            if !webhook.is_empty() { refs.push(format!("webhook:{webhook}")); }
+                                            for line in other_refs.lines() {
+                                                let line = line.trim();
+                                                if !line.is_empty() { refs.push(line.to_string()); }
+                                            }
+                                            t.external_refs = refs;
+
+                                            // Build ExecutionSpec from the
+                                            // populated fields. is_empty() check
+                                            // strips out the all-blank case.
+                                            let mut exec = flynt_core::models::ExecutionSpec::default();
+                                            if !model.is_empty() { exec.model = Some(model); }
+                                            if !skill.is_empty() { exec.skill = Some(skill); }
+                                            if let Ok(v) = max_turns_s.parse::<u32>() { exec.max_turns = Some(v); }
+                                            if let Ok(v) = timeout_s.parse::<u64>() { exec.timeout_secs = Some(v); }
+                                            if let Ok(v) = token_budget_s.parse::<u64>() { exec.token_budget = Some(v); }
+                                            if !cwd.is_empty() { exec.cwd = Some(std::path::PathBuf::from(cwd)); }
+                                            for line in env_raw.lines() {
+                                                if let Some((k, v)) = line.split_once('=') {
+                                                    let k = k.trim();
+                                                    let v = v.trim();
+                                                    if !k.is_empty() {
+                                                        exec.env.insert(k.to_string(), v.to_string());
+                                                    }
+                                                }
+                                            }
+                                            t.execution = if exec.is_empty() { None } else { Some(exec) };
+
+                                            // Lifecycle linkage: empty input clears.
+                                            t.design_node_id = uuid::Uuid::parse_str(&design_node_s).ok();
+                                            t.openspec_change = if openspec.is_empty() { None } else { Some(openspec) };
+                                            t.engagement_id = if engagement_s.is_empty() {
+                                                None
+                                            } else {
+                                                uuid::Uuid::parse_str(&engagement_s).ok().map(EngagementId)
+                                            };
+
                                             if let Some(pid) = project_id {
                                                 vault.save_project_task(&t, &pid)
                                             } else {
@@ -692,6 +1260,49 @@ fn priority_badge_class(priority: Priority) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_model_strips_provider_prefix() {
+        assert_eq!(short_model_label("anthropic:claude-sonnet-4-6"), "sonnet-4");
+        assert_eq!(short_model_label("anthropic:claude-opus-4-7"), "opus-4");
+        assert_eq!(short_model_label("anthropic:claude-haiku-4-5"), "haiku-4");
+    }
+
+    #[test]
+    fn short_model_passes_through_unknown_shapes() {
+        // No `claude-` prefix → return the bare part as-is.
+        assert_eq!(short_model_label("openai:gpt-5-turbo"), "gpt-5-turbo");
+        assert_eq!(short_model_label("ollama:qwen2-72b"), "qwen2-72b");
+        assert_eq!(short_model_label("custom-model"), "custom-model");
+    }
+
+    #[test]
+    fn short_model_handles_no_prefix() {
+        // Bare model name, no provider colon.
+        assert_eq!(short_model_label("claude-sonnet-4-6"), "sonnet-4");
+    }
+}
+
+/// Short display label for an execution.model string. Strips the provider
+/// prefix (`anthropic:`, `openai:`, `ollama:`) and abbreviates known long
+/// model names. Card chips only have ~6-10 chars of room before wrap.
+pub(crate) fn short_model_label(model: &str) -> String {
+    let bare = model.split(':').last().unwrap_or(model);
+    if let Some(rest) = bare.strip_prefix("claude-") {
+        // claude-sonnet-4-6 → sonnet-4
+        // claude-opus-4-7   → opus-4
+        // claude-haiku-4-5  → haiku-4
+        let parts: Vec<&str> = rest.split('-').collect();
+        if parts.len() >= 2 {
+            return format!("{}-{}", parts[0], parts[1]);
+        }
+    }
+    bare.to_string()
+}
+
 // ── New board prompts ────────────────────────────────────────────────────────
 
 #[component]
@@ -716,8 +1327,8 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
 
     rsx! {
         div { class: "new-board-prompt",
-            h2 { class: "view-heading", "Create your first board" }
-            p { class: "muted", "Boards organize tasks into columns like Backlog, In Progress, Review, and Done." }
+            h2 { class: "view-heading", "Create your first task board" }
+            p { class: "muted", "Boards organize tasks into Backlog → Scheduled → Running → Done columns. Tasks can be hand-tracked or executed autonomously by the agent — add a cron, webhook, or execution block to a card and Sentry picks it up." }
             div { class: "row gap-2",
                 input {
                     autofocus: true,

@@ -1,0 +1,27 @@
+[package]
+name = "omegon-design"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "omegon-design"
+path = "src/main.rs"
+
+[dependencies]
+flynt-core  = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+anyhow      = { workspace = true }
+thiserror   = { workspace = true }
+tokio       = { workspace = true }
+tracing     = { workspace = true }
+tracing-subscriber = { workspace = true }
+omegon-extension = { git = "https://github.com/styrene-lab/omegon.git", rev = "295d790e" }
+async-trait = "0.1"
+dirs        = "5"
+sha2        = "0.10"
+xcap        = "0.9"   # Permission probe only — actual capture happens in flynt-app
+uuid        = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

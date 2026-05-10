@@ -289,6 +289,7 @@
   flex-direction: column;
   flex-shrink:    0;
   overflow:       hidden;
+  position:       relative; /* anchor for .agent-scroll-controls */
 }
 
 .toolbar-build-hash {
@@ -1043,6 +1044,78 @@
   text-align:  right;
 }
 
+/* Session title — pushed by omegon via SessionInfoUpdate. Sits in the
+ * status bar below the version + state row, gets one line max. */
+.agent-session-title {
+  margin-top:    4px;
+  font-size:     12px;
+  color:         var(--text-muted, #888);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tool call output — text content surfaced via ToolCallUpdate.content.
+ * Sits under the tool-call header in a faint, monospace, scrollable block. */
+.agent-tool-output {
+  margin:        6px 0 0;
+  padding:       6px 8px;
+  font-family:   var(--font-mono, ui-monospace, monospace);
+  font-size:     11px;
+  line-height:   1.4;
+  color:         var(--text-muted, #888);
+  background:    var(--bg-elevated, rgba(255,255,255,0.03));
+  border-left:   2px solid var(--border, #2a2a2a);
+  border-radius: 3px;
+  max-height:    200px;
+  overflow:      auto;
+  white-space:   pre-wrap;
+}
+
+/* Agent plan — task list emitted via SessionUpdate::Plan. Rendered as a
+ * single block in the chat stream; replaced (not appended) on each update.
+ * Status icons: ○ pending, ● in-progress, ✓ completed. Priority drives the
+ * left-border accent color. */
+.agent-plan {
+  padding:       10px 12px;
+  background:    var(--bg-elevated, rgba(255,255,255,0.02));
+  border:        1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  font-size:     13px;
+}
+.agent-plan-header {
+  font-weight:   600;
+  color:         var(--text-muted, #888);
+  font-size:     11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.agent-plan-entry {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           8px;
+  padding:       4px 6px;
+  border-left:   2px solid transparent;
+  border-radius: 2px;
+}
+.agent-plan-entry.priority-high   { border-left-color: var(--destructive, #ef4444); }
+.agent-plan-entry.priority-medium { border-left-color: var(--primary, #6c8cff); }
+.agent-plan-entry.priority-low    { border-left-color: transparent; }
+.agent-plan-entry.in-progress     { background: rgba(108,140,255,0.06); }
+.agent-plan-entry.completed       { opacity: 0.55; }
+.agent-plan-icon {
+  display:       inline-block;
+  width:         14px;
+  text-align:    center;
+  flex-shrink:   0;
+  font-size:     12px;
+  color:         var(--text-muted, #888);
+}
+.agent-plan-entry.completed .agent-plan-icon  { color: var(--primary, #6c8cff); }
+.agent-plan-entry.in-progress .agent-plan-icon { color: var(--primary, #6c8cff); }
+.agent-plan-entry.completed .agent-plan-content { text-decoration: line-through; }
+
 /* Messages area */
 .agent-messages {
   flex:           1;
@@ -1051,6 +1124,53 @@
   display:        flex;
   flex-direction: column;
   gap:            var(--space-3);
+  scroll-behavior: smooth;
+}
+
+/* ── Inline scroll controls ─────────────────────────────────────────── */
+/*
+ * Slim row of three small buttons placed between the messages area and the
+ * input. Right-aligned, low-contrast until hover. Pin-state class
+ * (.agent-pinned on .agent-rail) is owned by JS in agent_rail.rs.
+ *
+ *   ↑   prev user message
+ *   ↓   next user message
+ *   ⤓   jump to bottom (only visible when not pinned)
+ */
+.agent-scroll-controls {
+  display:         flex;
+  flex-direction:  row;
+  justify-content: flex-end;
+  align-items:     center;
+  gap:             4px;
+  padding:         4px 8px 0;
+  flex-shrink:     0;
+}
+.agent-scroll-btn {
+  width:           20px;
+  height:          20px;
+  border-radius:   4px;
+  border:          1px solid transparent;
+  background:      transparent;
+  color:           var(--text-muted, #777);
+  font-size:       11px;
+  line-height:     1;
+  cursor:          pointer;
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  padding:         0;
+  transition:      color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+.agent-scroll-btn:hover {
+  color:           var(--text, #ddd);
+  background:      var(--bg-hover, rgba(255,255,255,0.04));
+  border-color:    var(--border, #2a2a2a);
+}
+/* Jump-to-bottom hides when already pinned — prev/next stay available
+ * since the user might want to navigate between exchanges either way. */
+.agent-rail.agent-pinned .agent-scroll-bottom {
+  visibility: hidden;
 }
 
 .agent-error-banner {

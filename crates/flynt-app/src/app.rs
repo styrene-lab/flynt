@@ -102,6 +102,18 @@ pub fn App() -> Element {
         });
     }
 
+    // Bootstrap canvas assets (tweakcn presets, shadcn primitives) into the
+    // vault's .flynt-local directory so flynt-agent can read them via the
+    // canvas_* tool family. Idempotent and content-aware; safe to re-run on
+    // every launch.
+    {
+        let assets_ctx = ctx.clone();
+        use_effect(move || {
+            let vault = assets_ctx.vault();
+            crate::canvas_assets::bootstrap(&vault.root);
+        });
+    }
+
     // Shared search query — lives here so toolbar and search view share it
     let search_query: Signal<String> = use_signal(String::new);
 
@@ -181,6 +193,24 @@ pub fn App() -> Element {
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let name = format!("Drawing {ts_suffix}");
                     if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+                        let _ = vault.reindex();
+                        let slug = name.to_lowercase();
+                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                            ts.write().open(doc.id, name);
+                        }
+                        *ar.write() = Route::Notes;
+                    }
+                });
+            }
+            crate::menu::NEW_CANVAS => {
+                let c = ctx_menu_handler;
+                let mut ts = tab_state;
+                let mut ar = active_route;
+                spawn(async move {
+                    let vault = c.vault();
+                    let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
+                    let name = format!("Canvas {ts_suffix}");
+                    if let Ok(_md_path) = crate::views::canvas::create_canvas(&vault.root, &name) {
                         let _ = vault.reindex();
                         let slug = name.to_lowercase();
                         if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
@@ -398,6 +428,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
         document::Stylesheet { href: asset!("/assets/styles/graph.css") }
         document::Stylesheet { href: asset!("/assets/styles/welcome.css") }
+        document::Stylesheet { href: asset!("/assets/styles/canvas.css") }
         // Reveal body after stylesheets are loaded
         document::Script { "document.body.classList.add('ready');" }
 

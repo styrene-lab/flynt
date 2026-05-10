@@ -22,6 +22,14 @@ once_cell   = { workspace = true }
 uuid        = { workspace = true }
 wry         = "0.53"
 dirs        = "5"
+# Cross-platform window/screen capture. Used by canvas_capture for the
+# "agent eyes" pipeline — captures the rendered canvas pane after layout
+# so the agent can see what the user actually sees, not just what the
+# HTML promises. Linux (X11/Wayland) + macOS; Windows path also supported
+# upstream though we don't ship for it. macOS first-call triggers the
+# system Screen Recording permission prompt.
+xcap        = "0.9"
+base64      = "0.22"
 agent-client-protocol = { workspace = true }
 async-trait = { workspace = true }
 futures     = { workspace = true }

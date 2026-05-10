@@ -169,6 +169,67 @@
   line-height: 1.4;
 }
 
+/* ── Board shell: filter pills + columns stacked ─────────────────────────── */
+.kanban-board-shell {
+  display:        flex;
+  flex-direction: column;
+  flex:           1;
+  min-height:     0;
+}
+
+/* ── Filter pills row ─────────────────────────────────────────────────────── */
+.kanban-filter-pills {
+  display:       flex;
+  gap:           var(--space-1);
+  padding:       var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background:    var(--toolbar-bg);
+  flex-shrink:   0;
+  overflow-x:    auto;
+}
+
+.kanban-filter-pill {
+  padding:       3px var(--space-2);
+  border-radius: var(--radius);
+  font-size:     var(--font-size-xs);
+  font-weight:   var(--font-weight-medium);
+  color:         var(--muted-foreground);
+  white-space:   nowrap;
+  background:    transparent;
+  border:        1px solid transparent;
+  cursor:        pointer;
+  transition:    color      var(--duration-fast) var(--ease),
+                 background var(--duration-fast) var(--ease),
+                 border     var(--duration-fast) var(--ease);
+}
+
+.kanban-filter-pill:hover {
+  color:      var(--foreground);
+  background: var(--accent);
+}
+
+.kanban-filter-pill.active {
+  color:      var(--foreground);
+  background: var(--accent);
+  border-color: var(--primary);
+}
+
+/* Engagement scope dropdown — sits on the same row as the filter pills.
+   margin-left:auto pushes it to the right so the lifecycle pills stay
+   left-anchored. Hidden when no engagements exist. */
+.kanban-engagement-select {
+  margin-left:    auto;
+  padding:        3px var(--space-2);
+  border-radius:  var(--radius);
+  border:         1px solid var(--border);
+  background:     var(--background);
+  color:          var(--foreground);
+  font-size:      var(--font-size-xs);
+  font-weight:    var(--font-weight-medium);
+  cursor:         pointer;
+  max-width:      220px;
+}
+
 /* ── Board: horizontal column strip ──────────────────────────────────────── */
 .kanban-board {
   display:        flex;
@@ -411,6 +472,148 @@
   background:    rgba(42, 180, 200, 0.08);
   border-radius: var(--radius-full);
   padding:       1px 6px;
+}
+
+/* ── Sentry-aware card chips ────────────────────────────────────────── */
+/*
+ * Predicate-driven chips on the card top row, surfacing what omegon's
+ * sentry would see: cron/webhook triggers from external_refs, the task's
+ * execution.model, design-tree linkage, openspec change linkage. Low
+ * contrast until card hover so they don't compete with the title.
+ *
+ * Variants share base styling and differ only in accent color so the
+ * operator can scan a board and pick out trigger types at a glance
+ * without a legend.
+ */
+.task-card-chips {
+  display:  inline-flex;
+  gap:      4px;
+  margin-left: auto;        /* pushes chips + menu button to the right edge */
+  flex-wrap: nowrap;
+}
+
+.task-chip {
+  display:        inline-flex;
+  align-items:    center;
+  font-size:      10px;
+  font-weight:    500;
+  letter-spacing: 0.02em;
+  padding:        1px 6px;
+  border-radius:  var(--radius-full);
+  border:         1px solid transparent;
+  color:          var(--text-muted, #888);
+  background:     transparent;
+  white-space:    nowrap;
+  opacity:        0.6;
+  transition:     opacity var(--duration-fast) var(--ease),
+                  background-color var(--duration-fast) var(--ease),
+                  color var(--duration-fast) var(--ease);
+}
+
+.task-card:hover .task-chip {
+  opacity: 1;
+}
+
+.task-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text, #ddd);
+}
+
+.task-chip-trigger {
+  border-color: rgba(108, 140, 255, 0.35);
+  color: rgba(150, 175, 255, 0.95);
+}
+.task-chip-model {
+  border-color: rgba(180, 140, 255, 0.35);
+  color: rgba(190, 165, 255, 0.95);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.task-chip-design {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: rgba(245, 200, 100, 0.95);
+}
+.task-chip-spec {
+  border-color: rgba(6, 182, 212, 0.4);
+  color: rgba(80, 200, 220, 0.95);
+}
+.task-chip-engagement {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: rgba(120, 220, 150, 0.95);
+}
+
+/* ── Sentry / Lifecycle inline section ──────────────────────────────── */
+/*
+ * Collapsible section in the task detail editor. Auto-expands when the
+ * task is sentry-managed (has cron/webhook trigger or execution block) so
+ * the operator opens straight onto the relevant fields. Fully collapsible
+ * for hand-tracked tasks.
+ */
+.task-sentry-section {
+  margin-top:    var(--space-2);
+  border-top:    1px solid var(--border, #2a2a2a);
+  padding-top:   var(--space-2);
+}
+
+.task-sentry-toggle {
+  background:    transparent;
+  border:        none;
+  color:         var(--text-muted, #888);
+  font-size:     var(--font-size-xs);
+  font-weight:   500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding:       4px 0;
+  cursor:        pointer;
+  transition:    color var(--duration-fast) var(--ease);
+}
+.task-sentry-toggle:hover {
+  color: var(--text, #ddd);
+}
+
+.task-sentry-fields {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+  padding-top:    var(--space-2);
+}
+
+.task-sentry-group {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  padding:        var(--space-2);
+  background:     rgba(255, 255, 255, 0.02);
+  border-radius:  var(--radius-md);
+  border:         1px solid var(--border, #2a2a2a);
+}
+
+.task-sentry-group-label {
+  font-size:      10px;
+  font-weight:    600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color:          var(--text-muted, #888);
+  margin-bottom:  2px;
+}
+
+/* Empty-state hint inside a sentry-group (e.g. "no engagements yet"). */
+.task-sentry-empty {
+  margin:    0;
+  font-size: var(--font-size-xs);
+}
+.task-sentry-empty code {
+  padding:        1px 4px;
+  border-radius:  3px;
+  background:     rgba(255, 255, 255, 0.06);
+  font-family:    var(--font-mono, monospace);
+}
+
+.task-sentry-fields .field input[type="text"],
+.task-sentry-fields .field input[type="number"],
+.task-sentry-fields .field input:not([type]),
+.task-sentry-fields .field textarea {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size:   var(--font-size-xs);
 }
 
 /* Archive button — shown on hover */

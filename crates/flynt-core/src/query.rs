@@ -256,11 +256,22 @@ mod tests {
         fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
         fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
         fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }
+        fn update_task(&self, _id: &TaskId, _patch: &flynt_models::TaskPatch) -> Result<bool> { Ok(true) }
         fn delete_task(&self, _id: &TaskId) -> Result<()> { Ok(()) }
         fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
         fn list_boards(&self) -> Result<Vec<Board>> { Ok(vec![]) }
         fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
         fn delete_board(&self, _id: &BoardId) -> Result<()> { Ok(()) }
+        fn get_engagement(
+            &self,
+            _id: &flynt_models::engagement::EngagementId,
+        ) -> Result<Option<flynt_models::engagement::Engagement>> { Ok(None) }
+        fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> { Ok(vec![]) }
+        fn save_engagement(&self, _e: &flynt_models::engagement::Engagement) -> Result<()> { Ok(()) }
+        fn delete_engagement(
+            &self,
+            _id: &flynt_models::engagement::EngagementId,
+        ) -> Result<bool> { Ok(true) }
         fn list_dirty_tasks(&self, _pid: &uuid::Uuid) -> Result<Vec<Task>> { Ok(vec![]) }
         fn list_dirty_documents(&self, _pid: &uuid::Uuid) -> Result<Vec<Document>> { Ok(vec![]) }
         fn mark_committed(&self, _t: &[TaskId], _d: &[DocumentId], _at: DateTime<Utc>) -> Result<()> { Ok(()) }

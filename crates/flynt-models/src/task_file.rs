@@ -51,6 +51,54 @@ pub fn serialize_task_to_markdown(task: &Task, project_id: &Uuid) -> String {
         fm.push_str(&format!("due_date = \"{due}\"\n"));
     }
 
+    if let Some(node) = task.design_node_id {
+        fm.push_str(&format!("design_node = \"{node}\"\n"));
+    }
+
+    if let Some(change) = &task.openspec_change {
+        fm.push_str(&format!("openspec_change = {}\n", toml_quote(change)));
+    }
+
+    if let Some(eng) = &task.engagement_id {
+        fm.push_str(&format!("engagement = \"{}\"\n", eng.0));
+    }
+
+    // Execution block — nested table under [data.execution]. Hand-format
+    // each field. We can't use toml::to_string here: it emits BTreeMap<String,
+    // String> as a separate sub-table header, which after our [data.execution]
+    // header becomes a SIBLING table at top-level scope, not a child of
+    // execution. Net effect: env vars round-trip-deserialize to empty.
+    // Inline tables (`env = { K = "V" }`) keep env scoped correctly.
+    if let Some(exec) = task.execution.as_ref() {
+        if !exec.is_empty() {
+            fm.push_str("\n[data.execution]\n");
+            if let Some(v) = &exec.model {
+                fm.push_str(&format!("model = {}\n", toml_quote(v)));
+            }
+            if let Some(v) = &exec.skill {
+                fm.push_str(&format!("skill = {}\n", toml_quote(v)));
+            }
+            if let Some(v) = exec.max_turns {
+                fm.push_str(&format!("max_turns = {v}\n"));
+            }
+            if let Some(v) = exec.timeout_secs {
+                fm.push_str(&format!("timeout_secs = {v}\n"));
+            }
+            if let Some(v) = exec.token_budget {
+                fm.push_str(&format!("token_budget = {v}\n"));
+            }
+            if let Some(v) = &exec.cwd {
+                fm.push_str(&format!("cwd = {}\n", toml_quote(&v.to_string_lossy())));
+            }
+            if !exec.env.is_empty() {
+                let pairs: Vec<String> = exec.env.iter()
+                    .map(|(k, v)| format!("{k} = {}", toml_quote(v)))
+                    .collect();
+                fm.push_str(&format!("env = {{ {} }}\n", pairs.join(", ")));
+            }
+        }
+    }
+
     fm.push_str("+++\n");
 
     let body = task.description.trim();
@@ -152,6 +200,24 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
             .unwrap_or_default(),
         last_touched_at: None,
         design_node_id: get_str("design_node").and_then(|s| Uuid::parse_str(&s).ok()),
+        // openspec_change: bare string from `[data]` (not nested). Sentry's
+        // lifecycle integration matches changes by name, so we don't try to
+        // canonicalize — just round-trip the string.
+        openspec_change: get_str("openspec_change"),
+        engagement_id: get_str("engagement")
+            .and_then(|s| Uuid::parse_str(&s).ok())
+            .map(crate::engagement::EngagementId),
+        // execution: nested `[data.execution]` table. Parsed via toml::Value
+        // → typed ExecutionSpec. Absent table = None; empty table also = None
+        // (no point persisting an empty execution block).
+        execution: data
+            .and_then(|d| d.get("execution"))
+            .and_then(|v| v.as_table())
+            .and_then(|t| {
+                let value = toml::Value::Table(t.clone());
+                let spec: crate::task::ExecutionSpec = value.try_into().ok()?;
+                if spec.is_empty() { None } else { Some(spec) }
+            }),
     })
 }
 
@@ -273,5 +339,103 @@ mod tests {
     fn parse_rejects_non_task() {
         let md = "+++\nkind = \"project\"\n+++\n";
         assert!(parse_task_from_markdown(md).is_err());
+    }
+
+    // ── execution + openspec_change round-trips ────────────────────────────
+    //
+    // Adversarial concern: toml::to_string of an ExecutionSpec with a
+    // non-empty BTreeMap<String, String> (env vars) emits a sub-table header
+    // like `[env]` which, when concatenated under our `[data.execution]`
+    // section, would silently break the TOML parse. Verify both paths.
+
+    #[test]
+    fn roundtrip_execution_minimal() {
+        let project_id = Uuid::new_v4();
+        let mut task = sample_task();
+        task.execution = Some(crate::task::ExecutionSpec {
+            model: Some("anthropic:claude-sonnet-4-6".into()),
+            max_turns: Some(20),
+            ..Default::default()
+        });
+
+        let md = serialize_task_to_markdown(&task, &project_id);
+        let parsed = parse_task_from_markdown(&md).unwrap();
+        let exec = parsed.execution.expect("execution should round-trip");
+        assert_eq!(exec.model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
+        assert_eq!(exec.max_turns, Some(20));
+    }
+
+    #[test]
+    fn roundtrip_execution_with_env_vars() {
+        // env: BTreeMap<String, String> serializes to a TOML sub-table.
+        // If our [data.execution] section is followed by an [env] block at
+        // the wrong scope, this round-trip silently drops env entries.
+        let project_id = Uuid::new_v4();
+        let mut task = sample_task();
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("SCAN_DEPTH".to_string(), "deep".to_string());
+        env.insert("API_TOKEN".to_string(), "xyz".to_string());
+        task.execution = Some(crate::task::ExecutionSpec {
+            model: Some("x".into()),
+            env,
+            ..Default::default()
+        });
+
+        let md = serialize_task_to_markdown(&task, &project_id);
+        let parsed = parse_task_from_markdown(&md).unwrap_or_else(|e| {
+            panic!("parse failed:\n=== md ===\n{md}\n=== err ===\n{e}");
+        });
+        let exec = parsed.execution.unwrap_or_else(|| {
+            panic!("execution missing after round-trip:\n=== md ===\n{md}\n=== end ===");
+        });
+        assert_eq!(exec.env.get("SCAN_DEPTH").map(String::as_str), Some("deep"));
+        assert_eq!(exec.env.get("API_TOKEN").map(String::as_str), Some("xyz"));
+        assert_eq!(exec.model.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn roundtrip_openspec_change() {
+        let project_id = Uuid::new_v4();
+        let mut task = sample_task();
+        task.openspec_change = Some("auth-rewrite".into());
+
+        let md = serialize_task_to_markdown(&task, &project_id);
+        let parsed = parse_task_from_markdown(&md).unwrap();
+        assert_eq!(parsed.openspec_change.as_deref(), Some("auth-rewrite"));
+    }
+
+    #[test]
+    fn roundtrip_engagement_id() {
+        let project_id = Uuid::new_v4();
+        let mut task = sample_task();
+        let eid = crate::engagement::EngagementId::new();
+        task.engagement_id = Some(eid.clone());
+
+        let md = serialize_task_to_markdown(&task, &project_id);
+        assert!(md.contains("engagement = "), "expected engagement field in:\n{md}");
+        let parsed = parse_task_from_markdown(&md).unwrap();
+        assert_eq!(parsed.engagement_id, Some(eid));
+    }
+
+    #[test]
+    fn missing_engagement_round_trips_as_none() {
+        let project_id = Uuid::new_v4();
+        let task = sample_task();
+        let md = serialize_task_to_markdown(&task, &project_id);
+        assert!(!md.contains("engagement"), "expected no engagement field in:\n{md}");
+        let parsed = parse_task_from_markdown(&md).unwrap();
+        assert!(parsed.engagement_id.is_none());
+    }
+
+    #[test]
+    fn empty_execution_block_does_not_emit_section() {
+        // is_empty() check should prevent us from writing
+        // `[data.execution]\n` for a task with no meaningful exec params.
+        let project_id = Uuid::new_v4();
+        let mut task = sample_task();
+        task.execution = Some(crate::task::ExecutionSpec::default());
+
+        let md = serialize_task_to_markdown(&task, &project_id);
+        assert!(!md.contains("[data.execution]"), "got: {md}");
     }
 }
