@@ -1,5 +1,4 @@
-//! Shared git2 utilities used by both `GitSync` (project-level) and
-//! `ProjectGit` (project-level scoped operations).
+//! Shared git2 utilities used by `GitSync`.
 
 use anyhow::{Context, Result};
 use git2::{Repository, Signature};

@@ -721,98 +721,6 @@ pub enum SyncConfig {
     },
 }
 
-// ── Git-backed project config ────────────────────────────────────────────────
-
-/// Describes how a project's data maps to a git repository.
-///
-/// Each project is backed 1:1 by a git repo. The repo can be the project's own
-/// repo (most common) or a separate external repo. In both cases the project
-/// data lives at a configurable sub-path within the repo.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum GitBacking {
-    /// Project data lives inside the project's own git repo.
-    #[serde(alias = "vault_repo")]
-    ProjectRepo {
-        /// Path relative to project root where this project's data lives
-        /// (e.g. ".flynt/projects/my-project").
-        sub_path: PathBuf,
-    },
-    /// Project data lives in a separate external git repo.
-    ExternalRepo {
-        /// Absolute path to the repo root on disk.
-        repo_root: PathBuf,
-        /// Sub-path within the repo where project data lives.
-        sub_path: PathBuf,
-        /// Remote name (e.g. "origin").
-        remote: String,
-        /// Branch name.
-        branch: String,
-    },
-    /// Project is backed by a forge-managed repo (via Scribe sync engine).
-    ForgeRepo {
-        /// Scribe forge endpoint identifier.
-        forge_id: String,
-        /// Org/owner on the forge.
-        org: String,
-        /// Repo name on the forge.
-        repo: String,
-        /// Local clone path (managed by scribe).
-        local_path: PathBuf,
-        /// Sub-path within the repo where project data lives.
-        sub_path: PathBuf,
-    },
-}
-
-impl GitBacking {
-    /// The sub-path within the repo where project data lives.
-    pub fn sub_path(&self) -> &Path {
-        match self {
-            Self::ProjectRepo { sub_path } => sub_path,
-            Self::ExternalRepo { sub_path, .. } => sub_path,
-            Self::ForgeRepo { sub_path, .. } => sub_path,
-        }
-    }
-
-    /// Whether this backing uses the project's own repo.
-    pub fn is_project_repo(&self) -> bool {
-        matches!(self, Self::ProjectRepo { .. })
-    }
-
-    /// Whether this backing is managed by a forge via Scribe.
-    pub fn is_forge_repo(&self) -> bool {
-        matches!(self, Self::ForgeRepo { .. })
-    }
-
-    /// Resolve the absolute repo root directory.
-    ///
-    /// For `ProjectRepo`, returns `project_root`.
-    /// For `ExternalRepo` and `ForgeRepo`, returns their own root path.
-    pub fn repo_root(&self, project_root: &Path) -> PathBuf {
-        match self {
-            Self::ProjectRepo { .. } => project_root.to_path_buf(),
-            Self::ExternalRepo { repo_root, .. } => repo_root.clone(),
-            Self::ForgeRepo { local_path, .. } => local_path.clone(),
-        }
-    }
-
-    /// Resolve the absolute path to the data directory (repo_root + sub_path).
-    pub fn data_root(&self, project_root: &Path) -> PathBuf {
-        self.repo_root(project_root).join(self.sub_path())
-    }
-}
-
-/// Configuration for project-level atomic commits.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct ProjectCommitConfig {
-    /// Auto-commit debounce in seconds. 0 = manual only.
-    #[serde(default)]
-    pub auto_commit_seconds: u64,
-    /// Commit message prefix (e.g. "[flynt:my-project]").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_prefix: Option<String>,
-}
-
 // ── Omegon profile + Flynt operator settings ────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -1338,5 +1246,86 @@ mod tests {
         let parsed: IndexingConfig = toml::from_str(old_toml).unwrap();
         assert!(parsed.write_frontmatter);
         assert!(parsed.scopes.is_empty());
+    }
+
+    // ── Vault → Project rename: legacy serde aliases ───────────────────────────
+    //
+    // These guard the back-compat surface for the 2026-05-10 rename. A future
+    // cleanup that strips the aliases will turn these tests red, which is the
+    // signal to also update the migration path.
+
+    #[test]
+    fn project_config_accepts_legacy_vault_name_field() {
+        // Old-format `.flynt/config.toml` from before the rename.
+        let legacy_toml = r#"vault_name = "my-notes"
+
+[sync]
+backend = "none"
+"#;
+        let parsed: ProjectConfig = toml::from_str(legacy_toml).unwrap();
+        assert_eq!(parsed.project_name, "my-notes");
+    }
+
+    #[test]
+    fn project_config_rejects_both_legacy_and_new_name_keys() {
+        // serde(alias) treats the alias as the same target field. If a
+        // config carries both keys (e.g. a half-completed hand edit),
+        // deserialization fails with a duplicate-field error. That's
+        // the right behavior — silent precedence would mask which name
+        // is authoritative and risk data loss on next save.
+        let toml = r#"vault_name = "old-name"
+project_name = "new-name"
+
+[sync]
+backend = "none"
+"#;
+        let err = toml::from_str::<ProjectConfig>(toml).unwrap_err();
+        assert!(
+            err.to_string().contains("duplicate field"),
+            "expected duplicate field error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn project_config_writes_new_field_name_only() {
+        // Round-trip: writing a ProjectConfig should never emit the legacy
+        // `vault_name` key. If it does, we'd be persisting deprecated names
+        // forward.
+        let cfg = ProjectConfig {
+            project_name: "fresh".into(),
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&cfg).unwrap();
+        assert!(serialized.contains("project_name = \"fresh\""));
+        assert!(!serialized.contains("vault_name"));
+    }
+
+    #[test]
+    fn notification_accepts_legacy_source_vault_field() {
+        // Notifications written by pre-rename devices (and synced via git)
+        // must keep parsing.
+        let legacy_json = r#"{
+            "id": "550e8400-e29b-41d4-a716-446655440000",
+            "kind": "due_date",
+            "title": "Standup",
+            "body": "10am",
+            "source_vault": "team-notes",
+            "created_at": "2026-05-09T10:00:00Z"
+        }"#;
+        let parsed: Notification = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(parsed.source_project, "team-notes");
+    }
+
+    #[test]
+    fn notification_writes_new_field_name_only() {
+        let n = Notification::new(
+            NotificationKind::DueDate,
+            "t",
+            "b",
+            "team-notes",
+        );
+        let serialized = serde_json::to_string(&n).unwrap();
+        assert!(serialized.contains("\"source_project\":\"team-notes\""));
+        assert!(!serialized.contains("source_vault"));
     }
 }

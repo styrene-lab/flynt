@@ -347,4 +347,79 @@ mod tests {
         assert!(ProjectRole::Editor.can_write());
         assert!(!ProjectRole::Viewer.can_write());
     }
+
+    // ── Vault → Project rename: legacy filename fallbacks ──────────────────────
+
+    fn empty_manifest_toml() -> String {
+        let m = ProjectManifest {
+            identity: ManifestIdentity::default(),
+            projects: vec![],
+        };
+        toml::to_string_pretty(&m).unwrap()
+    }
+
+    #[test]
+    fn load_manifest_falls_back_to_legacy_vaults_toml() {
+        // Pre-rename install: only `vaults.toml` exists.
+        let tmp = tempfile::TempDir::new().unwrap();
+        fs::write(tmp.path().join("vaults.toml"), empty_manifest_toml()).unwrap();
+        // No projects.toml; loader should still succeed.
+        let loaded = load_manifest(tmp.path()).unwrap();
+        assert!(loaded.projects.is_empty());
+    }
+
+    #[test]
+    fn load_manifest_prefers_new_filename_when_both_present() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        // Legacy file with one entry, new file empty.
+        let with_entry = ProjectManifest {
+            identity: ManifestIdentity::default(),
+            projects: vec![ManifestProject {
+                name: "Legacy".into(),
+                repo: "git@example.com:legacy.git".into(),
+                branch: "main".into(),
+                role: ProjectRole::Owner,
+                hub: None,
+                local_path: None,
+                auto_commit_seconds: 60,
+            }],
+        };
+        fs::write(tmp.path().join("vaults.toml"), toml::to_string_pretty(&with_entry).unwrap()).unwrap();
+        fs::write(tmp.path().join(MANIFEST_FILENAME), empty_manifest_toml()).unwrap();
+        // The new file (empty) wins, proving we don't silently read the legacy
+        // copy when both are present.
+        let loaded = load_manifest(tmp.path()).unwrap();
+        assert!(loaded.projects.is_empty());
+    }
+
+    #[test]
+    fn load_local_manifest_falls_back_to_legacy_vaults_local_toml() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        // Both the new and legacy main file are absent of a local_path entry,
+        // but a legacy `vaults.local.toml` carries one. The loader should
+        // pick it up.
+        fs::write(tmp.path().join(MANIFEST_FILENAME), toml::to_string_pretty(&ProjectManifest {
+            identity: ManifestIdentity::default(),
+            projects: vec![ManifestProject {
+                name: "Test".into(),
+                repo: "git@example.com:test.git".into(),
+                branch: "main".into(),
+                role: ProjectRole::Owner,
+                hub: None,
+                local_path: None,
+                auto_commit_seconds: 60,
+            }],
+        }).unwrap()).unwrap();
+
+        let local = LocalManifest {
+            projects: vec![LocalProjectEntry {
+                name: "Test".into(),
+                local_path: PathBuf::from("/legacy/path"),
+            }],
+        };
+        fs::write(tmp.path().join("vaults.local.toml"), toml::to_string_pretty(&local).unwrap()).unwrap();
+
+        let loaded = load_manifest_with_local(tmp.path()).unwrap();
+        assert_eq!(loaded.projects[0].local_path, Some(PathBuf::from("/legacy/path")));
+    }
 }
