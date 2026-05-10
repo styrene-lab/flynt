@@ -211,7 +211,7 @@ pub fn WelcomeView(
                                 onclick: move |_| on_choose_existing.call(()),
                                 span { class: "welcome-option-title", "Open an existing folder" }
                                 span { class: "welcome-option-desc",
-                                    "Use a folder of markdown files you already have (Obsidian projects work too)"
+                                    "Use a folder of markdown files you already have (Obsidian vaults work too)"
                                 }
                             }
                             button {

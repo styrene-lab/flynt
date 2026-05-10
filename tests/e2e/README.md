@@ -47,4 +47,4 @@ Tests are organized by UI guide sections (see `docs/ui-guide.md`):
 | `test_03_kanban.py` | Kanban board CRUD | 5 |
 | `test_04_palette.py` | Command palette | 7 |
 | `test_05_settings.py` | Settings sections | 8 |
-| `test_06_sidebar.py` | Toolbar, vault switcher, nav | 8 |
+| `test_06_sidebar.py` | Toolbar, project switcher, nav | 8 |

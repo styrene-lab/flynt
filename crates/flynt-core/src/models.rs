@@ -732,6 +732,7 @@ pub enum SyncConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GitBacking {
     /// Project data lives inside the project's own git repo.
+    #[serde(alias = "vault_repo")]
     ProjectRepo {
         /// Path relative to project root where this project's data lives
         /// (e.g. ".flynt/projects/my-project").

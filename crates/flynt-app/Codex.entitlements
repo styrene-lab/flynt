@@ -4,7 +4,7 @@
 <dict>
     <!-- Sandbox disabled for Developer ID distribution.
          Dioxus desktop requires local TCP for its edit socket,
-         and the vault lives at ~/Documents/Flynt which sandboxed
+         and the project lives at ~/Documents/Flynt which sandboxed
          apps can't access without user-granted bookmarks.
          Re-enable when targeting Mac App Store. -->
     <key>com.apple.security.app-sandbox</key>

@@ -1,10 +1,11 @@
-//! Project-level git operations scoped to a sub-path within a repository.
+//! Sub-path-scoped git operations.
 //!
-//! Unlike `GitSync` which operates on the entire project repo, `ProjectGit`
-//! stages and commits only files under a project's sub-path. For ProjectRepo
-//! projects, flushing tasks to disk is the main job (project-level sync handles
-//! actual commits). For ExternalRepo projects, this module handles the full
-//! commit cycle independently.
+//! Unlike `GitSync` which operates on the entire repo, `ProjectGit` stages
+//! and commits only files under a sub-path. When the backing is the
+//! project's own repo (`GitBacking::ProjectRepo`), flushing tasks to disk
+//! is the main job and top-level sync handles the actual commits. When
+//! the backing is an external repo (`GitBacking::ExternalRepo`), this
+//! module handles the full commit cycle independently.
 
 use anyhow::{Context, Result};
 use flynt_core::models::GitBacking;
@@ -71,7 +72,7 @@ impl ProjectGit {
         self.repo_root.join(&self.sub_path)
     }
 
-    /// Whether this is backed by an external repo (vs project repo).
+    /// Whether this is backed by an external repo (vs the project's own repo).
     pub fn is_external(&self) -> bool {
         self.remote_config.is_some()
     }
@@ -167,7 +168,7 @@ impl ProjectGit {
     /// Push to remote (only meaningful for ExternalRepo).
     pub fn push(&self) -> Result<()> {
         let (remote_name, branch) = self.remote_config.as_ref()
-            .context("push called on ProjectRepo project — project-level sync handles this")?;
+            .context("push called on a project's own repo — top-level sync handles this")?;
         let repo = self.open_repo()?;
         let mut remote = repo.find_remote(remote_name)?;
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");

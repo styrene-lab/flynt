@@ -13,12 +13,12 @@
 //! and per-request header-stamping stay infallible and non-blocking.
 //!
 //! This has consequences for any backend that *needs* async I/O to
-//! produce a token (HashiCorp Project, OAuth refresh, etc.). Three
+//! produce a token (HashiCorp Vault, OAuth refresh, etc.). Three
 //! supported wiring patterns:
 //!
 //! 1. **Cache-warming** (recommended for omegon): call
 //!    `SecretsManager::preflight_session_cache_async([...])` at startup
-//!    so project-backed and other async secrets are already in the sync
+//!    so vault-backed and other async secrets are already in the sync
 //!    cache by the time `resolve()` is called. This is what flynt-agent
 //!    does at extension boot.
 //!

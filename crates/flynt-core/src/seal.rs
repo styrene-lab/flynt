@@ -5,7 +5,7 @@
 //! - **Selective seal**: individual notes marked `sealed = true`, body encrypted inline
 //!
 //! Encryption uses the `age` crate with keys derived from StyreneIdentity:
-//! `IdentityProject::unlock()` → `KeyDeriver::age_secret()` → age X25519 recipient.
+//! `IdentityVault::unlock()` → `KeyDeriver::age_secret()` → age X25519 recipient.
 //!
 //! This module provides configuration, format detection, and the sealed body
 //! container. It does NOT implement cryptographic primitives — those come from

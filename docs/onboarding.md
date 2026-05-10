@@ -158,7 +158,7 @@ Tokens entered during clone are persisted automatically. Tokens can also be mana
 | PDF/image embeds | Images embedded; PDF not yet |
 
 ### Migration steps
-1. Copy or point Flynt at your Obsidian project folder
+1. Copy or point Flynt at your Obsidian vault folder
 2. Flynt indexes everything — `.obsidian/` is ignored
 3. Existing YAML frontmatter is read correctly
 4. New notes use TOML frontmatter by default
