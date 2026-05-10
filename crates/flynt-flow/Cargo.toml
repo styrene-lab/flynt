@@ -1,0 +1,18 @@
+[package]
+name = "flynt-flow"
+description = "Node-flow graph schema for Flynt — typed nodes, sockets, edges, and JSON+TOML-frontmatter file format. Consumed by the desktop app's flow editor and by flynt-agent tools."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MIT"
+repository = "https://github.com/styrene-lab/flynt"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

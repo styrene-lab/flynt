@@ -4,6 +4,7 @@ members = [
     "crates/flynt-core",
     "crates/flynt-store",
     "crates/flynt-forge",
+    "crates/flynt-flow",
     "crates/flynt-app",
     "crates/flynt-agent",
     "crates/flynt-git-helper",
@@ -76,4 +77,5 @@ flynt-models = { path = "crates/flynt-models" }
 flynt-core = { path = "crates/flynt-core" }
 flynt-store = { path = "crates/flynt-store" }
 flynt-forge = { path = "crates/flynt-forge" }
+flynt-flow = { path = "crates/flynt-flow" }
 flynt-agent = { path = "crates/flynt-agent" }
