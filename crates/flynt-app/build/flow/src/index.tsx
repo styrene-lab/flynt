@@ -1,13 +1,16 @@
 // Flynt flow viewer/editor — React + @xyflow/react host.
 //
-// Phase 2: read-only viewer. Operator can pan, zoom, select; no edits
-// flow back to disk. Phase 3 will add an `onChange` debounced bridge to
-// the Rust side, mirroring how FlyntExcalidraw signals changes.
+// Phase 3: editable. Operator can drag nodes, draw new edges, and delete
+// selected elements; changes flow back to disk via a debounced onChange
+// callback registered by the Rust view. Phase 4 will add agent tools.
 //
 // Public API matches FlyntExcalidraw's shape on purpose so the Rust view
 // component can copy that pattern verbatim:
 //
-//   window.FlyntFlow.mount(elementId, flowJson, { readOnly: true });
+//   window.FlyntFlow.mount(elementId, flowJson, {
+//     readOnly: false,
+//     onChange: (json) => { /* called debounced; json is a Flow body */ },
+//   });
 //   window.FlyntFlow.unmount();
 //
 // The bundle is loaded eagerly via document::Script in app.rs.
@@ -19,9 +22,17 @@ import {
   Background,
   Controls,
   Edge,
+  Handle,
   MiniMap,
   Node,
+  NodeChange,
+  EdgeChange,
+  Connection,
+  Position,
   ReactFlowProvider,
+  applyEdgeChanges,
+  applyNodeChanges,
+  addEdge,
 } from "@xyflow/react";
 import reactFlowCss from "@xyflow/react/dist/style.css";
 
@@ -60,21 +71,27 @@ interface FlowEdgeJson {
 
 interface MountOptions {
   readOnly?: boolean;
+  /** Called debounced (~500ms) after node/edge mutations. The argument
+   * is a JSON-stringified `FlowJson` body — caller passes it straight
+   * to `flynt_flow::parse_flow`-compatible code. */
   onChange?: (json: string) => void;
 }
 
 // ── Adapters: Flynt schema ↔ react-flow wire format ─────────────────────────
-//
-// react-flow wants `{x, y}` for position; we serialize as `[x, y]` (a
-// tuple in Rust) so the bridge swaps shapes here. Sockets become
-// react-flow handles (the visible connection points) — for v1 we render
-// them as a single bundled handle on each side of the node, which keeps
-// the visual minimal until we wire per-socket handles in Phase 3.
+
+// react-flow's `Node<T>` constrains `T extends Record<string, unknown>`,
+// so we intersect with that index signature. The named fields are still
+// the contract — the intersection just satisfies the type variable.
+type NodePayload = {
+  kind: string;
+  payload: Record<string, unknown>;
+  sockets: SocketJson[];
+} & Record<string, unknown>;
 
 // Defensive: agents (Phase 4) may send partial nodes — missing position,
 // missing data, missing sockets. We default rather than throw so a
 // malformed flow renders as best-effort rather than crashing the view.
-function toRfNode(n: FlowNodeJson): Node {
+function toRfNode(n: FlowNodeJson): Node<NodePayload> {
   const pos = Array.isArray(n.position) ? n.position : [0, 0];
   return {
     id: n.id,
@@ -89,9 +106,6 @@ function toRfNode(n: FlowNodeJson): Node {
 }
 
 function toRfEdge(e: FlowEdgeJson): Edge {
-  // Edges with no source/target ids would cascade-crash react-flow's
-  // diff. Filter at the caller; this function trusts its input but
-  // guards socket fields against `undefined`.
   return {
     id: e.id,
     source: e.source.node,
@@ -101,18 +115,47 @@ function toRfEdge(e: FlowEdgeJson): Edge {
   };
 }
 
+// Inverse of `toRfNode` — flatten react-flow's `{x,y}` back to our `[x,y]`,
+// peel the editor-only `data.payload` wrapper off, and rebuild the original
+// `data: Record<string, unknown>` payload. Idempotent: round-tripping
+// through `toRfNode → fromRfNode` produces the same FlowNodeJson modulo
+// numeric precision (f32 ↔ f64 noise).
+function fromRfNode(n: Node<NodePayload>): FlowNodeJson {
+  return {
+    id: n.id,
+    kind: n.data.kind,
+    position: [n.position.x, n.position.y],
+    data: n.data.payload,
+    sockets: n.data.sockets,
+  };
+}
+
+function fromRfEdge(e: Edge): FlowEdgeJson {
+  return {
+    id: e.id,
+    source: { node: e.source, socket: e.sourceHandle ?? "" },
+    target: { node: e.target, socket: e.targetHandle ?? "" },
+  };
+}
+
+// UUID generator. crypto.randomUUID is available in modern WebViews
+// (WKWebView 14+, WebKit2GTK 2.30+) and the wry shells we ship target
+// those. Fallback uses Math.random — collision probability is negligible
+// for the small graph sizes we expect (<200 nodes).
+function uuid(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // ── Custom node renderer ────────────────────────────────────────────────────
-//
-// All Flynt node kinds render through the same component for v1. The
-// `kind` shows as a small uppercase label; the title (if present in
-// `data`) is the body. Style is intentionally bland — the editor's job
-// is to show structure, not to be pretty. Per-kind theming lands when
-// the agent-rendering loop generates enough flows that visual
-// differentiation earns its keep.
 
-import { Handle, Position } from "@xyflow/react";
-
-function FlyntNode({ data }: { data: { kind: string; payload: Record<string, unknown>; sockets: SocketJson[] } }) {
+function FlyntNode({ data }: { data: NodePayload }) {
   const { kind, payload, sockets } = data;
   const title =
     (typeof payload.title === "string" && payload.title) ||
@@ -149,7 +192,6 @@ function FlyntNode({ data }: { data: { kind: string; payload: Record<string, unk
           type="target"
           position={Position.Left}
           id={s.name}
-          // Stack handles vertically when there are several
           style={{ top: 24 + i * 14 }}
         />
       ))}
@@ -168,11 +210,123 @@ function FlyntNode({ data }: { data: { kind: string; payload: Record<string, unk
 
 const NODE_TYPES = { flynt: FlyntNode };
 
-// ── Mount point ─────────────────────────────────────────────────────────────
+// ── App + state management ──────────────────────────────────────────────────
 
-function FlowApp({ flow, readOnly }: { flow: FlowJson; readOnly: boolean }) {
-  const nodes = React.useMemo(() => flow.nodes.map(toRfNode), [flow]);
-  const edges = React.useMemo(() => flow.edges.map(toRfEdge), [flow]);
+function FlowApp({
+  flow,
+  readOnly,
+  onChange,
+}: {
+  flow: FlowJson;
+  readOnly: boolean;
+  onChange?: (body: FlowJson) => void;
+}) {
+  // Local state seeded from the parsed flow. We don't keep `flow` itself
+  // as state because react-flow operates on its own typed structures —
+  // we round-trip into our schema only when emitting changes.
+  const [nodes, setNodes] = React.useState<Node<NodePayload>[]>(() =>
+    flow.nodes.map(toRfNode)
+  );
+  const [edges, setEdges] = React.useState<Edge[]>(() => flow.edges.map(toRfEdge));
+
+  // Keep a ref to the current state so the debounced emitter doesn't
+  // capture stale closures. React's setState batching makes "read latest
+  // after change" tricky without this.
+  const latestRef = React.useRef({ nodes, edges, meta: flow.meta ?? {} });
+  latestRef.current = { nodes, edges, meta: flow.meta ?? {} };
+
+  // Debounced change emit. 500ms matches the Excalidraw save cadence —
+  // long enough to coalesce a drag, short enough to feel snappy on
+  // discrete edits. Cmd+S triggers an immediate flush via flushEmit.
+  const emitTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushEmit = React.useCallback(() => {
+    if (!onChange) return;
+    if (emitTimerRef.current) {
+      clearTimeout(emitTimerRef.current);
+      emitTimerRef.current = null;
+    }
+    const { nodes, edges, meta } = latestRef.current;
+    const body: FlowJson = {
+      meta,
+      nodes: nodes.map(fromRfNode),
+      edges: edges.map(fromRfEdge),
+    };
+    onChange(body);
+  }, [onChange]);
+
+  const scheduleEmit = React.useCallback(() => {
+    if (!onChange) return;
+    if (emitTimerRef.current) clearTimeout(emitTimerRef.current);
+    emitTimerRef.current = setTimeout(flushEmit, 500);
+  }, [onChange, flushEmit]);
+
+  // Cmd+S / Ctrl+S → immediate flush. Mirrors the Excalidraw keybind
+  // so muscle memory carries across views.
+  React.useEffect(() => {
+    if (readOnly) return;
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        flushEmit();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [readOnly, flushEmit]);
+
+  // Flush any pending debounced change on unmount so the operator's last
+  // drag/edit isn't lost when navigating away mid-debounce.
+  React.useEffect(() => {
+    return () => {
+      if (emitTimerRef.current) {
+        clearTimeout(emitTimerRef.current);
+        emitTimerRef.current = null;
+        // Best-effort flush — onChange may already be unbound by the
+        // host but the call is cheap.
+        flushEmit();
+      }
+    };
+  }, [flushEmit]);
+
+  // Node changes: position drags, selection, dimensions. Selection-only
+  // changes don't dirty the file — filter those out so we don't flood
+  // disk with no-op writes when the operator clicks around.
+  const onNodesChange = React.useCallback(
+    (changes: NodeChange[]) => {
+      setNodes((ns) => applyNodeChanges(changes, ns) as Node<NodePayload>[]);
+      const dirty = changes.some(
+        (c) => c.type !== "select" && c.type !== "dimensions"
+      );
+      if (dirty) scheduleEmit();
+    },
+    [scheduleEmit]
+  );
+
+  const onEdgesChange = React.useCallback(
+    (changes: EdgeChange[]) => {
+      setEdges((es) => applyEdgeChanges(changes, es));
+      const dirty = changes.some((c) => c.type !== "select");
+      if (dirty) scheduleEmit();
+    },
+    [scheduleEmit]
+  );
+
+  const onConnect = React.useCallback(
+    (conn: Connection) => {
+      // react-flow generates edges without ids; we stamp a UUID so the
+      // schema's id contract is satisfied and round-trips remain stable.
+      const e: Edge = {
+        id: uuid(),
+        source: conn.source!,
+        target: conn.target!,
+        sourceHandle: conn.sourceHandle ?? undefined,
+        targetHandle: conn.targetHandle ?? undefined,
+      };
+      setEdges((es) => addEdge(e, es));
+      scheduleEmit();
+    },
+    [scheduleEmit]
+  );
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
@@ -181,13 +335,15 @@ function FlowApp({ flow, readOnly }: { flow: FlowJson; readOnly: boolean }) {
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
           nodesDraggable={!readOnly}
           nodesConnectable={!readOnly}
           edgesFocusable={!readOnly}
           elementsSelectable
           fitView
-          // Dark-on-dark to match the Flynt theme. The bundled CSS
-          // (injected at startup) handles control colors.
+          deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
           style={{ background: "#020617" }}
         >
           <Background gap={20} color="#1e293b" />
@@ -218,9 +374,6 @@ declare global {
   }
 }
 
-// Inject react-flow's stylesheet once. The bundle ships the CSS as a
-// string (esbuild --loader:.css=text) so we don't depend on the host
-// page for styling.
 function injectStyles() {
   if (document.getElementById("flynt-flow-styles")) return;
   const style = document.createElement("style");
@@ -245,15 +398,8 @@ const api: FlyntFlowGlobal = {
       console.error("[FlyntFlow] invalid flow JSON", err);
       return;
     }
-    // Defensive defaults — Rust guarantees these via #[serde(default)],
-    // but the tool surface in Phase 4 may pass partial bodies, and a
-    // hand-edited .flow file might omit either array entirely.
     parsed.nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
     parsed.edges = Array.isArray(parsed.edges) ? parsed.edges : [];
-    // Drop edges referencing non-existent or unset endpoints — react-flow
-    // tolerates dangling refs but the diff log gets noisy. Validation
-    // (Flow::validate) happens server-side; this is just a render-time
-    // guard so the canvas doesn't show ghost edges.
     const nodeIds = new Set(parsed.nodes.map((n) => n.id));
     parsed.edges = parsed.edges.filter(
       (e) =>
@@ -267,7 +413,16 @@ const api: FlyntFlowGlobal = {
 
     if (api._root) api._root.unmount();
     api._root = createRoot(container);
-    api._root.render(<FlowApp flow={parsed} readOnly={options.readOnly ?? true} />);
+    const onChangeWrapper = options.onChange
+      ? (body: FlowJson) => options.onChange!(JSON.stringify(body))
+      : undefined;
+    api._root.render(
+      <FlowApp
+        flow={parsed}
+        readOnly={options.readOnly ?? false}
+        onChange={onChangeWrapper}
+      />
+    );
   },
   unmount() {
     if (api._root) {
