@@ -46,7 +46,7 @@ tempfile    = "3"
 name = "Flynt"
 identifier = "io.styrene.codex"
 icon = ["assets/icon.icns"]
-short_description = "Local-first knowledge vault"
+short_description = "Local-first knowledge workspace"
 
 [[bin]]
 name = "flynt"

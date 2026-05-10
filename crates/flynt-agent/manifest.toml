@@ -1,7 +1,7 @@
 [extension]
 name        = "flynt"
 version     = "0.1.0"
-description = "Vault document and task tools — search, read, write, and manage kanban boards from Flynt."
+description = "Project document and task tools — search, read, write, and manage kanban boards from Flynt."
 sdk_version = "0.15"
 
 [runtime]
@@ -14,6 +14,6 @@ timeout_ms  = 5000
 
 [mind]
 enabled       = true
-description   = "Remembers vault structure, recent documents, and project context."
+description   = "Remembers project structure, recent documents, and working context."
 max_facts     = 500
 retention_days = 90
