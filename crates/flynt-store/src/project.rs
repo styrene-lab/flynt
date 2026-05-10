@@ -381,6 +381,77 @@ impl Project {
         self.index_file(&abs_path)
     }
 
+    /// Set a single field inside the `[data]` table of a document's
+    /// frontmatter, preserving formatting/order/comments via `toml_edit`.
+    ///
+    /// Used by the metadata-strip pickers — the operator clicks a pill,
+    /// picks a new value, this writes through. Schema enforcement (which
+    /// values are valid for which fields) is the picker's job; we just
+    /// land the bytes and reindex.
+    ///
+    /// `value` is a pre-built `toml_edit::Value` so callers can pass
+    /// strings, integers (priority), arrays (tags), inline tables, etc.
+    /// without us baking in a per-field shape.
+    ///
+    /// Refuses on discoverable files — same posture as `set_document_kind`.
+    pub fn set_data_field(
+        &self,
+        rel_path: &Path,
+        key: &str,
+        value: toml_edit::Value,
+    ) -> Result<()> {
+        if !self.config.indexing.should_write_frontmatter(rel_path) {
+            anyhow::bail!(
+                "Cannot edit data field on discoverable file {:?} — configure an indexing scope to manage this path",
+                rel_path,
+            );
+        }
+
+        let abs_path = self.root.join(rel_path);
+        let raw = fs::read_to_string(&abs_path)
+            .with_context(|| format!("read {}", abs_path.display()))?;
+
+        // Pull the frontmatter block (`+++\n...\n+++`) and the body.
+        // We need the raw bytes for the body so we don't mangle it on
+        // round-trip — toml_edit only operates on the frontmatter.
+        let fm_block = extract_raw_frontmatter_block(&raw)
+            .ok_or_else(|| anyhow::anyhow!("file has no TOML frontmatter: {}", rel_path.display()))?;
+        // The block returned includes the closing `+++` line. Strip the
+        // delimiters to feed toml_edit just the inner TOML.
+        let fm_inner = fm_block
+            .trim_start_matches("+++\n")
+            .trim_start_matches("+++\r\n")
+            .trim_end_matches("+++")
+            .trim_end_matches('\n')
+            .trim_end_matches('\r');
+
+        let mut doc: toml_edit::DocumentMut = fm_inner.parse()
+            .with_context(|| format!("parse frontmatter for {}", rel_path.display()))?;
+
+        // Ensure [data] table exists — create empty if absent. Operators
+        // converting a plain note to a task hit this path: no [data] yet,
+        // we materialize it on the first field write.
+        if doc.get("data").is_none() {
+            doc.insert("data", toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        let data = doc["data"].as_table_mut()
+            .ok_or_else(|| anyhow::anyhow!("[data] is not a table in {}", rel_path.display()))?;
+        data.insert(key, toml_edit::Item::Value(value));
+
+        // Reassemble: new frontmatter + body. The body starts immediately
+        // after the closing `+++` line (matches what extract_raw_frontmatter_block
+        // returned).
+        let body_start = fm_block.len();
+        let body = &raw[body_start..];
+        let body = body.strip_prefix('\n').unwrap_or(body);
+        let new_raw = format!("+++\n{}+++\n{}", doc, body);
+
+        fs::write(&abs_path, &new_raw)
+            .with_context(|| format!("write {}", abs_path.display()))?;
+        self.index_file(&abs_path)?;
+        Ok(())
+    }
+
     /// Write updated markdown content to a new file path and index it.
     pub fn create_document(&self, rel_path: &Path, title: &str) -> Result<()> {
         let abs_path = self.root.join(rel_path);
@@ -1675,6 +1746,129 @@ mod tests {
     };
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    // ── set_data_field ──────────────────────────────────────────────
+
+    fn write_task_file(project: &Project, rel: &str) -> std::path::PathBuf {
+        let path = std::path::PathBuf::from(rel);
+        let abs = project.root.join(&path);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, r#"+++
+id = "550e8400-e29b-41d4-a716-446655440000"
+kind = "task"
+
+[data]
+title = "Original title"
+board = "550e8400-e29b-41d4-a716-446655440001"
+column = "Active"
+priority = 2
+status = "todo"
+position = 0
++++
+
+Original body content.
+"#).unwrap();
+        project.index_file(&abs).unwrap();
+        path
+    }
+
+    #[test]
+    fn set_data_field_updates_status_preserves_body() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let path = write_task_file(&project, "Tasks/x/t.md");
+
+        project.set_data_field(
+            &path,
+            "status",
+            toml_edit::Value::from("in_progress"),
+        ).unwrap();
+
+        let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(raw.contains("status = \"in_progress\""), "{raw}");
+        assert!(raw.contains("Original body content"), "body preserved: {raw}");
+        assert!(!raw.contains("status = \"todo\""), "old status removed: {raw}");
+    }
+
+    #[test]
+    fn set_data_field_updates_priority_int() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let path = write_task_file(&project, "Tasks/x/t.md");
+
+        project.set_data_field(&path, "priority", toml_edit::Value::from(4i64)).unwrap();
+        let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(raw.contains("priority = 4"), "{raw}");
+    }
+
+    #[test]
+    fn set_data_field_updates_tags_array() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let path = write_task_file(&project, "Tasks/x/t.md");
+
+        let mut tags = toml_edit::Array::new();
+        tags.push("infra");
+        tags.push("pipeline");
+        project.set_data_field(&path, "tags", toml_edit::Value::Array(tags)).unwrap();
+
+        let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(raw.contains("tags = [\"infra\", \"pipeline\"]"), "{raw}");
+    }
+
+    #[test]
+    fn set_data_field_preserves_unrelated_fields() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let path = write_task_file(&project, "Tasks/x/t.md");
+
+        project.set_data_field(&path, "status", toml_edit::Value::from("done")).unwrap();
+        let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
+
+        // Title, board, column, priority, position all survive.
+        assert!(raw.contains("title = \"Original title\""), "{raw}");
+        assert!(raw.contains("column = \"Active\""), "{raw}");
+        assert!(raw.contains("priority = 2"), "{raw}");
+        assert!(raw.contains("position = 0"), "{raw}");
+    }
+
+    #[test]
+    fn set_data_field_creates_data_table_when_absent() {
+        // Edge: a fresh document with frontmatter but no [data] block.
+        // Setting a data field should materialize the table inline.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+
+        let path = std::path::PathBuf::from("note.md");
+        let abs = project.root.join(&path);
+        std::fs::write(&abs, "+++\nid = \"550e8400-e29b-41d4-a716-446655440000\"\nkind = \"task\"\n+++\n\nbody\n").unwrap();
+        project.index_file(&abs).unwrap();
+
+        project.set_data_field(&path, "status", toml_edit::Value::from("todo")).unwrap();
+        let raw = std::fs::read_to_string(&abs).unwrap();
+        assert!(raw.contains("[data]"), "[data] table created: {raw}");
+        assert!(raw.contains("status = \"todo\""), "{raw}");
+        assert!(raw.contains("body"), "body preserved: {raw}");
+    }
+
+    #[test]
+    fn set_data_field_reindexes_so_changes_show_up_immediately() {
+        // Mutating a field should refresh the indexed Document — the
+        // notes view's doc_data signal observes that update.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let path = write_task_file(&project, "Tasks/x/t.md");
+
+        project.set_data_field(
+            &path,
+            "title",
+            toml_edit::Value::from("Renamed"),
+        ).unwrap();
+
+        let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
+        assert_eq!(doc.title, "Renamed",
+                   "indexed title reflects the new [data].title");
+    }
 
     #[test]
     fn fresh_project_open_creates_default_board() {
