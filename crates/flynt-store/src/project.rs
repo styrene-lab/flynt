@@ -154,7 +154,32 @@ impl Project {
         if let Err(e) = project.migrate_tasks_to_files() {
             warn!("task→file migration failed (continuing): {e}");
         }
+
+        // Ensure a "Default" board exists so the kanban is never empty
+        // and convert-to-task always has a target. Idempotent — only
+        // creates if zero boards exist.
+        if let Err(e) = project.ensure_default_board() {
+            warn!("ensure_default_board failed (continuing): {e}");
+        }
+
         Ok(project)
+    }
+
+    /// Create a "Default" minimalist board if no boards exist yet.
+    ///
+    /// Idempotent. Existing projects with one or more boards are
+    /// untouched. Fresh projects get a 2-column (Active, Archive)
+    /// board so the kanban + convert-to-task always have a landing
+    /// spot. Operator can rename "Default" later.
+    pub fn ensure_default_board(&self) -> Result<()> {
+        let existing = self.store.list_boards()?;
+        if !existing.is_empty() {
+            return Ok(());
+        }
+        let board = Board::minimalist("Default");
+        self.store.save_board(&board)?;
+        info!("Created Default board for fresh project");
+        Ok(())
     }
 
     /// Index all markdown files under the project root into the SQLite store.
@@ -1650,6 +1675,58 @@ mod tests {
     };
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn fresh_project_open_creates_default_board() {
+        // Convert-to-task and the kanban both need a board to land
+        // tasks on. ensure_default_board materializes a "Default"
+        // minimalist (Active / Archive) board on first open.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let boards = project.store.list_boards().unwrap();
+        assert_eq!(boards.len(), 1, "fresh project has the Default board");
+        assert_eq!(boards[0].name, "Default");
+        assert_eq!(boards[0].columns.len(), 2);
+        assert_eq!(boards[0].columns[0].name, "Active");
+        assert_eq!(boards[0].columns[1].name, "Archive");
+    }
+
+    #[test]
+    fn ensure_default_board_is_idempotent_on_reopen() {
+        // Reopen the same project — Default board doesn't get
+        // duplicated. Operator-created boards likewise survive untouched.
+        let tmp = TempDir::new().unwrap();
+        {
+            let project = Project::open(tmp.path()).unwrap();
+            // Add a sibling board so we exercise both branches.
+            project.store.save_board(&flynt_core::models::Board::minimalist("Personal")).unwrap();
+        }
+        let project = Project::open(tmp.path()).unwrap();
+        let boards = project.store.list_boards().unwrap();
+        assert_eq!(boards.len(), 2, "no duplicate Default on reopen");
+        let names: Vec<&str> = boards.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"Default"));
+        assert!(names.contains(&"Personal"));
+    }
+
+    #[test]
+    fn ensure_default_board_skips_when_other_boards_exist() {
+        // Project that has a board (but not Default) — we don't add
+        // Default after the fact. The "fresh project" semantic is
+        // "had zero boards at open time."
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        // Replace the auto-created Default with a custom one.
+        for b in project.store.list_boards().unwrap() {
+            project.store.delete_board(&b.id).unwrap();
+        }
+        project.store.save_board(&flynt_core::models::Board::default_sprint("Sprint 1")).unwrap();
+        // Now run ensure_default_board directly — should be a no-op.
+        project.ensure_default_board().unwrap();
+        let boards = project.store.list_boards().unwrap();
+        assert_eq!(boards.len(), 1, "no Default re-added when other board exists");
+        assert_eq!(boards[0].name, "Sprint 1");
+    }
 
     #[test]
     fn task_files_index_with_data_title_not_filename_slug() {

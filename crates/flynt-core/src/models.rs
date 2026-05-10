@@ -270,13 +270,38 @@ pub struct Column {
 }
 
 impl Board {
-    /// Default columns for a new board.
+    /// Minimalist columns — the default for fresh boards.
+    ///
+    /// Two columns (`Active`, `Archive`) reflecting an organizational
+    /// model rather than a workflow lifecycle: a card lives in one or
+    /// the other; lifecycle (`status` field) is tracked on the task
+    /// itself. Sentry, the kanban card UI, and the metadata strip all
+    /// read `status` for execution state; the column is just where the
+    /// operator chose to put the card.
+    pub fn minimalist(name: impl Into<String>) -> Self {
+        Self {
+            id: BoardId::new(),
+            name: name.into(),
+            columns: vec![
+                Column { name: "Active".into(), wip_limit: None },
+                Column { name: "Archive".into(), wip_limit: None },
+            ],
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Sprint-style columns — kept as an opt-in constructor for operators
+    /// who want a workflow-coupled board.
     ///
     /// `Backlog → Scheduled → Running → Done` mirrors sentry's task lifecycle
     /// (queued → claimed → executing → terminal) so an autonomous flow lands
     /// in the right column without renaming. `Failed` is a terminal sibling
-    /// of `Done` for non-recoverable runs. Hand-tracked tasks are unaffected
-    /// — operators can still rename or reshape any column.
+    /// of `Done` for non-recoverable runs.
+    ///
+    /// No longer the *default* shape of a fresh board (the kanban
+    /// "+ New board" button uses `minimalist` now); status-as-lifecycle
+    /// + columns-as-buckets keeps the kanban surface simple and lets the
+    /// task's own status pill carry workflow signal.
     pub fn default_sprint(name: impl Into<String>) -> Self {
         Self {
             id: BoardId::new(),
@@ -979,6 +1004,20 @@ mod tests {
         assert_eq!(board.columns[2].name, "Running");
         assert_eq!(board.columns[3].name, "Done");
         assert_eq!(board.columns[4].name, "Failed");
+    }
+
+    #[test]
+    fn board_minimalist_has_two_organizational_columns() {
+        // The default for fresh boards: organizational, not workflow.
+        // Lifecycle is tracked on the task's `status` field; column
+        // is just where the operator chose to put the card.
+        let board = Board::minimalist("Default");
+        assert_eq!(board.name, "Default");
+        assert_eq!(board.columns.len(), 2);
+        assert_eq!(board.columns[0].name, "Active");
+        assert_eq!(board.columns[1].name, "Archive");
+        assert!(board.columns.iter().all(|c| c.wip_limit.is_none()),
+                "minimalist columns don't impose WIP limits");
     }
 
     // ── Task constructors ───────────────────────────────────────────
