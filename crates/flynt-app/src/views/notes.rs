@@ -1288,13 +1288,20 @@ pub fn NotesView() -> Element {
 
     // Initialize CM6 when: new document loaded OR mode switched back to Live
     let is_drawing_mode = use_context::<Signal<bool>>();
-    let mut cm_init_ver = use_signal(|| 0u64);
     use_effect(move || {
-        let _ver = *cm_init_ver.read();
+        // Gate on synced_doc_id (not on a tab-change ver). synced_doc_id
+        // is set AFTER doc_data → edit_body have populated, so by the
+        // time this fires, edit_body has the body for the new tab.
+        // Previously this gated on a manual ver counter that bumped on
+        // tab change, racing the doc_data effect — empty edit_body
+        // caused init to bail and CM6 stayed blank.
+        let synced = synced_doc_id.read().clone();
+        if synced.is_none() { return; }
         if *is_drawing_mode.read() { return; }
         if !matches!(&*mode.read(), EditMode::Live) { return; }
-        tracing::info!("CM6 init effect triggered, ver={}", _ver);
-        // Use edit_body if available (has latest edits), fall back to rendered content
+        tracing::info!("CM6 init effect triggered for synced_doc_id={:?}", synced);
+        // edit_body is now the post-sync source of truth; rendered is a
+        // fallback for documents loaded via the slow path.
         let content = {
             let eb = edit_body.peek().clone();
             if !eb.is_empty() {
@@ -1302,19 +1309,14 @@ pub fn NotesView() -> Element {
             } else if let Some(Some((_, _, body, _, _))) = &*rendered.peek() {
                 body.clone()
             } else {
-                return;
+                // synced is Some but edit_body is empty AND rendered
+                // empty — genuinely empty document. Init CM6 with empty
+                // string so the editor is ready for input.
+                String::new()
             }
         };
         document::eval(&cm6_init_js(&content));
     });
-
-    // Bump init version when active tab changes (but NOT on reindex)
-    let active_doc_id = tab_state.read().active_id().cloned();
-    let mut last_doc_id: Signal<Option<flynt_core::models::DocumentId>> = use_signal(|| None);
-    if active_doc_id != *last_doc_id.peek() {
-        *last_doc_id.write() = active_doc_id;
-        *cm_init_ver.write() += 1;
-    }
 
     // Persistent message bridge — one eval that polls a global queue.
     // CM6 pushes messages to the queue; this loop drains them to Rust.

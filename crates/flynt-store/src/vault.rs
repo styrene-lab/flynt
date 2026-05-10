@@ -314,12 +314,35 @@ impl Vault {
 
     /// Write updated markdown content back to disk and re-index.
     /// Preserves the existing frontmatter UUID so document identity is stable.
+    /// Save the body of a document while preserving its existing
+    /// frontmatter verbatim. The notes view's CodeMirror editor only
+    /// shows the body; without this preservation step, every save
+    /// would rewrite the file with body-only content, the next
+    /// `index_file` would inject default document-shape frontmatter,
+    /// and any unknown fields (task `kind` / `[data]` block, custom
+    /// metadata, etc.) would silently die on first save.
+    ///
+    /// `content` is treated as the BODY. Frontmatter from disk is
+    /// kept as-is (raw `+++` block). For files without existing
+    /// frontmatter, the content is written as-is.
     pub fn save_document_content(&self, rel_path: &Path, content: &str) -> Result<()> {
         let abs_path = self.root.join(rel_path);
         if let Some(parent) = abs_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&abs_path, content)?;
+        let existing_fm = fs::read_to_string(&abs_path)
+            .ok()
+            .and_then(|raw| extract_raw_frontmatter_block(&raw));
+        let to_write = match existing_fm {
+            Some(fm_block) => {
+                // Trim leading newlines from body; we'll add exactly
+                // one separator after the closing fence.
+                let body = content.trim_start_matches('\n');
+                format!("{fm_block}\n\n{body}")
+            }
+            None => content.to_string(),
+        };
+        fs::write(&abs_path, &to_write)?;
         self.index_file(&abs_path)
     }
 
@@ -1561,6 +1584,28 @@ impl Vault {
         }
         Ok(())
     }
+}
+
+/// If `raw` starts with a `+++` frontmatter block, return that block
+/// (including the opening and closing fences) verbatim. Otherwise
+/// return None. Used by save_document_content to preserve unknown
+/// frontmatter fields when re-writing a document body.
+fn extract_raw_frontmatter_block(raw: &str) -> Option<String> {
+    let r = raw.strip_prefix("+++\n").or_else(|| raw.strip_prefix("+++\r\n"))?;
+    let mut offset = 0usize;
+    for line in r.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches('\n').trim_end_matches('\r').trim();
+        if trimmed == "+++" {
+            // Length of the frontmatter section: prefix "+++\n" + r
+            // up through this closing line (without trailing newline).
+            let prefix_len = raw.len() - r.len();
+            let end_in_r = offset + line.len() - (line.len() - line.trim_end_matches('\n').trim_end_matches('\r').len());
+            let block = &raw[..prefix_len + end_in_r];
+            return Some(block.to_string());
+        }
+        offset += line.len();
+    }
+    None
 }
 
 fn extract_h1(body: &str) -> Option<String> {
@@ -2893,6 +2938,69 @@ Design for the authentication subsystem.
         let path = vault.store.task_file_path(&task.id).unwrap().unwrap();
         assert!(vault.root.join(&path).exists());
         assert!(path.starts_with("Tasks/backlog-board/"));
+    }
+
+    #[test]
+    fn save_document_content_preserves_task_frontmatter() {
+        // Regression: notes-view edits used to wipe non-Frontmatter
+        // fields (task kind + [data] block) because save_document_content
+        // wrote body-only and the reindex injected default doc fields.
+        let (_tmp, vault, board) = vault_with_board();
+        let mut t = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
+        t.description = "Original body".into();
+        let rel = vault.save_any_task(&t).unwrap();
+        let before = std::fs::read_to_string(vault.root.join(&rel)).unwrap();
+        assert!(before.contains("kind = \"task\""), "task fm before edit:\n{before}");
+        assert!(before.contains("[data]"), "task fm before edit:\n{before}");
+
+        // Simulate a notes-view body edit.
+        vault.save_document_content(&rel, "Edited body").unwrap();
+
+        let after = std::fs::read_to_string(vault.root.join(&rel)).unwrap();
+        assert!(after.contains("kind = \"task\""), "kind survived:\n{after}");
+        assert!(after.contains("[data]"), "[data] survived:\n{after}");
+        assert!(after.contains("Edited body"), "body updated:\n{after}");
+        assert!(!after.contains("Original body"), "old body gone:\n{after}");
+    }
+
+    #[test]
+    fn save_document_content_preserves_recognized_frontmatter_fields() {
+        // Limit of the preservation guarantee: fields the Frontmatter
+        // parser recognizes (kind, data, aliases, tags, …) survive a
+        // body edit. Truly unknown TOP-level keys flow into metadata
+        // via serde flatten and also survive. Unknown nested [tables]
+        // do NOT survive because the parser rejects them and
+        // index_file rewrites the frontmatter — that's a known
+        // limitation, not the case we need to fix for tasks.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().to_path_buf();
+        let vault = Vault::open(&root).unwrap();
+        let rel = std::path::PathBuf::from("custom.md");
+        let original = "+++\n\
+            id = \"11111111-2222-3333-4444-555555555555\"\n\
+            title = \"Custom\"\n\
+            tags = [\"alpha\", \"beta\"]\n\
+            aliases = [\"shorthand\"]\n\
+            +++\n\n\
+            First body";
+        std::fs::write(vault.root.join(&rel), original).unwrap();
+
+        vault.save_document_content(&rel, "Second body").unwrap();
+        let after = std::fs::read_to_string(vault.root.join(&rel)).unwrap();
+        assert!(after.contains("alpha"), "tags survived:\n{after}");
+        assert!(after.contains("shorthand"), "aliases survived:\n{after}");
+        assert!(after.contains("Second body"), "body updated:\n{after}");
+        assert!(!after.contains("First body"), "old body gone:\n{after}");
+    }
+
+    #[test]
+    fn extract_raw_frontmatter_block_basic() {
+        let raw = "+++\nid = \"x\"\ntitle = \"y\"\n+++\n\nbody";
+        let got = super::extract_raw_frontmatter_block(raw).expect("should extract");
+        assert!(got.starts_with("+++\n"));
+        assert!(got.ends_with("+++"), "block: {got:?}");
+        assert!(got.contains("id = \"x\""));
+        assert!(!got.contains("body"));
     }
 
     #[test]
