@@ -140,6 +140,12 @@ pub fn tool_definitions() -> Vec<Value> {
             "parameters": { "type": "object", "properties": {} }
         }),
         json!({
+            "name": "project_list",
+            "label": "List Projects",
+            "description": "List all flynt projects in this vault with their id and title. Use the id when setting FLYNT_PROJECT to scope sentry — without this tool the operator has to dig the UUID out of the vault sqlite manually.",
+            "parameters": { "type": "object", "properties": {} }
+        }),
+        json!({
             "name": "engagement_status",
             "label": "Engagement Status",
             "description": "Detail for one engagement: repos, forge endpoint, recent sync timestamps, and task counts. Required: engagement_id.",
@@ -417,6 +423,22 @@ pub fn engagement_list(vault: &Vault, _params: Value) -> ExtResult<Value> {
         "status": e.status,
         "forge_kind": format!("{:?}", e.forge.kind).to_lowercase(),
         "repo_count": e.repos.len(),
+    })).collect();
+    Ok(json!(summary))
+}
+
+pub fn project_list(vault: &Vault, _params: Value) -> ExtResult<Value> {
+    // Surface flynt project entities so operators can copy the UUID
+    // they need for FLYNT_PROJECT (the env var that scopes sentry to
+    // one project's tasks). Without this, discovering the UUID
+    // required querying the vault sqlite by hand.
+    let docs = vault.store
+        .list_entities_by_kind(&flynt_core::datum::EntityKind::Project)
+        .map_err(|e| ExtError::internal_error(e.to_string()))?;
+    let summary: Vec<Value> = docs.iter().map(|d| json!({
+        "id":    d.id.0.to_string(),
+        "title": d.title,
+        "path":  d.path.to_string_lossy(),
     })).collect();
     Ok(json!(summary))
 }

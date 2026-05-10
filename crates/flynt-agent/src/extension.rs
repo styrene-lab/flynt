@@ -1309,6 +1309,7 @@ impl Extension for FlyntExtension {
             "execute_engagement_create" => forge_tools::engagement_create(&self.vault, params),
             "execute_engagement_list"   => forge_tools::engagement_list(&self.vault, params),
             "execute_engagement_status" => forge_tools::engagement_status(&self.vault, params),
+            "execute_project_list"      => forge_tools::project_list(&self.vault, params),
             "execute_forge_status"      => forge_tools::forge_status(&self.vault, &self.secrets, params),
             "execute_forge_list_issues" => {
                 forge_tools::forge_list_issues(&self.vault, &self.secrets, params).await
@@ -1775,8 +1776,11 @@ mod tests {
         assert!(names.contains(&"get_board".to_string()));
         assert!(names.contains(&"create_board".to_string()));
         // Phase 3 — scribe-absorbed forge / engagement tools.
+        // Phase 7.5 added project_list so operators can discover the
+        // UUID needed for FLYNT_PROJECT scoping.
         for n in [
             "engagement_create", "engagement_list", "engagement_status",
+            "project_list",
             "forge_status", "forge_list_issues", "forge_sync_issues",
             "forge_create_issue", "log_work", "timeline",
         ] {
