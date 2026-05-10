@@ -145,13 +145,6 @@ CREATE TABLE IF NOT EXISTS conflicts (
     detected_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS project_deletions (
-    entity_id   TEXT PRIMARY KEY,
-    entity_kind TEXT NOT NULL,
-    project_id  TEXT NOT NULL,
-    deleted_at  TEXT NOT NULL,
-    committed   INTEGER NOT NULL DEFAULT 0
-);
 "#;
 
 /// Idempotent migrations applied after the base schema.
@@ -205,6 +198,17 @@ const MIGRATIONS: &[&str] = &[
     // has not yet been migrated to disk — the one-shot migration in
     // Project::open populates these.
     "ALTER TABLE tasks ADD COLUMN task_file_path TEXT;",
+    // v9: schema cleanup after Vault → Project rename + inner-Project
+    // dissolution (commits 53a3aa2..0d3a3c3, 2026-05-10). The dropped
+    // surfaces had no remaining read paths — every column listed below
+    // was either never-read or skipped-on-read. The runner swallows
+    // errors so a fresh DB (where the columns were never added) skips
+    // these no-ops cleanly.
+    "ALTER TABLE tasks DROP COLUMN project_id;",
+    "ALTER TABLE tasks DROP COLUMN last_committed_at;",
+    "ALTER TABLE documents DROP COLUMN last_committed_at;",
+    "ALTER TABLE boards DROP COLUMN project_id;",
+    "DROP TABLE IF EXISTS project_deletions;",
 ];
 
 // ── ProjectStore implementation ─────────────────────────────────────────────────
@@ -619,7 +623,7 @@ impl ProjectStore for SqliteStore {
     fn get_board(&self, id: &BoardId) -> Result<Option<Board>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, columns, project_id, created_at FROM boards WHERE id = ?1",
+            "SELECT id, name, columns, created_at FROM boards WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
         let Some(row) = rows.next()? else { return Ok(None) };
@@ -629,7 +633,7 @@ impl ProjectStore for SqliteStore {
     fn list_boards(&self) -> Result<Vec<Board>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt =
-            conn.prepare("SELECT id, name, columns, project_id, created_at FROM boards ORDER BY name ASC")?;
+            conn.prepare("SELECT id, name, columns, created_at FROM boards ORDER BY name ASC")?;
         let rows = stmt.query_map([], row_to_board)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -637,12 +641,8 @@ impl ProjectStore for SqliteStore {
     fn save_board(&self, board: &Board) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            // boards.project_id column is vestigial (legacy from the
-            // dissolved inner Project entity). We continue to write
-            // NULL here so existing schemas don't break, but the field
-            // is no longer read or surfaced to callers.
-            r#"INSERT INTO boards (id, name, columns, project_id, created_at)
-               VALUES (?1, ?2, ?3, NULL, ?4)
+            r#"INSERT INTO boards (id, name, columns, created_at)
+               VALUES (?1, ?2, ?3, ?4)
                ON CONFLICT(id) DO UPDATE SET name=excluded.name, columns=excluded.columns"#,
             params![
                 board.id.0.to_string(),
@@ -860,9 +860,7 @@ fn row_to_engagement(
 
 fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
     let cols_json: String = row.get(2)?;
-    // Column 3 is the vestigial project_id (legacy schema). Skipped
-    // — Board no longer carries it.
-    let created_at: String = row.get(4)?;
+    let created_at: String = row.get(3)?;
     let id: String = row.get(0)?;
     Ok(Board {
         id: BoardId(id.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?),
@@ -1027,6 +1025,165 @@ mod tests {
         assert_eq!(exec.model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
         assert_eq!(exec.max_turns, Some(20));
         assert_eq!(exec.env.get("API_TOKEN").map(String::as_str), Some("redacted"));
+    }
+
+    #[test]
+    fn migration_v9_drops_inner_project_surfaces_from_legacy_db() {
+        // Simulates a database created by pre-rename code: a fresh SqliteStore
+        // open runs all MIGRATIONS in order (v1..v9), so by the time we
+        // inspect the schema, v9 should have already dropped the legacy
+        // columns and table. This guards against a regression where someone
+        // adds a v10 migration and forgets that v9's idempotency relies on
+        // the runner swallowing errors.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+
+        // Bootstrap with the full migration chain and seed some data.
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        {
+            let store = SqliteStore::open(&db).unwrap();
+            let board_id = seed_board(&store);
+            let mut t = Task::new(board_id, "Backlog", "Survives migration");
+            t.id = task_id.clone();
+            store.save_task(&t).unwrap();
+        }
+
+        // Inspect raw schema using a fresh connection (bypass SqliteStore).
+        let conn = rusqlite::Connection::open(&db).unwrap();
+
+        // boards.project_id, tasks.project_id, tasks.last_committed_at,
+        // documents.last_committed_at must all be gone.
+        for (table, col) in [
+            ("boards", "project_id"),
+            ("tasks", "project_id"),
+            ("tasks", "last_committed_at"),
+            ("documents", "last_committed_at"),
+        ] {
+            let cols: Vec<String> = conn
+                .prepare(&format!("PRAGMA table_info({table});"))
+                .unwrap()
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            assert!(
+                !cols.contains(&col.to_string()),
+                "expected {table}.{col} to be dropped after v9, got cols: {cols:?}"
+            );
+        }
+
+        // project_deletions table must be gone.
+        let row: rusqlite::Result<i64> = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_deletions'",
+            [],
+            |r| r.get(0),
+        );
+        assert_eq!(row.unwrap(), 0, "project_deletions table should be dropped");
+
+        // Data we wrote pre-inspection still readable — schema cleanup must
+        // not have eaten task data.
+        drop(conn);
+        let store = SqliteStore::open(&db).unwrap();
+        assert!(store.get_task(&task_id).unwrap().is_some(), "task survives v9");
+    }
+
+    #[test]
+    fn migration_v9_drops_legacy_data_without_eating_task_or_board_rows() {
+        // Stronger guard than the previous test: simulate a *pre-v9* database
+        // (the legacy columns populated, project_deletions table populated)
+        // and prove v9 strips those without harming the task/board rows that
+        // share the schema. The Phase 2 dissolution had been writing NULL into
+        // boards.project_id but old DBs may carry real values from before.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+
+        // Manually construct a pre-v9 schema by running everything except the
+        // v9 DROP statements. We bypass SqliteStore::open and reach for the
+        // raw connection so we can splice the migrations.
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            // Re-create the table v9 dropped, so we can prove v9 cleans it up.
+            conn.execute_batch(
+                r#"CREATE TABLE IF NOT EXISTS project_deletions (
+                    entity_id   TEXT PRIMARY KEY,
+                    entity_kind TEXT NOT NULL,
+                    project_id  TEXT NOT NULL,
+                    deleted_at  TEXT NOT NULL,
+                    committed   INTEGER NOT NULL DEFAULT 0
+                );"#,
+            ).unwrap();
+            // Apply v1..v8 only (everything before the v9 DROP block).
+            for m in MIGRATIONS.iter().take_while(|m| !m.contains("DROP")) {
+                let _ = conn.execute_batch(m);
+            }
+            // Seed a board + task with the (now-vestigial) project_id populated,
+            // and a project_deletions row.
+            let board_id = uuid::Uuid::new_v4().to_string();
+            let task_id = uuid::Uuid::new_v4().to_string();
+            let project_id = uuid::Uuid::new_v4().to_string();
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO boards (id, name, columns, project_id, created_at) VALUES (?1, 'Sprint', '[]', ?2, ?3)",
+                rusqlite::params![board_id, project_id, now],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO tasks (id, board_id, column_name, title, project_id, last_committed_at, created_at, updated_at)
+                 VALUES (?1, ?2, 'Backlog', 'Pre-v9 task', ?3, ?4, ?4, ?4)",
+                rusqlite::params![task_id, board_id, project_id, now],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO project_deletions (entity_id, entity_kind, project_id, deleted_at)
+                 VALUES (?1, 'task', ?2, ?3)",
+                rusqlite::params![uuid::Uuid::new_v4().to_string(), project_id, now],
+            ).unwrap();
+        }
+
+        // Now open via SqliteStore (which runs the full migration chain
+        // including v9). The open must succeed cleanly.
+        let store = SqliteStore::open(&db).unwrap();
+
+        // The board + task survived.
+        let boards = store.list_boards().unwrap();
+        assert_eq!(boards.len(), 1, "board survives v9");
+        assert_eq!(boards[0].name, "Sprint");
+
+        let tasks = store.list_tasks(&TaskFilter {
+            board_id: Some(boards[0].id.clone()),
+            ..Default::default()
+        }).unwrap();
+        assert_eq!(tasks.len(), 1, "task survives v9");
+        assert_eq!(tasks[0].title, "Pre-v9 task");
+
+        // The legacy schema bits are gone.
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let table_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_deletions'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(table_count, 0, "project_deletions dropped even when populated");
+    }
+
+    #[test]
+    fn migration_v9_is_idempotent_on_reopen() {
+        // Reopening a post-v9 DB must not error or re-create the dropped
+        // surfaces. This tests the runner's let-_-= swallowing for the DROP
+        // statements specifically (DROP COLUMN on a missing column raises).
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("flynt-index.db");
+        for _ in 0..3 {
+            let _ = SqliteStore::open(&db).unwrap();
+        }
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(boards);")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(!cols.contains(&"project_id".to_string()));
     }
 
     #[test]
