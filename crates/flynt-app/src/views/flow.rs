@@ -38,7 +38,6 @@
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
 use std::path::PathBuf;
-use std::sync::Arc;
 use uuid::Uuid;
 
 /// Whether a path points at a `.flow` file. Used by the notes view to
@@ -119,6 +118,12 @@ pub fn FlowView(path: PathBuf) -> Element {
                 if (window.FlyntFlow) { try { window.FlyntFlow.unmount(); } catch(e) {} }
                 window._flowSaveQueue = [];
                 window._flowOnChange = null;
+                // Signal the drain loop to exit on its next iteration.
+                // Without this the loop runs forever (JS leak across
+                // every FlowView open/close) — the Rust-side spawn task
+                // is cancelled by Dioxus scope drop, but the JS poller
+                // has no scope-binding.
+                window._flowDrainActive = false;
                 var mc = document.querySelector('.main-content');
                 if (mc) { mc.style.overflow = ''; mc.style.display = ''; mc.style.flexDirection = ''; }
                 var np = document.querySelector('.notes-pane');
@@ -183,22 +188,30 @@ pub fn FlowView(path: PathBuf) -> Element {
     // disk via flynt-flow's serializer. Keeps the bundle's onChange
     // synchronous and lets us batch redundant writes (only the latest
     // queued body matters; older ones drop).
+    //
+    // Lifetime contract — important for future maintainers:
+    //   * The JS drain function is scope-less; we terminate it via the
+    //     `window._flowDrainActive` sentinel set false in `_flowCleanup`.
+    //   * The Rust `spawn` task is scope-bound to this component
+    //     (Dioxus drops it on unmount), but it lives across multiple
+    //     re-runs of this `use_effect` if anything inside the closure
+    //     ever reads a signal that changes. **Don't read signals inside
+    //     this `use_effect` body.** The current code reads them only
+    //     inside the spawned future, which is fine.
     let path_save = path.clone();
     use_effect(move || {
-        // The JS half: poll the queue and forward to Rust. Mirror of the
-        // Excalidraw drain pattern, with the redundant-write coalescing
-        // pulled inline so we send only the latest body when several
-        // queued up while a previous save was in flight.
         let mut bridge = document::eval(
             r#"
+            window._flowDrainActive = true;
             (async function drain() {
-                while (true) {
+                while (window._flowDrainActive) {
                     if (window._flowSaveQueue && window._flowSaveQueue.length > 0) {
                         // Keep only the latest queued body — older ones
                         // are stale snapshots of the same edit session.
                         var latest = window._flowSaveQueue[window._flowSaveQueue.length - 1];
                         window._flowSaveQueue = [];
-                        dioxus.send(latest);
+                        try { dioxus.send(latest); }
+                        catch (e) { console.warn('[FlowView] dioxus.send failed', e); }
                     } else {
                         await new Promise(function(r) { setTimeout(r, 200); });
                     }
@@ -211,10 +224,9 @@ pub fn FlowView(path: PathBuf) -> Element {
         let c = ctx;
         let l = loaded;
         spawn(async move {
-            // Document id is captured from the initial parse. If the
-            // file didn't exist on first read, allocate fresh once and
-            // reuse for all subsequent saves in this session — the
-            // indexer treats the resulting identity as canonical.
+            // Document id captured from the initial parse. If the file
+            // didn't exist on first read, allocate fresh once and reuse
+            // — the indexer treats the resulting identity as canonical.
             let mut doc_id: Option<Uuid> = l.read().id;
 
             loop {
@@ -242,18 +254,14 @@ pub fn FlowView(path: PathBuf) -> Element {
                 let id = *doc_id.get_or_insert_with(Uuid::new_v4);
 
                 let abs_for_blocking = abs.clone();
-                let flow_for_blocking = Arc::new(flow);
                 let result = tokio::task::spawn_blocking(move || {
-                    flynt_flow::save_flow(&abs_for_blocking, &flow_for_blocking, Some(id))
+                    flynt_flow::save_flow(&abs_for_blocking, &flow, Some(id))
                 })
                 .await;
 
                 match result {
                     Ok(Ok(())) => {
                         *save_state.write() = "saved";
-                        // Clear the badge after 2s — long enough that
-                        // the operator notices, short enough that it
-                        // doesn't crowd the canvas.
                         tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                         if *save_state.read() == "saved" {
                             *save_state.write() = "";

@@ -251,7 +251,15 @@ function FlowApp({
       nodes: nodes.map(fromRfNode),
       edges: edges.map(fromRfEdge),
     };
-    onChange(body);
+    // Guard host crashes — if onChange (the Rust bridge wrapper) throws
+    // because the host is mid-unmount or the queue isn't writable, we
+    // log and keep the editor responsive rather than letting an
+    // uncaught throw kill the React tree.
+    try {
+      onChange(body);
+    } catch (err) {
+      console.error("[FlyntFlow] onChange threw", err);
+    }
   }, [onChange]);
 
   const scheduleEmit = React.useCallback(() => {
