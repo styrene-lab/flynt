@@ -51,11 +51,11 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
 
     let results = use_resource(move || {
         let q = search_query.read().clone();
-        let vault = ctx.vault();
+        let project = ctx.project();
         async move {
             if q.trim().is_empty() { return vec![]; }
             tokio::task::spawn_blocking(move || {
-                vault.store.search_documents(&q).unwrap_or_default()
+                project.store.search_documents(&q).unwrap_or_default()
             })
             .await
             .unwrap_or_default()

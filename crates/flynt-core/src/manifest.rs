@@ -1,4 +1,4 @@
-//! Vault manifest — a registry of vaults synced across devices.
+//! Project manifest — a registry of vaults synced across devices.
 //!
 //! The manifest lives in its own small git repo (or a local file synced via
 //! iCloud). It lists all vaults the operator has access to, with their sync
@@ -32,7 +32,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::{Path, PathBuf}};
 
-/// The vault manifest — serialized as `vaults.toml`.
+/// The project manifest — serialized as `vaults.toml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultManifest {
     /// The operator's identity metadata.
@@ -57,23 +57,23 @@ pub struct ManifestIdentity {
     pub fingerprint: Option<String>,
 }
 
-/// A vault entry in the manifest.
+/// A project entry in the manifest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ManifestVault {
-    /// Human-readable vault name.
+    /// Human-readable project name.
     pub name: String,
     /// Git remote URL (SSH or HTTPS).
     pub repo: String,
     /// Branch to sync.
     #[serde(default = "default_branch")]
     pub branch: String,
-    /// Operator's role in this vault.
+    /// Operator's role in this project.
     #[serde(default)]
     pub role: VaultRole,
     /// If hosted on a Styrene Hub, the hub hostname.
     #[serde(default)]
     pub hub: Option<String>,
-    /// Local path where this vault is cloned (device-specific, not synced).
+    /// Local path where this project is cloned (device-specific, not synced).
     /// Populated after cloning. Stripped when serializing to the manifest repo.
     #[serde(skip_serializing, default)]
     pub local_path: Option<PathBuf>,
@@ -85,14 +85,14 @@ pub struct ManifestVault {
 fn default_branch() -> String { "main".into() }
 fn default_auto_commit() -> u64 { 60 }
 
-/// Role in a vault — determines default mutability.
+/// Role in a project — determines default mutability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VaultRole {
     /// Full control — can modify, delete, manage access.
     #[default]
     Owner,
-    /// Can read and write vault content.
+    /// Can read and write project content.
     Editor,
     /// Read-only access.
     Viewer,
@@ -144,8 +144,8 @@ pub fn load_manifest_with_local(manifest_dir: &Path) -> anyhow::Result<VaultMani
         let content = fs::read_to_string(&local_path)?;
         let local: LocalManifest = toml::from_str(&content)?;
         for entry in &local.vaults {
-            if let Some(vault) = manifest.vaults.iter_mut().find(|v| v.name == entry.name) {
-                vault.local_path = Some(entry.local_path.clone());
+            if let Some(project) = manifest.vaults.iter_mut().find(|v| v.name == entry.name) {
+                project.local_path = Some(entry.local_path.clone());
             }
         }
     }
@@ -187,21 +187,21 @@ pub fn save_local_manifest(manifest_dir: &Path, manifest: &VaultManifest) -> any
     Ok(())
 }
 
-/// Add a vault to the manifest. Returns error if name already exists.
-pub fn add_vault(manifest: &mut VaultManifest, vault: ManifestVault) -> anyhow::Result<()> {
-    if manifest.vaults.iter().any(|v| v.name == vault.name) {
-        anyhow::bail!("Vault '{}' already exists in the manifest", vault.name);
+/// Add a project to the manifest. Returns error if name already exists.
+pub fn add_vault(manifest: &mut VaultManifest, project: ManifestVault) -> anyhow::Result<()> {
+    if manifest.vaults.iter().any(|v| v.name == project.name) {
+        anyhow::bail!("Project '{}' already exists in the manifest", project.name);
     }
-    manifest.vaults.push(vault);
+    manifest.vaults.push(project);
     Ok(())
 }
 
-/// Remove a vault from the manifest by name.
+/// Remove a project from the manifest by name.
 pub fn remove_vault(manifest: &mut VaultManifest, name: &str) -> anyhow::Result<()> {
     let before = manifest.vaults.len();
     manifest.vaults.retain(|v| v.name != name);
     if manifest.vaults.len() == before {
-        anyhow::bail!("Vault '{}' not found in the manifest", name);
+        anyhow::bail!("Project '{}' not found in the manifest", name);
     }
     Ok(())
 }
@@ -237,7 +237,7 @@ mod tests {
             vaults: vec![
                 ManifestVault {
                     name: "Personal".into(),
-                    repo: "git@github.com:user/vault.git".into(),
+                    repo: "git@github.com:user/project.git".into(),
                     branch: "main".into(),
                     role: VaultRole::Owner,
                     hub: None,

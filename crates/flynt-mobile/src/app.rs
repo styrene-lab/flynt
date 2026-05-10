@@ -14,7 +14,7 @@ enum Tab {
 
 #[component]
 pub fn App() -> Element {
-    // Check if a vault exists — if not, show onboarding
+    // Check if a project exists — if not, show onboarding
     let mut vault_ready = use_signal(|| crate::bootstrap::has_vault());
 
     if !*vault_ready.read() {
@@ -33,7 +33,7 @@ pub fn App() -> Element {
         Err(e) => {
             return rsx! {
                 div { class: "error-screen",
-                    h1 { "Failed to open vault" }
+                    h1 { "Failed to open project" }
                     p { "{e}" }
                 }
             };
@@ -43,13 +43,13 @@ pub fn App() -> Element {
     use_context_provider(|| Signal::new(rt.clone()));
 
     // Poll the share-extension inbox every 5 seconds
-    let vault_for_inbox = rt.vault.clone();
+    let vault_for_inbox = rt.project.clone();
     use_future(move || {
-        let vault = vault_for_inbox.clone();
+        let project = vault_for_inbox.clone();
         async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(5)).await;
-                match crate::bootstrap::drain_inbox(&vault) {
+                match crate::bootstrap::drain_inbox(&project) {
                     Ok(0) => {}
                     Ok(n) => tracing::info!("Imported {n} notes from share inbox"),
                     Err(e) => tracing::warn!("Inbox drain error: {e}"),
@@ -90,8 +90,8 @@ pub fn App() -> Element {
                             h2 { "Settings" }
                             {
                                 let rt = use_context::<Signal<MobileRuntime>>();
-                                let vault_name = rt.read().vault.config.vault_name.clone();
-                                let sync_label = match &rt.read().vault.config.sync {
+                                let vault_name = rt.read().project.config.vault_name.clone();
+                                let sync_label = match &rt.read().project.config.sync {
                                     flynt_core::models::SyncConfig::None => "Off".to_string(),
                                     flynt_core::models::SyncConfig::Git { remote, branch, .. } => {
                                         format!("{remote}/{branch}")
@@ -107,7 +107,7 @@ pub fn App() -> Element {
                                 rsx! {
                                     div { class: "settings-section",
                                         div { class: "settings-row",
-                                            span { class: "settings-label", "Vault" }
+                                            span { class: "settings-label", "Project" }
                                             span { class: "settings-value", "{vault_name}" }
                                         }
                                         div { class: "settings-row",

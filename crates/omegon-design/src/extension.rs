@@ -83,7 +83,7 @@ impl Extension for DesignExtension {
                 {
                     "name": "design_load_style_guide",
                     "label": "Design: Load Style Guide",
-                    "description": "Read the project-level (`<vault>/.flynt/style-guide.md`) and user-level (`~/.flynt/style-guide.md`) style guides and return a merged report. Project wins on conflict; the per-level content fields are kept so you can reason about where any given rule originated. When neither guide exists, the response includes a setup_hint telling the user how to add one. Style guides are markdown with optional TOML frontmatter for structured data (brand colors, typography). Treat the merged content as source of truth for brand voice, color overrides, and visual rules.",
+                    "description": "Read the project-level (`<project>/.flynt/style-guide.md`) and user-level (`~/.flynt/style-guide.md`) style guides and return a merged report. Project wins on conflict; the per-level content fields are kept so you can reason about where any given rule originated. When neither guide exists, the response includes a setup_hint telling the user how to add one. Style guides are markdown with optional TOML frontmatter for structured data (brand colors, typography). Treat the merged content as source of truth for brand voice, color overrides, and visual rules.",
                     "parameters": { "type": "object", "properties": {} }
                 },
                 {
@@ -105,7 +105,7 @@ impl Extension for DesignExtension {
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "canvas_path": { "type": "string", "description": "Path to the .canvas file relative to vault root. Optional — when omitted, captures whatever canvas is currently rendered." },
+                            "canvas_path": { "type": "string", "description": "Path to the .canvas file relative to project root. Optional — when omitted, captures whatever canvas is currently rendered." },
                             "include_metrics": { "type": "boolean", "default": true, "description": "When false, skip the per-iframe postMessage round-trip and return image-only. Faster, but you lose the fill_ratio data." }
                         }
                     }
@@ -123,7 +123,7 @@ impl Extension for DesignExtension {
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "canvas_path": { "type": "string", "description": "Path to the .canvas file relative to vault root." }
+                            "canvas_path": { "type": "string", "description": "Path to the .canvas file relative to project root." }
                         },
                         "required": ["canvas_path"]
                     }
@@ -169,7 +169,7 @@ impl DesignExtension {
     }
 
     fn read_active_theme(&self, canvas_path: &str) -> Option<String> {
-        // Refuse path traversal; resolve relative to vault.
+        // Refuse path traversal; resolve relative to project.
         let rel = std::path::Path::new(canvas_path);
         if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             return None;

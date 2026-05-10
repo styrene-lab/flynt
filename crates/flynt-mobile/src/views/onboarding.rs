@@ -60,7 +60,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                             button {
                                 class: "onboarding-path",
                                 onclick: move |_| *step.write() = Step::RepoInput,
-                                span { class: "onboarding-path-title", "Join a shared vault" }
+                                span { class: "onboarding-path-title", "Join a shared project" }
                                 span { class: "onboarding-path-desc", "Paste a link someone shared with you" }
                             }
                         }
@@ -181,23 +181,23 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                         if let Some(ref m) = *manifest.read() {
                             if !m.identity.name.is_empty() {
                                 p { class: "onboarding-desc",
-                                    "Welcome back, {m.identity.name}. Pick a vault to sync."
+                                    "Welcome back, {m.identity.name}. Pick a project to sync."
                                 }
                             }
-                            div { class: "onboarding-vault-list",
-                                for (idx, vault) in m.vaults.iter().enumerate() {
+                            div { class: "onboarding-project-list",
+                                for (idx, project) in m.vaults.iter().enumerate() {
                                     {
                                         let is_selected = *selected_vault.read() == Some(idx);
-                                        let name = vault.name.clone();
-                                        let role = vault.role.label();
+                                        let name = project.name.clone();
+                                        let role = project.role.label();
                                         rsx! {
                                             button {
-                                                key: "vault-{idx}",
-                                                class: if is_selected { "onboarding-vault-item selected" } else { "onboarding-vault-item" },
+                                                key: "project-{idx}",
+                                                class: if is_selected { "onboarding-project-item selected" } else { "onboarding-project-item" },
                                                 onclick: move |_| *selected_vault.write() = Some(idx),
-                                                div { class: "onboarding-vault-name", "{name}" }
-                                                div { class: "onboarding-vault-meta",
-                                                    span { class: "onboarding-vault-role", "{role}" }
+                                                div { class: "onboarding-project-name", "{name}" }
+                                                div { class: "onboarding-project-meta",
+                                                    span { class: "onboarding-project-role", "{role}" }
                                                 }
                                             }
                                         }
@@ -213,10 +213,10 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                 onclick: move |_| {
                                     let Some(idx) = *selected_vault.read() else { return };
                                     let Some(ref m) = *manifest.read() else { return };
-                                    let vault = m.vaults[idx].clone();
+                                    let project = m.vaults[idx].clone();
                                     let tk = token.read().trim().to_string();
 
-                                    *vault_name.write() = vault.name.clone();
+                                    *vault_name.write() = project.name.clone();
                                     *step.write() = Step::Cloning;
                                     *error_msg.write() = None;
 
@@ -227,11 +227,11 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     spawn(async move {
                                         match tokio::task::spawn_blocking(move || {
                                             crate::oauth::clone_with_token(
-                                                &vault.repo, &vault.branch, &dest, &tk
+                                                &project.repo, &project.branch, &dest, &tk
                                             )?;
                                             if let Some(ref mdir) = mdir {
                                                 if let Some(v) = manifest_clone.vaults.iter_mut()
-                                                    .find(|v| v.name == vault.name)
+                                                    .find(|v| v.name == project.name)
                                                 {
                                                     v.local_path = Some(dest.clone());
                                                 }
@@ -253,7 +253,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                         }
                                     });
                                 },
-                                "Sync this vault"
+                                "Sync this project"
                             }
                             button {
                                 class: "btn btn-ghost",
@@ -264,7 +264,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                     }
                 },
 
-                // ── Single vault / join shared ──────────────────────
+                // ── Single project / join shared ──────────────────────
                 Step::RepoInput => rsx! {
                     div { class: "onboarding-card",
                         h2 { class: "onboarding-title", "Connect a notebook" }
@@ -274,12 +274,12 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
 
                         div { class: "onboarding-form",
                             label { class: "onboarding-field",
-                                span { "Vault URL" }
+                                span { "Project URL" }
                                 input {
                                     class: "input",
                                     r#type: "url",
                                     value: "{repo_url}",
-                                    placeholder: "https://github.com/you/my-vault.git",
+                                    placeholder: "https://github.com/you/my-project.git",
                                     oninput: move |e| *repo_url.write() = e.value(),
                                 }
                             }
@@ -318,7 +318,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     let tk = token.read().trim().to_string();
 
                                     let name = url.rsplit('/').next()
-                                        .unwrap_or("vault")
+                                        .unwrap_or("project")
                                         .trim_end_matches(".git")
                                         .to_string();
                                     *vault_name.write() = name;
@@ -357,7 +357,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 Step::Cloning => rsx! {
                     div { class: "onboarding-card",
                         h2 { class: "onboarding-title", "Setting up…" }
-                        p { class: "onboarding-desc", "Downloading your vault. This may take a moment." }
+                        p { class: "onboarding-desc", "Downloading your project. This may take a moment." }
                         div { class: "onboarding-spinner" }
                     }
                 },
@@ -365,14 +365,14 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                 Step::Done => rsx! {
                     div { class: "onboarding-card",
                         h2 { class: "onboarding-title", "You're all set" }
-                        p { class: "onboarding-desc", "Your vault \"{vault_name}\" is ready." }
+                        p { class: "onboarding-desc", "Your project \"{vault_name}\" is ready." }
                         button {
                             class: "btn btn-primary",
                             onclick: move |_| {
                                 let vault_root = crate::bootstrap::default_vault_root();
                                 on_complete.call(vault_root);
                             },
-                            "Open vault"
+                            "Open project"
                         }
                     }
                 },

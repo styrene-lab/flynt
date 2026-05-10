@@ -50,10 +50,10 @@ async fn main() -> Result<()> {
 
     let root = vault_root();
     if let Err(e) = std::fs::create_dir_all(&root) {
-        tracing::warn!("vault dir create failed: {} — {e}", root.display());
+        tracing::warn!("project dir create failed: {} — {e}", root.display());
     }
 
-    tracing::info!("omegon-design ready, vault={}", root.display());
+    tracing::info!("omegon-design ready, project={}", root.display());
 
     let ext = extension::DesignExtension::new(root);
 

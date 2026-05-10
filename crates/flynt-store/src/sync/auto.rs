@@ -27,7 +27,7 @@ pub struct AutoSyncHandle {
     _cancel: watch::Sender<bool>,
 }
 
-/// Start a background auto-sync loop for a vault.
+/// Start a background auto-sync loop for a project.
 ///
 /// - Commits any dirty files every `interval`
 /// - Pulls from remote (fast-forward or merge)

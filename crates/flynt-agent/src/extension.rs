@@ -4,7 +4,7 @@ use flynt_core::{
     models::{Board, Task},
     store::{TaskFilter, VaultStore},
 };
-use flynt_store::vault::Vault;
+use flynt_store::project::Project;
 use omegon_extension::Extension;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 use crate::forge_tools::{self, SecretBag};
 
 pub struct FlyntExtension {
-    vault: Arc<Vault>,
+    project: Arc<Project>,
     /// In-process secret bag — populated by `bootstrap_secrets` (omegon
     /// push) and seeded from the `FLYNT_GITHUB_TOKEN` env var on
     /// construction. Forge clients resolve tokens through this bag, so
@@ -22,10 +22,10 @@ pub struct FlyntExtension {
 }
 
 impl FlyntExtension {
-    pub fn new(vault: Arc<Vault>) -> Self {
+    pub fn new(project: Arc<Project>) -> Self {
         let secrets = SecretBag::new();
         secrets.seed_from_env();
-        Self { vault, secrets }
+        Self { project, secrets }
     }
 }
 
@@ -73,7 +73,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "search_documents",
                     "label": "Search Documents",
-                    "description": "Full-text search across all vault documents.",
+                    "description": "Full-text search across all project documents.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -86,7 +86,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "list_documents",
                     "label": "List Documents",
-                    "description": "List all vault documents (metadata only: id, path, title, tags, updated_at).",
+                    "description": "List all project documents (metadata only: id, path, title, tags, updated_at).",
                     "parameters": { "type": "object", "properties": {} }
                 },
                 {
@@ -102,11 +102,11 @@ impl Extension for FlyntExtension {
                 {
                     "name": "get_document",
                     "label": "Get Document",
-                    "description": "Retrieve full markdown content and metadata for a document. Pass either `path` (relative-to-vault, e.g. \"Identity.md\") OR `id` (UUID from get_ui_state / list_documents). At least one must be provided.",
+                    "description": "Retrieve full markdown content and metadata for a document. Pass either `path` (relative-to-project, e.g. \"Identity.md\") OR `id` (UUID from get_ui_state / list_documents). At least one must be provided.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "path": { "type": "string", "description": "Relative path inside the vault." },
+                            "path": { "type": "string", "description": "Relative path inside the project." },
                             "id":   { "type": "string", "description": "Document UUID. Either path or id is required." }
                         }
                     }
@@ -114,7 +114,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "create_document",
                     "label": "Create Document",
-                    "description": "Create or overwrite a markdown document in the vault.",
+                    "description": "Create or overwrite a markdown document in the project.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -282,7 +282,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "list_design_nodes",
                     "label": "List Design Nodes",
-                    "description": "List all design nodes in the vault, optionally filtered by lifecycle status.",
+                    "description": "List all design nodes in the project, optionally filtered by lifecycle status.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -312,7 +312,7 @@ impl Extension for FlyntExtension {
                         "properties": {
                             "name": { "type": "string", "description": "Diagram name (used for filename)" },
                             "source": { "type": "string", "description": "D2 diagram source code" },
-                            "directory": { "type": "string", "default": "diagrams", "description": "Directory within vault (default: diagrams)" }
+                            "directory": { "type": "string", "default": "diagrams", "description": "Directory within project (default: diagrams)" }
                         },
                         "required": ["name", "source"]
                     }
@@ -330,7 +330,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "get_workspace_leases",
                     "label": "Get Workspace Leases",
-                    "description": "List workspace leases — machine checkouts of this vault. Shows federation key, machine id, heartbeat, role, mutability, and staleness. Useful for showing workspace sync status in the Omegon sidebar.",
+                    "description": "List workspace leases — machine checkouts of this project. Shows federation key, machine id, heartbeat, role, mutability, and staleness. Useful for showing workspace sync status in the Omegon sidebar.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -343,7 +343,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "get_graph",
                     "label": "Get Graph",
-                    "description": "Get the full knowledge graph — all nodes (documents, tasks, boards, repos, links) and their relationships (wikilinks, task membership, semantic links). Use to understand vault structure and connections.",
+                    "description": "Get the full knowledge graph — all nodes (documents, tasks, boards, repos, links) and their relationships (wikilinks, task membership, semantic links). Use to understand project structure and connections.",
                     "parameters": { "type": "object", "properties": {} }
                 },
                 {
@@ -399,7 +399,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "canvas_get",
                     "label": "Canvas: Get",
-                    "description": "Read a design canvas file (.canvas JSON) and return its parsed shape: { version, theme, grid: {cols, rows, gap}, cells: [{ id, x, y, w, h, html, css, js? }] }. Pass `path` relative to vault root, e.g. 'canvases/Hero.canvas'. Use canvas_active first to discover which canvas the user has open.",
+                    "description": "Read a design canvas file (.canvas JSON) and return its parsed shape: { version, theme, grid: {cols, rows, gap}, cells: [{ id, x, y, w, h, html, css, js? }] }. Pass `path` relative to project root, e.g. 'canvases/Hero.canvas'. Use canvas_active first to discover which canvas the user has open.",
                     "parameters": {
                         "type": "object",
                         "properties": { "path": { "type": "string" } },
@@ -467,7 +467,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "canvas_create",
                     "label": "Canvas: Create",
-                    "description": "Create a new design canvas in the user's vault. Writes a `.canvas` data file at `canvases/<name>.canvas` plus a sibling `.md` wrapper that makes it indexable and openable as a tab. Returns { wrapper_path, canvas_path } you can pass to canvas_set_cells immediately. Refuses to overwrite an existing canvas — pick a different name. Use this when the user asks to design something fresh; use canvas_set_cells on the existing canvas when they want to edit what's already open (call canvas_active first to find out).",
+                    "description": "Create a new design canvas in the user's project. Writes a `.canvas` data file at `canvases/<name>.canvas` plus a sibling `.md` wrapper that makes it indexable and openable as a tab. Returns { wrapper_path, canvas_path } you can pass to canvas_set_cells immediately. Refuses to overwrite an existing canvas — pick a different name. Use this when the user asks to design something fresh; use canvas_set_cells on the existing canvas when they want to edit what's already open (call canvas_active first to find out).",
                     "parameters": {
                         "type": "object",
                         "properties": { "name": { "type": "string" } },
@@ -496,7 +496,7 @@ impl Extension for FlyntExtension {
                     .to_string();
                 let limit = params["limit"].as_u64().unwrap_or(20) as usize;
                 let results = self
-                    .vault
+                    .project
                     .store
                     .search_documents(&query)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -506,7 +506,7 @@ impl Extension for FlyntExtension {
 
             "execute_list_documents" => {
                 let docs = self
-                    .vault
+                    .project
                     .store
                     .list_documents()
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -518,7 +518,7 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'slug'"))?;
                 let doc = self
-                    .vault
+                    .project
                     .store
                     .find_document_by_slug(slug)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -533,7 +533,7 @@ impl Extension for FlyntExtension {
                 let id_arg = params.get("id").and_then(|v| v.as_str());
                 let doc = match (path_arg, id_arg) {
                     (Some(p), _) => self
-                        .vault
+                        .project
                         .store
                         .get_document_by_path(std::path::Path::new(p))
                         .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?,
@@ -544,7 +544,7 @@ impl Extension for FlyntExtension {
                             ))
                         })?;
                         let did = flynt_core::models::DocumentId(uuid);
-                        self.vault
+                        self.project
                             .store
                             .get_document(&did)
                             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
@@ -581,7 +581,7 @@ impl Extension for FlyntExtension {
                     "+++\ntitle = \"{title}\"\ntags = {tags_toml}\n+++\n\n# {title}\n\n{content}"
                 );
                 let rel = std::path::Path::new(path);
-                self.vault
+                self.project
                     .save_document_content(rel, &full)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "created": path }))
@@ -592,13 +592,13 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path'"))?;
                 let doc = self
-                    .vault
+                    .project
                     .store
                     .get_document_by_path(std::path::Path::new(path))
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
                     .ok_or_else(|| omegon_extension::Error::internal_error(format!("not found: {path}")))?;
                 let links = self
-                    .vault
+                    .project
                     .store
                     .get_backlinks(&doc.id)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -616,7 +616,7 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'content'"))?;
                 let path = self
-                    .vault
+                    .project
                     .store_memory_fact(topic, title, content)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "path": path }))
@@ -633,7 +633,7 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'content'"))?;
                 let path = self
-                    .vault
+                    .project
                     .store_agent_communication(channel, title, content)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "path": path }))
@@ -661,7 +661,7 @@ impl Extension for FlyntExtension {
                     })
                     .transpose()?;
                 let tasks = self
-                    .vault
+                    .project
                     .store
                     .list_tasks(&TaskFilter {
                         board_id,
@@ -683,7 +683,7 @@ impl Extension for FlyntExtension {
                         .map_err(|_| omegon_extension::Error::invalid_params("invalid 'id'"))?,
                 );
                 let task = self
-                    .vault
+                    .project
                     .store
                     .get_task(&id)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -705,9 +705,9 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'title'"))?;
                 let task = Task::new(board_id, column, title);
-                // Route through vault.persist_task so the new task lands
+                // Route through project.persist_task so the new task lands
                 // as a .md file alongside the sqlite row.
-                self.vault
+                self.project
                     .persist_task(&task, None)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(serde_json::to_value(&task).unwrap_or(json!({})))
@@ -780,7 +780,7 @@ impl Extension for FlyntExtension {
                 }
 
                 let updated = self
-                    .vault
+                    .project
                     .update_any_task(&task_id, &patch)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "updated": updated, "task_id": id_str }))
@@ -788,7 +788,7 @@ impl Extension for FlyntExtension {
 
             "execute_list_boards" => {
                 let boards = self
-                    .vault
+                    .project
                     .store
                     .list_boards()
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -804,7 +804,7 @@ impl Extension for FlyntExtension {
                         .map_err(|_| omegon_extension::Error::invalid_params("invalid 'id'"))?,
                 );
                 let board = self
-                    .vault
+                    .project
                     .store
                     .get_board(&id)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -816,7 +816,7 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'name'"))?;
                 let board = Board::default_sprint(name);
-                self.vault
+                self.project
                     .store
                     .save_board(&board)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -834,7 +834,7 @@ impl Extension for FlyntExtension {
 
                 // Read the existing document
                 let doc = self
-                    .vault
+                    .project
                     .store
                     .get_document_by_path(std::path::Path::new(path))
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
@@ -877,7 +877,7 @@ impl Extension for FlyntExtension {
                 );
 
                 let rel = std::path::Path::new(path);
-                self.vault
+                self.project
                     .save_document_content(rel, &full)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "converted": path, "id": doc_id.to_string(), "status": status }))
@@ -886,7 +886,7 @@ impl Extension for FlyntExtension {
             "execute_list_design_nodes" => {
                 let status_filter = params["status"].as_str();
                 let nodes = self
-                    .vault
+                    .project
                     .store
                     .list_entities_by_kind(&flynt_core::datum::EntityKind::DesignNode)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -895,7 +895,7 @@ impl Extension for FlyntExtension {
                 for meta in nodes {
                     // Load full document for entity fields
                     let doc = self
-                        .vault
+                        .project
                         .store
                         .get_document(&meta.id)
                         .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -945,7 +945,7 @@ impl Extension for FlyntExtension {
                 let scene = params["scene"].as_str();
 
                 // Create drawings directory and files
-                let drawings_dir = self.vault.root.join("drawings");
+                let drawings_dir = self.project.root.join("drawings");
                 std::fs::create_dir_all(&drawings_dir)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
@@ -970,7 +970,7 @@ impl Extension for FlyntExtension {
                     name.replace('"', "\\\"")
                 );
                 let rel = std::path::Path::new(&md_rel);
-                self.vault
+                self.project
                     .save_document_content(rel, &md_content)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
@@ -991,7 +991,7 @@ impl Extension for FlyntExtension {
                 let directory = params["directory"].as_str().unwrap_or("diagrams");
 
                 // Create directory and write .d2 file
-                let dir = self.vault.root.join(directory);
+                let dir = self.project.root.join(directory);
                 std::fs::create_dir_all(&dir)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
@@ -1012,7 +1012,7 @@ impl Extension for FlyntExtension {
                     name.replace('"', "\\\"")
                 );
                 let rel = std::path::Path::new(&md_rel);
-                self.vault
+                self.project
                     .save_document_content(rel, &md_content)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
@@ -1030,7 +1030,7 @@ impl Extension for FlyntExtension {
                     uuid::Uuid::parse_str(id)
                         .map_err(|_| omegon_extension::Error::invalid_params("invalid 'id'"))?,
                 );
-                self.vault
+                self.project
                     .store
                     .delete_board(&id)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -1043,7 +1043,7 @@ impl Extension for FlyntExtension {
                 let staleness_secs = params["staleness_threshold_secs"].as_i64().unwrap_or(300);
 
                 let leases = self
-                    .vault
+                    .project
                     .store
                     .list_entities_by_kind(&flynt_core::datum::EntityKind::WorkspaceLease)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -1051,7 +1051,7 @@ impl Extension for FlyntExtension {
                 let mut results: Vec<Value> = Vec::new();
                 for meta in leases {
                     let doc = self
-                        .vault
+                        .project
                         .store
                         .get_document(&meta.id)
                         .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -1091,13 +1091,13 @@ impl Extension for FlyntExtension {
             }
 
             "execute_get_graph" => {
-                let payload = build_graph_payload(&*self.vault.store)
+                let payload = build_graph_payload(&*self.project.store)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(serde_json::to_value(&payload).unwrap_or(json!({})))
             }
 
             "execute_get_graph_filtered" => {
-                let payload = build_graph_payload(&*self.vault.store)
+                let payload = build_graph_payload(&*self.project.store)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
                 let kind_filter = params["kind"].as_str();
@@ -1185,7 +1185,7 @@ impl Extension for FlyntExtension {
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'node_id'"))?;
 
-                let payload = build_graph_payload(&*self.vault.store)
+                let payload = build_graph_payload(&*self.project.store)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
                 let connected_edges: Vec<_> = payload.edges.iter()
@@ -1269,7 +1269,7 @@ impl Extension for FlyntExtension {
                 // the agent can still answer "no file open" without surfacing
                 // a confusing tool error to the user.
                 let path = self
-                    .vault
+                    .project
                     .root
                     .join(".flynt-local")
                     .join("flynt")
@@ -1284,7 +1284,7 @@ impl Extension for FlyntExtension {
                         "active_document": null,
                         "open_documents": [],
                         "current_view": null,
-                        "vault_root": self.vault.root.to_string_lossy(),
+                        "vault_root": self.project.root.to_string_lossy(),
                         "updated_at": null,
                         "note": "ui-state.json not yet written — flynt-app may not be running, or no view has rendered yet"
                     })),
@@ -1306,22 +1306,22 @@ impl Extension for FlyntExtension {
             // works without it.
             "bootstrap_secrets" => forge_tools::bootstrap_secrets(&self.secrets, params),
 
-            "execute_engagement_create" => forge_tools::engagement_create(&self.vault, params),
-            "execute_engagement_list"   => forge_tools::engagement_list(&self.vault, params),
-            "execute_engagement_status" => forge_tools::engagement_status(&self.vault, params),
-            "execute_project_list"      => forge_tools::project_list(&self.vault, params),
-            "execute_forge_status"      => forge_tools::forge_status(&self.vault, &self.secrets, params),
+            "execute_engagement_create" => forge_tools::engagement_create(&self.project, params),
+            "execute_engagement_list"   => forge_tools::engagement_list(&self.project, params),
+            "execute_engagement_status" => forge_tools::engagement_status(&self.project, params),
+            "execute_project_list"      => forge_tools::project_list(&self.project, params),
+            "execute_forge_status"      => forge_tools::forge_status(&self.project, &self.secrets, params),
             "execute_forge_list_issues" => {
-                forge_tools::forge_list_issues(&self.vault, &self.secrets, params).await
+                forge_tools::forge_list_issues(&self.project, &self.secrets, params).await
             }
             "execute_forge_sync_issues" => {
-                forge_tools::forge_sync_issues(&self.vault, &self.secrets, params).await
+                forge_tools::forge_sync_issues(&self.project, &self.secrets, params).await
             }
             "execute_forge_create_issue" => {
-                forge_tools::forge_create_issue(&self.vault, &self.secrets, params).await
+                forge_tools::forge_create_issue(&self.project, &self.secrets, params).await
             }
-            "execute_log_work"          => forge_tools::log_work(&self.vault, params),
-            "execute_timeline"          => forge_tools::timeline(&self.vault, params),
+            "execute_log_work"          => forge_tools::log_work(&self.project, params),
+            "execute_timeline"          => forge_tools::timeline(&self.project, params),
 
             _ => Err(omegon_extension::Error::method_not_found(method)),
         }
@@ -1332,20 +1332,20 @@ impl Extension for FlyntExtension {
 //
 // Pulled out as inherent methods (rather than inline match arms) so each tool
 // is independently unit-testable and the dispatch table above stays scannable.
-// All paths are interpreted relative to the vault root, matching get_document
+// All paths are interpreted relative to the project root, matching get_document
 // ergonomics. None of these tools panic on malformed input — they cross the
 // ACP boundary, where a panic would kill the worker thread.
 impl FlyntExtension {
     fn resolve_canvas_path(&self, path_arg: &str) -> Result<std::path::PathBuf, omegon_extension::Error> {
-        // Refuse paths that escape the vault root (path traversal). The agent
-        // shouldn't be writing outside the vault, ever.
+        // Refuse paths that escape the project root (path traversal). The agent
+        // shouldn't be writing outside the project, ever.
         let rel = std::path::Path::new(path_arg);
         if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
             return Err(omegon_extension::Error::invalid_params(
                 "path must not contain '..'",
             ));
         }
-        Ok(self.vault.root.join(rel))
+        Ok(self.project.root.join(rel))
     }
 
     fn execute_canvas_get(&self, params: Value) -> omegon_extension::Result<Value> {
@@ -1454,10 +1454,10 @@ impl FlyntExtension {
     }
 
     fn execute_canvas_list_primitives(&self) -> omegon_extension::Result<Value> {
-        // Read from the vault-side copy that flynt-app's canvas_assets bootstrap
+        // Read from the project-side copy that flynt-app's canvas_assets bootstrap
         // writes on launch. If the bootstrap hasn't run yet (agent started before
         // app), return an empty primitives list rather than erroring.
-        let dir = self.vault.root.join(".flynt-local").join("flynt").join("assets");
+        let dir = self.project.root.join(".flynt-local").join("flynt").join("assets");
         let primitives_doc = read_json_or_default(
             &dir.join("shadcn-primitives.json"),
             json!({ "version": 1, "primitives": [] }),
@@ -1511,7 +1511,7 @@ impl FlyntExtension {
                 "name must not be empty or contain path separators",
             ));
         }
-        let md_rel = flynt_core::canvas::create_canvas(&self.vault.root, name)
+        let md_rel = flynt_core::canvas::create_canvas(&self.project.root, name)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         let stem = std::path::Path::new(&md_rel)
             .file_stem()
@@ -1525,7 +1525,7 @@ impl FlyntExtension {
 
     fn execute_canvas_active(&self) -> omegon_extension::Result<Value> {
         let ui_path = self
-            .vault
+            .project
             .root
             .join(".flynt-local")
             .join("flynt")
@@ -1557,7 +1557,7 @@ impl FlyntExtension {
                 .file_stem()
                 .map(|s| format!("{}.canvas", s.to_string_lossy()))
         } else {
-            let md_abs = self.vault.root.join(md_path);
+            let md_abs = self.project.root.join(md_path);
             let md_body = match std::fs::read_to_string(&md_abs) {
                 Ok(s) => s,
                 Err(_) => return Ok(Value::Null),
@@ -1745,7 +1745,7 @@ fn canvas_embed_path(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::FlyntExtension;
-    use flynt_store::vault::Vault;
+    use flynt_store::project::Project;
     use omegon_extension::Extension;
     use serde_json::json;
     use std::sync::Arc;
@@ -1753,8 +1753,8 @@ mod tests {
 
     fn test_extension() -> (TempDir, FlyntExtension) {
         let tmp = TempDir::new().unwrap();
-        let vault = Arc::new(Vault::open(tmp.path()).unwrap());
-        (tmp, FlyntExtension::new(vault))
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        (tmp, FlyntExtension::new(project))
     }
 
     #[tokio::test]

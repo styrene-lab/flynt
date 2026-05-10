@@ -7,8 +7,8 @@
 //! ## Architecture
 //!
 //! Tool side (`omegon-design::canvas_capture_viewport`) writes a request file
-//! to `<vault>/.flynt-local/flynt/capture-requests/<id>.json`. Flynt-app's
-//! `CanvasView` watches that directory via the existing vault watcher; on
+//! to `<project>/.flynt-local/flynt/capture-requests/<id>.json`. Flynt-app's
+//! `CanvasView` watches that directory via the existing project watcher; on
 //! detection, it:
 //!   1. Queries each cell's iframe via `postMessage` for its body's natural
 //!      width/height (the "content_box"). The response listener is injected
@@ -16,7 +16,7 @@
 //!      in `views::canvas`.
 //!   2. Computes the canvas-pane's screen-relative bounds.
 //!   3. Calls `xcap` to capture the Flynt window, crops to those bounds.
-//!   4. Writes PNG + response JSON to `<vault>/.flynt-local/flynt/capture-responses/`.
+//!   4. Writes PNG + response JSON to `<project>/.flynt-local/flynt/capture-responses/`.
 //!
 //! Tool polls for the response file (5s timeout), returns image + metrics.
 //!

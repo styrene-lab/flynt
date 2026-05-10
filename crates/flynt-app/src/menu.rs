@@ -11,7 +11,7 @@ use muda::{
 // ── Menu item IDs ────────────────────────────────────────────────────────────
 
 pub const NEW_NOTE: &str = "flynt-new-note";
-pub const OPEN_VAULT: &str = "flynt-open-vault";
+pub const OPEN_VAULT: &str = "flynt-open-project";
 pub const SAVE: &str = "flynt-save";
 pub const CLOSE_TAB: &str = "flynt-close-tab";
 
@@ -103,7 +103,7 @@ pub fn build_menu_bar() -> Menu {
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(
                 OPEN_VAULT,
-                "Open Vault…",
+                "Open Project…",
                 true,
                 Some(Accelerator::new(Some(Modifiers::META), Code::KeyO)),
             ),

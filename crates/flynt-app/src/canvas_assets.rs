@@ -1,9 +1,9 @@
 //! Canvas asset bootstrap — copies bundled tweakcn presets and shadcn
-//! primitives into the vault's `.flynt-local/flynt/assets/` directory so
+//! primitives into the project's `.flynt-local/flynt/assets/` directory so
 //! `flynt-agent` (a separate binary) can read them via the `canvas_*`
 //! tools (phase 5).
 //!
-//! Why a vault-side copy? `flynt-app` and `flynt-agent` are two binaries
+//! Why a project-side copy? `flynt-app` and `flynt-agent` are two binaries
 //! installed into different locations. The app has the bundled assets
 //! via `include_str!`; the agent needs to find them without depending on
 //! the app's install path. Putting a copy under `.flynt-local/flynt/` is
@@ -11,7 +11,7 @@
 //!
 //! The copy is idempotent and content-aware: we only write when the file
 //! is missing or its bytes differ from the bundled version. New Flynt
-//! releases that ship updated presets/primitives propagate to the vault
+//! releases that ship updated presets/primitives propagate to the project
 //! on next launch with no migration step.
 
 use std::path::Path;
@@ -19,9 +19,9 @@ use std::path::Path;
 const TWEAKCN_PRESETS: &[u8] = include_bytes!("../assets/vendor/tweakcn-presets.json");
 const SHADCN_PRIMITIVES: &[u8] = include_bytes!("../assets/vendor/shadcn-primitives.json");
 
-/// Copy bundled canvas assets into `<vault>/.flynt-local/flynt/assets/`
+/// Copy bundled canvas assets into `<project>/.flynt-local/flynt/assets/`
 /// if they're missing or stale. Errors are logged but not propagated —
-/// the canvas still renders without the vault-side copy; the only
+/// the canvas still renders without the project-side copy; the only
 /// surface that requires it is the `canvas_*` agent tool family.
 pub fn bootstrap(vault_root: &Path) {
     let dir = vault_root.join(".flynt-local").join("flynt").join("assets");

@@ -60,7 +60,7 @@ pub type MetadataFieldMap = BTreeMap<String, MetadataField>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub id: DocumentId,
-    /// Path relative to vault root
+    /// Path relative to project root
     pub path: PathBuf,
     pub title: String,
     /// Raw markdown content (includes frontmatter stripped away)
@@ -206,7 +206,7 @@ pub struct Notification {
     pub kind: NotificationKind,
     pub title: String,
     pub body: String,
-    /// Which vault originated this notification.
+    /// Which project originated this notification.
     pub source_vault: String,
     /// Task ID if this notification relates to a task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -314,7 +314,7 @@ pub struct SearchResult {
     pub score: f32,
 }
 
-// ── Vault config ──────────────────────────────────────────────────────────────
+// ── Project config ──────────────────────────────────────────────────────────────
 
 /// Persisted configuration stored in `<vault_root>/.flynt/config.toml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -346,9 +346,9 @@ pub struct IndexingConfig {
     #[serde(default = "IndexingConfig::default_write_frontmatter")]
     pub write_frontmatter: bool,
 
-    /// Opt-in managed paths. Files under a scope can override the vault-wide
+    /// Opt-in managed paths. Files under a scope can override the project-wide
     /// `write_frontmatter` default and be auto-assigned an entity `kind`.
-    /// When empty, all files follow the vault-wide setting.
+    /// When empty, all files follow the project-wide setting.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scopes: Vec<IndexScope>,
 }
@@ -357,14 +357,14 @@ pub struct IndexingConfig {
 /// document management by Flynt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IndexScope {
-    /// Path prefix relative to vault root (e.g. `"design/"`).
+    /// Path prefix relative to project root (e.g. `"design/"`).
     pub prefix: PathBuf,
 
     /// Auto-assigned entity kind for files without an existing `kind`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
 
-    /// Override the vault-wide `write_frontmatter` for files under this prefix.
+    /// Override the project-wide `write_frontmatter` for files under this prefix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub write_frontmatter: Option<bool>,
 }
@@ -735,15 +735,15 @@ pub enum SyncConfig {
 
 /// Describes how a project's data maps to a git repository.
 ///
-/// Each project is backed 1:1 by a git repo. The repo can be the vault's own
+/// Each project is backed 1:1 by a git repo. The repo can be the project's own
 /// repo (most common) or a separate external repo. In both cases the project
 /// data lives at a configurable sub-path within the repo.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GitBacking {
-    /// Project data lives inside the vault's own git repo.
+    /// Project data lives inside the project's own git repo.
     VaultRepo {
-        /// Path relative to vault root where this project's data lives
+        /// Path relative to project root where this project's data lives
         /// (e.g. ".flynt/projects/my-project").
         sub_path: PathBuf,
     },
@@ -783,7 +783,7 @@ impl GitBacking {
         }
     }
 
-    /// Whether this backing uses the vault's own repo.
+    /// Whether this backing uses the project's own repo.
     pub fn is_vault_repo(&self) -> bool {
         matches!(self, Self::VaultRepo { .. })
     }
@@ -870,7 +870,7 @@ pub struct FlyntOperatorSettings {
     /// Keys are config option IDs, values are the selected value IDs.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub acp_config: std::collections::HashMap<String, String>,
-    /// Per-vault agent daemon configuration — model, posture, vox channels.
+    /// Per-project agent daemon configuration — model, posture, vox channels.
     #[serde(default)]
     pub agent_daemon: crate::daemon::AgentDaemonConfig,
     /// Design canvas settings — default theme, grid, asset bootstrap state.
@@ -1051,11 +1051,11 @@ mod tests {
 
     #[test]
     fn notification_new_has_correct_fields() {
-        let n = Notification::new(NotificationKind::DueDate, "Due", "Task is due", "my-vault");
+        let n = Notification::new(NotificationKind::DueDate, "Due", "Task is due", "my-project");
         assert_eq!(n.kind, NotificationKind::DueDate);
         assert_eq!(n.title, "Due");
         assert_eq!(n.body, "Task is due");
-        assert_eq!(n.source_vault, "my-vault");
+        assert_eq!(n.source_vault, "my-project");
         assert!(n.task_id.is_none());
         assert!(n.delivered_at.is_none());
     }
@@ -1063,7 +1063,7 @@ mod tests {
     #[test]
     fn notification_for_task_sets_task_id() {
         let tid = TaskId(uuid::Uuid::new_v4());
-        let n = Notification::new(NotificationKind::Decay, "Fading", "...", "vault")
+        let n = Notification::new(NotificationKind::Decay, "Fading", "...", "project")
             .for_task(tid.clone());
         assert_eq!(n.task_id, Some(tid));
     }

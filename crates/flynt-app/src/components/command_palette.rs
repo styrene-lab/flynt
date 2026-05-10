@@ -57,39 +57,39 @@ fn execute_command(
             let mut ts = *tab_state;
             let mut ar = *active_route;
             spawn(async move {
-                let vault = c.vault();
+                let project = c.project();
                 // Generate unique filename to avoid collisions
                 let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let title = format!("Untitled {ts_suffix}");
                 let filename = format!("{title}.md");
                 let path = std::path::PathBuf::from(&filename);
                 let content = format!("+++\ntitle = \"{title}\"\ntags = []\n+++\n\n");
-                if vault.save_document_content(&path, &content).is_ok() {
-                    let _ = vault.reindex();
-                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&title.to_lowercase()) {
+                if project.save_document_content(&path, &content).is_ok() {
+                    let _ = project.reindex();
+                    if let Ok(Some(doc)) = project.store.find_document_by_slug(&title.to_lowercase()) {
                         ts.write().open(doc.id, title);
                         *ar.write() = Route::Notes;
                     }
                 }
             });
         }
-        "icloud-vault" => {
+        "icloud-project" => {
             match flynt_store::sync::icloud::create_icloud_vault("Flynt") {
                 Ok(root) => {
                     let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_vault(&root);
                 }
                 Err(e) => {
-                    tracing::error!("iCloud vault creation failed: {e}");
+                    tracing::error!("iCloud project creation failed: {e}");
                 }
             }
         }
         other if other.starts_with("template:") => {
             if let Some(tmpl_name) = other.strip_prefix("template:") {
-                let templates = flynt_core::templates::list_templates(&ctx.vault().root);
+                let templates = flynt_core::templates::list_templates(&ctx.project().root);
                 if let Some(tmpl) = templates.iter().find(|t| t.name == tmpl_name) {
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let title = format!("{} {ts_suffix}", tmpl.name);
-                    let vault_name = ctx.vault().config.vault_name.clone();
+                    let vault_name = ctx.project().config.vault_name.clone();
                     let content = flynt_core::templates::expand(&tmpl.content, &title, &vault_name);
                     let filename = format!("{title}.md");
                     let path = std::path::PathBuf::from(&filename);
@@ -97,10 +97,10 @@ fn execute_command(
                     let mut ts = *tab_state;
                     let mut ar = *active_route;
                     spawn(async move {
-                        let vault = c.vault();
-                        if vault.save_document_content(&path, &content).is_ok() {
-                            let _ = vault.reindex();
-                            if let Ok(Some(doc)) = vault.store.find_document_by_slug(&title.to_lowercase()) {
+                        let project = c.project();
+                        if project.save_document_content(&path, &content).is_ok() {
+                            let _ = project.reindex();
+                            if let Ok(Some(doc)) = project.store.find_document_by_slug(&title.to_lowercase()) {
                                 ts.write().open(doc.id, title);
                                 *ar.write() = Route::Notes;
                             }
@@ -114,10 +114,10 @@ fn execute_command(
             if *active_route.read() != Route::Notes {
                 return; // Not on notes view
             }
-            let vault = ctx.vault();
+            let project = ctx.project();
             let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
             let name = format!("Drawing {ts_suffix}");
-            if let Ok(_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
+            if let Ok(_path) = crate::views::excalidraw::create_drawing(&project.root, &name) {
                 let embed = format!("![[{name}.excalidraw]]");
                 let js = format!(
                     "if(window._flyntCM){{const t=window._flyntCM.state.selection.main.head;window._flyntCM.dispatch({{changes:{{from:t,insert:{escaped}}}}});}}else{{alert('Open a note first to insert a drawing.')}}",
@@ -131,13 +131,13 @@ fn execute_command(
             let mut ts = *tab_state;
             let mut ar = *active_route;
             spawn(async move {
-                let vault = c.vault();
+                let project = c.project();
                 let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let name = format!("Drawing {ts_suffix}");
-                if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                    let _ = vault.reindex();
+                if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&project.root, &name) {
+                    let _ = project.reindex();
                     let slug = name.to_lowercase();
-                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                    if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
                         ts.write().open(doc.id, name);
                     }
                     *ar.write() = Route::Notes;
@@ -149,13 +149,13 @@ fn execute_command(
             let mut ts = *tab_state;
             let mut ar = *active_route;
             spawn(async move {
-                let vault = c.vault();
+                let project = c.project();
                 let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let name = format!("Canvas {ts_suffix}");
-                if let Ok(_md_path) = crate::views::canvas::create_canvas(&vault.root, &name) {
-                    let _ = vault.reindex();
+                if let Ok(_md_path) = crate::views::canvas::create_canvas(&project.root, &name) {
+                    let _ = project.reindex();
                     let slug = name.to_lowercase();
-                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                    if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
                         ts.write().open(doc.id, name);
                     }
                     *ar.write() = Route::Notes;
@@ -167,20 +167,20 @@ fn execute_command(
             let mut ts = *tab_state;
             let mut ar = *active_route;
             spawn(async move {
-                let vault = c.vault();
+                let project = c.project();
                 let date = flynt_core::daily::today();
                 let path = flynt_core::daily::daily_note_path(date);
-                let abs = vault.root.join(&path);
+                let abs = project.root.join(&path);
                 if !abs.exists() {
-                    let templates = flynt_core::templates::list_templates(&vault.root);
+                    let templates = flynt_core::templates::list_templates(&project.root);
                     let tmpl = templates.iter().find(|t| t.name.to_lowercase() == "daily");
                     let content = flynt_core::daily::daily_note_content(date, tmpl.map(|t| t.content.as_str()));
                     if let Some(parent) = abs.parent() { let _ = std::fs::create_dir_all(parent); }
-                    let _ = vault.save_document_content(&path, &content);
-                    let _ = vault.reindex();
+                    let _ = project.save_document_content(&path, &content);
+                    let _ = project.reindex();
                 }
                 let title = date.format("%A, %B %-d, %Y").to_string();
-                if let Ok(Some(doc)) = vault.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
+                if let Ok(Some(doc)) = project.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
                     ts.write().open(doc.id, title);
                     *ar.write() = Route::Notes;
                 }
@@ -189,10 +189,10 @@ fn execute_command(
         "sync-now" => {
             let c = ctx;
             spawn(async move {
-                let vault = c.vault();
-                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } = &vault.config.sync {
+                let project = c.project();
+                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } = &project.config.sync {
                     let git = flynt_store::sync::git::GitSync::new(
-                        vault.root.clone(),
+                        project.root.clone(),
                         remote.clone(),
                         branch.clone(),
                     );
@@ -208,15 +208,15 @@ fn execute_command(
         "create-tag" => {
             let c = ctx;
             spawn(async move {
-                let vault = c.vault();
-                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } = &vault.config.sync {
+                let project = c.project();
+                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } = &project.config.sync {
                     let git = flynt_store::sync::git::GitSync::new(
-                        vault.root.clone(), remote.clone(), branch.clone(),
+                        project.root.clone(), remote.clone(), branch.clone(),
                     );
                     // Auto-commit first so the tag captures current state
                     let _ = git.auto_commit("[flynt] snapshot");
                     let tag_name = format!("snapshot-{}", chrono::Local::now().format("%Y%m%d-%H%M%S%3f"));
-                    match git.create_tag(&tag_name, Some("Flynt vault snapshot")) {
+                    match git.create_tag(&tag_name, Some("Flynt project snapshot")) {
                         Ok(()) => {
                             let _ = git.push_tags();
                             tracing::info!("Created snapshot: {tag_name}");
@@ -271,9 +271,9 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
             Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
             Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
             Cmd { id: "create-tag".into(), label: "Create Snapshot".into(), category: "Action".into() },
-        Cmd { id: "icloud-vault".into(), label: "Create Vault in iCloud".into(), category: "Create".into() },
+        Cmd { id: "icloud-project".into(), label: "Create Project in iCloud".into(), category: "Create".into() },
         ];
-        let templates = flynt_core::templates::list_templates(&ctx.vault().root);
+        let templates = flynt_core::templates::list_templates(&ctx.project().root);
         for tmpl in &templates {
             all.push(Cmd {
                 id: format!("template:{}", tmpl.name),
@@ -281,7 +281,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 category: "Template".into(),
             });
         }
-        if let Ok(tags) = ctx.vault().list_tags() {
+        if let Ok(tags) = ctx.project().list_tags() {
             for (tag, count) in &tags {
                 all.push(Cmd {
                     id: format!("filter-tag:{}", tag),
@@ -290,7 +290,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 });
             }
         }
-        if let Ok(docs) = ctx.vault().store.list_documents() {
+        if let Ok(docs) = ctx.project().store.list_documents() {
             for doc in docs {
                 all.push(Cmd {
                     id: format!("open:{}", doc.id.0),
@@ -411,7 +411,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 PaletteMode::Agent => {
                     // ── Agent delegation mode ───────────────────────────────
                     // Fire-and-forget: submit prompt to the shared ACP session,
-                    // close the palette. Results flow into the vault via watcher
+                    // close the palette. Results flow into the project via watcher
                     // and appear in the agent rail transcript.
                     let has_session = shared_session.read().is_some();
 
@@ -436,7 +436,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
 
                                         let Some(sess) = shared_session.read().clone() else { return };
 
-                                        // Inject vault context: active note title + route
+                                        // Inject project context: active note title + route
                                         let context_prefix = {
                                             let ts = tab_state.read();
                                             let route = active_route.read();
@@ -458,8 +458,8 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                         };
                                         let full_prompt = format!("{context_prefix}{prompt}");
 
-                                        // Persist delegation to vault for audit trail
-                                        let vault = ctx.vault();
+                                        // Persist delegation to project for audit trail
+                                        let project = ctx.project();
                                         let ts = chrono::Local::now();
                                         let del_path = format!(
                                             "ai/delegations/{}.md",
@@ -470,7 +470,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             ts.format("%H:%M"),
                                             prompt,
                                         );
-                                        let _ = vault.save_document_content(
+                                        let _ = project.save_document_content(
                                             std::path::Path::new(&del_path),
                                             &del_content,
                                         );
@@ -508,7 +508,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                 }
                             } else {
                                 div { class: "palette-agent-hint",
-                                    "Describe what you need. The agent acts on your vault and results appear in your notes."
+                                    "Describe what you need. The agent acts on your project and results appear in your notes."
                                 }
                             }
                         }

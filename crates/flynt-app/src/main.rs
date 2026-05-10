@@ -8,7 +8,7 @@ fn vault_root() -> PathBuf {
         .collect::<Vec<_>>()
         .windows(2)
         .find_map(|window| {
-            if window[0] == "--vault" {
+            if window[0] == "--project" {
                 Some(PathBuf::from(&window[1]))
             } else {
                 None
@@ -48,9 +48,9 @@ fn main() {
                         .with_always_on_top(false)
                         .with_resizable(true),
                 )
-                // Serve vault files at vault://localhost/<rel-path>
-                // Allows <img src="vault://localhost/image.png"> to resolve.
-                .with_custom_protocol("vault", {
+                // Serve project files at project://localhost/<rel-path>
+                // Allows <img src="project://localhost/image.png"> to resolve.
+                .with_custom_protocol("project", {
                     let root = root.clone();
                     move |_id, request: HttpRequest<Vec<u8>>| {
                         let path_str = request.uri().path().trim_start_matches('/');

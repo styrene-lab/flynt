@@ -77,9 +77,9 @@ pub fn GraphView() -> Element {
     let ctx_click = ctx.clone();
 
     let graph = use_resource(move || {
-        let vault = ctx_res.vault();
+        let project = ctx_res.project();
         async move {
-            tokio::task::spawn_blocking(move || build_graph_payload(&*vault.store))
+            tokio::task::spawn_blocking(move || build_graph_payload(&*project.store))
                 .await
                 .ok()
                 .and_then(Result::ok)
@@ -123,10 +123,10 @@ pub fn GraphView() -> Element {
                     Ok(node_id) => {
                         if let Ok(uuid) = uuid::Uuid::from_str(&node_id) {
                             let doc_id = DocumentId(uuid);
-                            let vault = click_ctx.vault();
+                            let project = click_ctx.project();
                             let result: Result<Option<flynt_core::models::Document>, _> =
                                 tokio::task::spawn_blocking(move || {
-                                    vault.store.get_document(&doc_id)
+                                    project.store.get_document(&doc_id)
                                 }).await.unwrap_or(Ok(None));
                             if let Ok(Some(doc)) = result {
                                 tab_state.write().open(doc.id, doc.title);

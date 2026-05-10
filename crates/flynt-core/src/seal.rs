@@ -1,7 +1,7 @@
-//! Vault sealing — encryption at rest for notes and vaults.
+//! Project sealing — encryption at rest for notes and vaults.
 //!
 //! Two modes:
-//! - **Sealed vault**: all files encrypted as `.md.age`, decrypted in memory while unlocked
+//! - **Sealed project**: all files encrypted as `.md.age`, decrypted in memory while unlocked
 //! - **Selective seal**: individual notes marked `sealed = true`, body encrypted inline
 //!
 //! Encryption uses the `age` crate with keys derived from StyreneIdentity:
@@ -16,14 +16,14 @@ use serde::{Deserialize, Serialize};
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
-/// How the vault handles encryption at rest.
+/// How the project handles encryption at rest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SealMode {
     /// No encryption — plain markdown files.
     #[default]
     Open,
-    /// Entire vault encrypted. All files stored as `.sealed` on disk.
+    /// Entire project encrypted. All files stored as `.sealed` on disk.
     Sealed,
     /// Per-note encryption. Notes with `sealed = true` have encrypted bodies.
     Selective,
@@ -76,7 +76,7 @@ pub const SEALED_VERSION: u8 = 0x01;
 ///
 /// Note: the preferred format for new implementations is `age` armored
 /// encryption (see design doc). This struct is the legacy/fallback binary
-/// format and may be used for `.sealed` files in full vault mode.
+/// format and may be used for `.sealed` files in full project mode.
 #[derive(Debug, Clone)]
 pub struct SealedBody {
     pub version: u8,
@@ -155,7 +155,7 @@ impl SealedBody {
         })
     }
 
-    /// Encode as binary for `.sealed` files (full vault mode).
+    /// Encode as binary for `.sealed` files (full project mode).
     pub fn encode_binary(&self) -> Vec<u8> {
         let algo_byte = match self.algorithm {
             SealAlgorithm::ChaCha20Poly1305 => 0x01,

@@ -8,8 +8,8 @@
 //! and the agent can list/sync forge issues against the right repo binding.
 //!
 //! Ported from scribe (now absorbed). Drops codex-specific fields:
-//! `RepoBinding` no longer carries `codex_project_id` or vault path
-//! overrides — flynt is the vault, so binding lookup happens via
+//! `RepoBinding` no longer carries `codex_project_id` or project path
+//! overrides — flynt is the project, so binding lookup happens via
 //! `engagement_id` on the task or via project structure.
 
 use chrono::{DateTime, Utc};
@@ -123,8 +123,8 @@ impl Engagement {
 
 /// Binds an engagement to a forge repo.
 ///
-/// Flynt is the vault, so this no longer carries codex-era project /
-/// vault path fields. To find tasks linked to a binding, look up tasks
+/// Flynt is the project, so this no longer carries codex-era project /
+/// project path fields. To find tasks linked to a binding, look up tasks
 /// with this engagement's `engagement_id` and matching `external_refs`
 /// pointing at the binding's repo.
 #[derive(Debug, Clone, Serialize, Deserialize)]

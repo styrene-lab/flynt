@@ -1,6 +1,6 @@
 //! Style-guide loader — two-tier merge of project-level + user-level guides.
 //!
-//! Project-level: `<vault>/.flynt/style-guide.md` (lives with the project repo,
+//! Project-level: `<project>/.flynt/style-guide.md` (lives with the project repo,
 //! version-controlled, overrides everything below).
 //! User-level: `~/.flynt/style-guide.md` (defaults across all projects).
 //!

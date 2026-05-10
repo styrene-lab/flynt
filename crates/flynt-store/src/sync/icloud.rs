@@ -1,13 +1,13 @@
 //! iCloud Drive sync for Flynt vaults.
 //!
-//! The simplest sync path: the vault folder lives inside iCloud Drive.
+//! The simplest sync path: the project folder lives inside iCloud Drive.
 //! Apple handles all file sync transparently. No server, no tokens, no git.
 //!
 //! On macOS: ~/Library/Mobile Documents/com~apple~CloudDrive/Flynt/
 //! On iOS: app's iCloud container (requires entitlement)
 //!
 //! Flynt just needs to:
-//! 1. Create/open the vault in the right location
+//! 1. Create/open the project in the right location
 //! 2. Handle .icloud placeholder files (not-yet-downloaded)
 //! 3. Detect and resolve conflicts (.icloud suffix files)
 
@@ -20,7 +20,7 @@ pub fn icloud_drive_root() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join("Library/Mobile Documents/com~apple~CloudDrive"))
 }
 
-/// Get the default Flynt vault path inside iCloud Drive.
+/// Get the default Flynt project path inside iCloud Drive.
 pub fn icloud_vault_path(vault_name: &str) -> Option<PathBuf> {
     icloud_drive_root().map(|root| root.join(vault_name))
 }
@@ -38,7 +38,7 @@ pub fn is_icloud_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Download any .icloud placeholder files in the vault.
+/// Download any .icloud placeholder files in the project.
 /// On macOS, files in iCloud Drive may be evicted (replaced with .icloud stubs).
 /// This triggers download of all markdown files.
 pub fn ensure_downloaded(vault_root: &Path) -> Result<usize> {
@@ -110,13 +110,13 @@ pub fn detect_conflicts(vault_root: &Path) -> Vec<(PathBuf, PathBuf)> {
     conflicts
 }
 
-/// Create a new vault in iCloud Drive.
+/// Create a new project in iCloud Drive.
 pub fn create_icloud_vault(vault_name: &str) -> Result<PathBuf> {
     let root = icloud_vault_path(vault_name)
         .ok_or_else(|| anyhow::anyhow!("iCloud Drive not available"))?;
 
     if root.exists() {
-        anyhow::bail!("Vault '{}' already exists in iCloud Drive", vault_name);
+        anyhow::bail!("Project '{}' already exists in iCloud Drive", vault_name);
     }
 
     std::fs::create_dir_all(&root)?;
@@ -141,6 +141,6 @@ default_visibility = "private"
     );
     std::fs::write(root.join(".flynt/config.toml"), config)?;
 
-    info!("Created iCloud vault at {}", root.display());
+    info!("Created iCloud project at {}", root.display());
     Ok(root)
 }

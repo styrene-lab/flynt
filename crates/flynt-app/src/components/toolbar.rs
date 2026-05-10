@@ -83,10 +83,10 @@ pub fn Toolbar(
         *search_query.write() = q.clone();
         *active_index.write() = None;
         if q.trim().is_empty() { *results.write() = Vec::new(); return; }
-        let vault = ctx_search.vault();
+        let project = ctx_search.project();
         spawn(async move {
             let hits = tokio::task::spawn_blocking(move || {
-                vault.store.search_documents(&q).unwrap_or_default()
+                project.store.search_documents(&q).unwrap_or_default()
             }).await.unwrap_or_default();
             *results.write() = hits;
         });
@@ -100,13 +100,13 @@ pub fn Toolbar(
 
     let grouped_results = group_results(&results.read());
     let flat_results = flatten_grouped_results(&grouped_results);
-    let vault_name = ctx.vault().config.vault_name.clone();
+    let vault_name = ctx.project().config.vault_name.clone();
     let vault_root = ctx.vault_root();
     let omegon = ctx.omegon();
 
     rsx! {
         div { class: "toolbar",
-            span { class: "toolbar-vault-name", "{vault_name}" }
+            span { class: "toolbar-project-name", "{vault_name}" }
             {
                 const BUILD: &str = env!("FLYNT_BUILD_HASH");
                 rsx! { span { class: "toolbar-build-hash", title: "Build {BUILD}", "{BUILD}" } }
@@ -237,7 +237,7 @@ pub fn Toolbar(
             div { class: "toolbar-right",
                 button {
                     class: "btn btn-ghost",
-                    title: "Open another vault in a new window",
+                    title: "Open another project in a new window",
                     onclick: move |_| {
                         let _ = FileDialog::new()
                             .pick_folder()
@@ -245,7 +245,7 @@ pub fn Toolbar(
                     },
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
                 }
-                if *sync_status.read() != SyncStatus::Idle || matches!(ctx.vault().config.sync, flynt_core::models::SyncConfig::Git { .. }) {
+                if *sync_status.read() != SyncStatus::Idle || matches!(ctx.project().config.sync, flynt_core::models::SyncConfig::Git { .. }) {
                     span { class: "{sync_class}", title: "{sync_title}", "{sync_label}" }
                 }
                 button {

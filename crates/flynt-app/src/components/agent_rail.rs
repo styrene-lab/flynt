@@ -237,15 +237,15 @@ pub fn AgentRail() -> Element {
                 return;
             }
         };
-        let vault = ctx.vault_root();
-        tracing::info!("Connecting ACP session: vault={}, binary={}", vault.display(), binary.display());
+        let project = ctx.vault_root();
+        tracing::info!("Connecting ACP session: project={}, binary={}", project.display(), binary.display());
         let operator_settings = ctx.omegon().load_operator_settings();
         let saved_config = operator_settings.acp_config.clone();
         let agent_id = operator_settings.agent_id.clone();
 
         spawn(async move {
             tracing::info!("ACP connect starting… saved_config={:?}", saved_config);
-            match AcpSession::connect(binary, vault, agent_id).await {
+            match AcpSession::connect(binary, project, agent_id).await {
                 Ok((s, rx)) => {
                     tracing::info!("ACP session connected successfully");
                     let sess = Rc::new(s);
@@ -427,7 +427,7 @@ pub fn AgentRail() -> Element {
             div { class: "agent-messages",
                 if items.read().is_empty() && binary_found {
                     div { class: "agent-empty",
-                        p { "Ask Omegon about your vault, notes, or projects." }
+                        p { "Ask Omegon about your project, notes, or projects." }
                         div { class: "agent-suggestions",
                             button { class: "btn btn-ghost btn-xs", onclick: move |_| *input.write() = "/login".into(), "/login" }
                             button { class: "btn btn-ghost btn-xs", onclick: move |_| *input.write() = "/status".into(), "/status" }
@@ -662,7 +662,7 @@ pub fn AgentRail() -> Element {
                                 let trimmed = prompt.trim();
                                 if trimmed == "/login" || trimmed.starts_with("/login ") {
                                     let provider = trimmed.strip_prefix("/login").unwrap().trim();
-                                    let vault = use_context::<AppContext>().vault_root();
+                                    let project = use_context::<AppContext>().vault_root();
                                     *agent_status.write() = AgentStatus::Thinking;
                                     sess.login(&binary, provider).await;
 
@@ -673,7 +673,7 @@ pub fn AgentRail() -> Element {
                                     let reconnect_settings = use_context::<AppContext>().omegon().load_operator_settings();
                                     let saved_config = reconnect_settings.acp_config.clone();
                                     let agent_id = reconnect_settings.agent_id.clone();
-                                    match AcpSession::connect(binary.clone(), vault, agent_id).await {
+                                    match AcpSession::connect(binary.clone(), project, agent_id).await {
                                         Ok((s, rx)) => {
                                             let new_sess = Rc::new(s);
                                             for (cfg_id, value) in &saved_config {

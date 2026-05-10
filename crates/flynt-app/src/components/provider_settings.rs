@@ -130,7 +130,7 @@ fn ProviderRow(
                             button {
                                 class: "btn btn-ghost btn-sm",
                                 onclick: move |_| {
-                                    let runtime_cfg = ctx.vault().config.local_runtime.clone();
+                                    let runtime_cfg = ctx.project().config.local_runtime.clone();
                                     let (bin, args) = providers::oauth_login_command(&runtime_cfg, provider.id);
                                     spawn(async move {
                                         match tokio::process::Command::new(&bin).args(&args).spawn() {

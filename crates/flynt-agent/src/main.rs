@@ -1,5 +1,5 @@
 use anyhow::Result;
-use flynt_store::vault::Vault;
+use flynt_store::project::Project;
 use std::{path::PathBuf, sync::Arc};
 
 fn env_with_fallback(new_name: &str, old_name: &str) -> Option<String> {
@@ -35,11 +35,11 @@ async fn main() -> Result<()> {
         });
 
     std::fs::create_dir_all(&vault_root)?;
-    let vault = Arc::new(Vault::open(&vault_root)?);
+    let project = Arc::new(Project::open(&vault_root)?);
 
-    tracing::info!("flynt-agent ready, vault={}", vault_root.display());
+    tracing::info!("flynt-agent ready, project={}", vault_root.display());
 
-    let ext = flynt_agent::extension::FlyntExtension::new(vault);
+    let ext = flynt_agent::extension::FlyntExtension::new(project);
 
     match mode {
         Some("--mcp") => {
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
                 .expect("flynt MCP server failed");
         }
         Some("--help") | Some("help") | Some("-h") => {
-            println!("flynt-agent — vault document and task tools for omegon");
+            println!("flynt-agent — project document and task tools for omegon");
             println!();
             println!("USAGE:");
             println!("  flynt-agent                Run as omegon extension (default, v2 protocol)");
@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
             println!("  flynt-agent --help         Show this help");
             println!();
             println!("ENVIRONMENT:");
-            println!("  FLYNT_VAULT                Vault directory (default: ~/Documents/Flynt)");
+            println!("  FLYNT_VAULT                Project directory (default: ~/Documents/Flynt)");
         }
         Some("--rpc") | _ => {
             // Default: run as omegon extension (v2 bidirectional protocol)

@@ -14,7 +14,7 @@
 //! Out of scope (intentionally not ported from scribe):
 //! - OAuth2 device flow / token store — use omegon's `SecretsManager`
 //!   to resolve a PAT (or any other secret-resolution recipe)
-//! - `codex_bridge.rs` and `mapper.rs` — flynt is the vault, so forge
+//! - `codex_bridge.rs` and `mapper.rs` — flynt is the project, so forge
 //!   issues map directly to `flynt_models::Task`
 //! - Git credential helper (RFC 6579) — that ships as a separate
 //!   `flynt-git-helper` binary in Phase 6

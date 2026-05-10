@@ -95,7 +95,7 @@ pub fn WelcomeView(
                                                                     } else {
                                                                         match flynt_store::sync::cloud::create_cloud_vault(&provider, "Flynt") {
                                                                             Ok(root) => on_cloud_vault.call(root),
-                                                                            Err(e) => tracing::error!("Cloud vault failed: {e}"),
+                                                                            Err(e) => tracing::error!("Cloud project failed: {e}"),
                                                                         }
                                                                     }
                                                                 },
@@ -178,15 +178,15 @@ pub fn WelcomeView(
                         }
                     }
 
-                    // Path 3: Join a shared vault (tier 2/3)
+                    // Path 3: Join a shared project (tier 2/3)
                     button {
                         class: "welcome-path-card",
                         onclick: move |_| on_clone_remote.call(()),
                         div { class: "welcome-path-icon", "\u{1F91D}" }
                         div { class: "welcome-path-content",
-                            span { class: "welcome-path-title", "Join a shared vault" }
+                            span { class: "welcome-path-title", "Join a shared project" }
                             span { class: "welcome-path-desc",
-                                "Someone shared a vault with you? Paste the link they gave you."
+                                "Someone shared a project with you? Paste the link they gave you."
                             }
                         }
                     }

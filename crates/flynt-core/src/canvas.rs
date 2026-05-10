@@ -174,7 +174,7 @@ pub fn create_canvas(vault_root: &Path, name: &str) -> anyhow::Result<PathBuf> {
 // The runtime capture (xcap, JS measurement) lives in `flynt-app` since it
 // needs the WebView. The wire types live here so the omegon-design tool
 // (separate binary) and flynt-app's request handler agree on the shape of
-// `<vault>/.flynt-local/flynt/capture-{requests,responses}/*.json` files.
+// `<project>/.flynt-local/flynt/capture-{requests,responses}/*.json` files.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaptureRequest {
@@ -241,7 +241,7 @@ pub struct CanvasSettings {
     /// Grid dimensions used when creating a new canvas.
     pub default_grid: Grid,
     /// One-shot bootstrap flag set after canvas assets are copied into
-    /// the vault's `.flynt-local/flynt/assets/` directory. See Phase 4.
+    /// the project's `.flynt-local/flynt/assets/` directory. See Phase 4.
     pub assets_initialized: bool,
 }
 

@@ -73,10 +73,10 @@ fn TabItem(index: usize, title: String, doc_id: flynt_core::models::DocumentId, 
                                 let did = doc_id.clone();
                                 let nt = new_title.clone();
                                 spawn(async move {
-                                    let vault = c.vault();
-                                    if let Ok(Some(doc)) = vault.store.get_document(&did) {
-                                        let _ = vault.rename_document(&doc.path, &nt);
-                                        let _ = vault.reindex();
+                                    let project = c.project();
+                                    if let Ok(Some(doc)) = project.store.get_document(&did) {
+                                        let _ = project.rename_document(&doc.path, &nt);
+                                        let _ = project.reindex();
                                     }
                                 });
                                 // Update tab title immediately

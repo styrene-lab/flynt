@@ -1,7 +1,7 @@
 //! Sandbox integration tests for Flynt CRUD operations.
 //!
 //! Tests all major operations: documents, boards, tasks, graph, sync, images.
-//! Uses a temporary vault with known fixtures.
+//! Uses a temporary project with known fixtures.
 //!
 //! Run: cargo test --test sandbox -- --nocapture
 
@@ -11,14 +11,14 @@ use flynt_core::{
     models::*,
     store::{TaskFilter, VaultStore},
 };
-use flynt_store::vault::Vault;
+use flynt_store::project::Project;
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn setup_vault() -> (TempDir, Arc<Vault>) {
+fn setup_vault() -> (TempDir, Arc<Project>) {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
     let root = tmp.path().to_path_buf();
 
@@ -53,11 +53,11 @@ default_visibility = "private"
     std::fs::create_dir_all(root.join("assets")).unwrap();
     std::fs::write(root.join("assets/photo.png"), &[0x89, 0x50, 0x4E, 0x47]).unwrap();
 
-    let vault = Arc::new(Vault::open(&root).unwrap());
-    let (n, errs) = vault.reindex().unwrap();
+    let project = Arc::new(Project::open(&root).unwrap());
+    let (n, errs) = project.reindex().unwrap();
     assert!(n >= 6, "Expected at least 6 docs, got {n}");
 
-    (tmp, vault)
+    (tmp, project)
 }
 
 fn write_doc(root: &Path, rel: &str, title: &str, tags: &[&str], body: &str) {
@@ -74,8 +74,8 @@ fn write_doc(root: &Path, rel: &str, title: &str, tags: &[&str], body: &str) {
 
 #[test]
 fn test_list_documents() {
-    let (_tmp, vault) = setup_vault();
-    let docs = vault.store.list_documents().unwrap();
+    let (_tmp, project) = setup_vault();
+    let docs = project.store.list_documents().unwrap();
     assert!(docs.len() >= 6);
 
     let titles: Vec<&str> = docs.iter().map(|d| d.title.as_str()).collect();
@@ -87,16 +87,16 @@ fn test_list_documents() {
 
 #[test]
 fn test_search_documents() {
-    let (_tmp, vault) = setup_vault();
-    let results = vault.store.search_documents("architecture").unwrap();
+    let (_tmp, project) = setup_vault();
+    let results = project.store.search_documents("architecture").unwrap();
     assert!(!results.is_empty(), "Search for 'architecture' returned nothing");
     assert!(results.iter().any(|d| d.title == "Architecture"));
 }
 
 #[test]
 fn test_get_document_by_path() {
-    let (_tmp, vault) = setup_vault();
-    let doc = vault.store.get_document_by_path(Path::new("Welcome.md")).unwrap();
+    let (_tmp, project) = setup_vault();
+    let doc = project.store.get_document_by_path(Path::new("Welcome.md")).unwrap();
     assert!(doc.is_some());
     let doc = doc.unwrap();
     assert_eq!(doc.title, "Welcome");
@@ -105,42 +105,42 @@ fn test_get_document_by_path() {
 
 #[test]
 fn test_find_document_by_slug() {
-    let (_tmp, vault) = setup_vault();
-    let doc = vault.store.find_document_by_slug("welcome").unwrap();
+    let (_tmp, project) = setup_vault();
+    let doc = project.store.find_document_by_slug("welcome").unwrap();
     assert!(doc.is_some());
     assert_eq!(doc.unwrap().title, "Welcome");
 }
 
 #[test]
 fn test_create_and_update_document() {
-    let (tmp, vault) = setup_vault();
+    let (tmp, project) = setup_vault();
 
     // Create
     let path = Path::new("New Note.md");
     let content = "+++\ntitle = \"New Note\"\ntags = [\"test\"]\n+++\n\n# New Note\n\nCreated by test.";
-    vault.save_document_content(path, content).unwrap();
+    project.save_document_content(path, content).unwrap();
 
     // Reindex to pick it up
-    vault.reindex().unwrap();
-    let doc = vault.store.get_document_by_path(path).unwrap().unwrap();
+    project.reindex().unwrap();
+    let doc = project.store.get_document_by_path(path).unwrap().unwrap();
     assert_eq!(doc.title, "New Note");
     assert!(doc.frontmatter.tags.contains(&"test".to_string()));
 
     // Update
     let updated = "+++\ntitle = \"New Note Updated\"\ntags = [\"test\", \"updated\"]\n+++\n\n# New Note Updated\n\nModified.";
-    vault.save_document_content(path, updated).unwrap();
-    vault.reindex().unwrap();
-    let doc2 = vault.store.get_document_by_path(path).unwrap().unwrap();
+    project.save_document_content(path, updated).unwrap();
+    project.reindex().unwrap();
+    let doc2 = project.store.get_document_by_path(path).unwrap().unwrap();
     assert_eq!(doc2.title, "New Note Updated");
     assert!(doc2.frontmatter.tags.contains(&"updated".to_string()));
 }
 
 #[test]
 fn test_backlinks() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     // Architecture is linked from Welcome and Research/Graphs
-    let arch = vault.store.find_document_by_slug("architecture").unwrap().unwrap();
-    let backlinks = vault.store.get_backlinks(&arch.id).unwrap();
+    let arch = project.store.find_document_by_slug("architecture").unwrap().unwrap();
+    let backlinks = project.store.get_backlinks(&arch.id).unwrap();
     assert!(backlinks.len() >= 2, "Expected ≥2 backlinks to Architecture, got {}", backlinks.len());
 }
 
@@ -148,17 +148,17 @@ fn test_backlinks() {
 
 #[test]
 fn test_create_and_list_boards() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
 
     // No boards initially
-    let boards = vault.store.list_boards().unwrap();
+    let boards = project.store.list_boards().unwrap();
     assert!(boards.is_empty());
 
     // Create
     let board = Board::default_sprint("Test Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
-    let boards = vault.store.list_boards().unwrap();
+    let boards = project.store.list_boards().unwrap();
     assert_eq!(boards.len(), 1);
     assert_eq!(boards[0].name, "Test Sprint");
     assert_eq!(boards[0].columns.len(), 5); // Backlog, Scheduled, Running, Done, Failed
@@ -166,23 +166,23 @@ fn test_create_and_list_boards() {
 
 #[test]
 fn test_get_board() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("My Board");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
-    let fetched = vault.store.get_board(&board.id).unwrap();
+    let fetched = project.store.get_board(&board.id).unwrap();
     assert!(fetched.is_some());
     assert_eq!(fetched.unwrap().name, "My Board");
 }
 
 #[test]
 fn test_board_with_project() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let project_id = uuid::Uuid::new_v4();
     let board = Board::for_project("Project Board", project_id);
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
-    let fetched = vault.store.get_board(&board.id).unwrap().unwrap();
+    let fetched = project.store.get_board(&board.id).unwrap().unwrap();
     assert_eq!(fetched.project_id, Some(project_id));
 }
 
@@ -190,26 +190,26 @@ fn test_board_with_project() {
 
 #[test]
 fn test_create_and_list_tasks() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint 1");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     // Create tasks
     let t1 = Task::new(board.id.clone(), "Backlog", "Fix login bug");
     let t2 = Task::new(board.id.clone(), "Backlog", "Add dark mode");
     let t3 = Task::new(board.id.clone(), "In Progress", "Write tests");
-    vault.store.save_task(&t1).unwrap();
-    vault.store.save_task(&t2).unwrap();
-    vault.store.save_task(&t3).unwrap();
+    project.store.save_task(&t1).unwrap();
+    project.store.save_task(&t2).unwrap();
+    project.store.save_task(&t3).unwrap();
 
-    let all = vault.store.list_tasks(&TaskFilter {
+    let all = project.store.list_tasks(&TaskFilter {
         board_id: Some(board.id.clone()),
         ..Default::default()
     }).unwrap();
     assert_eq!(all.len(), 3);
 
     // Filter by column
-    let backlog = vault.store.list_tasks(&TaskFilter {
+    let backlog = project.store.list_tasks(&TaskFilter {
         board_id: Some(board.id.clone()),
         column: Some("Backlog".into()),
         ..Default::default()
@@ -219,12 +219,12 @@ fn test_create_and_list_tasks() {
 
 #[test]
 fn test_update_task() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     let mut task = Task::new(board.id.clone(), "Backlog", "Original title");
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
     // Update
     task.title = "Updated title".into();
@@ -232,9 +232,9 @@ fn test_update_task() {
     task.priority = Priority::High;
     task.column = "In Progress".into();
     task.updated_at = Utc::now();
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let fetched = vault.store.get_task(&task.id).unwrap().unwrap();
+    let fetched = project.store.get_task(&task.id).unwrap().unwrap();
     assert_eq!(fetched.title, "Updated title");
     assert_eq!(fetched.description, "Added description");
     assert_eq!(fetched.priority, Priority::High);
@@ -243,21 +243,21 @@ fn test_update_task() {
 
 #[test]
 fn test_archive_task() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     let mut task = Task::new(board.id.clone(), "Done", "Completed task");
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
     task.status = TaskStatus::Archived;
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let fetched = vault.store.get_task(&task.id).unwrap().unwrap();
+    let fetched = project.store.get_task(&task.id).unwrap().unwrap();
     assert_eq!(fetched.status, TaskStatus::Archived);
 
     // Archived tasks still in list but filtered by UI
-    let all = vault.store.list_tasks(&TaskFilter {
+    let all = project.store.list_tasks(&TaskFilter {
         board_id: Some(board.id.clone()),
         ..Default::default()
     }).unwrap();
@@ -267,16 +267,16 @@ fn test_archive_task() {
 
 #[test]
 fn test_task_with_due_date_and_tags() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     let mut task = Task::new(board.id.clone(), "Backlog", "Tagged task");
     task.tags = vec!["urgent".into(), "frontend".into()];
     task.due_date = Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap());
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let fetched = vault.store.get_task(&task.id).unwrap().unwrap();
+    let fetched = project.store.get_task(&task.id).unwrap().unwrap();
     assert_eq!(fetched.tags, vec!["urgent", "frontend"]);
     assert_eq!(fetched.due_date, Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()));
 }
@@ -285,8 +285,8 @@ fn test_task_with_due_date_and_tags() {
 
 #[test]
 fn test_graph_payload() {
-    let (_tmp, vault) = setup_vault();
-    let graph = build_graph_payload(&*vault.store).unwrap();
+    let (_tmp, project) = setup_vault();
+    let graph = build_graph_payload(&*project.store).unwrap();
 
     // Should have nodes for all documents
     assert!(graph.nodes.len() >= 6);
@@ -306,13 +306,13 @@ fn test_graph_payload() {
 
 #[test]
 fn test_graph_with_boards_and_tasks() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint 1");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
     let task = Task::new(board.id.clone(), "Backlog", "Test task");
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let graph = build_graph_payload(&*vault.store).unwrap();
+    let graph = build_graph_payload(&*project.store).unwrap();
     assert!(graph.nodes.iter().any(|n| n.kind == GraphNodeKind::Board));
     assert!(graph.nodes.iter().any(|n| n.kind == GraphNodeKind::Task));
     assert!(graph.edges.iter().any(|e| e.kind == GraphEdgeKind::TaskMembership));
@@ -320,8 +320,8 @@ fn test_graph_with_boards_and_tasks() {
 
 #[test]
 fn test_force_layout() {
-    let (_tmp, vault) = setup_vault();
-    let graph = build_graph_payload(&*vault.store).unwrap();
+    let (_tmp, project) = setup_vault();
+    let graph = build_graph_payload(&*project.store).unwrap();
     let config = LayoutConfig::default();
     let positions = force_layout(&graph, &config);
 
@@ -336,8 +336,8 @@ fn test_force_layout() {
 
 #[test]
 fn test_render_graph_svg() {
-    let (_tmp, vault) = setup_vault();
-    let graph = build_graph_payload(&*vault.store).unwrap();
+    let (_tmp, project) = setup_vault();
+    let graph = build_graph_payload(&*project.store).unwrap();
     let config = LayoutConfig { width: 400.0, height: 300.0, ..Default::default() };
     let svg = render_graph_svg(&graph, &config);
 
@@ -352,8 +352,8 @@ fn test_render_graph_svg() {
 
 #[test]
 fn test_orphan_nodes() {
-    let (_tmp, vault) = setup_vault();
-    let graph = build_graph_payload(&*vault.store).unwrap();
+    let (_tmp, project) = setup_vault();
+    let graph = build_graph_payload(&*project.store).unwrap();
 
     // Orphan.md has no links — should have degree 0
     let orphan = graph.nodes.iter().find(|n| n.title == "Orphan").unwrap();
@@ -370,10 +370,10 @@ fn test_orphan_nodes() {
 
 #[test]
 fn test_delete_document() {
-    let (tmp, vault) = setup_vault();
+    let (tmp, project) = setup_vault();
 
     // Verify orphan exists
-    let orphan = vault.store.find_document_by_slug("orphan").unwrap();
+    let orphan = project.store.find_document_by_slug("orphan").unwrap();
     assert!(orphan.is_some(), "Orphan should exist before deletion");
 
     // Delete the file
@@ -391,23 +391,23 @@ fn test_delete_document() {
 
 #[test]
 fn test_store_memory_fact() {
-    let (tmp, vault) = setup_vault();
-    let path = vault.store_memory_fact("testing", "Test Fact", "This is a test memory fact.").unwrap();
+    let (tmp, project) = setup_vault();
+    let path = project.store_memory_fact("testing", "Test Fact", "This is a test memory fact.").unwrap();
     assert!(tmp.path().join(&path).exists());
 
-    vault.reindex().unwrap();
-    let docs = vault.store.list_documents().unwrap();
+    project.reindex().unwrap();
+    let docs = project.store.list_documents().unwrap();
     assert!(docs.iter().any(|d| d.title == "Test Fact"));
 }
 
 #[test]
 fn test_store_communication() {
-    let (tmp, vault) = setup_vault();
-    let path = vault.store_agent_communication("testing", "Test Comm", "Agent communication content.").unwrap();
+    let (tmp, project) = setup_vault();
+    let path = project.store_agent_communication("testing", "Test Comm", "Agent communication content.").unwrap();
     assert!(tmp.path().join(&path).exists());
 
-    vault.reindex().unwrap();
-    let docs = vault.store.list_documents().unwrap();
+    project.reindex().unwrap();
+    let docs = project.store.list_documents().unwrap();
     assert!(docs.iter().any(|d| d.title == "Test Comm"));
 }
 
@@ -415,20 +415,20 @@ fn test_store_communication() {
 
 #[test]
 fn test_vault_config() {
-    let (_tmp, vault) = setup_vault();
-    assert_eq!(vault.config.vault_name, "test-sandbox");
-    assert_eq!(vault.config.sync, SyncConfig::None);
-    assert_eq!(vault.config.appearance.theme, "alpharius");
+    let (_tmp, project) = setup_vault();
+    assert_eq!(project.config.vault_name, "test-sandbox");
+    assert_eq!(project.config.sync, SyncConfig::None);
+    assert_eq!(project.config.appearance.theme, "alpharius");
 }
 
 #[test]
 fn test_save_config() {
-    let (_tmp, vault) = setup_vault();
-    let mut config = vault.config.clone();
+    let (_tmp, project) = setup_vault();
+    let mut config = project.config.clone();
     config.vault_name = "updated-sandbox".into();
-    vault.save_config(&config).unwrap();
+    project.save_config(&config).unwrap();
 
-    let vault2 = Vault::open(&vault.root).unwrap();
+    let vault2 = Project::open(&project.root).unwrap();
     assert_eq!(vault2.config.vault_name, "updated-sandbox");
 }
 
@@ -436,22 +436,22 @@ fn test_save_config() {
 
 #[test]
 fn test_multiple_boards_isolation() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
 
     let b1 = Board::default_sprint("Board A");
     let b2 = Board::default_sprint("Board B");
-    vault.store.save_board(&b1).unwrap();
-    vault.store.save_board(&b2).unwrap();
+    project.store.save_board(&b1).unwrap();
+    project.store.save_board(&b2).unwrap();
 
     let t1 = Task::new(b1.id.clone(), "Backlog", "Task on A");
     let t2 = Task::new(b2.id.clone(), "Backlog", "Task on B");
-    vault.store.save_task(&t1).unwrap();
-    vault.store.save_task(&t2).unwrap();
+    project.store.save_task(&t1).unwrap();
+    project.store.save_task(&t2).unwrap();
 
-    let a_tasks = vault.store.list_tasks(&TaskFilter {
+    let a_tasks = project.store.list_tasks(&TaskFilter {
         board_id: Some(b1.id.clone()), ..Default::default()
     }).unwrap();
-    let b_tasks = vault.store.list_tasks(&TaskFilter {
+    let b_tasks = project.store.list_tasks(&TaskFilter {
         board_id: Some(b2.id.clone()), ..Default::default()
     }).unwrap();
 
@@ -465,11 +465,11 @@ fn test_multiple_boards_isolation() {
 
 #[test]
 fn test_rename_document_updates_links() {
-    let (tmp, vault) = setup_vault();
+    let (tmp, project) = setup_vault();
 
     // Welcome.md links to [[Projects]] and [[Architecture]]
     // Rename "Projects" to "Active Projects"
-    let files_updated = vault.rename_document(
+    let files_updated = project.rename_document(
         Path::new("Projects.md"),
         "Active Projects",
     ).unwrap();
@@ -493,7 +493,7 @@ fn test_rename_document_updates_links() {
 
 #[test]
 fn test_rename_preserves_display_links() {
-    let (tmp, vault) = setup_vault();
+    let (tmp, project) = setup_vault();
 
     // Create a doc with a display link
     write_doc(
@@ -503,9 +503,9 @@ fn test_rename_preserves_display_links() {
         &[],
         "See [[Projects|our projects]] for more.",
     );
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    vault.rename_document(Path::new("Projects.md"), "Active Projects").unwrap();
+    project.rename_document(Path::new("Projects.md"), "Active Projects").unwrap();
 
     let linker = std::fs::read_to_string(tmp.path().join("Linker.md")).unwrap();
     assert!(linker.contains("[[Active Projects|our projects]]"), "Display link should be preserved: {linker}");
@@ -585,16 +585,16 @@ fn test_decay_done_tasks_zero_relevance() {
 
 #[test]
 fn test_decay_persistence() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     let mut task = Task::new(board.id.clone(), "Backlog", "Decaying task");
     task.decay = DecayRate::Fast;
     task.touch();
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let fetched = vault.store.get_task(&task.id).unwrap().unwrap();
+    let fetched = project.store.get_task(&task.id).unwrap().unwrap();
     assert_eq!(fetched.decay, DecayRate::Fast);
     assert!(fetched.last_touched_at.is_some());
 }
@@ -612,7 +612,7 @@ fn test_decay_custom_rate() {
 
 #[test]
 fn test_push_and_read_notification() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     use flynt_core::models::*;
 
     let notif = Notification::new(
@@ -621,9 +621,9 @@ fn test_push_and_read_notification() {
         "Task is due today",
         "test-sandbox",
     );
-    vault.push_notification(&notif).unwrap();
+    project.push_notification(&notif).unwrap();
 
-    let pending = vault.pending_notifications().unwrap();
+    let pending = project.pending_notifications().unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].title, "Mow the lawn");
     assert!(pending[0].delivered_at.is_none());
@@ -631,17 +631,17 @@ fn test_push_and_read_notification() {
 
 #[test]
 fn test_mark_notification_delivered() {
-    let (tmp, vault) = setup_vault();
+    let (tmp, project) = setup_vault();
     use flynt_core::models::*;
 
     let notif = Notification::new(NotificationKind::Decay, "Old task", "Fading", "test-sandbox");
     let id = notif.id;
-    vault.push_notification(&notif).unwrap();
+    project.push_notification(&notif).unwrap();
 
-    vault.mark_notification_delivered(&id).unwrap();
+    project.mark_notification_delivered(&id).unwrap();
 
     // Pending should be empty
-    let pending = vault.pending_notifications().unwrap();
+    let pending = project.pending_notifications().unwrap();
     assert!(pending.is_empty());
 
     // Delivered file should exist
@@ -651,46 +651,46 @@ fn test_mark_notification_delivered() {
 
 #[test]
 fn test_check_task_notifications_due_date() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     let today = chrono::Local::now().date_naive();
     let mut task = Task::new(board.id.clone(), "Backlog", "Due today");
     task.due_date = Some(today);
     task.decay = DecayRate::None;
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let notifications = vault.check_task_notifications().unwrap();
+    let notifications = project.check_task_notifications().unwrap();
     assert!(notifications.iter().any(|n| n.title == "Due today" && n.kind == NotificationKind::DueDate));
 }
 
-// ── Vault open / reindex ────────────────────────────────────────────────────
+// ── Project open / reindex ────────────────────────────────────────────────────
 
 #[test]
 fn test_vault_open_creates_flynt_dir() {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
-    let root = tmp.path().join("fresh-vault");
-    let vault = Vault::open(&root).unwrap();
+    let root = tmp.path().join("fresh-project");
+    let project = Project::open(&root).unwrap();
     assert!(root.join(".flynt").exists());
     assert!(root.join(".flynt/config.toml").exists());
-    assert_eq!(vault.config.vault_name, "fresh-vault");
+    assert_eq!(project.config.vault_name, "fresh-project");
 }
 
 #[test]
 fn test_vault_open_preserves_existing_config() {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
-    let root = tmp.path().join("vault");
+    let root = tmp.path().join("project");
     std::fs::create_dir_all(root.join(".flynt")).unwrap();
     std::fs::write(root.join(".flynt/config.toml"), "vault_name = \"Custom Name\"\n[sync]\nbackend = \"none\"\n").unwrap();
-    let vault = Vault::open(&root).unwrap();
-    assert_eq!(vault.config.vault_name, "Custom Name");
+    let project = Project::open(&root).unwrap();
+    assert_eq!(project.config.vault_name, "Custom Name");
 }
 
 #[test]
 fn test_reindex_counts_files() {
-    let (_tmp, vault) = setup_vault();
-    let (count, errors) = vault.reindex().unwrap();
+    let (_tmp, project) = setup_vault();
+    let (count, errors) = project.reindex().unwrap();
     // setup_vault creates alpha.md and beta.md
     assert!(count >= 2);
     assert!(errors.is_empty());
@@ -698,12 +698,12 @@ fn test_reindex_counts_files() {
 
 #[test]
 fn test_reindex_skips_flynt_dir() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     // Create a file in .flynt that should be ignored
-    std::fs::write(vault.root.join(".flynt/internal.md"), "# Should be ignored").unwrap();
-    vault.reindex().unwrap();
+    std::fs::write(project.root.join(".flynt/internal.md"), "# Should be ignored").unwrap();
+    project.reindex().unwrap();
     // This file should NOT appear in the document list
-    let docs = vault.store.list_documents().unwrap();
+    let docs = project.store.list_documents().unwrap();
     assert!(!docs.iter().any(|d| d.title == "Should be ignored"));
 }
 
@@ -711,84 +711,84 @@ fn test_reindex_skips_flynt_dir() {
 
 #[test]
 fn test_save_document_content() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let path = std::path::PathBuf::from("new-note.md");
-    vault.save_document_content(&path, "+++\ntitle = \"New\"\ntags = []\n+++\n\nContent here.").unwrap();
-    let doc = vault.store.get_document_by_path(&path).unwrap().unwrap();
+    project.save_document_content(&path, "+++\ntitle = \"New\"\ntags = []\n+++\n\nContent here.").unwrap();
+    let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
     assert_eq!(doc.title, "New");
     assert!(doc.content.contains("Content here."));
 }
 
 #[test]
 fn test_save_document_creates_parent_dirs() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let path = std::path::PathBuf::from("nested/deep/note.md");
-    vault.save_document_content(&path, "# Deep Note").unwrap();
-    assert!(vault.root.join("nested/deep/note.md").exists());
+    project.save_document_content(&path, "# Deep Note").unwrap();
+    assert!(project.root.join("nested/deep/note.md").exists());
 }
 
 // ── Tag operations ──────────────────────────────────────────────────────────
 
 #[test]
 fn test_list_tags() {
-    let (_tmp, vault) = setup_vault();
-    vault.reindex().unwrap();
-    let tags = vault.list_tags().unwrap();
+    let (_tmp, project) = setup_vault();
+    project.reindex().unwrap();
+    let tags = project.list_tags().unwrap();
     // setup_vault creates docs with tags
     assert!(!tags.is_empty());
 }
 
 #[test]
 fn test_rename_tag() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     // Create a note with a specific tag
     let path = std::path::PathBuf::from("tagged.md");
-    vault.save_document_content(&path, "+++\ntitle = \"Tagged\"\ntags = [\"old-tag\"]\n+++\n\nContent.").unwrap();
+    project.save_document_content(&path, "+++\ntitle = \"Tagged\"\ntags = [\"old-tag\"]\n+++\n\nContent.").unwrap();
 
-    let count = vault.rename_tag("old-tag", "new-tag").unwrap();
+    let count = project.rename_tag("old-tag", "new-tag").unwrap();
     assert!(count >= 1);
 
     // Verify the tag was renamed in the file
-    let content = std::fs::read_to_string(vault.root.join("tagged.md")).unwrap();
+    let content = std::fs::read_to_string(project.root.join("tagged.md")).unwrap();
     assert!(content.contains("new-tag"));
     assert!(!content.contains("old-tag"));
 }
 
 #[test]
 fn test_rename_tag_nonexistent() {
-    let (_tmp, vault) = setup_vault();
-    vault.reindex().unwrap();
-    let count = vault.rename_tag("nonexistent-tag-xyz", "new-tag").unwrap();
+    let (_tmp, project) = setup_vault();
+    project.reindex().unwrap();
+    let count = project.rename_tag("nonexistent-tag-xyz", "new-tag").unwrap();
     assert_eq!(count, 0);
 }
 
 #[test]
 fn test_delete_tag() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let path = std::path::PathBuf::from("to-delete-tag.md");
-    vault.save_document_content(&path, "+++\ntitle = \"Del\"\ntags = [\"remove-me\", \"keep\"]\n+++\n\nBody.").unwrap();
+    project.save_document_content(&path, "+++\ntitle = \"Del\"\ntags = [\"remove-me\", \"keep\"]\n+++\n\nBody.").unwrap();
 
-    let count = vault.delete_tag("remove-me").unwrap();
+    let count = project.delete_tag("remove-me").unwrap();
     assert!(count >= 1);
 
-    let content = std::fs::read_to_string(vault.root.join("to-delete-tag.md")).unwrap();
+    let content = std::fs::read_to_string(project.root.join("to-delete-tag.md")).unwrap();
     assert!(!content.contains("remove-me"));
     assert!(content.contains("keep"));
 }
 
 #[test]
 fn test_merge_tags() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let p1 = std::path::PathBuf::from("merge1.md");
     let p2 = std::path::PathBuf::from("merge2.md");
-    vault.save_document_content(&p1, "+++\ntitle = \"M1\"\ntags = [\"src1\"]\n+++\n\nBody.").unwrap();
-    vault.save_document_content(&p2, "+++\ntitle = \"M2\"\ntags = [\"src2\"]\n+++\n\nBody.").unwrap();
+    project.save_document_content(&p1, "+++\ntitle = \"M1\"\ntags = [\"src1\"]\n+++\n\nBody.").unwrap();
+    project.save_document_content(&p2, "+++\ntitle = \"M2\"\ntags = [\"src2\"]\n+++\n\nBody.").unwrap();
 
-    let count = vault.merge_tags(&["src1", "src2"], "target").unwrap();
+    let count = project.merge_tags(&["src1", "src2"], "target").unwrap();
     assert!(count >= 2);
 
-    let c1 = std::fs::read_to_string(vault.root.join("merge1.md")).unwrap();
-    let c2 = std::fs::read_to_string(vault.root.join("merge2.md")).unwrap();
+    let c1 = std::fs::read_to_string(project.root.join("merge1.md")).unwrap();
+    let c2 = std::fs::read_to_string(project.root.join("merge2.md")).unwrap();
     assert!(c1.contains("target"));
     assert!(c2.contains("target"));
 }
@@ -797,31 +797,31 @@ fn test_merge_tags() {
 
 #[test]
 fn test_push_and_list_notifications() {
-    let (_tmp, vault) = setup_vault();
-    let n = Notification::new(NotificationKind::DueDate, "Test", "Body", "test-vault");
-    vault.push_notification(&n).unwrap();
+    let (_tmp, project) = setup_vault();
+    let n = Notification::new(NotificationKind::DueDate, "Test", "Body", "test-project");
+    project.push_notification(&n).unwrap();
 
-    let pending = vault.pending_notifications().unwrap();
+    let pending = project.pending_notifications().unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].title, "Test");
 }
 
 #[test]
 fn test_mark_notification_delivered_clears_pending() {
-    let (_tmp, vault) = setup_vault();
-    let n = Notification::new(NotificationKind::Decay, "Fading", "Task fading", "vault");
-    vault.push_notification(&n).unwrap();
-    assert_eq!(vault.pending_notifications().unwrap().len(), 1);
+    let (_tmp, project) = setup_vault();
+    let n = Notification::new(NotificationKind::Decay, "Fading", "Task fading", "project");
+    project.push_notification(&n).unwrap();
+    assert_eq!(project.pending_notifications().unwrap().len(), 1);
 
-    vault.mark_notification_delivered(&n.id).unwrap();
-    assert_eq!(vault.pending_notifications().unwrap().len(), 0);
+    project.mark_notification_delivered(&n.id).unwrap();
+    assert_eq!(project.pending_notifications().unwrap().len(), 0);
 }
 
 #[test]
 fn test_check_task_notifications_decay() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     // Create a task in the fading range: relevance between 0.1 and 0.3
     // Natural decay (7-day half-life), 14 days old → relevance ≈ 0.25 (fading but not auto-archive)
@@ -829,25 +829,25 @@ fn test_check_task_notifications_decay() {
     task.decay = DecayRate::Natural; // 7-day half-life
     task.last_touched_at = Some(Utc::now() - chrono::Duration::days(14));
     task.updated_at = Utc::now() - chrono::Duration::days(14);
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let notifications = vault.check_task_notifications().unwrap();
+    let notifications = project.check_task_notifications().unwrap();
     assert!(notifications.iter().any(|n| n.kind == NotificationKind::Decay),
         "expected decay notification for fading task (relevance ~0.25), got: {:?}", notifications);
 }
 
 #[test]
 fn test_check_task_notifications_skips_done() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let board = Board::default_sprint("Sprint");
-    vault.store.save_board(&board).unwrap();
+    project.store.save_board(&board).unwrap();
 
     let mut task = Task::new(board.id.clone(), "Done", "Completed");
     task.status = TaskStatus::Done;
     task.due_date = Some(chrono::Local::now().date_naive());
-    vault.store.save_task(&task).unwrap();
+    project.store.save_task(&task).unwrap();
 
-    let notifications = vault.check_task_notifications().unwrap();
+    let notifications = project.check_task_notifications().unwrap();
     assert!(!notifications.iter().any(|n| n.title == "Completed"),
         "should not notify for done tasks");
 }
@@ -856,37 +856,37 @@ fn test_check_task_notifications_skips_done() {
 
 #[test]
 fn test_search_documents_empty_query() {
-    let (_tmp, vault) = setup_vault();
-    vault.reindex().unwrap();
-    let results = vault.store.search_documents("").unwrap();
+    let (_tmp, project) = setup_vault();
+    project.reindex().unwrap();
+    let results = project.store.search_documents("").unwrap();
     assert!(results.is_empty());
 }
 
 #[test]
 fn test_search_documents_finds_match() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     // Fixtures have "Welcome", "Projects", "Architecture", etc.
-    let results = vault.store.search_documents("Welcome").unwrap();
+    let results = project.store.search_documents("Welcome").unwrap();
     assert!(!results.is_empty(), "search for 'Welcome' should find the welcome doc");
 }
 
 #[test]
 fn test_delete_document_removes_from_store() {
-    let (_tmp, vault) = setup_vault();
-    vault.reindex().unwrap();
-    let docs = vault.store.list_documents().unwrap();
+    let (_tmp, project) = setup_vault();
+    project.reindex().unwrap();
+    let docs = project.store.list_documents().unwrap();
     let first = docs[0].id.clone();
-    vault.store.delete_document(&first).unwrap();
-    assert!(vault.store.get_document(&first).unwrap().is_none());
+    project.store.delete_document(&first).unwrap();
+    assert!(project.store.get_document(&first).unwrap().is_none());
 }
 
 #[test]
 fn test_get_backlinks() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     // Welcome links to Projects, so Projects should have Welcome as a backlink
-    let docs = vault.store.list_documents().unwrap();
+    let docs = project.store.list_documents().unwrap();
     let projects = docs.iter().find(|d| d.title == "Projects").unwrap();
-    let backlinks = vault.store.get_backlinks(&projects.id).unwrap();
+    let backlinks = project.store.get_backlinks(&projects.id).unwrap();
     assert!(backlinks.iter().any(|bl| bl.title == "Welcome"),
         "expected Welcome in backlinks of Projects, got: {:?}", backlinks.iter().map(|b| &b.title).collect::<Vec<_>>());
 }
@@ -937,48 +937,48 @@ fn test_create_drawing_idempotent_dir() {
 
 #[test]
 fn test_delete_document_removes_file_and_index() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
 
     // Get a document that exists
-    let docs = vault.store.list_documents().unwrap();
+    let docs = project.store.list_documents().unwrap();
     assert!(!docs.is_empty());
     let target = &docs[0];
-    let abs_path = vault.root.join(&target.path);
+    let abs_path = project.root.join(&target.path);
     assert!(abs_path.exists(), "file should exist before delete");
 
     // Delete it
     std::fs::remove_file(&abs_path).unwrap();
-    vault.store.delete_document(&target.id).unwrap();
+    project.store.delete_document(&target.id).unwrap();
 
     // Verify it's gone from both disk and index
     assert!(!abs_path.exists(), "file should be gone after delete");
-    assert!(vault.store.get_document(&target.id).unwrap().is_none(),
+    assert!(project.store.get_document(&target.id).unwrap().is_none(),
         "document should be gone from index after delete");
 }
 
 #[test]
 fn test_delete_document_does_not_affect_others() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
 
-    let docs = vault.store.list_documents().unwrap();
+    let docs = project.store.list_documents().unwrap();
     let initial_count = docs.len();
     assert!(initial_count >= 2, "need at least 2 docs for this test");
 
     let target = &docs[0];
     let other = &docs[1];
 
-    std::fs::remove_file(vault.root.join(&target.path)).unwrap();
-    vault.store.delete_document(&target.id).unwrap();
+    std::fs::remove_file(project.root.join(&target.path)).unwrap();
+    project.store.delete_document(&target.id).unwrap();
 
     // Other document should still exist
-    assert!(vault.store.get_document(&other.id).unwrap().is_some(),
+    assert!(project.store.get_document(&other.id).unwrap().is_some(),
         "other document should survive the delete");
 
-    let remaining = vault.store.list_documents().unwrap();
+    let remaining = project.store.list_documents().unwrap();
     assert_eq!(remaining.len(), initial_count - 1);
 }
 
-// ── Vault switching ─────────────────────────────────────────────────────────
+// ── Project switching ─────────────────────────────────────────────────────────
 
 #[test]
 fn test_switch_vault_opens_different_content() {
@@ -986,49 +986,49 @@ fn test_switch_vault_opens_different_content() {
     let tmp1 = tempfile::Builder::new().prefix("flynt-vault1-").tempdir().unwrap();
     let tmp2 = tempfile::Builder::new().prefix("flynt-vault2-").tempdir().unwrap();
 
-    let vault1 = Vault::open(tmp1.path()).unwrap();
+    let vault1 = Project::open(tmp1.path()).unwrap();
     vault1.save_document_content(
         &std::path::PathBuf::from("vault1-note.md"),
-        "+++\ntitle = \"Vault One Note\"\ntags = []\n+++\n\nContent from vault 1.",
+        "+++\ntitle = \"Project One Note\"\ntags = []\n+++\n\nContent from project 1.",
     ).unwrap();
     vault1.reindex().unwrap();
 
-    let vault2 = Vault::open(tmp2.path()).unwrap();
+    let vault2 = Project::open(tmp2.path()).unwrap();
     vault2.save_document_content(
         &std::path::PathBuf::from("vault2-note.md"),
-        "+++\ntitle = \"Vault Two Note\"\ntags = []\n+++\n\nContent from vault 2.",
+        "+++\ntitle = \"Project Two Note\"\ntags = []\n+++\n\nContent from project 2.",
     ).unwrap();
     vault2.reindex().unwrap();
 
-    // Vault 1 should have its doc, not vault 2's
+    // Project 1 should have its doc, not project 2's
     let docs1 = vault1.store.list_documents().unwrap();
-    assert!(docs1.iter().any(|d| d.title == "Vault One Note"));
-    assert!(!docs1.iter().any(|d| d.title == "Vault Two Note"));
+    assert!(docs1.iter().any(|d| d.title == "Project One Note"));
+    assert!(!docs1.iter().any(|d| d.title == "Project Two Note"));
 
-    // Vault 2 should have its doc, not vault 1's
+    // Project 2 should have its doc, not project 1's
     let docs2 = vault2.store.list_documents().unwrap();
-    assert!(docs2.iter().any(|d| d.title == "Vault Two Note"));
-    assert!(!docs2.iter().any(|d| d.title == "Vault One Note"));
+    assert!(docs2.iter().any(|d| d.title == "Project Two Note"));
+    assert!(!docs2.iter().any(|d| d.title == "Project One Note"));
 }
 
 #[test]
 fn test_switch_vault_reindexes_correctly() {
     let tmp = tempfile::Builder::new().prefix("flynt-switch-").tempdir().unwrap();
-    let vault = Vault::open(tmp.path()).unwrap();
+    let project = Project::open(tmp.path()).unwrap();
 
     // Start empty
-    let (count, _) = vault.reindex().unwrap();
+    let (count, _) = project.reindex().unwrap();
     assert_eq!(count, 0);
 
-    // Add a file and reindex (simulates what happens on vault switch)
-    vault.save_document_content(
+    // Add a file and reindex (simulates what happens on project switch)
+    project.save_document_content(
         &std::path::PathBuf::from("new.md"),
         "+++\ntitle = \"New\"\ntags = []\n+++\n\nHello.",
     ).unwrap();
-    let (count, _) = vault.reindex().unwrap();
+    let (count, _) = project.reindex().unwrap();
     assert_eq!(count, 1);
 
-    let docs = vault.store.list_documents().unwrap();
+    let docs = project.store.list_documents().unwrap();
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].title, "New");
 }
@@ -1038,20 +1038,20 @@ fn test_switch_vault_reindexes_correctly() {
 #[test]
 fn test_excalidraw_files_not_indexed_as_documents() {
     let tmp = tempfile::Builder::new().prefix("flynt-test-").tempdir().unwrap();
-    let vault = Vault::open(tmp.path()).unwrap();
+    let project = Project::open(tmp.path()).unwrap();
 
     // Create a .excalidraw file
     create_drawing(tmp.path(), "Diagram").unwrap();
 
     // Also create a regular .md file
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("note.md"),
         "+++\ntitle = \"Note\"\ntags = []\n+++\n\nA note.",
     ).unwrap();
 
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    let docs = vault.store.list_documents().unwrap();
+    let docs = project.store.list_documents().unwrap();
     // Only the .md should be indexed, not the .excalidraw
     assert_eq!(docs.len(), 1, "only .md files should be indexed, got: {:?}",
         docs.iter().map(|d| &d.title).collect::<Vec<_>>());
@@ -1062,17 +1062,17 @@ fn test_excalidraw_files_not_indexed_as_documents() {
 
 #[test]
 fn test_publication_unlisted_exported_but_marked_correctly() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let output = _tmp.path().join("pub-output");
 
     // Create an unlisted document
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("unlisted-note.md"),
         "+++\ntitle = \"Secret Page\"\ntags = []\n[publication]\nenabled = true\nvisibility = \"unlisted\"\n+++\n\nUnlisted content.",
     ).unwrap();
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    let report = vault.export_publication_tree(&output).unwrap();
+    let report = project.export_publication_tree(&output).unwrap();
     assert!(report.exported >= 1, "unlisted note should be exported");
 
     // Check manifest — visibility should be Unlisted, not hardcoded Public
@@ -1087,16 +1087,16 @@ fn test_publication_unlisted_exported_but_marked_correctly() {
 
 #[test]
 fn test_publication_private_not_exported() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let output = _tmp.path().join("pub-output");
 
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("private-note.md"),
         "+++\ntitle = \"Private\"\ntags = []\n[publication]\nenabled = true\nvisibility = \"private\"\n+++\n\nSecret.",
     ).unwrap();
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    let report = vault.export_publication_tree(&output).unwrap();
+    let report = project.export_publication_tree(&output).unwrap();
     // Private doc should NOT be exported
     if output.join("manifest.json").exists() {
         let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
@@ -1109,11 +1109,11 @@ fn test_publication_private_not_exported() {
 
 #[test]
 fn test_publication_policy_rules_tag_match() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let output = _tmp.path().join("pub-output");
 
     // Set policy: default private, public if tagged "published"
-    let mut config = vault.config.clone();
+    let mut config = project.config.clone();
     config.publication.default_visibility = PublicationVisibility::Private;
     config.publication.rules = vec![
         flynt_core::models::PublicationRule {
@@ -1122,22 +1122,22 @@ fn test_publication_policy_rules_tag_match() {
             visibility: PublicationVisibility::Public,
         },
     ];
-    vault.save_config(&config).unwrap();
+    project.save_config(&config).unwrap();
 
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("tagged.md"),
         "+++\ntitle = \"Tagged\"\ntags = [\"published\"]\n[publication]\nenabled = true\n+++\n\nShould be public.",
     ).unwrap();
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("untagged.md"),
         "+++\ntitle = \"Untagged\"\ntags = [\"other\"]\n[publication]\nenabled = true\n+++\n\nShould be private.",
     ).unwrap();
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    // Re-open vault to pick up new config
-    let vault = std::sync::Arc::new(flynt_store::vault::Vault::open(&vault.root).unwrap());
-    vault.reindex().unwrap();
-    let report = vault.export_publication_tree(&output).unwrap();
+    // Re-open project to pick up new config
+    let project = std::sync::Arc::new(flynt_store::project::Project::open(&project.root).unwrap());
+    project.reindex().unwrap();
+    let report = project.export_publication_tree(&output).unwrap();
 
     let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
     let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
@@ -1150,10 +1150,10 @@ fn test_publication_policy_rules_tag_match() {
 
 #[test]
 fn test_publication_policy_rules_path_prefix() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let output = _tmp.path().join("pub-output");
 
-    let mut config = vault.config.clone();
+    let mut config = project.config.clone();
     config.publication.default_visibility = PublicationVisibility::Private;
     config.publication.rules = vec![
         flynt_core::models::PublicationRule {
@@ -1162,22 +1162,22 @@ fn test_publication_policy_rules_path_prefix() {
             visibility: PublicationVisibility::Public,
         },
     ];
-    vault.save_config(&config).unwrap();
+    project.save_config(&config).unwrap();
 
-    std::fs::create_dir_all(vault.root.join("public")).unwrap();
-    vault.save_document_content(
+    std::fs::create_dir_all(project.root.join("public")).unwrap();
+    project.save_document_content(
         &std::path::PathBuf::from("public/visible.md"),
         "+++\ntitle = \"Visible\"\ntags = []\n[publication]\nenabled = true\n+++\n\nPublic path.",
     ).unwrap();
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("hidden.md"),
         "+++\ntitle = \"Hidden\"\ntags = []\n[publication]\nenabled = true\n+++\n\nNot in public path.",
     ).unwrap();
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    let vault = std::sync::Arc::new(flynt_store::vault::Vault::open(&vault.root).unwrap());
-    vault.reindex().unwrap();
-    let report = vault.export_publication_tree(&output).unwrap();
+    let project = std::sync::Arc::new(flynt_store::project::Project::open(&project.root).unwrap());
+    project.reindex().unwrap();
+    let report = project.export_publication_tree(&output).unwrap();
 
     let manifest_raw = std::fs::read_to_string(output.join("manifest.json")).unwrap();
     let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
@@ -1190,20 +1190,20 @@ fn test_publication_policy_rules_path_prefix() {
 
 #[test]
 fn test_publication_wikilink_to_private_becomes_plain_text() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let output = _tmp.path().join("pub-output");
 
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("public-note.md"),
         "+++\ntitle = \"Public Note\"\ntags = []\n[publication]\nenabled = true\nvisibility = \"public\"\n+++\n\nSee [[Private Note]] for details.",
     ).unwrap();
-    vault.save_document_content(
+    project.save_document_content(
         &std::path::PathBuf::from("private-note.md"),
         "+++\ntitle = \"Private Note\"\ntags = []\n+++\n\nThis is private.",
     ).unwrap();
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
-    let report = vault.export_publication_tree(&output).unwrap();
+    let report = project.export_publication_tree(&output).unwrap();
     assert!(report.exported >= 1);
 
     // The exported public note should NOT have a clickable link to the private note
@@ -1214,30 +1214,30 @@ fn test_publication_wikilink_to_private_becomes_plain_text() {
 
 #[test]
 fn test_publication_empty_board_exports() {
-    let (_tmp, vault) = setup_vault();
+    let (_tmp, project) = setup_vault();
     let output = _tmp.path().join("pub-output");
 
     // Create a project with publication enabled
-    std::fs::create_dir_all(vault.root.join("projects")).unwrap();
-    vault.save_document_content(
+    std::fs::create_dir_all(project.root.join("projects")).unwrap();
+    project.save_document_content(
         &std::path::PathBuf::from("projects/test-project.md"),
         "+++\ntitle = \"Test Project\"\nkind = \"project\"\n[publication]\nenabled = true\nvisibility = \"public\"\n[data]\n+++\n\n# Test Project",
     ).unwrap();
-    vault.reindex().unwrap();
+    project.reindex().unwrap();
 
     // Create a board with no tasks
-    let doc = vault.store.list_documents().unwrap();
+    let doc = project.store.list_documents().unwrap();
     let project_doc = doc.iter().find(|d| d.title == "Test Project");
     if let Some(proj) = project_doc {
-        if let Ok(Some(full_doc)) = vault.store.get_document(&proj.id) {
+        if let Ok(Some(full_doc)) = project.store.get_document(&proj.id) {
             if let Some(id) = full_doc.frontmatter.id {
                 let board = Board::for_project("Empty Board", id);
-                vault.store.save_board(&board).unwrap();
+                project.store.save_board(&board).unwrap();
             }
         }
     }
 
-    let report = vault.export_publication_tree(&output).unwrap();
+    let report = project.export_publication_tree(&output).unwrap();
     // Should not crash even with empty board
     assert!(report.errors.is_empty(), "empty board export should not error: {:?}", report.errors);
 }
@@ -1283,7 +1283,7 @@ fn test_sync_config_icloud_roundtrip() {
 fn test_sync_config_s3_roundtrip() {
     let config = SyncConfig::S3 {
         bucket: "my-bucket".into(),
-        prefix: "vault/".into(),
+        prefix: "project/".into(),
         region: "us-east-1".into(),
         endpoint: Some("https://s3.example.com".into()),
     };
@@ -1292,7 +1292,7 @@ fn test_sync_config_s3_roundtrip() {
     match deserialized {
         SyncConfig::S3 { bucket, prefix, region, endpoint } => {
             assert_eq!(bucket, "my-bucket");
-            assert_eq!(prefix, "vault/");
+            assert_eq!(prefix, "project/");
             assert_eq!(region, "us-east-1");
             assert_eq!(endpoint, Some("https://s3.example.com".into()));
         }

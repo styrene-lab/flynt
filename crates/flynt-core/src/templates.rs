@@ -1,7 +1,7 @@
 //! Template system — markdown templates with variable expansion.
 //!
 //! Templates live in `.flynt/templates/` as markdown files.
-//! Variables: {{title}}, {{date}}, {{time}}, {{year}}, {{month}}, {{day}}, {{weekday}}, {{vault}}.
+//! Variables: {{title}}, {{date}}, {{time}}, {{year}}, {{month}}, {{day}}, {{weekday}}, {{project}}.
 
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -16,7 +16,7 @@ pub struct Template {
     pub content: String,
 }
 
-/// List all templates in the vault's .flynt/templates/ directory.
+/// List all templates in the project's .flynt/templates/ directory.
 pub fn list_templates(vault_root: &Path) -> Vec<Template> {
     let dir = vault_root.join(".flynt/templates");
     if !dir.exists() { return vec![]; }
@@ -39,7 +39,7 @@ pub fn list_templates(vault_root: &Path) -> Vec<Template> {
     templates
 }
 
-/// Expand a template with the given title and vault name.
+/// Expand a template with the given title and project name.
 pub fn expand(template: &str, title: &str, vault_name: &str) -> String {
     let now = Local::now();
     template
@@ -50,7 +50,7 @@ pub fn expand(template: &str, title: &str, vault_name: &str) -> String {
         .replace("{{month}}", &now.format("%m").to_string())
         .replace("{{day}}", &now.format("%d").to_string())
         .replace("{{weekday}}", &now.format("%A").to_string())
-        .replace("{{vault}}", vault_name)
+        .replace("{{project}}", vault_name)
 }
 
 /// Create the default templates if the templates directory doesn't exist.
@@ -139,9 +139,9 @@ mod tests {
 
     #[test]
     fn expand_replaces_title_and_vault() {
-        let result = expand("Hello {{title}} in {{vault}}", "My Note", "My Vault");
+        let result = expand("Hello {{title}} in {{project}}", "My Note", "My Project");
         assert!(result.contains("My Note"));
-        assert!(result.contains("My Vault"));
+        assert!(result.contains("My Project"));
     }
 
     #[test]

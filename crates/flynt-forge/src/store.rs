@@ -1,9 +1,9 @@
 //! `IssueMap` persistence — the bridge between flynt task UUIDs and
 //! forge issue numbers.
 //!
-//! Owns its own SQLite file (default `<vault>/.flynt/forge-sync.db`)
-//! rather than colocating with the main vault DB. Rationale: forge sync
-//! is an opt-in side channel; keeping it separate means a vault that's
+//! Owns its own SQLite file (default `<project>/.flynt/forge-sync.db`)
+//! rather than colocating with the main project DB. Rationale: forge sync
+//! is an opt-in side channel; keeping it separate means a project that's
 //! never been wired to a forge has no schema overhead, and re-sync /
 //! reset is just `rm forge-sync.db`.
 //!

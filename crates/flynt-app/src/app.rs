@@ -19,9 +19,9 @@ pub fn App() -> Element {
     let current_runtime = ctx.runtime.read().clone();
 
     let theme = use_context_provider(|| {
-        Signal::new(ThemeName(current_runtime.vault.config.appearance.theme.clone()))
+        Signal::new(ThemeName(current_runtime.project.config.appearance.theme.clone()))
     });
-    let font_size = use_context_provider(|| Signal::new(current_runtime.vault.config.appearance.font_size));
+    let font_size = use_context_provider(|| Signal::new(current_runtime.project.config.appearance.font_size));
     use_context_provider(|| Signal::new(current_runtime.omegon.load_project_profile()));
     use_context_provider(|| Signal::new(current_runtime.omegon.load_operator_settings()));
     use_context_provider(|| Signal::new(None::<tokio::process::Child>));
@@ -88,7 +88,7 @@ pub fn App() -> Element {
     let mut palette_mode = use_signal(|| crate::components::command_palette::PaletteMode::Command);
     let shared_acp_session = use_context::<Signal<Option<std::rc::Rc<crate::acp::AcpSession>>>>();
 
-    // Mirror tab + view state to <vault>/.flynt-local/flynt/ui-state.json so the
+    // Mirror tab + view state to <project>/.flynt-local/flynt/ui-state.json so the
     // embedded omegon agent can answer "what document am I looking at?" via
     // its get_ui_state tool. Re-fires whenever Dioxus detects tab_state /
     // active_route changes.
@@ -97,20 +97,20 @@ pub fn App() -> Element {
         use_effect(move || {
             let tabs = tab_state.read().clone();
             let route = active_route.read().clone();
-            let vault = ui_ctx.vault();
-            crate::ui_state::write_snapshot(&vault, &tabs, &route);
+            let project = ui_ctx.project();
+            crate::ui_state::write_snapshot(&project, &tabs, &route);
         });
     }
 
     // Bootstrap canvas assets (tweakcn presets, shadcn primitives) into the
-    // vault's .flynt-local directory so flynt-agent can read them via the
+    // project's .flynt-local directory so flynt-agent can read them via the
     // canvas_* tool family. Idempotent and content-aware; safe to re-run on
     // every launch.
     {
         let assets_ctx = ctx.clone();
         use_effect(move || {
-            let vault = assets_ctx.vault();
-            crate::canvas_assets::bootstrap(&vault.root);
+            let project = assets_ctx.project();
+            crate::canvas_assets::bootstrap(&project.root);
         });
     }
 
@@ -139,15 +139,15 @@ pub fn App() -> Element {
             crate::menu::NEW_NOTE => {
                 let c = ctx_menu_handler;
                 spawn(async move {
-                    let vault = c.vault();
+                    let project = c.project();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let title = format!("Untitled {ts_suffix}");
                     let filename = format!("{title}.md");
                     let path = std::path::PathBuf::from(&filename);
                     let content = format!("+++\ntitle = \"{title}\"\ntags = []\n+++\n\n");
-                    if vault.save_document_content(&path, &content).is_ok() {
-                        let _ = vault.reindex();
-                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&title.to_lowercase()) {
+                    if project.save_document_content(&path, &content).is_ok() {
+                        let _ = project.reindex();
+                        if let Ok(Some(doc)) = project.store.find_document_by_slug(&title.to_lowercase()) {
                             tab_state.write().open(doc.id, title);
                             *active_route.write() = Route::Notes;
                         }
@@ -159,13 +159,13 @@ pub fn App() -> Element {
                 let mut ts = tab_state;
                 let mut ar = active_route;
                 spawn(async move {
-                    let vault = c.vault();
+                    let project = c.project();
                     let date = flynt_core::daily::today();
                     let path = flynt_core::daily::daily_note_path(date);
-                    let abs = vault.root.join(&path);
+                    let abs = project.root.join(&path);
                     if !abs.exists() {
                         // Load daily template if it exists
-                        let templates = flynt_core::templates::list_templates(&vault.root);
+                        let templates = flynt_core::templates::list_templates(&project.root);
                         let tmpl = templates.iter().find(|t| t.name.to_lowercase() == "daily");
                         let content = flynt_core::daily::daily_note_content(
                             date,
@@ -174,11 +174,11 @@ pub fn App() -> Element {
                         if let Some(parent) = abs.parent() {
                             let _ = std::fs::create_dir_all(parent);
                         }
-                        let _ = vault.save_document_content(&path, &content);
-                        let _ = vault.reindex();
+                        let _ = project.save_document_content(&path, &content);
+                        let _ = project.reindex();
                     }
                     let title = date.format("%A, %B %-d, %Y").to_string();
-                    if let Ok(Some(doc)) = vault.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
+                    if let Ok(Some(doc)) = project.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
                         ts.write().open(doc.id, title);
                         *ar.write() = Route::Notes;
                     }
@@ -189,13 +189,13 @@ pub fn App() -> Element {
                 let mut ts = tab_state;
                 let mut ar = active_route;
                 spawn(async move {
-                    let vault = c.vault();
+                    let project = c.project();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let name = format!("Drawing {ts_suffix}");
-                    if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&vault.root, &name) {
-                        let _ = vault.reindex();
+                    if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&project.root, &name) {
+                        let _ = project.reindex();
                         let slug = name.to_lowercase();
-                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                        if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
                             ts.write().open(doc.id, name);
                         }
                         *ar.write() = Route::Notes;
@@ -207,13 +207,13 @@ pub fn App() -> Element {
                 let mut ts = tab_state;
                 let mut ar = active_route;
                 spawn(async move {
-                    let vault = c.vault();
+                    let project = c.project();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let name = format!("Canvas {ts_suffix}");
-                    if let Ok(_md_path) = crate::views::canvas::create_canvas(&vault.root, &name) {
-                        let _ = vault.reindex();
+                    if let Ok(_md_path) = crate::views::canvas::create_canvas(&project.root, &name) {
+                        let _ = project.reindex();
                         let slug = name.to_lowercase();
-                        if let Ok(Some(doc)) = vault.store.find_document_by_slug(&slug) {
+                        if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
                             ts.write().open(doc.id, name);
                         }
                         *ar.write() = Route::Notes;
@@ -231,13 +231,13 @@ pub fn App() -> Element {
                 spawn(async move {
                     let active_id = ts.read().active_id().cloned();
                     if let Some(doc_id) = active_id {
-                        let vault = c.vault();
-                        if let Ok(Some(doc)) = vault.store.get_document(&doc_id) {
-                            let abs = vault.root.join(&doc.path);
+                        let project = c.project();
+                        if let Ok(Some(doc)) = project.store.get_document(&doc_id) {
+                            let abs = project.root.join(&doc.path);
                             if abs.exists() {
                                 let _ = std::fs::remove_file(&abs);
                             }
-                            let _ = vault.store.delete_document(&doc_id);
+                            let _ = project.store.delete_document(&doc_id);
                             let idx = ts.read().active;
                             ts.write().close(idx);
                         }
@@ -251,15 +251,15 @@ pub fn App() -> Element {
     // Auto-render SVG when .excalidraw or .d2 files are created/modified
     {
         let vault_events = ctx.vault_events();
-        let vault_for_svg = ctx.vault();
+        let vault_for_svg = ctx.project();
         use_future(move || {
             let mut rx = vault_events.subscribe();
-            let vault = vault_for_svg.clone();
+            let project = vault_for_svg.clone();
             async move {
                 loop {
                     let Ok(evt) = rx.recv().await else { break };
                     // Re-read viz config on each event so settings changes take effect immediately
-                    let viz = vault.config.visualization.clone();
+                    let viz = project.config.visualization.clone();
                     let path = match evt {
                         flynt_store::watcher::VaultChangeEvent::FileCreated(p)
                         | flynt_store::watcher::VaultChangeEvent::FileModified(p) => p,
@@ -369,7 +369,7 @@ pub fn App() -> Element {
                     // Re-index the wrapper .md if it exists
                     let md_path = path.with_extension("md");
                     if md_path.exists() {
-                        let _ = vault.index_file(&md_path);
+                        let _ = project.index_file(&md_path);
                     }
                 }
             }
@@ -478,7 +478,7 @@ pub fn App() -> Element {
                             let on_get_started = move |_| {
                                 *welcome_error.write() = None;
 
-                                // If we already have a vault, switch to it
+                                // If we already have a project, switch to it
                                 let existing = launcher_profile().last_vault_root.clone();
                                 if let Some(ref root) = existing {
                                     if root.exists() {
@@ -496,12 +496,12 @@ pub fn App() -> Element {
                                     "Flynt",
                                     flynt_core::models::SyncConfig::None,
                                 ) {
-                                    Ok(vault) => {
+                                    Ok(project) => {
                                         // Create a welcome note
                                         let welcome_path = std::path::PathBuf::from("Welcome.md");
                                         let welcome_content = include_str!("../assets/welcome-note.md");
-                                        let _ = vault.save_document_content(&welcome_path, welcome_content);
-                                        let _ = vault.reindex();
+                                        let _ = project.save_document_content(&welcome_path, welcome_content);
+                                        let _ = project.reindex();
 
                                         let mut profile = launcher_profile();
                                         profile.last_vault_root = Some(vault_root.clone());
@@ -514,8 +514,8 @@ pub fn App() -> Element {
                                         start_ctx.set_runtime(runtime_state_for_vault_root(vault_root));
 
                                         // Open the welcome note
-                                        let vault = start_ctx.vault();
-                                        if let Ok(Some(doc)) = vault.store.find_document_by_slug("welcome") {
+                                        let project = start_ctx.project();
+                                        if let Ok(Some(doc)) = project.store.find_document_by_slug("welcome") {
                                             tab_state.write().open(doc.id, "Welcome".into());
                                         }
                                         *active_route.write() = Route::Notes;
@@ -545,7 +545,7 @@ pub fn App() -> Element {
                                     flynt_core::models::SyncConfig::None,
                                     flynt_core::models::IndexingConfig { write_frontmatter: false, scopes: Vec::new() },
                                 ) {
-                                    *welcome_error.write() = Some(format!("Could not open vault: {e}"));
+                                    *welcome_error.write() = Some(format!("Could not open project: {e}"));
                                     return;
                                 }
                                 let mut profile = launcher_profile();
@@ -581,13 +581,13 @@ pub fn App() -> Element {
                                     .and_then(|n| n.to_str())
                                     .unwrap_or("Flynt")
                                     .to_string();
-                                // Initialize the vault at the cloud location
+                                // Initialize the project at the cloud location
                                 match OmegonRuntimeContext::initialize_vault(&root, &name, flynt_core::models::SyncConfig::None) {
-                                    Ok(vault) => {
+                                    Ok(project) => {
                                         let welcome_path = std::path::PathBuf::from("Welcome.md");
                                         let welcome_content = include_str!("../assets/welcome-note.md");
-                                        let _ = vault.save_document_content(&welcome_path, welcome_content);
-                                        let _ = vault.reindex();
+                                        let _ = project.save_document_content(&welcome_path, welcome_content);
+                                        let _ = project.reindex();
 
                                         let mut profile = launcher_profile();
                                         profile.last_vault_root = Some(root.clone());
@@ -600,7 +600,7 @@ pub fn App() -> Element {
                                         *active_route.write() = Route::Notes;
                                     }
                                     Err(e) => {
-                                        *welcome_error.write() = Some(format!("Could not create vault: {e}"));
+                                        *welcome_error.write() = Some(format!("Could not create project: {e}"));
                                     }
                                 }
                             };
@@ -609,7 +609,7 @@ pub fn App() -> Element {
                                 let Some(source_root) = FileDialog::new().pick_folder() else {
                                     return;
                                 };
-                                match import_ctx.vault().import_markdown_tree(&source_root) {
+                                match import_ctx.project().import_markdown_tree(&source_root) {
                                     Ok(_count) => {
                                         let mut profile = launcher_profile();
                                         profile.wizard_completed = true;
@@ -651,7 +651,7 @@ pub fn App() -> Element {
                         Route::Settings => rsx! { SettingsView {} },
                     }
                 }
-                // Clone remote vault dialog
+                // Clone remote project dialog
                 if *clone_dialog_open.read() {
                     div { class: "modal-overlay",
                         onclick: move |_| *clone_dialog_open.write() = false,
@@ -665,7 +665,7 @@ pub fn App() -> Element {
                                 input {
                                     r#type: "text",
                                     value: "{clone_url}",
-                                    placeholder: "https://github.com/you/your-vault.git",
+                                    placeholder: "https://github.com/you/your-project.git",
                                     oninput: move |e| *clone_url.write() = e.value(),
                                     onblur: move |_| {
                                         let url = clone_url.read().trim().to_string();
@@ -725,7 +725,7 @@ pub fn App() -> Element {
                                             let repo_name = url
                                                 .rsplit('/')
                                                 .next()
-                                                .unwrap_or("vault")
+                                                .unwrap_or("project")
                                                 .trim_end_matches(".git")
                                                 .to_string();
                                             let dest = dirs::document_dir()
@@ -748,7 +748,7 @@ pub fn App() -> Element {
                                                         OmegonRuntimeContext::clone_remote_vault(&dest, &url, &branch)
                                                     } else {
                                                         flynt_store::sync::GitSync::clone_repo_with_token(&url, &branch, &dest, &token)
-                                                            .and_then(|_| flynt_store::vault::Vault::open(&dest).map_err(Into::into))
+                                                            .and_then(|_| flynt_store::project::Project::open(&dest).map_err(Into::into))
                                                     }.map(|_| (dest, url, branch))
                                                 }).await;
 

@@ -1,7 +1,7 @@
-//! Vault migration — move a vault between sync locations.
+//! Project migration — move a project between sync locations.
 //!
 //! Handles: Local ↔ iCloud, Local → Git, iCloud → Git, any → any.
-//! The migration copies vault content (all files except `.flynt-local/`),
+//! The migration copies project content (all files except `.flynt-local/`),
 //! writes a new config at the destination, and returns the new root path.
 
 use anyhow::{Context, Result};
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 /// Result of a successful migration.
 #[derive(Debug)]
 pub struct MigrationResult {
-    /// The new vault root directory.
+    /// The new project root directory.
     pub new_root: PathBuf,
     /// Number of files copied.
     pub files_copied: usize,
@@ -19,11 +19,11 @@ pub struct MigrationResult {
     pub old_removed: bool,
 }
 
-/// Migrate a vault from its current location to a new sync target.
+/// Migrate a project from its current location to a new sync target.
 ///
-/// - `current_root`: the existing vault directory
+/// - `current_root`: the existing project directory
 /// - `new_sync`: the desired sync configuration
-/// - `remove_old`: whether to delete the old vault after migration
+/// - `remove_old`: whether to delete the old project after migration
 ///
 /// For iCloud: destination is `~/Library/Mobile Documents/com~apple~CloudDocs/<vault_name>/`
 /// For Git: destination stays the same (just init a repo + set remote)
@@ -49,7 +49,7 @@ pub fn migrate_vault(
         });
     }
 
-    // Copy vault contents to new location
+    // Copy project contents to new location
     let files_copied = copy_vault(current_root, &new_root)?;
 
     // Update config at destination
@@ -100,7 +100,7 @@ fn destination_for_sync(
     }
 }
 
-/// Copy all vault files to a new directory, excluding `.flynt-local/` and `.git/`.
+/// Copy all project files to a new directory, excluding `.flynt-local/` and `.git/`.
 fn copy_vault(src: &Path, dst: &Path) -> Result<usize> {
     if dst.exists() {
         // Check if destination is non-empty
@@ -147,7 +147,7 @@ fn copy_vault(src: &Path, dst: &Path) -> Result<usize> {
     Ok(count)
 }
 
-/// Update the sync field in the vault's config.toml, preserving all other fields.
+/// Update the sync field in the project's config.toml, preserving all other fields.
 fn update_config_sync(vault_root: &Path, sync: &SyncConfig) -> Result<()> {
     let config_path = vault_root.join(".flynt/config.toml");
     std::fs::create_dir_all(vault_root.join(".flynt"))?;
@@ -180,7 +180,7 @@ fn update_config_sync(vault_root: &Path, sync: &SyncConfig) -> Result<()> {
     Ok(())
 }
 
-/// Initialize a git repo at the vault root if one doesn't exist.
+/// Initialize a git repo at the project root if one doesn't exist.
 fn init_git_if_needed(vault_root: &Path, remote: &str, _branch: &str) -> Result<()> {
     if vault_root.join(".git").exists() {
         return Ok(());
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn migrate_to_git_stays_in_place() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path().join("vault");
+        let root = tmp.path().join("project");
         std::fs::create_dir_all(root.join(".flynt")).unwrap();
         std::fs::write(
             root.join(".flynt/config.toml"),
@@ -220,7 +220,7 @@ mod tests {
         std::fs::write(root.join("note.md"), "# Hello").unwrap();
 
         let sync = SyncConfig::Git {
-            remote: "git@github.com:user/vault.git".into(),
+            remote: "git@github.com:user/project.git".into(),
             branch: "main".into(),
             auto_commit_seconds: 60,
         };
@@ -234,8 +234,8 @@ mod tests {
     #[test]
     fn migrate_copies_files_excludes_local_state() {
         let tmp = TempDir::new().unwrap();
-        let src = tmp.path().join("src-vault");
-        let dst = tmp.path().join("dst-vault");
+        let src = tmp.path().join("src-project");
+        let dst = tmp.path().join("dst-project");
 
         std::fs::create_dir_all(src.join(".flynt")).unwrap();
         std::fs::create_dir_all(src.join(".flynt-local/db")).unwrap();
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn migrate_to_git_inits_repo() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path().join("vault");
+        let root = tmp.path().join("project");
         std::fs::create_dir_all(root.join(".flynt")).unwrap();
         std::fs::write(
             root.join(".flynt/config.toml"),
@@ -264,7 +264,7 @@ mod tests {
         ).unwrap();
 
         let sync = SyncConfig::Git {
-            remote: "git@github.com:user/vault.git".into(),
+            remote: "git@github.com:user/project.git".into(),
             branch: "main".into(),
             auto_commit_seconds: 60,
         };

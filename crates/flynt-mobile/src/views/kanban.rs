@@ -12,7 +12,7 @@ pub fn KanbanView() -> Element {
 
     let boards = use_memo(move || {
         let _ = *refresh.read();
-        rt.read().vault.store.list_boards().unwrap_or_default()
+        rt.read().project.store.list_boards().unwrap_or_default()
     });
 
     let mut active_board: Signal<Option<BoardId>> = use_signal(|| None);
@@ -66,7 +66,7 @@ pub fn KanbanView() -> Element {
                     let tasks = {
                         let _ = *refresh.read();
                         rt.read()
-                            .vault
+                            .project
                             .store
                             .list_tasks(&TaskFilter {
                                 board_id: Some(board.id.clone()),

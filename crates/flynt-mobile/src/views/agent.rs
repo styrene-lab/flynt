@@ -13,7 +13,7 @@ pub fn AgentView() -> Element {
         tokio_tungstenite::tungstenite::Message
     >>> = use_signal(|| None);
 
-    let server_host = rt.read().vault.config.local_runtime
+    let server_host = rt.read().project.config.local_runtime
         .omegon_serve_host.clone()
         .unwrap_or_else(|| "127.0.0.1:7842".to_string());
     let server_host_display = server_host.clone();
@@ -101,7 +101,7 @@ pub fn AgentView() -> Element {
             div { class: "agent-mobile-messages",
                 if messages.read().is_empty() {
                     div { class: "agent-mobile-empty",
-                        p { "Ask Omegon about your vault." }
+                        p { "Ask Omegon about your project." }
                         p { class: "muted", "Connected to {server_host_display}" }
                     }
                 } else {

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use flynt_core::models::SyncConfig;
-use flynt_store::{sync::AutoSyncHandle, vault::Vault};
+use flynt_store::{sync::AutoSyncHandle, project::Project};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{info, warn};
 
-/// Vault root on mobile — uses the app's Documents directory.
+/// Project root on mobile — uses the app's Documents directory.
 pub fn vault_root() -> PathBuf {
     dirs::document_dir()
         .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")))
@@ -14,7 +14,7 @@ pub fn vault_root() -> PathBuf {
 /// Alias for use from onboarding view.
 pub fn default_vault_root() -> PathBuf { vault_root() }
 
-/// Check if a vault has been initialized (has at least a .flynt directory or any .md files).
+/// Check if a project has been initialized (has at least a .flynt directory or any .md files).
 pub fn has_vault() -> bool {
     let root = vault_root();
     root.join(".flynt").exists() || root.join(".git").exists()
@@ -24,20 +24,20 @@ pub fn has_vault() -> bool {
 #[derive(Clone)]
 pub struct MobileRuntime {
     pub vault_root: PathBuf,
-    pub vault: Arc<Vault>,
+    pub project: Arc<Project>,
     pub _sync_handle: Option<Arc<AutoSyncHandle>>,
 }
 
-/// Bootstrap the mobile vault — open, index, start sync.
+/// Bootstrap the mobile project — open, index, start sync.
 pub fn bootstrap() -> Result<MobileRuntime> {
     let root = vault_root();
     std::fs::create_dir_all(&root)?;
 
-    let vault = Arc::new(Vault::open(&root)?);
+    let project = Arc::new(Project::open(&root)?);
 
-    match vault.reindex() {
+    match project.reindex() {
         Ok((n, errs)) => {
-            info!("Vault indexed: {n} files");
+            info!("Project indexed: {n} files");
             for e in &errs {
                 warn!("Index error: {e}");
             }
@@ -45,29 +45,29 @@ pub fn bootstrap() -> Result<MobileRuntime> {
             if n == 0 {
                 let welcome = std::path::PathBuf::from("Welcome.md");
                 let content = "+++\ntitle = \"Welcome\"\ntags = []\n+++\n\n# Welcome to Flynt\n\nThis is your first note. Start writing, or explore the app.\n\n- **Notes** — write and organize your thoughts\n- **Board** — track tasks with kanban boards\n- **Graph** — see how your notes connect\n";
-                let _ = vault.save_document_content(&welcome, content);
-                let _ = vault.reindex();
+                let _ = project.save_document_content(&welcome, content);
+                let _ = project.reindex();
             }
         }
         Err(e) => warn!("Reindex failed: {e}"),
     }
 
     // Drain share-extension inbox
-    match drain_inbox(&vault) {
+    match drain_inbox(&project) {
         Ok(0) => {}
         Ok(n) => info!("Imported {n} notes from share inbox"),
         Err(e) => warn!("Inbox drain error: {e}"),
     }
 
     // Start auto-sync if configured
-    let sync_handle = match &vault.config.sync {
+    let sync_handle = match &project.config.sync {
         SyncConfig::Git {
             remote,
             branch,
             auto_commit_seconds,
         } if *auto_commit_seconds > 0 => {
             let interval = Duration::from_secs((*auto_commit_seconds).max(30));
-            let vault_for_reindex = Arc::clone(&vault);
+            let vault_for_reindex = Arc::clone(&project);
             let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
                 if let Err(e) = vault_for_reindex.reindex() {
                     warn!("Post-pull reindex failed: {e}");
@@ -91,7 +91,7 @@ pub fn bootstrap() -> Result<MobileRuntime> {
 
     Ok(MobileRuntime {
         vault_root: root,
-        vault,
+        project,
         _sync_handle: sync_handle,
     })
 }
@@ -99,8 +99,8 @@ pub fn bootstrap() -> Result<MobileRuntime> {
 // ─── Share Extension Inbox ────────────────────────────────────
 
 /// Drain the share-extension inbox: move .md files (and assets/) from the
-/// App Group container into the vault, then index each one.
-pub fn drain_inbox(vault: &Vault) -> Result<usize> {
+/// App Group container into the project, then index each one.
+pub fn drain_inbox(project: &Project) -> Result<usize> {
     let Some(inbox) = app_group_inbox_dir() else {
         return Ok(0);
     };
@@ -113,7 +113,7 @@ pub fn drain_inbox(vault: &Vault) -> Result<usize> {
     // Move shared assets first (images etc.)
     let inbox_assets = inbox.join("assets");
     if inbox_assets.is_dir() {
-        let vault_assets = vault.root.join("assets");
+        let vault_assets = project.root.join("assets");
         fs::create_dir_all(&vault_assets)?;
         for entry in fs::read_dir(&inbox_assets)? {
             let entry = entry?;
@@ -123,14 +123,14 @@ pub fn drain_inbox(vault: &Vault) -> Result<usize> {
         let _ = fs::remove_dir(&inbox_assets);
     }
 
-    // Move .md files into vault root and index
+    // Move .md files into project root and index
     for entry in fs::read_dir(&inbox)? {
         let entry = entry?;
         let path = entry.path();
         if path.extension().map_or(false, |e| e == "md") {
-            let dest = vault.root.join(path.file_name().unwrap());
+            let dest = project.root.join(path.file_name().unwrap());
             fs::rename(&path, &dest)?;
-            if let Err(e) = vault.index_file(&dest) {
+            if let Err(e) = project.index_file(&dest) {
                 warn!("Failed to index shared note {}: {e}", dest.display());
             }
             count += 1;

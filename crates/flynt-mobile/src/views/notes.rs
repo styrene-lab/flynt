@@ -20,7 +20,7 @@ pub fn NotesList(
     let rt = use_context::<Signal<MobileRuntime>>();
     let docs = use_memo(move || {
         rt.read()
-            .vault
+            .project
             .store
             .list_documents()
             .unwrap_or_default()
@@ -64,7 +64,7 @@ pub fn NoteDetail(
     let content = use_memo(move || {
         let id = flynt_core::models::DocumentId(doc_id.parse().unwrap_or_default());
         rt.read()
-            .vault
+            .project
             .store
             .get_document(&id)
             .ok()

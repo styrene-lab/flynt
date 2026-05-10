@@ -10,21 +10,21 @@ use crate::state::{Route, TabState};
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
 async fn create_task(ctx: AppContext, board_id: BoardId, col: String, title: String, project_id: Option<uuid::Uuid>) {
-    let vault = ctx.vault();
+    let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
         let task = Task::new(board_id, col, title);
-        vault.persist_task(&task, project_id)
+        project.persist_task(&task, project_id)
     })
     .await;
 }
 
 async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Option<uuid::Uuid>) {
-    let vault = ctx.vault();
+    let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
+        if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
             t.column     = col;
             t.updated_at = Utc::now();
-            vault.persist_task(&t, project_id)
+            project.persist_task(&t, project_id)
         } else {
             Ok(())
         }
@@ -33,12 +33,12 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String, project_id: Op
 }
 
 async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid::Uuid>) {
-    let vault = ctx.vault();
+    let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
+        if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
             t.status     = TaskStatus::Archived;
             t.updated_at = Utc::now();
-            vault.persist_task(&t, project_id)
+            project.persist_task(&t, project_id)
         } else {
             Ok(())
         }
@@ -47,9 +47,9 @@ async fn archive_task(ctx: AppContext, task_id: TaskId, project_id: Option<uuid:
 }
 
 async fn create_board(ctx: AppContext, name: String) -> anyhow::Result<()> {
-    let vault = ctx.vault();
+    let project = ctx.project();
     tokio::task::spawn_blocking(move || {
-        vault.store.save_board(&Board::default_sprint(name))
+        project.store.save_board(&Board::default_sprint(name))
     })
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))??;
@@ -57,8 +57,8 @@ async fn create_board(ctx: AppContext, name: String) -> anyhow::Result<()> {
 }
 
 async fn delete_board(ctx: AppContext, board_id: BoardId) -> anyhow::Result<()> {
-    let vault = ctx.vault();
-    tokio::task::spawn_blocking(move || vault.store.delete_board(&board_id))
+    let project = ctx.project();
+    tokio::task::spawn_blocking(move || project.store.delete_board(&board_id))
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))??;
     Ok(())
@@ -73,9 +73,9 @@ pub fn KanbanView() -> Element {
 
     let boards = use_resource(move || {
         let _ = refresh(); // reactive dep
-        let vault = ctx.vault();
+        let project = ctx.project();
         async move {
-            tokio::task::spawn_blocking(move || vault.store.list_boards().unwrap_or_default())
+            tokio::task::spawn_blocking(move || project.store.list_boards().unwrap_or_default())
                 .await
                 .unwrap_or_default()
         }
@@ -237,11 +237,11 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
 
     let tasks = use_resource(move || {
         let _ = refresh();
-        let vault = ctx.vault();
+        let project = ctx.project();
         let bid = board_id.clone();
         async move {
             tokio::task::spawn_blocking(move || {
-                vault
+                project
                     .store
                     .list_tasks(&TaskFilter { board_id: Some(bid), ..Default::default() })
                     .unwrap_or_default()
@@ -257,9 +257,9 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
     // is fine.
     let engagements = use_resource(move || {
         let _ = refresh();
-        let vault = ctx.vault();
+        let project = ctx.project();
         async move {
-            tokio::task::spawn_blocking(move || vault.store.list_engagements().unwrap_or_default())
+            tokio::task::spawn_blocking(move || project.store.list_engagements().unwrap_or_default())
                 .await
                 .unwrap_or_default()
         }
@@ -411,10 +411,10 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                         let mut b = board_for_remove.clone();
                                         let name = col_name_remove.clone();
                                         spawn(async move {
-                                            let vault = c.vault();
+                                            let project = c.project();
                                             b.columns.retain(|c| c.name != name);
                                             let _ = tokio::task::spawn_blocking(move || {
-                                                vault.store.save_board(&b)
+                                                project.store.save_board(&b)
                                             }).await;
                                             *refresh.write() += 1;
                                         });
@@ -426,15 +426,15 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                             let mut b = board_for_rename.clone();
                                             let old_name = col_name_rename.clone();
                                             spawn(async move {
-                                                let vault = c.vault();
+                                                let project = c.project();
                                                 // Rename column
                                                 if let Some(col) = b.columns.iter_mut().find(|c| c.name == old_name) {
                                                     col.name = new_name.clone();
                                                 }
                                                 // Update tasks in this column
                                                 let _ = tokio::task::spawn_blocking(move || {
-                                                    vault.store.save_board(&b)?;
-                                                    let tasks = vault.store.list_tasks(&flynt_core::store::TaskFilter {
+                                                    project.store.save_board(&b)?;
+                                                    let tasks = project.store.list_tasks(&flynt_core::store::TaskFilter {
                                                         board_id: Some(b.id.clone()),
                                                         column: Some(old_name),
                                                         ..Default::default()
@@ -444,7 +444,7 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                                         // project_id is the board's; pass through
                                                         // so project-backed boards keep writing to
                                                         // git-backing.
-                                                        vault.persist_task(&t, b.project_id)?;
+                                                        project.persist_task(&t, b.project_id)?;
                                                     }
                                                     Ok::<_, anyhow::Error>(())
                                                 }).await;
@@ -475,9 +475,9 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                                             let mut b = board_for_add.clone();
                                             b.columns.push(Column { name, wip_limit: None });
                                             spawn(async move {
-                                                let vault = c.vault();
+                                                let project = c.project();
                                                 let _ = tokio::task::spawn_blocking(move || {
-                                                    vault.store.save_board(&b)
+                                                    project.store.save_board(&b)
                                                 }).await;
                                                 *refresh.write() += 1;
                                             });
@@ -939,9 +939,9 @@ fn TaskCard(
                                 let new_priority = *inline_priority.read();
                                 let engagement_s = inline_engagement.read().trim().to_string();
                                 spawn(async move {
-                                    let vault = c.vault();
+                                    let project = c.project();
                                     let _ = tokio::task::spawn_blocking(move || {
-                                        if let Ok(Some(mut t)) = vault.store.get_task(&task_id) {
+                                        if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
                                             t.title      = new_title;
                                             t.priority   = new_priority;
                                             t.engagement_id = if engagement_s.is_empty() {
@@ -950,7 +950,7 @@ fn TaskCard(
                                                 uuid::Uuid::parse_str(&engagement_s).ok().map(EngagementId)
                                             };
                                             t.updated_at = Utc::now();
-                                            vault.persist_task(&t, project_id)
+                                            project.persist_task(&t, project_id)
                                         } else {
                                             Ok(())
                                         }
@@ -973,10 +973,10 @@ fn TaskCard(
                                 let c = ctx_open.clone();
                                 let task_id = tid_open.clone();
                                 spawn(async move {
-                                    let vault = c.vault();
+                                    let project = c.project();
                                     let lookup = tokio::task::spawn_blocking(move || -> Option<(flynt_core::models::DocumentId, String)> {
-                                        let path = vault.store.task_file_path(&task_id).ok().flatten()?;
-                                        let doc = vault.store.get_document_by_path(std::path::Path::new(&path)).ok().flatten()?;
+                                        let path = project.store.task_file_path(&task_id).ok().flatten()?;
+                                        let doc = project.store.get_document_by_path(std::path::Path::new(&path)).ok().flatten()?;
                                         Some((doc.id, doc.title))
                                     }).await.ok().flatten();
                                     if let Some((id, title)) = lookup {

@@ -17,8 +17,8 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
 
     // Load the file content
     let content = use_memo(move || {
-        let vault = ctx.vault();
-        let abs = vault.root.join(&path_load);
+        let project = ctx.project();
+        let abs = project.root.join(&path_load);
         std::fs::read_to_string(&abs).unwrap_or_else(|_| {
             // New drawing — empty scene
             r#"{"type":"excalidraw","version":2,"elements":[],"appState":{}}"#.to_string()
@@ -147,8 +147,8 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
         spawn(async move {
             loop {
                 let Ok(data) = eval.recv::<String>().await else { break; };
-                let vault = c.vault();
-                let abs = vault.root.join(&p);
+                let project = c.project();
+                let abs = project.root.join(&p);
                 if std::fs::write(&abs, &data).is_ok() {
                     *save_state.write() = "saved";
 
@@ -212,9 +212,9 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                                 "#);
                                 if let Ok(svg) = eval.recv::<String>().await {
                                     if !svg.is_empty() {
-                                        let vault = c.vault();
+                                        let project = c.project();
                                         let svg_path = p.with_extension("svg");
-                                        let abs = vault.root.join(&svg_path);
+                                        let abs = project.root.join(&svg_path);
                                         if std::fs::write(&abs, &svg).is_ok() {
                                             *save_state.write() = "SVG exported";
                                             #[cfg(target_os = "macos")]
@@ -274,9 +274,9 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                                 if let Ok(b64) = eval.recv::<String>().await {
                                     if !b64.is_empty() {
                                         if let Ok(bytes) = base64_decode(&b64) {
-                                            let vault = c.vault();
+                                            let project = c.project();
                                             let png_path = p.with_extension("png");
-                                            let abs = vault.root.join(&png_path);
+                                            let abs = project.root.join(&png_path);
                                             if std::fs::write(&abs, &bytes).is_ok() {
                                                 *save_state.write() = "PNG exported";
                                                 #[cfg(target_os = "macos")]

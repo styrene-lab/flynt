@@ -18,7 +18,7 @@ const TAILWIND_CSS: &str = include_str!("../../assets/vendor/tailwind.css");
 
 /// Vendored tweakcn-style theme presets. Compiled into the app binary so
 /// theme switching is instant and offline. The JSON map is also copied
-/// into the vault on first launch so flynt-agent can read it for
+/// into the project on first launch so flynt-agent can read it for
 /// canvas_apply_theme suggestions (phase 5).
 const TWEAKCN_PRESETS: &str = include_str!("../../assets/vendor/tweakcn-presets.json");
 
@@ -288,7 +288,7 @@ const MEASUREMENT_HOOK: &str = r#"
 ///
 /// Inlines Tailwind, theme tokens, and the cell's CSS into `<head>`, then
 /// the cell's HTML and optional JS into `<body>`. Inlining (vs. a
-/// `vault://` link) keeps the canvas portable: it renders identically
+/// `project://` link) keeps the canvas portable: it renders identically
 /// across boundaries — exported, screenshotted, run on a different
 /// machine, or run offline.
 pub fn build_srcdoc(cell: &Cell, theme: &str, tailwind_css: &str) -> String {
@@ -367,7 +367,7 @@ pub use flynt_core::canvas::create_canvas;
 pub fn CanvasView(path: PathBuf) -> Element {
     let ctx = use_context::<AppContext>();
 
-    // Refresh counter — bumped whenever the vault watcher reports a write
+    // Refresh counter — bumped whenever the project watcher reports a write
     // to our .canvas file (typically by the agent via canvas_set_cells).
     // Hook into use_memo's deps so reload happens automatically.
     let mut refresh = use_signal(|| 0u64);
@@ -387,7 +387,7 @@ pub fn CanvasView(path: PathBuf) -> Element {
                     };
                     let Some(changed) = changed else { continue; };
                     // Match by suffix — events carry absolute paths; our path
-                    // is vault-relative. Keeps the comparison robust to
+                    // is project-relative. Keeps the comparison robust to
                     // canonicalization differences.
                     if changed.ends_with(&watch_path) {
                         *refresh.write() += 1;
@@ -407,7 +407,7 @@ pub fn CanvasView(path: PathBuf) -> Element {
         let cap_ctx = ctx.clone();
         let canvas_path_for_handler = path.clone();
         use_effect(move || {
-            let vault_root = cap_ctx.vault().root.clone();
+            let vault_root = cap_ctx.project().root.clone();
             let canvas_rel = canvas_path_for_handler.clone();
             spawn(async move {
                 use crate::canvas_capture::*;
@@ -452,8 +452,8 @@ pub fn CanvasView(path: PathBuf) -> Element {
     let path_load = path.clone();
     let parsed = use_memo(move || {
         let _ = refresh();
-        let vault = ctx.vault();
-        let abs = vault.root.join(&path_load);
+        let project = ctx.project();
+        let abs = project.root.join(&path_load);
         Canvas::load(&abs).map_err(|e| e.to_string())
     });
 

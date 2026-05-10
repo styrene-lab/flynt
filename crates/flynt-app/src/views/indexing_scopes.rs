@@ -18,7 +18,7 @@ pub fn IndexingScopesEditor(
     rsx! {
         div { class: "indexing-scopes-editor",
             if scopes.read().is_empty() {
-                p { class: "muted", "No scopes configured — all files follow the vault-wide default." }
+                p { class: "muted", "No scopes configured — all files follow the project-wide default." }
             } else {
                 for (index, scope) in scopes.read().iter().cloned().enumerate() {
                     IndexScopeCard {

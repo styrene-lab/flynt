@@ -3,7 +3,7 @@ use flynt_core::{
     models::{FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, VaultConfig},
     store::VaultStore,
 };
-use flynt_store::{vault::Vault, watcher::{VaultChangeEvent, VaultWatcher}};
+use flynt_store::{project::Project, watcher::{VaultChangeEvent, VaultWatcher}};
 use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
 use tokio::{process::Command, sync::broadcast};
@@ -34,7 +34,7 @@ pub struct LauncherProfile {
     pub known_vaults: Vec<KnownVault>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_setup: Option<PendingVaultSetup>,
-    /// Path to a cloned vault manifest repo. If set, known_vaults are
+    /// Path to a cloned project manifest repo. If set, known_vaults are
     /// supplemented from the manifest's `vaults.toml`.
     #[serde(default)]
     pub manifest_dir: Option<PathBuf>,
@@ -121,13 +121,13 @@ impl OmegonRuntimeContext {
         let Some(ref manifest_dir) = profile.manifest_dir else { return };
         let Ok(manifest) = flynt_core::manifest::load_manifest_with_local(manifest_dir) else { return };
 
-        for vault in &manifest.vaults {
-            let Some(ref local_path) = vault.local_path else { continue };
+        for project in &manifest.vaults {
+            let Some(ref local_path) = project.local_path else { continue };
             if !local_path.exists() { continue; }
             // Add if not already known
             if !profile.known_vaults.iter().any(|kv| kv.root == *local_path) {
                 profile.known_vaults.push(KnownVault {
-                    name: vault.name.clone(),
+                    name: project.name.clone(),
                     root: local_path.clone(),
                 });
             }
@@ -142,7 +142,7 @@ impl OmegonRuntimeContext {
         profile.known_vaults.retain(|v| v.root.exists());
         profile.recent_vaults.retain(|v| v.exists());
 
-        if let Some(existing) = profile.known_vaults.iter_mut().find(|vault| vault.root == root) {
+        if let Some(existing) = profile.known_vaults.iter_mut().find(|project| project.root == root) {
             existing.name = name.to_string();
         } else {
             profile.known_vaults.push(KnownVault {
@@ -157,7 +157,7 @@ impl OmegonRuntimeContext {
         profile.last_vault_root = Some(root);
     }
 
-    /// Add a vault to the manifest and clone it locally.
+    /// Add a project to the manifest and clone it locally.
     pub fn add_vault_to_manifest(
         profile: &mut LauncherProfile,
         name: &str,
@@ -176,7 +176,7 @@ impl OmegonRuntimeContext {
             .unwrap_or_else(|| PathBuf::from("."))
             .join(name);
 
-        let vault = ManifestVault {
+        let project = ManifestVault {
             name: name.into(),
             repo: repo.into(),
             branch: branch.into(),
@@ -185,7 +185,7 @@ impl OmegonRuntimeContext {
             local_path: Some(local_path.clone()),
             auto_commit_seconds: 60,
         };
-        manifest::add_vault(&mut m, vault)?;
+        manifest::add_vault(&mut m, project)?;
         manifest::save_manifest(&manifest_dir, &m)?;
         manifest::save_local_manifest(&manifest_dir, &m)?;
 
@@ -200,12 +200,12 @@ impl OmegonRuntimeContext {
         Self::register_known_vault(profile, &local_path, name);
 
         // Commit manifest changes
-        let _ = Self::commit_manifest(&manifest_dir, &format!("Add vault: {name}"));
+        let _ = Self::commit_manifest(&manifest_dir, &format!("Add project: {name}"));
 
         Ok(local_path)
     }
 
-    /// Remove a vault from the manifest. Optionally delete local files.
+    /// Remove a project from the manifest. Optionally delete local files.
     pub fn remove_vault_from_manifest(
         profile: &mut LauncherProfile,
         vault_name: &str,
@@ -239,7 +239,7 @@ impl OmegonRuntimeContext {
             }
         }
 
-        let _ = Self::commit_manifest(&manifest_dir, &format!("Remove vault: {vault_name}"));
+        let _ = Self::commit_manifest(&manifest_dir, &format!("Remove project: {vault_name}"));
 
         Ok(())
     }
@@ -257,7 +257,7 @@ impl OmegonRuntimeContext {
     pub fn spawn_new_instance_for_vault(root: &Path) -> anyhow::Result<()> {
         let exe = std::env::current_exe()?;
         Command::new(exe)
-            .arg("--vault")
+            .arg("--project")
             .arg(root)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -266,7 +266,7 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    pub fn initialize_vault(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Vault> {
+    pub fn initialize_vault(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Project> {
         Self::initialize_vault_with_indexing(path, name, sync, Default::default())
     }
 
@@ -275,19 +275,19 @@ impl OmegonRuntimeContext {
         name: &str,
         sync: SyncConfig,
         indexing: flynt_core::models::IndexingConfig,
-    ) -> anyhow::Result<Vault> {
+    ) -> anyhow::Result<Project> {
         std::fs::create_dir_all(path)?;
-        let vault = Vault::open(path)?;
-        let mut config: VaultConfig = vault.config.clone();
+        let project = Project::open(path)?;
+        let mut config: VaultConfig = project.config.clone();
         config.vault_name = name.to_string();
         config.sync = sync;
         config.indexing = indexing;
-        vault.save_config(&config)?;
-        let vault = Vault::open(path)?;
+        project.save_config(&config)?;
+        let project = Project::open(path)?;
         let mut profile = Self::load_launcher_profile();
         Self::register_known_vault(&mut profile, path, name);
         Self::save_launcher_profile(&profile)?;
-        Ok(vault)
+        Ok(project)
     }
 
     pub fn initialize_github_linked_vault(
@@ -295,7 +295,7 @@ impl OmegonRuntimeContext {
         name: &str,
         repo: &str,
         branch: &str,
-    ) -> anyhow::Result<Vault> {
+    ) -> anyhow::Result<Project> {
         Self::initialize_vault(
             local_path,
             name,
@@ -312,8 +312,8 @@ impl OmegonRuntimeContext {
         name: &str,
         repo: &str,
         branch: &str,
-    ) -> anyhow::Result<Vault> {
-        let vault = Self::initialize_github_linked_vault(local_path, name, repo, branch)?;
+    ) -> anyhow::Result<Project> {
+        let project = Self::initialize_github_linked_vault(local_path, name, repo, branch)?;
         let home_path = local_path.join("home.md");
         if !home_path.exists() {
             std::fs::write(
@@ -322,17 +322,17 @@ impl OmegonRuntimeContext {
                     "+++\ntitle = \"Home\"\n[publication]\nenabled = true\nvisibility = \"public\"\n[publication.target]\nrepo = \"{repo}\"\nbranch = \"{branch}\"\nsite_dir = \"site\"\n+++\n\n# Home\n\nWelcome to {name}.\n"
                 ),
             )?;
-            vault.index_file(&home_path)?;
+            project.index_file(&home_path)?;
         }
-        Ok(vault)
+        Ok(project)
     }
 
-    /// Clone a remote git repo into `local_path` and open it as a Flynt vault.
+    /// Clone a remote git repo into `local_path` and open it as a Flynt project.
     pub fn clone_remote_vault(
         local_path: &Path,
         repo_url: &str,
         branch: &str,
-    ) -> anyhow::Result<Vault> {
+    ) -> anyhow::Result<Project> {
         use flynt_store::sync::git::GitSync;
 
         std::fs::create_dir_all(local_path)?;
@@ -364,24 +364,24 @@ impl OmegonRuntimeContext {
         )
     }
 
-    pub fn export_publication_preview(vault: &Vault) -> anyhow::Result<PathBuf> {
-        let target = publication_output_path(vault);
+    pub fn export_publication_preview(project: &Project) -> anyhow::Result<PathBuf> {
+        let target = publication_output_path(project);
         std::fs::create_dir_all(&target)?;
-        let report = vault.export_publication_tree(&target)?;
+        let report = project.export_publication_tree(&target)?;
         if !report.errors.is_empty() {
             anyhow::bail!(report.errors.join("; "));
         }
         Ok(target)
     }
 
-    pub fn publication_target(vault: &Vault) -> Option<PublicationTarget> {
-        vault
+    pub fn publication_target(project: &Project) -> Option<PublicationTarget> {
+        project
             .store
             .list_documents()
             .ok()
             .and_then(|docs: Vec<flynt_core::models::DocumentMeta>| {
                 docs.into_iter().find_map(|meta| {
-                    vault.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
+                    project.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
                         doc.frontmatter.publication.target.clone()
                     })
                 })
@@ -416,12 +416,12 @@ impl OmegonRuntimeContext {
 
         std::fs::write(
             repo_root.join("src/pages/index.astro"),
-            "---\nconst title = 'Flynt Publication Demo';\n---\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <title>{title}</title>\n    <style>body{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:3rem;background:#06080e;color:#c4d8e4}a{color:#6ecad8}code{background:#0e1622;padding:.2rem .4rem;border-radius:4px}</style>\n  </head>\n  <body>\n    <h1>{title}</h1>\n    <p>This Astro site demonstrates what a published Flynt vault can look like.</p>\n    <p>Copy local publication preview artifacts into <code>public/preview/</code> or evolve this into a richer adapter over the publication manifest.</p>\n    <ul>\n      <li><a href=\"/preview/home.html\">Preview exported home page</a></li>\n      <li><a href=\"https://github.com/example-org/codex\">Flynt source</a></li>\n    </ul>\n  </body>\n</html>\n",
+            "---\nconst title = 'Flynt Publication Demo';\n---\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <title>{title}</title>\n    <style>body{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:3rem;background:#06080e;color:#c4d8e4}a{color:#6ecad8}code{background:#0e1622;padding:.2rem .4rem;border-radius:4px}</style>\n  </head>\n  <body>\n    <h1>{title}</h1>\n    <p>This Astro site demonstrates what a published Flynt project can look like.</p>\n    <p>Copy local publication preview artifacts into <code>public/preview/</code> or evolve this into a richer adapter over the publication manifest.</p>\n    <ul>\n      <li><a href=\"/preview/home.html\">Preview exported home page</a></li>\n      <li><a href=\"https://github.com/example-org/codex\">Flynt source</a></li>\n    </ul>\n  </body>\n</html>\n",
         )?;
 
         std::fs::write(
             repo_root.join("README.md"),
-            "# Flynt Publication Demo\n\nThis Astro site is the example/demo publication target for a published Flynt vault.\n\n## Workflow\n\n1. Export a local publication preview from Flynt.\n2. Copy the generated preview tree into `public/preview/`.\n3. Run `npm install` and `npm run dev`.\n\nThe long-term path is to replace the raw preview copy step with a richer Astro adapter over Flynt publication manifests.\n",
+            "# Flynt Publication Demo\n\nThis Astro site is the example/demo publication target for a published Flynt project.\n\n## Workflow\n\n1. Export a local publication preview from Flynt.\n2. Copy the generated preview tree into `public/preview/`.\n3. Run `npm install` and `npm run dev`.\n\nThe long-term path is to replace the raw preview copy step with a richer Astro adapter over Flynt publication manifests.\n",
         )?;
 
         Ok(())
@@ -554,7 +554,7 @@ mod tests {
     #[test]
     fn derives_runtime_paths_from_local_runtime_config() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         let runtime = OmegonRuntimeContext::discover(
             &vault_root,
             &LocalRuntimeConfig {
@@ -589,7 +589,7 @@ mod tests {
             }],
             pending_setup: Some(PendingVaultSetup::LinkGithub {
                 local_path: tmp.path().join("vaults/example-org"),
-                repo: "git@github.com:example-org/codex-vault.git".into(),
+                repo: "git@github.com:example-org/codex-project.git".into(),
                 branch: "main".into(),
             }),
             manifest_dir: None,
@@ -603,20 +603,20 @@ mod tests {
     #[test]
     fn initializes_github_linked_vault_with_git_sync_config() {
         let tmp = TempDir::new().unwrap();
-        let local_path = tmp.path().join("vault");
-        let vault = OmegonRuntimeContext::initialize_github_linked_vault(
+        let local_path = tmp.path().join("project");
+        let project = OmegonRuntimeContext::initialize_github_linked_vault(
             &local_path,
             "Black Meridian",
-            "git@github.com:example-org/codex-vault.git",
+            "git@github.com:example-org/codex-project.git",
             "main",
         )
         .unwrap();
 
-        assert_eq!(vault.config.vault_name, "Black Meridian");
+        assert_eq!(project.config.vault_name, "Black Meridian");
         assert_eq!(
-            vault.config.sync,
+            project.config.sync,
             SyncConfig::Git {
-                remote: "git@github.com:example-org/codex-vault.git".into(),
+                remote: "git@github.com:example-org/codex-project.git".into(),
                 branch: "main".into(),
                 auto_commit_seconds: 60,
             }
@@ -626,8 +626,8 @@ mod tests {
     #[test]
     fn initializes_github_pages_publication_seed_document() {
         let tmp = TempDir::new().unwrap();
-        let local_path = tmp.path().join("vault");
-        let vault = OmegonRuntimeContext::initialize_github_pages_publication(
+        let local_path = tmp.path().join("project");
+        let project = OmegonRuntimeContext::initialize_github_pages_publication(
             &local_path,
             "Black Meridian",
             "https://github.com/example-org/flynt-site.git",
@@ -635,7 +635,7 @@ mod tests {
         )
         .unwrap();
 
-        let home = vault.store.get_document_by_path(std::path::Path::new("home.md")).unwrap().unwrap();
+        let home = project.store.get_document_by_path(std::path::Path::new("home.md")).unwrap().unwrap();
         assert!(home.frontmatter.publication.enabled);
         assert_eq!(home.frontmatter.publication.visibility, flynt_core::models::PublicationVisibility::Public);
         assert_eq!(
@@ -646,7 +646,7 @@ mod tests {
                 site_dir: "site".into(),
             })
         );
-        assert_eq!(publication_output_path(&vault), local_path.join("site"));
+        assert_eq!(publication_output_path(&project), local_path.join("site"));
     }
 
     #[test]
@@ -670,9 +670,9 @@ mod tests {
             omegon_runtime_root: tmp.path().join("local/omegon"),
             omegon_mind_db_path: tmp.path().join("local/omegon/minds/flynt.db"),
             home_dir: tmp.path().join("home"),
-            project_profile_path: tmp.path().join("vault/.omegon/profile.json"),
+            project_profile_path: tmp.path().join("project/.omegon/profile.json"),
             global_profile_path: tmp.path().join("home/profile.json"),
-            operator_settings_path: tmp.path().join("vault/.flynt/operator-settings.json"),
+            operator_settings_path: tmp.path().join("project/.flynt/operator-settings.json"),
             extensions_dir: tmp.path().join("home/extensions"),
             vox_manifest_path: tmp.path().join("home/extensions/vox/manifest.toml"),
             omegon_channel: Default::default(),
@@ -705,9 +705,9 @@ mod tests {
             omegon_runtime_root: tmp.path().join("local/omegon"),
             omegon_mind_db_path: tmp.path().join("local/omegon/minds/flynt.db"),
             home_dir: tmp.path().join("home"),
-            project_profile_path: tmp.path().join("vault/.omegon/profile.json"),
+            project_profile_path: tmp.path().join("project/.omegon/profile.json"),
             global_profile_path: tmp.path().join("home/profile.json"),
-            operator_settings_path: tmp.path().join("vault/.flynt/operator-settings.json"),
+            operator_settings_path: tmp.path().join("project/.flynt/operator-settings.json"),
             extensions_dir: tmp.path().join("home/extensions"),
             vox_manifest_path: tmp.path().join("home/extensions/vox/manifest.toml"),
             omegon_channel: Default::default(),
@@ -729,7 +729,7 @@ mod tests {
 #[derive(Clone)]
 pub struct RuntimeState {
     pub vault_root: PathBuf,
-    pub vault: Arc<Vault>,
+    pub project: Arc<Project>,
     pub vault_events: broadcast::Sender<VaultChangeEvent>,
     pub omegon: OmegonRuntimeContext,
     /// Background git sync handle — kept alive as long as RuntimeState exists.
@@ -750,8 +750,8 @@ impl AppContext {
         self.runtime.read().vault_root.clone()
     }
 
-    pub fn vault(&self) -> Arc<Vault> {
-        self.runtime.read().vault.clone()
+    pub fn project(&self) -> Arc<Project> {
+        self.runtime.read().project.clone()
     }
 
     pub fn vault_events(&self) -> broadcast::Sender<VaultChangeEvent> {
@@ -774,49 +774,49 @@ impl AppContext {
 
 /// Build AppContext at launch. Reads persisted launcher profile first, then FLYNT_VAULT,
 /// then falls back to ~/Documents/Flynt.
-fn publication_output_path(vault: &Vault) -> PathBuf {
-    let target = vault
+fn publication_output_path(project: &Project) -> PathBuf {
+    let target = project
         .store
         .list_documents()
         .ok()
         .and_then(|docs| {
             docs.into_iter().find_map(|meta| {
-                vault.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
+                project.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
                     doc.frontmatter.publication.target.map(|target| target.site_dir)
                 })
             })
         })
         .unwrap_or_else(|| "site".into());
 
-    vault.root.join(target)
+    project.root.join(target)
 }
 
 pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState {
     if let Err(e) = std::fs::create_dir_all(&vault_root) {
-        tracing::error!("Cannot create vault directory at {}: {e}", vault_root.display());
-        // Fall back to a temporary vault so the app doesn't crash
-        let fallback = std::env::temp_dir().join("flynt-fallback-vault");
+        tracing::error!("Cannot create project directory at {}: {e}", vault_root.display());
+        // Fall back to a temporary project so the app doesn't crash
+        let fallback = std::env::temp_dir().join("flynt-fallback-project");
         let _ = std::fs::create_dir_all(&fallback);
-        tracing::warn!("Using fallback vault at {}", fallback.display());
+        tracing::warn!("Using fallback project at {}", fallback.display());
         return runtime_state_for_vault_root(fallback);
     }
 
-    let vault = match Vault::open(&vault_root) {
+    let project = match Project::open(&vault_root) {
         Ok(v) => Arc::new(v),
         Err(e) => {
-            tracing::error!("Failed to open vault at {}: {e}", vault_root.display());
-            tracing::error!("The vault directory may be corrupted. Try removing .flynt/ and reopening.");
-            // Fall back to a temporary vault
-            let fallback = std::env::temp_dir().join("flynt-fallback-vault");
+            tracing::error!("Failed to open project at {}: {e}", vault_root.display());
+            tracing::error!("The project directory may be corrupted. Try removing .flynt/ and reopening.");
+            // Fall back to a temporary project
+            let fallback = std::env::temp_dir().join("flynt-fallback-project");
             let _ = std::fs::create_dir_all(&fallback);
-            tracing::warn!("Using fallback vault at {}", fallback.display());
+            tracing::warn!("Using fallback project at {}", fallback.display());
             return runtime_state_for_vault_root(fallback);
         }
     };
 
-    match vault.reindex() {
+    match project.reindex() {
         Ok((n, errs)) => {
-            info!("Vault indexed: {n} files");
+            info!("Project indexed: {n} files");
             for e in &errs {
                 warn!("Index error: {e}");
             }
@@ -827,7 +827,7 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     let (tx, _rx) = broadcast::channel::<VaultChangeEvent>(256);
     let tx_clone = tx.clone();
     let vault_root_clone = vault_root.clone();
-    let vault_clone = Arc::clone(&vault);
+    let vault_clone = Arc::clone(&project);
 
     tokio::spawn(async move {
         let watcher = match VaultWatcher::new(&vault_root_clone) {
@@ -864,19 +864,19 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
     let _ = flynt_core::templates::ensure_default_templates(&vault_root);
 
     // iCloud: download any placeholder files before indexing
-    if matches!(vault.config.sync, flynt_core::models::SyncConfig::ICloud) {
+    if matches!(project.config.sync, flynt_core::models::SyncConfig::ICloud) {
         if let Err(e) = flynt_store::sync::icloud::ensure_downloaded(&vault_root) {
             warn!("iCloud download check failed: {e}");
         }
     }
 
-    let omegon = OmegonRuntimeContext::discover(&vault_root, &vault.config.local_runtime);
+    let omegon = OmegonRuntimeContext::discover(&vault_root, &project.config.local_runtime);
 
     // Start background git sync if configured
-    let (sync_handle, sync_status_rx) = match &vault.config.sync {
+    let (sync_handle, sync_status_rx) = match &project.config.sync {
         flynt_core::models::SyncConfig::Git { remote, branch, auto_commit_seconds } if *auto_commit_seconds > 0 => {
             let interval = std::time::Duration::from_secs(*auto_commit_seconds);
-            let vault_for_reindex = Arc::clone(&vault);
+            let vault_for_reindex = Arc::clone(&project);
             let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
                 if let Err(e) = vault_for_reindex.reindex() {
                     warn!("Post-pull reindex failed: {e}");
@@ -929,7 +929,7 @@ pub(crate) fn runtime_state_for_vault_root(vault_root: PathBuf) -> RuntimeState 
 
     RuntimeState {
         vault_root,
-        vault,
+        project,
         vault_events: tx,
         omegon,
         _sync_handle: sync_handle,
@@ -948,12 +948,12 @@ pub fn bootstrap_from_env() -> RuntimeState {
     };
 
     // FLYNT_VAULT env var takes priority (explicit override), then launcher
-    // profile's last vault (only if parent dir is accessible), then default.
+    // profile's last project (only if parent dir is accessible), then default.
     let vault_root = env_with_fallback("FLYNT_VAULT", "CODEX_VAULT")
         .map(PathBuf::from)
         .or_else(|| {
             launcher_profile.last_vault_root.clone().filter(|p| {
-                // Accept if vault dir exists, or its parent exists (so we can create it)
+                // Accept if project dir exists, or its parent exists (so we can create it)
                 p.exists() || p.parent().is_some_and(|parent| parent.exists())
             })
         })

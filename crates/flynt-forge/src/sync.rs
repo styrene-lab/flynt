@@ -2,8 +2,8 @@
 //!
 //! Operates on `ForgeIssue` directly. The caller (typically the agent
 //! extension) translates `SyncOp::CreateLocal` / `UpdateLocal` into
-//! `flynt_models::Task` writes against the vault store. This crate is
-//! intentionally vault-agnostic so it can be used from sentry-side
+//! `flynt_models::Task` writes against the project store. This crate is
+//! intentionally project-agnostic so it can be used from sentry-side
 //! adapters too.
 
 use chrono::{DateTime, Utc};
@@ -70,7 +70,7 @@ pub struct IssueMap {
 
 /// Effect the caller should apply after the engine finishes diffing.
 ///
-/// Engine never writes to the vault — it just reports what should
+/// Engine never writes to the project — it just reports what should
 /// happen. Caller is responsible for materializing each op against
 /// flynt's `VaultStore` and updating the corresponding `IssueMap`.
 #[derive(Debug, Clone)]

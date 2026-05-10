@@ -1,4 +1,4 @@
-//! Shared git2 utilities used by both `GitSync` (vault-level) and
+//! Shared git2 utilities used by both `GitSync` (project-level) and
 //! `ProjectGit` (project-level scoped operations).
 
 use anyhow::{Context, Result};
@@ -25,12 +25,12 @@ fn default_signature() -> Result<Signature<'static>> {
 
 /// Signature for a specific repository.
 ///
-/// Resolution order (intentional — never leak global gitconfig into vault commits):
+/// Resolution order (intentional — never leak global gitconfig into project commits):
 ///   1. Repo-local .git/config (set by StyreneIdentity configure_git_signing)
 ///   2. Flynt default ("Flynt <flynt@local>")
 ///
 /// Global ~/.gitconfig is NOT consulted. The operator's personal git
-/// identity for other repos should not bleed into vault auto-commits.
+/// identity for other repos should not bleed into project auto-commits.
 pub fn repo_signature(repo: &Repository) -> Result<Signature<'static>> {
     if let Ok(config) = repo.config() {
         // Only read repo-local level, not global

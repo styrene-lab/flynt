@@ -47,7 +47,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::V
     }
 
     // Embed Excalidraw drawings: ![[file.excalidraw]] → inline SVG
-    // Also handles image embeds: ![[image.png]] → <img src="vault://...">
+    // Also handles image embeds: ![[image.png]] → <img src="project://...">
     if let Some(root) = vault_root {
         // Pattern: ![[something.excalidraw]] (may appear as text or inside <p> tags)
         while let Some(start) = html.find("![[") {
@@ -137,7 +137,7 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::V
                     .cloned()
                     .unwrap_or_else(|| ref_name.to_string());
                 let encoded = resolved.replace(' ', "%20");
-                let replacement = format!("<img class=\"embedded-image\" src=\"vault://localhost/{encoded}\" alt=\"{ref_name}\" />");
+                let replacement = format!("<img class=\"embedded-image\" src=\"project://localhost/{encoded}\" alt=\"{ref_name}\" />");
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
             } else {
                 break; // not an embed we handle — avoid infinite loop
@@ -233,10 +233,10 @@ fn preprocess(src: &str) -> String {
                     .extension().and_then(|e| e.to_str()).unwrap_or("");
                 if matches!(ext, "png"|"jpg"|"jpeg"|"gif"|"svg"|"webp") {
                     let encoded = inner.replace(' ', "%20");
-                    out.push_str(&format!("![{inner}](vault://localhost/{encoded})"));
+                    out.push_str(&format!("![{inner}](project://localhost/{encoded})"));
                 } else {
                     let encoded = inner.replace(' ', "%20");
-                    out.push_str(&format!("[{inner}](vault://localhost/{encoded})"));
+                    out.push_str(&format!("[{inner}](project://localhost/{encoded})"));
                 }
                 continue;
             } else {
@@ -816,7 +816,7 @@ fn cm6_init_js(content: &str) -> String {
                 // Image — try to render inline
                 const img = document.createElement('img');
                 img.className = 'cm-embed-image';
-                img.src = 'vault://localhost/' + encodeURIComponent(this._ref).replace(/%2F/g, '/');
+                img.src = 'project://localhost/' + encodeURIComponent(this._ref).replace(/%2F/g, '/');
                 img.alt = this._ref;
                 img.onerror = () => {{
                     // Try common subdirs
@@ -824,7 +824,7 @@ fn cm6_init_js(content: &str) -> String {
                     let tried = 0;
                     function tryNext() {{
                         if (tried >= dirs.length) {{ img.replaceWith(document.createTextNode('[Image: ' + img.alt + ']')); return; }}
-                        img.src = 'vault://localhost/' + dirs[tried++] + encodeURIComponent(img.alt).replace(/%2F/g, '/');
+                        img.src = 'project://localhost/' + dirs[tried++] + encodeURIComponent(img.alt).replace(/%2F/g, '/');
                     }}
                     img.onerror = tryNext;
                     tryNext();
@@ -1233,8 +1233,8 @@ pub fn NotesView() -> Element {
             return;
         };
         // Synchronous SQLite read — <1ms for any document
-        let vault = ctx_res.vault();
-        if let Ok(Some(doc)) = vault.store.get_document(&doc_id) {
+        let project = ctx_res.project();
+        if let Ok(Some(doc)) = project.store.get_document(&doc_id) {
             *doc_data.write() = Some((doc.path.clone(), doc.title.clone(), doc.content.clone()));
         }
     });
@@ -1243,7 +1243,7 @@ pub fn NotesView() -> Element {
     let rendered: Resource<Option<(std::path::PathBuf, String, String, String, bool)>> = use_resource(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
-        let vault = ctx_res.vault();
+        let project = ctx_res.project();
         async move {
             let Some(doc_id) = selected_id else { return None; };
 
@@ -1255,8 +1255,8 @@ pub fn NotesView() -> Element {
             // Background render — won't block the UI
             let cache_id = doc_id.clone();
             let result = tokio::task::spawn_blocking(move || {
-                vault.store.get_document(&doc_id).ok().flatten().map(|doc| {
-                    let html = render_html_with_store(&doc.content, Some(&*vault.store), Some(&vault.root));
+                project.store.get_document(&doc_id).ok().flatten().map(|doc| {
+                    let html = render_html_with_store(&doc.content, Some(&*project.store), Some(&project.root));
                     let has_conflicts = flynt_core::conflict::has_conflict_markers(&doc.content);
                     (doc.path.clone(), doc.title.clone(), doc.content.clone(), html, has_conflicts)
                 })
@@ -1350,9 +1350,9 @@ pub fn NotesView() -> Element {
                         // peek — do NOT subscribe reactively
                         if let Some(Some((p, _, _, _, _))) = &*rendered.peek() {
                             let path = p.clone();
-                            let vault = c.vault();
+                            let project = c.project();
                             match tokio::task::spawn_blocking(move || {
-                                vault.save_document_content(&path, &content)
+                                project.save_document_content(&path, &content)
                             }).await {
                                 Ok(Ok(())) => {
                                     // Update save indicator via DOM — no signal write
@@ -1380,9 +1380,9 @@ pub fn NotesView() -> Element {
                         // detects the embed and renders ExcalidrawView automatically
                         let drawing_file = data.to_string();
                         let slug = drawing_file.replace(".excalidraw", "").to_lowercase();
-                        let vault = c.vault();
+                        let project = c.project();
                         if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
-                            vault.store.find_document_by_slug(&slug)
+                            project.store.find_document_by_slug(&slug)
                         }).await.unwrap_or(Ok(None)) {
                             ts_link.write().open(meta.id.clone(), meta.title.clone());
                             *ar_link.write() = Route::Notes;
@@ -1390,9 +1390,9 @@ pub fn NotesView() -> Element {
                     }
                     "nav" => {
                         let slug = data.to_lowercase();
-                        let vault = c.vault();
+                        let project = c.project();
                         if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
-                            vault.store.find_document_by_slug(&slug)
+                            project.store.find_document_by_slug(&slug)
                         }).await.unwrap_or(Ok(None)) {
                             ts_link.write().open(meta.id.clone(), meta.title.clone());
                             *ar_link.write() = Route::Notes;
@@ -1530,8 +1530,8 @@ pub fn NotesView() -> Element {
                                 let c = ctx.clone();
                                 if let Some(path) = p {
                                     spawn(async move {
-                                        let vault = c.vault();
-                                        let _ = vault.save_document_content(&path, &resolved);
+                                        let project = c.project();
+                                        let _ = project.save_document_content(&path, &resolved);
                                         *render_ver.write() += 1;
                                     });
                                 }
@@ -1548,8 +1548,8 @@ pub fn NotesView() -> Element {
                                 let c = ctx.clone();
                                 if let Some(path) = p {
                                     spawn(async move {
-                                        let vault = c.vault();
-                                        let _ = vault.save_document_content(&path, &resolved);
+                                        let project = c.project();
+                                        let _ = project.save_document_content(&path, &resolved);
                                         *render_ver.write() += 1;
                                     });
                                 }
@@ -1584,9 +1584,9 @@ pub fn NotesView() -> Element {
                                     let p = path_for_rename.clone();
                                     let c = ctx_rename.clone();
                                     spawn(async move {
-                                        let vault = c.vault();
+                                        let project = c.project();
                                         match tokio::task::spawn_blocking(move || {
-                                            vault.rename_document(&p, &new_title)
+                                            project.rename_document(&p, &new_title)
                                         }).await {
                                             Ok(Ok(n)) => {
                                                 *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
@@ -1612,9 +1612,9 @@ pub fn NotesView() -> Element {
                                 let p = path_for_rename.clone();
                                 let c = ctx_rename.clone();
                                 spawn(async move {
-                                    let vault = c.vault();
+                                    let project = c.project();
                                     match tokio::task::spawn_blocking(move || {
-                                        vault.rename_document(&p, &new_title)
+                                        project.rename_document(&p, &new_title)
                                     }).await {
                                         Ok(Ok(n)) => {
                                             *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
@@ -1675,9 +1675,9 @@ pub fn NotesView() -> Element {
                                     let c       = ctx.clone();
 
                                     spawn(async move {
-                                        let vault = c.vault();
+                                        let project = c.project();
                                         match tokio::task::spawn_blocking(move || {
-                                            vault.save_document_content(&p, &content)
+                                            project.save_document_content(&p, &content)
                                         }).await {
                                             Ok(Ok(())) => {
                                                 render_ver += 1;
@@ -1750,9 +1750,9 @@ pub fn NotesView() -> Element {
                                             let c       = ctx_save2.clone();
         
                                             spawn(async move {
-                                                let vault = c.vault();
+                                                let project = c.project();
                                                 match tokio::task::spawn_blocking(move || {
-                                                    vault.save_document_content(&p, &content)
+                                                    project.save_document_content(&p, &content)
                                                 }).await {
                                                     Ok(Ok(())) => {
                                                         render_ver += 1;

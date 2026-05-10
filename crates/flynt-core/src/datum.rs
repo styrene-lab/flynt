@@ -266,7 +266,7 @@ pub enum EntityKind {
     DesignNode,
     /// An OpenSpec scenario — Given/When/Then validation of a design decision.
     OpenSpecScenario,
-    /// A workspace lease — tracks which machine holds a vault checkout.
+    /// A workspace lease — tracks which machine holds a project checkout.
     WorkspaceLease,
     /// User-defined entity type (e.g. "contact", "sprint", "milestone").
     #[serde(untagged)]
@@ -834,7 +834,7 @@ impl<'a> OpenSpecScenarioView<'a> {
     }
 }
 
-/// A workspace lease — tracks which machine holds a vault checkout and its
+/// A workspace lease — tracks which machine holds a project checkout and its
 /// sync role/mutability.
 ///
 /// On disk (stored in `ai/workspaces/<machine_id>.md`):
@@ -842,7 +842,7 @@ impl<'a> OpenSpecScenarioView<'a> {
 /// +++
 /// kind = "workspace_lease"
 /// [data]
-/// federation_key = "vault:abc123"
+/// federation_key = "project:abc123"
 /// machine_id = "macbook-pro-chris"
 /// last_heartbeat = "2026-04-25T10:30:00Z"
 /// role = "primary"
@@ -865,7 +865,7 @@ impl<'a> WorkspaceLeaseView<'a> {
         }
     }
 
-    /// The federation key identifying the shared vault this lease belongs to.
+    /// The federation key identifying the shared project this lease belongs to.
     pub fn federation_key(&self) -> &str {
         self.entity.get_text("federation_key").unwrap_or("")
     }

@@ -14,7 +14,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     let ctx     = use_context::<AppContext>();
     let mut refresh = use_context_provider(|| Signal::new(0_u64));
 
-    // Debounced vault watcher — coalesces rapid-fire events (e.g., during
+    // Debounced project watcher — coalesces rapid-fire events (e.g., during
     // reindex of 1000+ files) into a single sidebar refresh after 500ms of quiet.
     let vault_events = ctx.vault_events();
     use_effect(move || {
@@ -39,8 +39,8 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     let mut docs: Signal<Option<Vec<DocumentMeta>>> = use_signal(|| None);
     use_effect(move || {
         let _ = refresh();
-        let vault = ctx.vault();
-        let mut list = vault.store.list_documents().unwrap_or_default();
+        let project = ctx.project();
+        let mut list = project.store.list_documents().unwrap_or_default();
         list.retain(|doc| {
             let path = doc.path.to_string_lossy();
             !path.starts_with("ai/delegations/")
@@ -57,7 +57,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
 
     rsx! {
         nav { class: "sidebar",
-            // ── Vault selector (compact) ──────────────────────
+            // ── Project selector (compact) ──────────────────────
             VaultSelector {}
 
             // ── File tree ─────────────────────────────────────
@@ -90,7 +90,7 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     None => rsx! { span { class: "tree-item muted", "Loading…" } },
                     Some(list) if list.is_empty() => rsx! {
                         div { class: "tree-empty",
-                            "Empty vault — press + to create a note"
+                            "Empty project — press + to create a note"
                         }
                     },
                     Some(list) => rsx! { { build_tree(list) } },
@@ -347,7 +347,7 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                                     rename_trigger.write().0 += 1;
                                 }
                                 "reveal" => {
-                                    let abs = ctx.vault().root.join(&path_for_delete);
+                                    let abs = ctx.project().root.join(&path_for_delete);
                                     #[cfg(target_os = "macos")]
                                     { let _ = std::process::Command::new("open").arg("-R").arg(&abs).spawn(); }
                                     #[cfg(target_os = "linux")]
@@ -358,9 +358,9 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                                     let p = path_for_delete.clone();
                                     let kind_opt = if kind_val == "clear" { None } else { Some(kind_val.to_string()) };
                                     spawn(async move {
-                                        let vault = ctx.vault();
+                                        let project = ctx.project();
                                         let _ = tokio::task::spawn_blocking(move || {
-                                            vault.set_document_kind(&p, kind_opt.as_deref())
+                                            project.set_document_kind(&p, kind_opt.as_deref())
                                         }).await;
                                         *refresh.write() += 1;
                                     });
@@ -369,24 +369,24 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                                     let p = path_for_delete.clone();
                                     let doc_id = id_for_tab.clone();
                                     spawn(async move {
-                                        let vault = ctx.vault();
-                                        let abs = vault.root.join(&p);
+                                        let project = ctx.project();
+                                        let abs = project.root.join(&p);
                                         if abs.exists() {
                                             if let Ok(content) = std::fs::read_to_string(&abs) {
                                                 if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&content) {
                                                     let doc_dir = p.parent().unwrap_or(std::path::Path::new(""));
-                                                    let excalidraw_abs = vault.root.join(doc_dir).join(&excalidraw_file);
+                                                    let excalidraw_abs = project.root.join(doc_dir).join(&excalidraw_file);
                                                     let _ = std::fs::remove_file(&excalidraw_abs);
                                                 }
                                             }
                                             let _ = std::fs::remove_file(&abs);
                                         }
-                                        let _ = vault.store.delete_document(&doc_id);
+                                        let _ = project.store.delete_document(&doc_id);
                                         let tabs = tab_state.read().tabs.clone();
                                         if let Some(idx) = tabs.iter().position(|(id, _)| id == &doc_id) {
                                             tab_state.write().close(idx);
                                         }
-                                        let _ = vault.reindex();
+                                        let _ = project.reindex();
                                         *refresh.write() += 1;
                                     });
                                 }
@@ -436,17 +436,17 @@ fn NewNoteInput(
                     let title = rel.file_stem()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_else(|| raw.clone());
-                    let vault = ctx.vault();
+                    let project = ctx.project();
                     let ctx2 = ctx.clone();
                     let title2 = title.clone();
                     spawn(async move {
-                        match tokio::task::spawn_blocking(move || vault.create_document(&rel, &title)).await {
+                        match tokio::task::spawn_blocking(move || project.create_document(&rel, &title)).await {
                             Ok(Ok(())) => {
                                 *refresh.write() += 1;
                                 creating.set(false);
-                                let vault = ctx2.vault();
+                                let project = ctx2.project();
                                 if let Ok(Some(meta)) = tokio::task::spawn_blocking(
-                                    move || vault.store.find_document_by_slug(&title2)
+                                    move || project.store.find_document_by_slug(&title2)
                                 ).await.unwrap_or(Ok(None)) {
                                     tab_state.write().open(meta.id, meta.title);
                                     *active_route.write() = Route::Notes;
@@ -466,7 +466,7 @@ fn NewNoteInput(
     }
 }
 
-// ── Vault selector ────────────────────────────────────────────────────────────
+// ── Project selector ────────────────────────────────────────────────────────────
 
 #[component]
 fn VaultSelector() -> Element {
@@ -474,7 +474,7 @@ fn VaultSelector() -> Element {
     let mut active_route = use_context::<Signal<Route>>();
     let mut profile = use_signal(OmegonRuntimeContext::load_launcher_profile);
     let current_root = ctx.vault_root();
-    let current_name = ctx.vault().config.vault_name.clone();
+    let current_name = ctx.project().config.vault_name.clone();
 
     let mut do_switch = move |root: std::path::PathBuf| {
         let new_runtime = crate::bootstrap::runtime_state_for_vault_root(root.clone());
@@ -509,33 +509,33 @@ fn VaultSelector() -> Element {
     let has_others = !other_vaults.is_empty();
 
     rsx! {
-        div { class: "vault-selector",
+        div { class: "project-selector",
             button {
-                class: "vault-selector-btn",
+                class: "project-selector-btn",
                 onclick: move |_| { let v = *expanded.read(); *expanded.write() = !v; },
-                span { class: "vault-selector-name", "{current_name}" }
+                span { class: "project-selector-name", "{current_name}" }
                 if has_others {
-                    span { class: "vault-selector-arrow",
+                    span { class: "project-selector-arrow",
                         if *expanded.read() { "\u{25BE}" } else { "\u{25B8}" }
                     }
                 }
             }
             if *expanded.read() {
-                div { class: "vault-dropdown",
-                    for vault in other_vaults {
+                div { class: "project-dropdown",
+                    for project in other_vaults {
                         {
-                            let root = vault.root.clone();
+                            let root = project.root.clone();
                             rsx! {
                                 button {
-                                    class: "vault-dropdown-item",
+                                    class: "project-dropdown-item",
                                     onclick: move |_| do_switch(root.clone()),
-                                    "{vault.name}"
+                                    "{project.name}"
                                 }
                             }
                         }
                     }
                     button {
-                        class: "vault-dropdown-item muted",
+                        class: "project-dropdown-item muted",
                         onclick: open_folder,
                         "Open folder\u{2026}"
                     }
@@ -546,11 +546,11 @@ fn VaultSelector() -> Element {
 }
 
 pub fn initial_note_id_for_vault(vault_root: &PathBuf) -> Option<String> {
-    let vault = crate::bootstrap::OmegonRuntimeContext::initialize_vault(
+    let project = crate::bootstrap::OmegonRuntimeContext::initialize_vault(
         vault_root,
         vault_root.file_name().and_then(|name| name.to_str()).unwrap_or("Flynt"),
         flynt_core::models::SyncConfig::None,
     ).ok()?;
-    vault.store.list_documents().ok()?.into_iter().next()
+    project.store.list_documents().ok()?.into_iter().next()
         .map(|doc| doc.id.0.to_string())
 }

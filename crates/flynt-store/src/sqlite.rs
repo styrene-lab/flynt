@@ -34,9 +34,9 @@ impl SqliteStore {
         Ok(())
     }
 
-    /// Read the on-disk file path for a task (vault-relative). None when
+    /// Read the on-disk file path for a task (project-relative). None when
     /// the task hasn't been written as a file yet — the migration sweep
-    /// at Vault::open populates these for legacy sqlite-only tasks.
+    /// at Project::open populates these for legacy sqlite-only tasks.
     pub fn task_file_path(&self, task_id: &TaskId) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let path: Option<String> = conn.query_row(
@@ -47,7 +47,7 @@ impl SqliteStore {
         Ok(path)
     }
 
-    /// Update the on-disk file path for a task. Called by Vault after
+    /// Update the on-disk file path for a task. Called by Project after
     /// it writes (or renames) the markdown file.
     pub fn set_task_file_path(&self, task_id: &TaskId, path: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
@@ -209,11 +209,11 @@ const MIGRATIONS: &[&str] = &[
     );"#,
     "CREATE INDEX IF NOT EXISTS idx_engagements_partnership ON engagements (partnership_id);",
     "CREATE INDEX IF NOT EXISTS idx_tasks_engagement ON tasks (engagement_id);",
-    // v8: tasks-as-files. Every task gets a `.md` file at a vault-relative
+    // v8: tasks-as-files. Every task gets a `.md` file at a project-relative
     // path; this column stores the latest path so we can rename the file
     // when the title changes (slug-based filenames). NULL means the task
     // has not yet been migrated to disk — the one-shot migration in
-    // Vault::open populates these.
+    // Project::open populates these.
     "ALTER TABLE tasks ADD COLUMN task_file_path TEXT;",
 ];
 

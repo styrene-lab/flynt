@@ -87,7 +87,7 @@ pub fn GraphView() -> Element {
     let mut controls_open = use_signal(|| false);
 
     let payload = use_memo(move || {
-        build_graph_payload(&*rt.read().vault.store).ok()
+        build_graph_payload(&*rt.read().project.store).ok()
     });
 
     // Init graph once with full data

@@ -212,12 +212,12 @@ pub fn IdentitySettingsSection() -> Element {
                                             match identity::configure_git_signing(
                                                 &vault_root, &key, git_name, git_email,
                                             ) {
-                                                Ok(()) => *error_msg.write() = Some("Git signing enabled for this vault".into()),
+                                                Ok(()) => *error_msg.write() = Some("Git signing enabled for this project".into()),
                                                 Err(e) => *error_msg.write() = Some(format!("Failed: {e}")),
                                             }
                                         }
                                     },
-                                    "Enable git signing for this vault"
+                                    "Enable git signing for this project"
                                 }
                                 } else {
                                     span { class: "settings-hint", "Enable git sync first to use commit signing" }

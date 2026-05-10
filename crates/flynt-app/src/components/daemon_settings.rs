@@ -100,7 +100,7 @@ pub fn DaemonSettingsSection(
                                     sync_config();
                                 },
                             }
-                            "Enable daemon for this vault"
+                            "Enable daemon for this project"
                         }
                     }
                 }

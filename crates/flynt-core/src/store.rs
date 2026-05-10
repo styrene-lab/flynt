@@ -30,7 +30,7 @@ pub struct TaskFilter {
     /// Engagement scope. When set, only tasks linked to this engagement
     /// are returned. Powers the kanban "by engagement" pill and lets
     /// sentry's FlyntTaskBoard list actionable work for one engagement
-    /// at a time when an omegon is launched into a multi-engagement vault.
+    /// at a time when an omegon is launched into a multi-engagement project.
     pub engagement_id: Option<flynt_models::engagement::EngagementId>,
 }
 

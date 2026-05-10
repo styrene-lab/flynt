@@ -25,7 +25,7 @@ pub enum Route {
 pub enum SettingsTab {
     #[default]
     General,
-    Vault,
+    Project,
     Omegon,
     Advanced,
 }
@@ -34,14 +34,14 @@ impl SettingsTab {
     pub fn label(self) -> &'static str {
         match self {
             Self::General => "General",
-            Self::Vault => "Vault",
+            Self::Project => "Project",
             Self::Omegon => "Omegon",
             Self::Advanced => "Advanced",
         }
     }
 
     pub fn all() -> &'static [Self] {
-        &[Self::General, Self::Vault, Self::Omegon, Self::Advanced]
+        &[Self::General, Self::Project, Self::Omegon, Self::Advanced]
     }
 }
 

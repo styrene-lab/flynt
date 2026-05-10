@@ -16,7 +16,7 @@ use std::path::PathBuf;
 pub const SKILL_BYTES: &[u8] = include_bytes!("../assets/SKILL.md");
 
 /// The bundled style-guide template, also baked in. We don't auto-install
-/// it (the user opts in by copying it into their vault), but exposing it
+/// it (the user opts in by copying it into their project), but exposing it
 /// here lets the `design_load_style_guide` tool surface a "no guide
 /// configured — here's a starter you can copy" hint.
 pub const STYLE_GUIDE_TEMPLATE_BYTES: &[u8] =

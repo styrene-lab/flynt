@@ -8,7 +8,7 @@ use tracing::info;
 
 use crate::bootstrap::OmegonRuntimeContext;
 
-/// Manages the lifecycle of the per-vault omegon daemon process.
+/// Manages the lifecycle of the per-project omegon daemon process.
 pub struct DaemonManager {
     state: Arc<Mutex<DaemonState>>,
     child: Arc<Mutex<Option<Child>>>,
@@ -61,7 +61,7 @@ impl DaemonManager {
         }
 
         let port = *self.port.lock().unwrap();
-        info!("Starting daemon on port {port} for vault {:?}", self.vault_root);
+        info!("Starting daemon on port {port} for project {:?}", self.vault_root);
 
         match self.omegon_ctx.spawn_background_host(&self.vault_root).await {
             Ok(child) => {
@@ -89,7 +89,7 @@ impl DaemonManager {
     pub async fn stop(&self) -> anyhow::Result<()> {
         let mut child_guard = self.child.lock().unwrap();
         if let Some(ref mut child) = *child_guard {
-            info!("Stopping daemon for vault {:?}", self.vault_root);
+            info!("Stopping daemon for project {:?}", self.vault_root);
             let _ = child.kill().await;
         }
         *child_guard = None;

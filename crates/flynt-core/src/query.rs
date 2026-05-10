@@ -1,4 +1,4 @@
-//! Inline query engine for vault documents.
+//! Inline query engine for project documents.
 //!
 //! Supports a simple query language in markdown code blocks:
 //!

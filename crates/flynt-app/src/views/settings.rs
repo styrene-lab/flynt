@@ -48,11 +48,11 @@ pub fn SettingsView() -> Element {
     let mut theme = use_context::<Signal<ThemeName>>();
     let mut font_sz = use_context::<Signal<FontSizePreset>>();
 
-    // Vault + sync — local form state; persisted on explicit Save.
-    let mut vault_name = use_signal(|| ctx.vault().config.vault_name.clone());
-    let mut sync_config = use_signal(|| ctx.vault().config.sync.clone());
+    // Project + sync — local form state; persisted on explicit Save.
+    let mut vault_name = use_signal(|| ctx.project().config.vault_name.clone());
+    let mut sync_config = use_signal(|| ctx.project().config.sync.clone());
     let mut local_state_root = use_signal(|| {
-        ctx.vault()
+        ctx.project()
             .config
             .local_runtime
             .local_state_root
@@ -61,7 +61,7 @@ pub fn SettingsView() -> Element {
             .unwrap_or_default()
     });
     let mut flynt_index_db_path = use_signal(|| {
-        ctx.vault()
+        ctx.project()
             .config
             .local_runtime
             .flynt_index_db_path
@@ -70,7 +70,7 @@ pub fn SettingsView() -> Element {
             .unwrap_or_default()
     });
     let mut omegon_runtime_root = use_signal(|| {
-        ctx.vault()
+        ctx.project()
             .config
             .local_runtime
             .omegon_runtime_root
@@ -79,7 +79,7 @@ pub fn SettingsView() -> Element {
             .unwrap_or_default()
     });
     let mut omegon_mind_db_path = use_signal(|| {
-        ctx.vault()
+        ctx.project()
             .config
             .local_runtime
             .omegon_mind_db_path
@@ -87,9 +87,9 @@ pub fn SettingsView() -> Element {
             .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
-    let mut omegon_channel = use_signal(|| ctx.vault().config.local_runtime.omegon_channel.clone());
+    let mut omegon_channel = use_signal(|| ctx.project().config.local_runtime.omegon_channel.clone());
     let mut omegon_bin_override = use_signal(|| {
-        ctx.vault()
+        ctx.project()
             .config
             .local_runtime
             .omegon_bin_override
@@ -97,7 +97,7 @@ pub fn SettingsView() -> Element {
             .unwrap_or_default()
     });
     let mut styrene_identity_profile = use_signal(|| {
-        ctx.vault()
+        ctx.project()
             .config
             .local_runtime
             .styrene_identity_profile
@@ -106,15 +106,15 @@ pub fn SettingsView() -> Element {
     });
 
     let publication_default_visibility =
-        use_signal(|| ctx.vault().config.publication.default_visibility);
-    let publication_rules = use_signal(|| ctx.vault().config.publication.rules.clone());
+        use_signal(|| ctx.project().config.publication.default_visibility);
+    let publication_rules = use_signal(|| ctx.project().config.publication.rules.clone());
 
     let _project_profile_state = use_context::<Signal<OmegonProfile>>();
     let _operator_settings_state = use_context::<Signal<FlyntOperatorSettings>>();
 
     // Indexing
-    let mut write_frontmatter = use_signal(|| ctx.vault().config.indexing.write_frontmatter);
-    let indexing_scopes = use_signal(|| ctx.vault().config.indexing.scopes.clone());
+    let mut write_frontmatter = use_signal(|| ctx.project().config.indexing.write_frontmatter);
+    let indexing_scopes = use_signal(|| ctx.project().config.indexing.scopes.clone());
 
     // Raw config editor
     let mut show_raw_config = use_signal(|| false);
@@ -125,11 +125,11 @@ pub fn SettingsView() -> Element {
     let mut raw_config_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
 
     // Visualization
-    let mut excalidraw_auto_export = use_signal(|| ctx.vault().config.visualization.excalidraw_auto_export);
-    let mut d2_auto_render = use_signal(|| ctx.vault().config.visualization.d2_auto_render);
-    let mut d2_theme = use_signal(|| ctx.vault().config.visualization.d2_theme.to_string());
-    let mut d2_layout = use_signal(|| ctx.vault().config.visualization.d2_layout.clone());
-    let mut d2_bin = use_signal(|| ctx.vault().config.visualization.d2_bin.clone().unwrap_or_default());
+    let mut excalidraw_auto_export = use_signal(|| ctx.project().config.visualization.excalidraw_auto_export);
+    let mut d2_auto_render = use_signal(|| ctx.project().config.visualization.d2_auto_render);
+    let mut d2_theme = use_signal(|| ctx.project().config.visualization.d2_theme.to_string());
+    let mut d2_layout = use_signal(|| ctx.project().config.visualization.d2_layout.clone());
+    let mut d2_bin = use_signal(|| ctx.project().config.visualization.d2_bin.clone().unwrap_or_default());
 
     // Daemon config — managed by DaemonSettingsSection
     let daemon_config = use_signal(|| ctx.omegon().load_operator_settings().agent_daemon.clone());
@@ -139,10 +139,10 @@ pub fn SettingsView() -> Element {
 
     let mut active_tab = use_context::<Signal<SettingsTab>>();
 
-    let vault = ctx.vault();
+    let project = ctx.project();
     let omegon = ctx.omegon();
     let omegon_for_save = omegon.clone();
-    let publish_vault = ctx.vault();
+    let publish_vault = ctx.project();
     let mut publish_msg_signal = publish_msg;
     let publish_preview = move |_| {
         match OmegonRuntimeContext::export_publication_preview(&publish_vault) {
@@ -214,7 +214,7 @@ pub fn SettingsView() -> Element {
                 default_visibility: *publication_default_visibility.read(),
                 rules: publication_rules.read().clone(),
             },
-            security: ctx.vault().config.security.clone(),
+            security: ctx.project().config.security.clone(),
             indexing: IndexingConfig {
                 write_frontmatter: *write_frontmatter.read(),
                 scopes: indexing_scopes.read().clone(),
@@ -231,19 +231,19 @@ pub fn SettingsView() -> Element {
             },
         };
 
-        // Check if sync backend changed — trigger vault migration
-        let old_sync = &vault.config.sync;
+        // Check if sync backend changed — trigger project migration
+        let old_sync = &project.config.sync;
         let new_sync = &config.sync;
         if old_sync != new_sync {
             let vault_name = config.vault_name.clone();
-            let current_root = vault.root.clone();
+            let current_root = project.root.clone();
             let sync_for_migrate = new_sync.clone();
             match flynt_store::migrate::migrate_vault(
                 &current_root, &vault_name, &sync_for_migrate, false,
             ) {
                 Ok(result) => {
                     if result.new_root != current_root {
-                        // Vault moved — update launcher profile and switch runtime
+                        // Project moved — update launcher profile and switch runtime
                         let mut profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
                         crate::bootstrap::OmegonRuntimeContext::register_known_vault(
                             &mut profile, &result.new_root, &vault_name,
@@ -251,7 +251,7 @@ pub fn SettingsView() -> Element {
                         let _ = crate::bootstrap::OmegonRuntimeContext::save_launcher_profile(&profile);
                         let mut migrate_ctx = ctx;
                         migrate_ctx.set_runtime(crate::bootstrap::runtime_state_for_vault_root(result.new_root));
-                        *save_msg.write() = Some(("ok", "Vault migrated and sync updated."));
+                        *save_msg.write() = Some(("ok", "Project migrated and sync updated."));
                         return; // config already written by migrate
                     }
                     // Same location — migration updated config in place, continue to save other settings
@@ -264,7 +264,7 @@ pub fn SettingsView() -> Element {
             }
         }
 
-        match vault.save_config(&config) {
+        match project.save_config(&config) {
             Ok(()) => {}
             Err(e) => {
                 tracing::error!("save_config: {e}");
@@ -273,7 +273,7 @@ pub fn SettingsView() -> Element {
             }
         }
 
-        // Persist daemon config alongside vault config
+        // Persist daemon config alongside project config
         let mut operator = omegon_for_save.load_operator_settings();
         operator.agent_daemon = daemon_config.read().clone();
         if let Err(e) = omegon_for_save.save_operator_settings(&operator) {
@@ -301,7 +301,7 @@ pub fn SettingsView() -> Element {
             div { class: "settings-scroll",
 
                 // ════════════════════════════════════════════════════════════
-                // General: Appearance, Vault, Sync, Identity, Providers
+                // General: Appearance, Project, Sync, Identity, Providers
                 // ════════════════════════════════════════════════════════════
                 if *active_tab.read() == SettingsTab::General {
 
@@ -333,7 +333,7 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                SettingsSection { heading: "Vault",
+                SettingsSection { heading: "Project",
                     SettingsRow { label: "Name",
                         input {
                             class: "input settings-input",
@@ -446,9 +446,9 @@ pub fn SettingsView() -> Element {
                 } // end General
 
                 // ════════════════════════════════════════════════════════════
-                // Vault: Indexing, Visualization, Publication
+                // Project: Indexing, Visualization, Publication
                 // ════════════════════════════════════════════════════════════
-                if *active_tab.read() == SettingsTab::Vault {
+                if *active_tab.read() == SettingsTab::Project {
 
                 SettingsSection { heading: "Indexing",
                     SettingsRow { label: "Write frontmatter",
@@ -458,7 +458,7 @@ pub fn SettingsView() -> Element {
                                 checked: *write_frontmatter.read(),
                                 onchange: move |e| *write_frontmatter.write() = e.checked(),
                             }
-                            "Write stable UUIDs into file frontmatter (vault-wide default)"
+                            "Write stable UUIDs into file frontmatter (project-wide default)"
                         }
                         span { class: "settings-hint muted", "Disable for code repos — then use scopes below to opt in specific directories" }
                     }
@@ -527,7 +527,7 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                } // end Vault
+                } // end Project
 
                 // ════════════════════════════════════════════════════════════
                 // Omegon: Agent config, Extensions, Skills, Daemon
@@ -659,7 +659,7 @@ pub fn SettingsView() -> Element {
                                 },
                                 if *show_raw_config.read() { "Close editor" } else { "Edit config.toml" }
                             }
-                            span { class: "settings-hint muted", "Power user: edit the vault config directly" }
+                            span { class: "settings-hint muted", "Power user: edit the project config directly" }
                         }
                     }
                     if *show_raw_config.read() {
@@ -684,7 +684,7 @@ pub fn SettingsView() -> Element {
                                                         *raw_config_msg.write() = Some(("err", "Write failed — check permissions."));
                                                         tracing::error!("raw config write: {e}");
                                                     } else {
-                                                        *raw_config_msg.write() = Some(("ok", "Config saved. Restart or re-open vault to apply."));
+                                                        *raw_config_msg.write() = Some(("ok", "Config saved. Restart or re-open project to apply."));
                                                     }
                                                 }
                                                 Err(_) => {
@@ -722,7 +722,7 @@ pub fn SettingsView() -> Element {
                 // ── Save bar ─────────────────────────────────────────────────
                 div { class: "settings-save-bar",
                     button { class: "btn btn-primary", onclick: save, "Save changes" }
-                    if *active_tab.read() == SettingsTab::Vault {
+                    if *active_tab.read() == SettingsTab::Project {
                         button { class: "btn btn-ghost", onclick: publish_preview, "Export local preview" }
                     }
                     if let Some((kind, msg)) = *save_msg.read() {

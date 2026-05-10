@@ -1,18 +1,18 @@
-//! Vault-scoped agent daemon configuration.
+//! Project-scoped agent daemon configuration.
 //!
-//! Defines the desired state for a per-vault Omegon daemon instance
+//! Defines the desired state for a per-project Omegon daemon instance
 //! and Vox communication channel bindings. Flynt manages the daemon
 //! directly (Tier 1) or declares desired state for Auspex (Tier 2).
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Per-vault agent daemon configuration.
+/// Per-project agent daemon configuration.
 /// Stored in `.flynt/operator-settings.json` under `agent_daemon`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDaemonConfig {
-    /// Whether the daemon should be running for this vault.
+    /// Whether the daemon should be running for this project.
     #[serde(default)]
     pub enabled: bool,
 
@@ -36,7 +36,7 @@ pub struct AgentDaemonConfig {
     #[serde(default = "default_port")]
     pub port: u16,
 
-    /// Vox communication channels — how to reach this vault's agent externally.
+    /// Vox communication channels — how to reach this project's agent externally.
     #[serde(default)]
     pub vox: VoxConfig,
 
@@ -142,7 +142,7 @@ pub struct WebhookChannel {
 #[serde(rename_all = "camelCase")]
 pub struct RnsChannel {
     pub enabled: bool,
-    /// RNS destination hash for this vault's agent.
+    /// RNS destination hash for this project's agent.
     #[serde(default)]
     pub destination_hash: Option<String>,
     /// LXMF propagation node address (optional relay).
@@ -162,13 +162,13 @@ pub enum InboundCapability {
     CaptureIdeas,
     /// Create/update/query tasks on kanban boards.
     ManageTasks,
-    /// Answer questions about vault contents using search + graph.
+    /// Answer questions about project contents using search + graph.
     AnswerQuestions,
     /// Generate a daily digest of due tasks, decaying items, recent changes.
     DailyDigest,
     /// Create full documents from detailed descriptions.
     CreateDocuments,
-    /// Search the vault and return relevant excerpts.
+    /// Search the project and return relevant excerpts.
     SearchVault,
     /// Update existing notes with new information.
     EnrichNotes,
@@ -198,7 +198,7 @@ impl InboundCapability {
             Self::AnswerQuestions => "Answer Questions",
             Self::DailyDigest => "Daily Digest",
             Self::CreateDocuments => "Create Documents",
-            Self::SearchVault => "Search Vault",
+            Self::SearchVault => "Search Project",
             Self::EnrichNotes => "Enrich Notes",
         }
     }
@@ -206,11 +206,11 @@ impl InboundCapability {
     /// System prompt fragment describing this capability to the agent.
     pub fn system_prompt(&self) -> &'static str {
         match self {
-            Self::ResearchLinks => "When the user sends a URL or link, fetch the content, analyze it, and create a research note in the vault with a summary, key points, and relevant tags.",
+            Self::ResearchLinks => "When the user sends a URL or link, fetch the content, analyze it, and create a research note in the project with a summary, key points, and relevant tags.",
             Self::CaptureIdeas => "When the user shares a thought or idea, capture it as an entry in today's daily note under the Notes section.",
             Self::ManageTasks => "When the user mentions something they need to do, create a task on the appropriate board. When they ask about tasks, query the boards and respond.",
-            Self::AnswerQuestions => "When the user asks a question about their vault, notes, or projects, search the vault and knowledge graph to provide accurate answers with references.",
-            Self::DailyDigest => "When asked for a digest or summary, compile due tasks, decaying items needing attention, and recent vault activity.",
+            Self::AnswerQuestions => "When the user asks a question about their project, notes, or projects, search the project and knowledge graph to provide accurate answers with references.",
+            Self::DailyDigest => "When asked for a digest or summary, compile due tasks, decaying items needing attention, and recent project activity.",
             Self::CreateDocuments => "When the user describes something in detail that should be a document, create a properly structured markdown note with frontmatter.",
             Self::SearchVault => "When the user asks to find something, search across documents, tasks, and the graph. Return relevant excerpts and links.",
             Self::EnrichNotes => "When the user provides new information about an existing topic, find the relevant note and suggest updates or additions.",
@@ -221,14 +221,14 @@ impl InboundCapability {
 /// Build the system prompt for the daemon agent based on enabled capabilities.
 pub fn build_daemon_system_prompt(config: &AgentDaemonConfig, vault_name: &str) -> String {
     let mut prompt = format!(
-        "You are the agent for the \"{}\" vault in Flynt. \
-         Messages come from the vault operator via various channels (Signal, email, etc.). \
-         Respond concisely. Use your vault tools to take action.\n\n",
+        "You are the agent for the \"{}\" project in Flynt. \
+         Messages come from the project operator via various channels (Signal, email, etc.). \
+         Respond concisely. Use your project tools to take action.\n\n",
         vault_name
     );
 
     if config.capabilities.is_empty() {
-        prompt.push_str("Process all messages as general prompts using available vault tools.\n");
+        prompt.push_str("Process all messages as general prompts using available project tools.\n");
     } else {
         prompt.push_str("Your capabilities:\n\n");
         for cap in &config.capabilities {
@@ -322,8 +322,8 @@ mod tests {
             capabilities: vec![],
             vox: VoxConfig::default(),
         };
-        let prompt = build_daemon_system_prompt(&config, "Test Vault");
-        assert!(prompt.contains("Test Vault"));
+        let prompt = build_daemon_system_prompt(&config, "Test Project");
+        assert!(prompt.contains("Test Project"));
         assert!(prompt.contains("general prompts"));
     }
 
@@ -342,8 +342,8 @@ mod tests {
             ],
             vox: VoxConfig::default(),
         };
-        let prompt = build_daemon_system_prompt(&config, "My Vault");
-        assert!(prompt.contains("My Vault"));
+        let prompt = build_daemon_system_prompt(&config, "My Project");
+        assert!(prompt.contains("My Project"));
         assert!(prompt.contains("Your capabilities:"));
         assert!(prompt.contains("task"));
         assert!(prompt.contains("search"));

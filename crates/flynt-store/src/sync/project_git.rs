@@ -1,8 +1,8 @@
 //! Project-level git operations scoped to a sub-path within a repository.
 //!
-//! Unlike `GitSync` which operates on the entire vault repo, `ProjectGit`
+//! Unlike `GitSync` which operates on the entire project repo, `ProjectGit`
 //! stages and commits only files under a project's sub-path. For VaultRepo
-//! projects, flushing tasks to disk is the main job (vault-level sync handles
+//! projects, flushing tasks to disk is the main job (project-level sync handles
 //! actual commits). For ExternalRepo projects, this module handles the full
 //! commit cycle independently.
 
@@ -71,7 +71,7 @@ impl ProjectGit {
         self.repo_root.join(&self.sub_path)
     }
 
-    /// Whether this is backed by an external repo (vs vault repo).
+    /// Whether this is backed by an external repo (vs project repo).
     pub fn is_external(&self) -> bool {
         self.remote_config.is_some()
     }
@@ -167,7 +167,7 @@ impl ProjectGit {
     /// Push to remote (only meaningful for ExternalRepo).
     pub fn push(&self) -> Result<()> {
         let (remote_name, branch) = self.remote_config.as_ref()
-            .context("push called on VaultRepo project — vault-level sync handles this")?;
+            .context("push called on VaultRepo project — project-level sync handles this")?;
         let repo = self.open_repo()?;
         let mut remote = repo.find_remote(remote_name)?;
         let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");

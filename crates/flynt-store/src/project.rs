@@ -19,17 +19,17 @@ use crate::sqlite::SqliteStore;
 use crate::sync::ProjectGit;
 use crate::task_file;
 
-/// Vault manages the root directory layout:
+/// Project manages the root directory layout:
 ///
 ///   <vault_root>/
 ///     .flynt/
 ///       config.toml    ← sync + preferences
 ///     **/*.md          ← notes/documents
 ///
-/// Local SQLite state is materialized outside the syncable vault whenever
+/// Local SQLite state is materialized outside the syncable project whenever
 /// `local_runtime.flynt_index_db_path` (or its derived default) resolves to a
 /// local app-state directory.
-pub struct Vault {
+pub struct Project {
     pub root: PathBuf,
     pub store: Arc<SqliteStore>,
     pub config: VaultConfig,
@@ -103,8 +103,8 @@ enum ImportDisposition {
     Skipped,
 }
 
-impl Vault {
-    /// Open (or create) a vault rooted at `root`.
+impl Project {
+    /// Open (or create) a project rooted at `root`.
     pub fn open(root: &Path) -> Result<Self> {
         fs::create_dir_all(root)?;
 
@@ -112,7 +112,7 @@ impl Vault {
         let old_dir = root.join(".codex");
         let flynt_dir = root.join(".flynt");
         if old_dir.exists() && !flynt_dir.exists() {
-            info!("Migrating vault config: .codex/ → .flynt/");
+            info!("Migrating project config: .codex/ → .flynt/");
             if let Err(e) = fs::rename(&old_dir, &flynt_dir) {
                 tracing::warn!("Could not rename .codex/ to .flynt/: {e} — will use .codex/ as-is");
                 // Fall through: flynt_dir won't exist, so create_dir_all below will create it
@@ -173,19 +173,19 @@ impl Vault {
         }
         let store = Arc::new(SqliteStore::open(&db_path)?);
 
-        info!("Vault opened at {:?}, store ready at {:?}", root, db_path);
-        let vault = Self { root: root.to_owned(), store, config };
+        info!("Project opened at {:?}, store ready at {:?}", root, db_path);
+        let project = Self { root: root.to_owned(), store, config };
 
         // Migration: every task becomes a file. Legacy sqlite-only tasks
         // get a `.md` written under `Tasks/<board-slug>/`. Idempotent —
         // tasks with task_file_path already set are skipped.
-        if let Err(e) = vault.migrate_tasks_to_files() {
+        if let Err(e) = project.migrate_tasks_to_files() {
             warn!("task→file migration failed (continuing): {e}");
         }
-        Ok(vault)
+        Ok(project)
     }
 
-    /// Index all markdown files under the vault root into the SQLite store.
+    /// Index all markdown files under the project root into the SQLite store.
     /// Skips `.flynt/` directory. Idempotent — safe to call on every launch.
     pub fn reindex(&self) -> Result<(usize, Vec<String>)> {
         let mut indexed = 0;
@@ -275,7 +275,7 @@ impl Vault {
 
         // If the file has no id in frontmatter, write it back so it survives a DB wipe.
         // Scope-aware: only write when the file's path is in a managed scope
-        // (or the vault-wide default allows it).
+        // (or the project-wide default allows it).
         if frontmatter.id.is_none() {
             frontmatter.id = Some(id.0);
             if self.config.indexing.should_write_frontmatter(&rel_path) {
@@ -530,7 +530,7 @@ impl Vault {
         Ok(relative_path)
     }
 
-    /// Import markdown documents from an external directory tree into this vault.
+    /// Import markdown documents from an external directory tree into this project.
     /// The imported markdown becomes Flynt canonical truth while preserving source provenance.
     pub fn import_markdown_tree(&self, source_root: &Path) -> Result<ImportReport> {
         let mut imported = 0usize;
@@ -889,8 +889,8 @@ impl Vault {
                     }
                     fs::write(&abs_path, &md)?;
 
-                    // Record vault-relative path so the migration sweep
-                    // at next vault.open doesn't see this as unfiled and
+                    // Record project-relative path so the migration sweep
+                    // at next project.open doesn't see this as unfiled and
                     // write a duplicate at Tasks/<board>/...
                     let abs_root = self.root.canonicalize().unwrap_or(self.root.clone());
                     let abs_full = abs_path.canonicalize().unwrap_or(abs_path.clone());
@@ -959,7 +959,7 @@ impl Vault {
     }
 
     /// Persist a task: write `.md` file to disk + sqlite + remember the
-    /// path for future renames. Every task becomes a file in the vault.
+    /// path for future renames. Every task becomes a file in the project.
     ///
     /// File path: `Tasks/<board-slug>/<title-slug>.md`. If the title
     /// changed since last save (slug differs from stored path), the
@@ -1034,7 +1034,7 @@ impl Vault {
 
     /// One-shot migration: any task in sqlite without a `task_file_path`
     /// gets a markdown file written and its path recorded. Called from
-    /// `Vault::open` so freshly-rebuilt vaults converge to the
+    /// `Project::open` so freshly-rebuilt vaults converge to the
     /// every-task-is-a-file invariant on next launch.
     fn migrate_tasks_to_files(&self) -> Result<usize> {
         let unfiled = self.store.tasks_without_file()?;
@@ -1155,7 +1155,7 @@ impl Vault {
     }
 
     /// Re-index task files from a project's sub-path into SQLite.
-    /// Called on vault open and after git pulls to sync disk -> DB.
+    /// Called on project open and after git pulls to sync disk -> DB.
     pub fn reindex_project(&self, project_id: Uuid) -> Result<usize> {
         let project_entity = self.resolve_project_entity(&project_id)?;
         let view = ProjectView::from_entity(&project_entity)
@@ -1213,7 +1213,7 @@ impl Vault {
     // ── Rename document + update links ────────────────────────────────────────
 
     /// Rename a document: moves the file on disk, updates frontmatter title,
-    /// and rewrites all wikilinks across the vault that pointed to the old name.
+    /// and rewrites all wikilinks across the project that pointed to the old name.
     /// Returns the number of files updated.
     pub fn rename_document(&self, old_path: &Path, new_title: &str) -> Result<usize> {
         use std::path::PathBuf;
@@ -1370,7 +1370,7 @@ impl Vault {
 
     // ── Tag management ───────────────────────────────────────────────────────
 
-    /// List all unique tags across the vault with document counts.
+    /// List all unique tags across the project with document counts.
     pub fn list_tags(&self) -> Result<Vec<(String, usize)>> {
         let docs = self.store.list_documents()?;
         let mut tag_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
@@ -1384,7 +1384,7 @@ impl Vault {
         Ok(tags)
     }
 
-    /// Rename a tag across all documents in the vault.
+    /// Rename a tag across all documents in the project.
     /// Parses frontmatter as structured data, modifies, re-serializes.
     /// Returns the number of files updated.
     pub fn rename_tag(&self, old_tag: &str, new_tag: &str) -> Result<usize> {
@@ -1683,8 +1683,8 @@ fn effective_publication_visibility(
     }
 }
 
-fn render_published_markdown(vault: &Vault, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(vault, &document.content, PublicationRender::Markdown)?;
+fn render_published_markdown(project: &Project, document: &Document) -> Result<String> {
+    let body = rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Markdown)?;
     let mut frontmatter = document.frontmatter.clone();
     frontmatter.imported_reference = false;
     frontmatter.source_path = None;
@@ -1694,8 +1694,8 @@ fn render_published_markdown(vault: &Vault, document: &Document) -> Result<Strin
     Ok(format!("+++\n{frontmatter}\n+++\n\n{body}"))
 }
 
-fn render_published_html(vault: &Vault, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(vault, &document.content, PublicationRender::Html)?;
+fn render_published_html(project: &Project, document: &Document) -> Result<String> {
+    let body = rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Html)?;
     let mut options = Options::default();
     options.extension.table = true;
     options.extension.strikethrough = true;
@@ -1707,8 +1707,8 @@ fn render_published_html(vault: &Vault, document: &Document) -> Result<String> {
     ))
 }
 
-fn render_published_micron(vault: &Vault, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(vault, &document.content, PublicationRender::Micron)?;
+fn render_published_micron(project: &Project, document: &Document) -> Result<String> {
+    let body = rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Micron)?;
     let micron = markdown_to_micron(&body);
     Ok(format!("# title: {}\n\n{micron}", document.title))
 }
@@ -1874,7 +1874,7 @@ enum PublicationRender {
     Micron,
 }
 
-fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str, mode: PublicationRender) -> Result<String> {
+fn rewrite_wikilinks_for_publication(project: &Project, body: &str, mode: PublicationRender) -> Result<String> {
     let mut rendered = String::new();
     let mut remaining = body;
 
@@ -1899,8 +1899,8 @@ fn rewrite_wikilinks_for_publication(vault: &Vault, body: &str, mode: Publicatio
             (target_part, None)
         };
 
-        if let Some(linked) = vault.store.find_document_by_slug(target)? {
-            let Some(linked_doc) = vault.store.get_document(&linked.id)? else {
+        if let Some(linked) = project.store.find_document_by_slug(target)? {
+            let Some(linked_doc) = project.store.get_document(&linked.id)? else {
                 rendered.push_str(display.unwrap_or(target));
                 continue;
             };
@@ -2037,7 +2037,7 @@ fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_document_source, import_destination_path, markdown_to_micron, resolve_index_db_path, Vault};
+    use super::{canonical_document_source, import_destination_path, markdown_to_micron, resolve_index_db_path, Project};
     use chrono::Utc;
     use flynt_core::{
         models::{Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue, PublicationRule, PublicationVisibility},
@@ -2049,7 +2049,7 @@ mod tests {
     #[test]
     fn uses_explicit_absolute_index_db_path_when_configured() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path().join("vault");
+        let root = tmp.path().join("project");
         let explicit = tmp.path().join("state/custom-index.db");
 
         let resolved = resolve_index_db_path(
@@ -2066,7 +2066,7 @@ mod tests {
     #[test]
     fn derives_index_db_under_local_state_root_when_only_root_is_configured() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path().join("vault");
+        let root = tmp.path().join("project");
         let local_state_root = tmp.path().join("state-root");
 
         let resolved = resolve_index_db_path(
@@ -2083,7 +2083,7 @@ mod tests {
     #[test]
     fn imports_markdown_tree_into_references_with_provenance_and_links() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         let source_root = tmp.path().join("obsidian");
         std::fs::create_dir_all(source_root.join("notes")).unwrap();
         std::fs::write(
@@ -2099,13 +2099,13 @@ See [[roadmap]].\n",
         )
         .unwrap();
 
-        let vault = Vault::open(&vault_root).unwrap();
-        let report = vault.import_markdown_tree(&source_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
+        let report = project.import_markdown_tree(&source_root).unwrap();
         assert_eq!(report.imported, 1);
         assert!(report.errors.is_empty());
 
         let imported_rel = import_destination_path(std::path::Path::new("notes/design.md"));
-        let imported_doc = vault.store.get_document_by_path(&imported_rel).unwrap().unwrap();
+        let imported_doc = project.store.get_document_by_path(&imported_rel).unwrap().unwrap();
         assert_eq!(imported_doc.title, "Design");
         assert_eq!(imported_doc.outgoing_links.len(), 1);
         assert_eq!(imported_doc.outgoing_links[0].target, "roadmap");
@@ -2121,22 +2121,22 @@ See [[roadmap]].\n",
             Some(&MetadataValue::String("alpharius".into()))
         );
 
-        let imported_meta = vault.store.get_document_by_path(&imported_rel).unwrap().unwrap();
+        let imported_meta = project.store.get_document_by_path(&imported_rel).unwrap().unwrap();
         assert_eq!(imported_meta.path, imported_rel);
     }
 
     #[test]
     fn stores_agent_communication_under_references_comms_with_metadata_and_links() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
-        let vault = Vault::open(&vault_root).unwrap();
+        let vault_root = tmp.path().join("project");
+        let project = Project::open(&vault_root).unwrap();
 
-        let relative_path = vault
+        let relative_path = project
             .store_agent_communication("vox", "Standup Recall", "See [[design]].")
             .unwrap();
 
         assert!(relative_path.starts_with("references/comms/vox"));
-        let doc = vault.store.get_document_by_path(&relative_path).unwrap().unwrap();
+        let doc = project.store.get_document_by_path(&relative_path).unwrap().unwrap();
         assert_eq!(doc.title, "Standup Recall");
         assert_eq!(doc.frontmatter.source_format.as_deref(), Some("omegon_comm"));
         assert_eq!(doc.frontmatter.source_path.as_deref(), Some("omegon://vox"));
@@ -2153,15 +2153,15 @@ See [[roadmap]].\n",
     #[ignore = "metadata flatten roundtrip through TOML→SQLite drops extra keys — needs schema fix"]
     fn stores_memory_fact_under_ai_memory_with_metadata_and_links() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
-        let vault = Vault::open(&vault_root).unwrap();
+        let vault_root = tmp.path().join("project");
+        let project = Project::open(&vault_root).unwrap();
 
-        let relative_path = vault
+        let relative_path = project
             .store_memory_fact("storage", "Canonical vs Local", "Supports [[design]].")
             .unwrap();
 
         assert!(relative_path.starts_with("ai/memory/storage"));
-        let doc = vault.store.get_document_by_path(&relative_path).unwrap().unwrap();
+        let doc = project.store.get_document_by_path(&relative_path).unwrap().unwrap();
         assert_eq!(doc.title, "Canonical vs Local");
         assert_eq!(doc.frontmatter.source_format.as_deref(), Some("omegon_memory"));
         assert_eq!(doc.frontmatter.source_path.as_deref(), Some("omegon://memory/storage"));
@@ -2200,11 +2200,11 @@ See [[roadmap]].\n",
     #[test]
     fn publication_export_reports_duplicate_slugs() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
         let output_root = tmp.path().join("published");
-        let vault = Vault::open(&vault_root).unwrap();
-        assert!(vault.store.list_documents().unwrap().is_empty());
+        let project = Project::open(&vault_root).unwrap();
+        assert!(project.store.list_documents().unwrap().is_empty());
 
         for (name, title) in [("alpha.md", "Same"), ("beta.md", "Same")] {
             let path = vault_root.join(name);
@@ -2215,10 +2215,10 @@ See [[roadmap]].\n",
                 ),
             )
             .unwrap();
-            vault.index_file(&path).unwrap();
+            project.index_file(&path).unwrap();
         }
 
-        let report = vault.export_publication_tree(&output_root).unwrap();
+        let report = project.export_publication_tree(&output_root).unwrap();
         assert_eq!(report.exported, 1);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("duplicate publication slug"));
@@ -2227,10 +2227,10 @@ See [[roadmap]].\n",
     #[test]
     fn publication_policy_rules_can_publish_selected_subset() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
-        assert!(vault.store.list_documents().unwrap().is_empty());
+        let project = Project::open(&vault_root).unwrap();
+        assert!(project.store.list_documents().unwrap().is_empty());
 
         let public_path = vault_root.join("docs/public.md");
         std::fs::create_dir_all(public_path.parent().unwrap()).unwrap();
@@ -2239,7 +2239,7 @@ See [[roadmap]].\n",
             "+++\ntitle = \"Public\"\ntags = [\"public\"]\n[publication]\nenabled = true\n+++\n\n# Public\n",
         )
         .unwrap();
-        vault.index_file(&public_path).unwrap();
+        project.index_file(&public_path).unwrap();
 
         let private_path = vault_root.join("private.md");
         std::fs::write(
@@ -2247,17 +2247,17 @@ See [[roadmap]].\n",
             "+++\ntitle = \"Private\"\n[publication]\nenabled = true\n+++\n\n# Private\n",
         )
         .unwrap();
-        vault.index_file(&private_path).unwrap();
+        project.index_file(&private_path).unwrap();
 
-        let mut config = vault.config.clone();
+        let mut config = project.config.clone();
         config.publication.default_visibility = PublicationVisibility::Private;
         config.publication.rules = vec![PublicationRule {
             match_tag: Some("public".into()),
             match_path_prefix: None,
             visibility: PublicationVisibility::Public,
         }];
-        vault.save_config(&config).unwrap();
-        let filtered_vault = Vault::open(&vault_root).unwrap();
+        project.save_config(&config).unwrap();
+        let filtered_vault = Project::open(&vault_root).unwrap();
 
         let report = filtered_vault
             .export_publication_tree(&tmp.path().join("published"))
@@ -2269,9 +2269,9 @@ See [[roadmap]].\n",
     #[test]
     fn exports_public_documents_with_resolved_wikilinks() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         let output_root = tmp.path().join("published");
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let roadmap_path = vault_root.join("roadmap.md");
         std::fs::write(
@@ -2286,7 +2286,7 @@ visibility = \"public\"
 # Roadmap\n",
         )
         .unwrap();
-        vault.index_file(&roadmap_path).unwrap();
+        project.index_file(&roadmap_path).unwrap();
 
         let design_path = vault_root.join("design.md");
         std::fs::write(
@@ -2303,9 +2303,9 @@ visibility = \"public\"
 See [[roadmap|the roadmap]].\n",
         )
         .unwrap();
-        vault.index_file(&design_path).unwrap();
+        project.index_file(&design_path).unwrap();
 
-        let report = vault.export_publication_tree(&output_root).unwrap();
+        let report = project.export_publication_tree(&output_root).unwrap();
         assert_eq!(report.exported, 2);
         assert!(report.errors.is_empty());
 
@@ -2353,7 +2353,7 @@ See [[roadmap|the roadmap]].\n",
 
     // ── Project git-backing tests ────────────────────────────────────────
 
-    fn create_git_backed_project(vault: &Vault) -> uuid::Uuid {
+    fn create_git_backed_project(project: &Project) -> uuid::Uuid {
         let project_id = uuid::Uuid::new_v4();
         let sub_path = format!("projects/{}", &project_id.to_string()[..8]);
 
@@ -2381,9 +2381,9 @@ auto_commit_seconds = 0
 
         // Use a unique path per project to avoid collision
         let rel_path = PathBuf::from(format!("project-{}.md", &project_id.to_string()[..8]));
-        let abs_path = vault.root.join(&rel_path);
+        let abs_path = project.root.join(&rel_path);
         std::fs::write(&abs_path, &frontmatter).unwrap();
-        vault.index_file(&abs_path).unwrap();
+        project.index_file(&abs_path).unwrap();
 
         project_id
     }
@@ -2391,33 +2391,33 @@ auto_commit_seconds = 0
     #[test]
     fn flush_project_writes_dirty_tasks_to_disk() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         // Init a git repo so ProjectGit can open it
         git2::Repository::init(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
-        let project_id = create_git_backed_project(&vault);
+        let project_id = create_git_backed_project(&project);
 
         // Create a task associated with this project
         let board = flynt_core::models::Board::default_sprint("Sprint");
-        vault.store.save_board(&board).unwrap();
+        project.store.save_board(&board).unwrap();
 
         let mut task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Fix the parser");
         task.description = "Need to fix the TOML parser.".into();
         task.priority = flynt_core::models::Priority::High;
 
         // Save task with project_id set
-        vault.store.save_task(&task).unwrap();
+        project.store.save_task(&task).unwrap();
 
         // Associate task with this project
-        vault.store.set_task_project(&task.id, &project_id).unwrap();
+        project.store.set_task_project(&task.id, &project_id).unwrap();
 
         // Flush should write the task file
-        let report = vault.flush_project(project_id).unwrap();
+        let report = project.flush_project(project_id).unwrap();
         assert_eq!(report.tasks_flushed, 1);
 
         // Verify the file exists on disk
-        let project_entity = vault.store.get_document(&DocumentId(project_id)).unwrap().unwrap();
+        let project_entity = project.store.get_document(&DocumentId(project_id)).unwrap().unwrap();
         let entity = project_entity.entity.unwrap();
         let view = flynt_core::datum::ProjectView::from_entity(&entity).unwrap();
         let backing = view.git_backing().unwrap();
@@ -2433,14 +2433,14 @@ auto_commit_seconds = 0
     #[test]
     fn reindex_project_reads_task_files_into_db() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         git2::Repository::init(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
-        let project_id = create_git_backed_project(&vault);
+        let project_id = create_git_backed_project(&project);
 
         // Resolve the sub_path from the project entity
-        let project_doc = vault.store.get_document(&DocumentId(project_id)).unwrap().unwrap();
+        let project_doc = project.store.get_document(&DocumentId(project_id)).unwrap().unwrap();
         let entity = project_doc.entity.unwrap();
         let view = flynt_core::datum::ProjectView::from_entity(&entity).unwrap();
         let backing = view.git_backing().unwrap();
@@ -2449,7 +2449,7 @@ auto_commit_seconds = 0
         let task_id = uuid::Uuid::new_v4();
         // Create the board first so the FK constraint is satisfied
         let board = flynt_core::models::Board::default_sprint("Sprint");
-        vault.store.save_board(&board).unwrap();
+        project.store.save_board(&board).unwrap();
         let board_id = board.id.0;
         let task_md = format!(
             r#"+++
@@ -2474,11 +2474,11 @@ Description from git.
         std::fs::write(tasks_dir.join(format!("{task_id}.md")), &task_md).unwrap();
 
         // Reindex should parse the file and insert into SQLite
-        let count = vault.reindex_project(project_id).unwrap();
+        let count = project.reindex_project(project_id).unwrap();
         assert_eq!(count, 1);
 
         // Verify the task is in the DB
-        let stored_task = vault.store.get_task(&flynt_core::models::TaskId(task_id)).unwrap();
+        let stored_task = project.store.get_task(&flynt_core::models::TaskId(task_id)).unwrap();
         assert!(stored_task.is_some(), "task should be in SQLite after reindex");
         let stored = stored_task.unwrap();
         assert_eq!(stored.title, "Imported task");
@@ -2489,37 +2489,37 @@ Description from git.
     #[test]
     fn flush_then_reindex_roundtrips() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         git2::Repository::init(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
-        let project_id = create_git_backed_project(&vault);
+        let project_id = create_git_backed_project(&project);
 
         let board = flynt_core::models::Board::default_sprint("Sprint");
-        vault.store.save_board(&board).unwrap();
+        project.store.save_board(&board).unwrap();
 
         let mut task = flynt_core::models::Task::new(board.id.clone(), "Review", "Write tests");
         task.tags = vec!["test".into()];
-        vault.store.save_task(&task).unwrap();
+        project.store.save_task(&task).unwrap();
         let original_id = task.id.clone();
 
         // Associate task with this project
-        vault.store.set_task_project(&task.id, &project_id).unwrap();
+        project.store.set_task_project(&task.id, &project_id).unwrap();
 
         // Flush
-        let report = vault.flush_project(project_id).unwrap();
+        let report = project.flush_project(project_id).unwrap();
         assert_eq!(report.tasks_flushed, 1);
 
         // Delete from DB to simulate a fresh reindex
-        vault.store.delete_task(&original_id).unwrap();
-        assert!(vault.store.get_task(&original_id).unwrap().is_none());
+        project.store.delete_task(&original_id).unwrap();
+        assert!(project.store.get_task(&original_id).unwrap().is_none());
 
         // Reindex from disk
-        let count = vault.reindex_project(project_id).unwrap();
+        let count = project.reindex_project(project_id).unwrap();
         assert_eq!(count, 1);
 
         // Verify roundtrip
-        let restored = vault.store.get_task(&original_id).unwrap().unwrap();
+        let restored = project.store.get_task(&original_id).unwrap().unwrap();
         assert_eq!(restored.title, "Write tests");
         assert_eq!(restored.column, "Review");
         assert_eq!(restored.tags, vec!["test"]);
@@ -2528,12 +2528,12 @@ Description from git.
     #[test]
     fn publication_exports_project_board_state() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         git2::Repository::init(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
         let output_root = tmp.path().join("published");
 
-        let project_id = create_git_backed_project(&vault);
+        let project_id = create_git_backed_project(&project);
 
         // Enable publication on the project document
         let project_doc_path = vault_root.join(
@@ -2545,22 +2545,22 @@ Description from git.
             "[publication]\nenabled = true\nvisibility = \"public\"\n+++\n\n# Test Project"
         );
         std::fs::write(&project_doc_path, &updated).unwrap();
-        vault.index_file(&project_doc_path).unwrap();
+        project.index_file(&project_doc_path).unwrap();
 
         // Create a board for this project
         let board = flynt_core::models::Board::for_project("Sprint 1", project_id);
-        vault.store.save_board(&board).unwrap();
+        project.store.save_board(&board).unwrap();
 
         // Create tasks
         let mut task1 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Design API");
         task1.priority = flynt_core::models::Priority::High;
-        vault.save_project_task(&task1, &project_id).unwrap();
+        project.save_project_task(&task1, &project_id).unwrap();
 
         let task2 = flynt_core::models::Task::new(board.id.clone(), "Running", "Build parser");
-        vault.save_project_task(&task2, &project_id).unwrap();
+        project.save_project_task(&task2, &project_id).unwrap();
 
         // Export
-        let report = vault.export_publication_tree(&output_root).unwrap();
+        let report = project.export_publication_tree(&output_root).unwrap();
         assert!(report.exported >= 1, "should export at least the project board");
         assert!(report.errors.is_empty(), "errors: {:?}", report.errors);
 
@@ -2585,9 +2585,9 @@ Description from git.
         use flynt_core::datum::EntityKind;
 
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let node_id = uuid::Uuid::new_v4();
         let parent_id = uuid::Uuid::new_v4();
@@ -2618,14 +2618,14 @@ Design for the authentication subsystem.
         let file_path = design_dir.join("auth-subsystem.md");
         std::fs::write(&file_path, &design_md).unwrap();
 
-        // Reindex the vault
-        let (indexed, errors) = vault.reindex().unwrap();
+        // Reindex the project
+        let (indexed, errors) = project.reindex().unwrap();
         assert!(indexed >= 1, "should index at least the design node file");
         assert!(errors.is_empty(), "reindex errors: {errors:?}");
 
         // Retrieve the document
         let doc_id = flynt_core::models::DocumentId(node_id);
-        let doc = vault.store.get_document(&doc_id).unwrap();
+        let doc = project.store.get_document(&doc_id).unwrap();
         assert!(doc.is_some(), "design node document should exist in store");
         let doc = doc.unwrap();
 
@@ -2642,7 +2642,7 @@ Design for the authentication subsystem.
         assert_eq!(entity.get_text_list("open_questions"), vec!["Which OAuth flow?", "Token rotation?"]);
 
         // Verify it shows up in list_entities_by_kind
-        let design_nodes = vault.store.list_entities_by_kind(&EntityKind::DesignNode).unwrap();
+        let design_nodes = project.store.list_entities_by_kind(&EntityKind::DesignNode).unwrap();
         assert!(design_nodes.iter().any(|m| m.id == doc_id), "design node should appear in kind listing");
     }
 
@@ -2651,18 +2651,18 @@ Design for the authentication subsystem.
         use flynt_core::datum::EntityKind;
 
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         // Create a plain document with frontmatter
         let content = "+++\ntitle = \"My Note\"\ntags = [\"test\"]\n+++\n\n# My Note\n\nSome content.\n";
         let path = std::path::PathBuf::from("my-note.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
-        vault.reindex().unwrap();
+        project.reindex().unwrap();
 
         // Set kind to design_node
-        vault.set_document_kind(&path, Some("design_node")).unwrap();
+        project.set_document_kind(&path, Some("design_node")).unwrap();
 
         // Re-read the file and verify
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
@@ -2672,8 +2672,8 @@ Design for the authentication subsystem.
         assert!(updated.contains("# My Note"), "should preserve body");
 
         // Reindex and verify entity kind
-        vault.reindex().unwrap();
-        let docs = vault.store.list_documents().unwrap();
+        project.reindex().unwrap();
+        let docs = project.store.list_documents().unwrap();
         let doc = docs.iter().find(|d| d.title == "My Note").unwrap();
         assert_eq!(doc.entity_kind, Some(EntityKind::DesignNode));
     }
@@ -2681,16 +2681,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_replaces_existing_kind() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let content = "+++\ntitle = \"Task Doc\"\nkind = \"task\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("task-doc.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
         // Change kind from task to project
-        vault.set_document_kind(&path, Some("project")).unwrap();
+        project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "should have new kind: {updated}");
         assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
@@ -2699,16 +2699,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_clear_removes_kind() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let content = "+++\ntitle = \"Typed\"\nkind = \"design_node\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("typed.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
         // Clear the kind
-        vault.set_document_kind(&path, None).unwrap();
+        project.set_document_kind(&path, None).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
         assert!(updated.contains("title = \"Typed\""), "should preserve title");
@@ -2717,15 +2717,15 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_no_frontmatter_creates_one() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let content = "# Just a note\n\nNo frontmatter here.\n";
         let path = std::path::PathBuf::from("plain.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
-        vault.set_document_kind(&path, Some("design_node")).unwrap();
+        project.set_document_kind(&path, Some("design_node")).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(updated.starts_with("+++\n"), "should start with frontmatter");
         assert!(updated.contains("kind = \"design_node\""), "should contain kind");
@@ -2735,15 +2735,15 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_clear_on_plain_doc_is_noop() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let content = "# Plain\n\nNo kind to clear.\n";
         let path = std::path::PathBuf::from("noop.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
-        vault.set_document_kind(&path, None).unwrap();
+        project.set_document_kind(&path, None).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         // File gets reindexed (frontmatter added by indexer) but no kind field
         assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
@@ -2753,16 +2753,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_preserves_data_table() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         let content = "+++\ntitle = \"Design\"\nkind = \"design_node\"\n\n[data]\nstatus = \"exploring\"\npriority = 5\n+++\n\n# Design\n";
         let path = std::path::PathBuf::from("with-data.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
         // Change kind — [data] table should be preserved
-        vault.set_document_kind(&path, Some("project")).unwrap();
+        project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "new kind: {updated}");
         assert!(updated.contains("[data]"), "should preserve data table: {updated}");
@@ -2773,16 +2773,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_does_not_match_similar_field_names() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         // "kind_of_thing" should NOT be matched as the "kind" field
         let content = "+++\ntitle = \"Test\"\nkind_of_thing = \"misc\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("similar.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
-        vault.set_document_kind(&path, Some("project")).unwrap();
+        project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "should have kind: {updated}");
         assert!(updated.contains("kind_of_thing = \"misc\""), "should preserve similar field: {updated}");
@@ -2791,16 +2791,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_does_not_remove_kind_inside_data_table() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         // kind inside [data] should be preserved
         let content = "+++\ntitle = \"Node\"\nkind = \"design_node\"\n\n[data]\nkind = \"subtype-a\"\nstatus = \"active\"\n+++\n\nBody\n";
         let path = std::path::PathBuf::from("nested-kind.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
-        vault.set_document_kind(&path, Some("project")).unwrap();
+        project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"project\""), "should have new top-level kind: {updated}");
         // The [data] section's kind field should be preserved
@@ -2810,16 +2810,16 @@ Design for the authentication subsystem.
     #[test]
     fn set_document_kind_handles_crlf_line_endings() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         // CRLF line endings
         let content = "+++\r\ntitle = \"CRLF\"\r\nkind = \"task\"\r\n+++\r\n\r\nBody\r\n";
         let path = std::path::PathBuf::from("crlf.md");
         std::fs::write(vault_root.join(&path), content).unwrap();
 
-        vault.set_document_kind(&path, Some("design_node")).unwrap();
+        project.set_document_kind(&path, Some("design_node")).unwrap();
         let updated = std::fs::read_to_string(vault_root.join(&path)).unwrap();
         assert!(updated.contains("kind = \"design_node\""), "should have new kind: {updated}");
         assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
@@ -2829,9 +2829,9 @@ Design for the authentication subsystem.
     #[test]
     fn graph_edges_from_wikilinks() {
         let tmp = TempDir::new().unwrap();
-        let vault_root = tmp.path().join("vault");
+        let vault_root = tmp.path().join("project");
         std::fs::create_dir_all(&vault_root).unwrap();
-        let vault = Vault::open(&vault_root).unwrap();
+        let project = Project::open(&vault_root).unwrap();
 
         // Create two documents with wikilinks between them
         let id_a = uuid::Uuid::new_v4();
@@ -2845,21 +2845,21 @@ Design for the authentication subsystem.
             format!("+++\nid = \"{id_b}\"\ntitle = \"Beta\"\n+++\n\n# Beta\n\nRefer back to [[Alpha]].\n"),
         ).unwrap();
 
-        let (indexed, errors) = vault.reindex().unwrap();
+        let (indexed, errors) = project.reindex().unwrap();
         assert_eq!(indexed, 2, "should index both files");
         assert!(errors.is_empty());
 
         // Verify outgoing links are stored
-        let doc_a = vault.store.get_document(&flynt_core::models::DocumentId(id_a)).unwrap().unwrap();
+        let doc_a = project.store.get_document(&flynt_core::models::DocumentId(id_a)).unwrap().unwrap();
         assert_eq!(doc_a.outgoing_links.len(), 1, "alpha should link to beta");
         assert_eq!(doc_a.outgoing_links[0].target.to_lowercase(), "beta");
 
-        let doc_b = vault.store.get_document(&flynt_core::models::DocumentId(id_b)).unwrap().unwrap();
+        let doc_b = project.store.get_document(&flynt_core::models::DocumentId(id_b)).unwrap().unwrap();
         assert_eq!(doc_b.outgoing_links.len(), 1, "beta should link to alpha");
         assert_eq!(doc_b.outgoing_links[0].target.to_lowercase(), "alpha");
 
         // Build graph and verify edges
-        let graph = flynt_core::graph::build_graph_payload(&*vault.store).unwrap();
+        let graph = flynt_core::graph::build_graph_payload(&*project.store).unwrap();
         assert!(graph.nodes.len() >= 2, "should have at least 2 nodes");
         assert!(!graph.edges.is_empty(), "should have wikilink edges, got: {:?}", graph.edges);
 
@@ -2871,72 +2871,72 @@ Design for the authentication subsystem.
 
     // ── save_any_task: every task becomes a file ────────────────────────────
 
-    fn vault_with_board() -> (TempDir, Vault, flynt_core::models::Board) {
+    fn vault_with_board() -> (TempDir, Project, flynt_core::models::Board) {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_path_buf();
-        let vault = Vault::open(&root).unwrap();
+        let project = Project::open(&root).unwrap();
         let board = flynt_core::models::Board::default_sprint("Sprint 1");
-        vault.store.save_board(&board).unwrap();
-        (tmp, vault, board)
+        project.store.save_board(&board).unwrap();
+        (tmp, project, board)
     }
 
     #[test]
     fn save_any_task_writes_file_and_records_path() {
-        let (_tmp, vault, board) = vault_with_board();
+        let (_tmp, project, board) = vault_with_board();
         let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
-        let rel = vault.save_any_task(&task).unwrap();
+        let rel = project.save_any_task(&task).unwrap();
         assert_eq!(rel, std::path::PathBuf::from("Tasks/sprint-1/auth-rewrite.md"));
-        assert!(vault.root.join(&rel).exists(), "file must exist on disk");
+        assert!(project.root.join(&rel).exists(), "file must exist on disk");
         assert_eq!(
-            vault.store.task_file_path(&task.id).unwrap().as_deref(),
+            project.store.task_file_path(&task.id).unwrap().as_deref(),
             Some(rel.to_string_lossy().as_ref()),
         );
     }
 
     #[test]
     fn save_any_task_renames_file_when_title_changes() {
-        let (_tmp, vault, board) = vault_with_board();
+        let (_tmp, project, board) = vault_with_board();
         let mut task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Initial");
-        let first = vault.save_any_task(&task).unwrap();
-        assert!(vault.root.join(&first).exists());
+        let first = project.save_any_task(&task).unwrap();
+        assert!(project.root.join(&first).exists());
 
         task.title = "Renamed".into();
-        let second = vault.save_any_task(&task).unwrap();
+        let second = project.save_any_task(&task).unwrap();
         assert_ne!(first, second, "rename must produce a different path");
-        assert!(vault.root.join(&second).exists(), "new file must exist");
-        assert!(!vault.root.join(&first).exists(), "old file must be removed");
+        assert!(project.root.join(&second).exists(), "new file must exist");
+        assert!(!project.root.join(&first).exists(), "old file must be removed");
     }
 
     #[test]
     fn save_any_task_handles_collisions_with_numeric_suffix() {
-        let (_tmp, vault, board) = vault_with_board();
+        let (_tmp, project, board) = vault_with_board();
         let t1 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Same Title");
         let t2 = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Same Title");
-        let p1 = vault.save_any_task(&t1).unwrap();
-        let p2 = vault.save_any_task(&t2).unwrap();
+        let p1 = project.save_any_task(&t1).unwrap();
+        let p2 = project.save_any_task(&t2).unwrap();
         assert!(p1.to_string_lossy().ends_with("same-title.md"));
         assert!(p2.to_string_lossy().ends_with("same-title-2.md"));
-        assert!(vault.root.join(&p1).exists());
-        assert!(vault.root.join(&p2).exists());
+        assert!(project.root.join(&p1).exists());
+        assert!(project.root.join(&p2).exists());
     }
 
     #[test]
     fn migrate_tasks_to_files_writes_legacy_sqlite_only_tasks() {
-        // Simulate a legacy vault: task in sqlite without task_file_path.
+        // Simulate a legacy project: task in sqlite without task_file_path.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_path_buf();
-        let vault = Vault::open(&root).unwrap();
+        let project = Project::open(&root).unwrap();
         let board = flynt_core::models::Board::default_sprint("Backlog Board");
-        vault.store.save_board(&board).unwrap();
+        project.store.save_board(&board).unwrap();
         let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Legacy task");
         // Bypass save_any_task — write directly via store, mimicking pre-migration state.
-        vault.store.save_task(&task).unwrap();
-        assert!(vault.store.task_file_path(&task.id).unwrap().is_none());
+        project.store.save_task(&task).unwrap();
+        assert!(project.store.task_file_path(&task.id).unwrap().is_none());
 
-        let n = vault.migrate_tasks_to_files().unwrap();
+        let n = project.migrate_tasks_to_files().unwrap();
         assert_eq!(n, 1);
-        let path = vault.store.task_file_path(&task.id).unwrap().unwrap();
-        assert!(vault.root.join(&path).exists());
+        let path = project.store.task_file_path(&task.id).unwrap().unwrap();
+        assert!(project.root.join(&path).exists());
         assert!(path.starts_with("Tasks/backlog-board/"));
     }
 
@@ -2945,18 +2945,18 @@ Design for the authentication subsystem.
         // Regression: notes-view edits used to wipe non-Frontmatter
         // fields (task kind + [data] block) because save_document_content
         // wrote body-only and the reindex injected default doc fields.
-        let (_tmp, vault, board) = vault_with_board();
+        let (_tmp, project, board) = vault_with_board();
         let mut t = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
         t.description = "Original body".into();
-        let rel = vault.save_any_task(&t).unwrap();
-        let before = std::fs::read_to_string(vault.root.join(&rel)).unwrap();
+        let rel = project.save_any_task(&t).unwrap();
+        let before = std::fs::read_to_string(project.root.join(&rel)).unwrap();
         assert!(before.contains("kind = \"task\""), "task fm before edit:\n{before}");
         assert!(before.contains("[data]"), "task fm before edit:\n{before}");
 
         // Simulate a notes-view body edit.
-        vault.save_document_content(&rel, "Edited body").unwrap();
+        project.save_document_content(&rel, "Edited body").unwrap();
 
-        let after = std::fs::read_to_string(vault.root.join(&rel)).unwrap();
+        let after = std::fs::read_to_string(project.root.join(&rel)).unwrap();
         assert!(after.contains("kind = \"task\""), "kind survived:\n{after}");
         assert!(after.contains("[data]"), "[data] survived:\n{after}");
         assert!(after.contains("Edited body"), "body updated:\n{after}");
@@ -2974,7 +2974,7 @@ Design for the authentication subsystem.
         // limitation, not the case we need to fix for tasks.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_path_buf();
-        let vault = Vault::open(&root).unwrap();
+        let project = Project::open(&root).unwrap();
         let rel = std::path::PathBuf::from("custom.md");
         let original = "+++\n\
             id = \"11111111-2222-3333-4444-555555555555\"\n\
@@ -2983,10 +2983,10 @@ Design for the authentication subsystem.
             aliases = [\"shorthand\"]\n\
             +++\n\n\
             First body";
-        std::fs::write(vault.root.join(&rel), original).unwrap();
+        std::fs::write(project.root.join(&rel), original).unwrap();
 
-        vault.save_document_content(&rel, "Second body").unwrap();
-        let after = std::fs::read_to_string(vault.root.join(&rel)).unwrap();
+        project.save_document_content(&rel, "Second body").unwrap();
+        let after = std::fs::read_to_string(project.root.join(&rel)).unwrap();
         assert!(after.contains("alpha"), "tags survived:\n{after}");
         assert!(after.contains("shorthand"), "aliases survived:\n{after}");
         assert!(after.contains("Second body"), "body updated:\n{after}");
@@ -3005,13 +3005,13 @@ Design for the authentication subsystem.
 
     #[test]
     fn save_any_task_is_idempotent_when_called_twice_with_same_data() {
-        let (_tmp, vault, board) = vault_with_board();
+        let (_tmp, project, board) = vault_with_board();
         let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Steady");
-        let p1 = vault.save_any_task(&task).unwrap();
-        let p2 = vault.save_any_task(&task).unwrap();
+        let p1 = project.save_any_task(&task).unwrap();
+        let p2 = project.save_any_task(&task).unwrap();
         assert_eq!(p1, p2);
         // Only one file under Tasks/sprint-1/
-        let entries: Vec<_> = std::fs::read_dir(vault.root.join("Tasks/sprint-1")).unwrap()
+        let entries: Vec<_> = std::fs::read_dir(project.root.join("Tasks/sprint-1")).unwrap()
             .filter_map(|e| e.ok())
             .collect();
         assert_eq!(entries.len(), 1, "no duplicate files on resave");

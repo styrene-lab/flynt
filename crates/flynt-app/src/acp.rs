@@ -609,7 +609,7 @@ impl AcpSession {
         self.control_call("secrets_view", "").await
     }
 
-    /// Vault status.
+    /// Project status.
     pub async fn vault_status(&self) -> Result<serde_json::Value> {
         self.control_call("vault_status", "").await
     }

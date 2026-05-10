@@ -28,19 +28,19 @@ pub fn detect_providers() -> Vec<CloudProvider> {
     providers
 }
 
-/// Get the vault path within a cloud provider's sync directory.
+/// Get the project path within a cloud provider's sync directory.
 pub fn vault_path_for_provider(provider: &CloudProvider, vault_name: &str) -> PathBuf {
     provider.sync_root.join(vault_name)
 }
 
-/// Create a vault inside a cloud provider's sync directory.
+/// Create a project inside a cloud provider's sync directory.
 pub fn create_cloud_vault(
     provider: &CloudProvider,
     vault_name: &str,
 ) -> anyhow::Result<PathBuf> {
     let vault_root = vault_path_for_provider(provider, vault_name);
     if vault_root.exists() {
-        anyhow::bail!("Vault '{}' already exists in {}", vault_name, provider.label);
+        anyhow::bail!("Project '{}' already exists in {}", vault_name, provider.label);
     }
     std::fs::create_dir_all(vault_root.join(".flynt"))?;
 

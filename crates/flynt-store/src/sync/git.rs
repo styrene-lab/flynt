@@ -181,7 +181,7 @@ impl GitSync {
 
 // ── Tagging ─────────────────────────────────────────────────────────────────
 
-/// A vault tag (git tag wrapper).
+/// A project tag (git tag wrapper).
 #[derive(Debug, Clone)]
 pub struct VaultTag {
     pub name: String,
@@ -353,7 +353,7 @@ impl GitSync {
         let repo = self.open_repo()?;
         let mut index = repo.index()?;
         // Stage all changes. IndexAddOption::DEFAULT respects .gitignore.
-        // The .gitignore (created by Vault::open) excludes .flynt-local/.
+        // The .gitignore (created by Project::open) excludes .flynt-local/.
         index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
         index.write()?;
         let tree_oid = index.write_tree()?;

@@ -64,8 +64,8 @@ fn process_tag(
     if tag_lower.starts_with("img") {
         let alt = extract_attr(&tag_lower, "alt").unwrap_or_default();
         let src = extract_attr(&tag_lower, "src").unwrap_or_default();
-        // Reverse vault:// protocol to ![[wikilink]] syntax
-        if let Some(filename) = src.strip_prefix("vault://localhost/") {
+        // Reverse project:// protocol to ![[wikilink]] syntax
+        if let Some(filename) = src.strip_prefix("project://localhost/") {
             let decoded = filename.replace("%20", " ");
             out.push_str(&format!("![[{decoded}]]"));
         } else {
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn image_vault_protocol() {
-        let html = r#"<img src="vault://localhost/photo%20name.png" alt="photo name">"#;
+        let html = r#"<img src="project://localhost/photo%20name.png" alt="photo name">"#;
         assert_eq!(html_to_markdown(html), "![[photo name.png]]\n");
     }
 

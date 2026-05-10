@@ -20,7 +20,7 @@ pub struct VaultWatcher {
 impl VaultWatcher {
     pub fn new(vault_root: &Path) -> Result<Self> {
         let (tx, rx) = mpsc::channel();
-        // Canonicalize the vault path before deriving the skip prefix and
+        // Canonicalize the project path before deriving the skip prefix and
         // before handing it to notify. macOS FSEvents emits paths against
         // the underlying filesystem (symlinks resolved), so a starts_with
         // filter built from a symlinked input would silently miss every

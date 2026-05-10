@@ -2,7 +2,7 @@
 //!
 //! Lives in its own module to keep `extension.rs` from sprawling.
 //! All handlers are free functions that take what they need from
-//! `FlyntExtension` (vault store + secret bag) and return omegon
+//! `FlyntExtension` (project store + secret bag) and return omegon
 //! `Result<Value>`.
 //!
 //! ## Tool surface (Phase 3 — scribe absorption)
@@ -20,7 +20,7 @@
 //! - `forge_create_issue` — create on the forge + create a linked
 //!   flynt task + remember the binding in SyncStore.
 //! - `log_work` / `timeline` — work-log jsonl per engagement at
-//!   `<vault>/.flynt/work-logs/<engagement-id>.jsonl`.
+//!   `<project>/.flynt/work-logs/<engagement-id>.jsonl`.
 
 use chrono::{DateTime, Utc};
 use flynt_core::{
@@ -32,7 +32,7 @@ use flynt_forge::{
     TokenResolver, issue_hash,
 };
 use flynt_models::engagement::{Engagement, EngagementId, RepoBinding};
-use flynt_store::vault::Vault;
+use flynt_store::project::Project;
 use omegon_extension::{Error as ExtError, Result as ExtResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -142,7 +142,7 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "project_list",
             "label": "List Projects",
-            "description": "List all flynt projects in this vault with their id and title. Use the id when setting FLYNT_PROJECT to scope sentry — without this tool the operator has to dig the UUID out of the vault sqlite manually.",
+            "description": "List all flynt projects in this project with their id and title. Use the id when setting FLYNT_PROJECT to scope sentry — without this tool the operator has to dig the UUID out of the project sqlite manually.",
             "parameters": { "type": "object", "properties": {} }
         }),
         json!({
@@ -216,7 +216,7 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "log_work",
             "label": "Log Work",
-            "description": "Append a work log entry to one engagement. Persisted as JSONL at <vault>/.flynt/work-logs/<engagement-id>.jsonl. Required: engagement_id, content.",
+            "description": "Append a work log entry to one engagement. Persisted as JSONL at <project>/.flynt/work-logs/<engagement-id>.jsonl. Required: engagement_id, content.",
             "parameters": {
                 "type": "object",
                 "required": ["engagement_id", "content"],
@@ -269,8 +269,8 @@ fn parse_repo(params: &Value) -> ExtResult<(String, String)> {
     Ok((org.to_string(), name.to_string()))
 }
 
-fn load_engagement(vault: &Vault, eid: &EngagementId) -> ExtResult<Engagement> {
-    vault.store.get_engagement(eid)
+fn load_engagement(project: &Project, eid: &EngagementId) -> ExtResult<Engagement> {
+    project.store.get_engagement(eid)
         .map_err(|e| ExtError::internal_error(e.to_string()))?
         .ok_or_else(|| ExtError::invalid_params(format!("engagement {} not found", eid.0)))
 }
@@ -301,8 +301,8 @@ fn build_client(eng: &Engagement, secrets: &SecretBag) -> ExtResult<Box<dyn Forg
     }
 }
 
-fn sync_store_for(vault: &Vault) -> ExtResult<SyncStore> {
-    let path = vault.root.join(".flynt").join("forge-sync.db");
+fn sync_store_for(project: &Project) -> ExtResult<SyncStore> {
+    let path = project.root.join(".flynt").join("forge-sync.db");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| ExtError::internal_error(format!("create .flynt dir: {e}")))?;
@@ -321,12 +321,12 @@ pub struct WorkLogEntry {
     pub task_id: Option<Uuid>,
 }
 
-fn work_log_path(vault: &Vault, eid: &EngagementId) -> PathBuf {
-    vault.root.join(".flynt").join("work-logs").join(format!("{}.jsonl", eid.0))
+fn work_log_path(project: &Project, eid: &EngagementId) -> PathBuf {
+    project.root.join(".flynt").join("work-logs").join(format!("{}.jsonl", eid.0))
 }
 
-fn append_work_log(vault: &Vault, eid: &EngagementId, entry: &WorkLogEntry) -> ExtResult<()> {
-    let path = work_log_path(vault, eid);
+fn append_work_log(project: &Project, eid: &EngagementId, entry: &WorkLogEntry) -> ExtResult<()> {
+    let path = work_log_path(project, eid);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| ExtError::internal_error(format!("create work-logs dir: {e}")))?;
@@ -341,8 +341,8 @@ fn append_work_log(vault: &Vault, eid: &EngagementId, entry: &WorkLogEntry) -> E
     Ok(())
 }
 
-fn read_work_log(vault: &Vault, eid: &EngagementId) -> Vec<WorkLogEntry> {
-    let path = work_log_path(vault, eid);
+fn read_work_log(project: &Project, eid: &EngagementId) -> Vec<WorkLogEntry> {
+    let path = work_log_path(project, eid);
     let Ok(text) = std::fs::read_to_string(&path) else { return Vec::new() };
     text.lines()
         .filter_map(|l| serde_json::from_str::<WorkLogEntry>(l).ok())
@@ -361,7 +361,7 @@ pub fn bootstrap_secrets(secrets: &SecretBag, params: Value) -> ExtResult<Value>
 
 // ── engagement_* ────────────────────────────────────────────────────────────
 
-pub fn engagement_create(vault: &Vault, params: Value) -> ExtResult<Value> {
+pub fn engagement_create(project: &Project, params: Value) -> ExtResult<Value> {
     let name = params.get("name").and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("name is required"))?
         .to_string();
@@ -409,13 +409,13 @@ pub fn engagement_create(vault: &Vault, params: Value) -> ExtResult<Value> {
         }
     }
 
-    vault.store.save_engagement(&e)
+    project.store.save_engagement(&e)
         .map_err(|err| ExtError::internal_error(err.to_string()))?;
     Ok(serde_json::to_value(&e).unwrap_or(json!({})))
 }
 
-pub fn engagement_list(vault: &Vault, _params: Value) -> ExtResult<Value> {
-    let list = vault.store.list_engagements()
+pub fn engagement_list(project: &Project, _params: Value) -> ExtResult<Value> {
+    let list = project.store.list_engagements()
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
     let summary: Vec<Value> = list.iter().map(|e| json!({
         "id": e.id.0.to_string(),
@@ -427,12 +427,12 @@ pub fn engagement_list(vault: &Vault, _params: Value) -> ExtResult<Value> {
     Ok(json!(summary))
 }
 
-pub fn project_list(vault: &Vault, _params: Value) -> ExtResult<Value> {
+pub fn project_list(project: &Project, _params: Value) -> ExtResult<Value> {
     // Surface flynt project entities so operators can copy the UUID
     // they need for FLYNT_PROJECT (the env var that scopes sentry to
     // one project's tasks). Without this, discovering the UUID
-    // required querying the vault sqlite by hand.
-    let docs = vault.store
+    // required querying the project sqlite by hand.
+    let docs = project.store
         .list_entities_by_kind(&flynt_core::datum::EntityKind::Project)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
     let summary: Vec<Value> = docs.iter().map(|d| json!({
@@ -443,18 +443,18 @@ pub fn project_list(vault: &Vault, _params: Value) -> ExtResult<Value> {
     Ok(json!(summary))
 }
 
-pub fn engagement_status(vault: &Vault, params: Value) -> ExtResult<Value> {
+pub fn engagement_status(project: &Project, params: Value) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
-    let eng = load_engagement(vault, &eid)?;
+    let eng = load_engagement(project, &eid)?;
 
     // Task counts under this engagement.
-    let tasks = vault.store.list_tasks(&TaskFilter {
+    let tasks = project.store.list_tasks(&TaskFilter {
         engagement_id: Some(eid.clone()),
         ..Default::default()
     }).map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     // Per-repo last_synced timestamps (max across mappings).
-    let store = sync_store_for(vault).ok();
+    let store = sync_store_for(project).ok();
     let per_repo: Vec<Value> = eng.repos.iter().map(|b| {
         let last_synced = store.as_ref()
             .and_then(|s| s.list_by_repo(&b.forge_org, &b.forge_repo).ok())
@@ -478,9 +478,9 @@ pub fn engagement_status(vault: &Vault, params: Value) -> ExtResult<Value> {
 
 // ── forge_* ─────────────────────────────────────────────────────────────────
 
-pub fn forge_status(vault: &Vault, secrets: &SecretBag, params: Value) -> ExtResult<Value> {
+pub fn forge_status(project: &Project, secrets: &SecretBag, params: Value) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
-    let eng = load_engagement(vault, &eid)?;
+    let eng = load_engagement(project, &eid)?;
     let secret_name = eng.forge.token_secret.as_deref().unwrap_or("GITHUB_TOKEN");
     let has_token = secrets.get(secret_name).is_some();
     Ok(json!({
@@ -494,12 +494,12 @@ pub fn forge_status(vault: &Vault, secrets: &SecretBag, params: Value) -> ExtRes
 }
 
 pub async fn forge_list_issues(
-    vault: &Vault,
+    project: &Project,
     secrets: &SecretBag,
     params: Value,
 ) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
-    let eng = load_engagement(vault, &eid)?;
+    let eng = load_engagement(project, &eid)?;
     let (org, repo) = parse_repo(&params)?;
     load_binding(&eng, &org, &repo)?;
     let client = build_client(&eng, secrets)?;
@@ -520,19 +520,19 @@ pub async fn forge_list_issues(
 }
 
 pub async fn forge_sync_issues(
-    vault: &Vault,
+    project: &Project,
     secrets: &SecretBag,
     params: Value,
 ) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
-    let eng = load_engagement(vault, &eid)?;
+    let eng = load_engagement(project, &eid)?;
     let (org, repo) = parse_repo(&params)?;
     let binding = load_binding(&eng, &org, &repo)?.clone();
     // Validate board + column up-front so we don't silently write tasks
     // that the kanban will never render.
-    let (board_id, column) = resolve_board_column(vault, &params)?;
+    let (board_id, column) = resolve_board_column(project, &params)?;
     let client = build_client(&eng, secrets)?;
-    let store = sync_store_for(vault)?;
+    let store = sync_store_for(project)?;
 
     let existing = store.list_by_repo(&org, &repo)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
@@ -540,15 +540,15 @@ pub async fn forge_sync_issues(
     let ops = engine.pull_issues(&binding, &existing).await
         .map_err(|e| ExtError::internal_error(format!("sync: {e}")))?;
 
-    materialize_sync_ops(vault, &store, &eid, &board_id, &column, &org, &repo, &ops)
+    materialize_sync_ops(project, &store, &eid, &board_id, &column, &org, &repo, &ops)
 }
 
-/// Apply pre-computed `SyncOp`s to the vault and the sync store.
+/// Apply pre-computed `SyncOp`s to the project and the sync store.
 /// Split out so tests can hand-craft op slices and exercise the
 /// CreateLocal / UpdateLocal / orphan paths without spinning up a
 /// real or mock forge client.
 fn materialize_sync_ops(
-    vault: &Vault,
+    project: &Project,
     store: &SyncStore,
     eid: &EngagementId,
     board_id: &BoardId,
@@ -572,7 +572,7 @@ fn materialize_sync_ops(
                 // Use persist_task so the issue lands as a .md file
                 // under Tasks/<board>/<slug>.md (board has no
                 // project_id in the typical sync flow).
-                vault.persist_task(&t, None)
+                project.persist_task(&t, None)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 store.upsert(&IssueMap {
                     local_id: *local_id,
@@ -587,7 +587,7 @@ fn materialize_sync_ops(
                 created += 1;
             }
             SyncOp::UpdateLocal { local_id, issue, new_hash } => {
-                // Task may have been deleted out-of-band — vault.store
+                // Task may have been deleted out-of-band — project.store
                 // returns Ok(false) in that case. Drop the orphaned
                 // IssueMap so next sync sees the issue as new and
                 // re-creates. Orphan numbers are surfaced in the result
@@ -597,9 +597,9 @@ fn materialize_sync_ops(
                 patch.description = Some(issue.body.clone());
                 patch.tags = Some(issue.labels.clone());
                 // update_any_task applies the patch + persists via the
-                // vault path so the .md file gets refreshed (forge sync
+                // project path so the .md file gets refreshed (forge sync
                 // is the canonical path for issue→task updates).
-                let exists = vault.update_any_task(&TaskId(*local_id), &patch)
+                let exists = project.update_any_task(&TaskId(*local_id), &patch)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 if !exists {
                     tracing::warn!(
@@ -635,12 +635,12 @@ fn materialize_sync_ops(
 }
 
 pub async fn forge_create_issue(
-    vault: &Vault,
+    project: &Project,
     secrets: &SecretBag,
     params: Value,
 ) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
-    let eng = load_engagement(vault, &eid)?;
+    let eng = load_engagement(project, &eid)?;
     let (org, repo) = parse_repo(&params)?;
     load_binding(&eng, &org, &repo)?;
     let title = params.get("title").and_then(|v| v.as_str())
@@ -650,7 +650,7 @@ pub async fn forge_create_issue(
     let labels: Vec<String> = params.get("labels").and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
-    let (board_id, column) = resolve_board_column(vault, &params)?;
+    let (board_id, column) = resolve_board_column(project, &params)?;
 
     let client = build_client(&eng, secrets)?;
     let issue = client.create_issue(&org, &repo, &ForgeCreateIssue {
@@ -680,10 +680,10 @@ pub async fn forge_create_issue(
     t.external_refs = vec![canonical.url.clone()];
     t.engagement_id = Some(eid.clone());
     // persist_task writes the .md file alongside sqlite.
-    vault.persist_task(&t, None)
+    project.persist_task(&t, None)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
-    let store = sync_store_for(vault)?;
+    let store = sync_store_for(project)?;
     store.upsert(&IssueMap {
         local_id: t.id.0,
         board_id: board_id.0,
@@ -704,11 +704,11 @@ pub async fn forge_create_issue(
 
 // ── log_work / timeline ─────────────────────────────────────────────────────
 
-pub fn log_work(vault: &Vault, params: Value) -> ExtResult<Value> {
+pub fn log_work(project: &Project, params: Value) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
     // Validate engagement exists so we don't silently scribble logs for
     // a non-existent record.
-    let _ = load_engagement(vault, &eid)?;
+    let _ = load_engagement(project, &eid)?;
     let content = params.get("content").and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("content is required"))?
         .to_string();
@@ -723,19 +723,19 @@ pub fn log_work(vault: &Vault, params: Value) -> ExtResult<Value> {
         content,
         task_id,
     };
-    append_work_log(vault, &eid, &entry)?;
+    append_work_log(project, &eid, &entry)?;
     Ok(json!({ "logged": true, "ts": entry.ts.to_rfc3339() }))
 }
 
-pub fn timeline(vault: &Vault, params: Value) -> ExtResult<Value> {
+pub fn timeline(project: &Project, params: Value) -> ExtResult<Value> {
     let eid = parse_eid(&params)?;
-    let _ = load_engagement(vault, &eid)?;
+    let _ = load_engagement(project, &eid)?;
     let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
     let mut events: Vec<Value> = Vec::new();
 
     // Work log entries
-    for e in read_work_log(vault, &eid) {
+    for e in read_work_log(project, &eid) {
         events.push(json!({
             "kind": "work_log",
             "ts": e.ts.to_rfc3339(),
@@ -746,8 +746,8 @@ pub fn timeline(vault: &Vault, params: Value) -> ExtResult<Value> {
     }
 
     // Issue mappings — show as forge events at last_synced time.
-    if let Ok(store) = sync_store_for(vault) {
-        let eng = load_engagement(vault, &eid)?;
+    if let Ok(store) = sync_store_for(project) {
+        let eng = load_engagement(project, &eid)?;
         for binding in &eng.repos {
             if let Ok(maps) = store.list_by_repo(&binding.forge_org, &binding.forge_repo) {
                 for m in maps {
@@ -789,9 +789,9 @@ fn parse_board_id(params: &Value) -> ExtResult<BoardId> {
 /// caller-supplied column exists on it or defaults to the first column.
 /// Used by both `forge_sync_issues` and `forge_create_issue` so they
 /// produce tasks the kanban will actually render.
-fn resolve_board_column(vault: &Vault, params: &Value) -> ExtResult<(BoardId, String)> {
+fn resolve_board_column(project: &Project, params: &Value) -> ExtResult<(BoardId, String)> {
     let board_id = parse_board_id(params)?;
-    let board = vault.store.get_board(&board_id)
+    let board = project.store.get_board(&board_id)
         .map_err(|e| ExtError::internal_error(e.to_string()))?
         .ok_or_else(|| ExtError::invalid_params(format!("board {} not found", board_id.0)))?;
     let column = match params.get("column").and_then(|v| v.as_str()) {
@@ -816,13 +816,13 @@ fn resolve_board_column(vault: &Vault, params: &Value) -> ExtResult<(BoardId, St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flynt_store::vault::Vault;
+    use flynt_store::project::Project;
     use tempfile::TempDir;
 
-    fn fresh_vault() -> (TempDir, Arc<Vault>) {
+    fn fresh_vault() -> (TempDir, Arc<Project>) {
         let tmp = TempDir::new().unwrap();
-        let vault = Arc::new(Vault::open(tmp.path()).unwrap());
-        (tmp, vault)
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        (tmp, project)
     }
 
     fn engagement_create_params() -> Value {
@@ -842,25 +842,25 @@ mod tests {
 
     #[test]
     fn engagement_create_then_list_then_status() {
-        let (_tmp, vault) = fresh_vault();
-        let created = engagement_create(&vault, engagement_create_params()).unwrap();
+        let (_tmp, project) = fresh_vault();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
 
-        let listed = engagement_list(&vault, json!({})).unwrap();
+        let listed = engagement_list(&project, json!({})).unwrap();
         let arr = listed.as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["repo_count"], 1);
 
-        let status = engagement_status(&vault, json!({ "engagement_id": eid })).unwrap();
+        let status = engagement_status(&project, json!({ "engagement_id": eid })).unwrap();
         assert_eq!(status["task_count"], 0);
         assert_eq!(status["repos"].as_array().unwrap().len(), 1);
     }
 
     #[test]
     fn engagement_create_rejects_missing_forge() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let bad = json!({ "name": "x" });
-        let err = engagement_create(&vault, bad).unwrap_err();
+        let err = engagement_create(&project, bad).unwrap_err();
         // Error::invalid_params messages are conventionally fine to assert against
         // by category — we just want to ensure we got an Err, not a panic.
         let _ = format!("{err:?}");
@@ -868,17 +868,17 @@ mod tests {
 
     #[test]
     fn forge_status_reflects_token_presence() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let secrets = SecretBag::new();
-        let created = engagement_create(&vault, engagement_create_params()).unwrap();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap();
 
-        let s = forge_status(&vault, &secrets, json!({ "engagement_id": eid })).unwrap();
+        let s = forge_status(&project, &secrets, json!({ "engagement_id": eid })).unwrap();
         assert_eq!(s["has_token"], false);
         assert_eq!(s["client_supported"], true);
 
         secrets.set("GITHUB_TOKEN", "ghp_xyz");
-        let s = forge_status(&vault, &secrets, json!({ "engagement_id": eid })).unwrap();
+        let s = forge_status(&project, &secrets, json!({ "engagement_id": eid })).unwrap();
         assert_eq!(s["has_token"], true);
     }
 
@@ -905,22 +905,22 @@ mod tests {
 
     #[test]
     fn log_work_then_timeline_returns_entries() {
-        let (_tmp, vault) = fresh_vault();
-        let created = engagement_create(&vault, engagement_create_params()).unwrap();
+        let (_tmp, project) = fresh_vault();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap();
 
-        log_work(&vault, json!({
+        log_work(&project, json!({
             "engagement_id": eid,
             "content": "Wrote forge tools",
             "category": "development"
         })).unwrap();
-        log_work(&vault, json!({
+        log_work(&project, json!({
             "engagement_id": eid,
             "content": "Reviewed PR",
             "category": "review"
         })).unwrap();
 
-        let tl = timeline(&vault, json!({ "engagement_id": eid })).unwrap();
+        let tl = timeline(&project, json!({ "engagement_id": eid })).unwrap();
         let events = tl["events"].as_array().unwrap();
         assert_eq!(events.len(), 2);
         // Newest-first: "Reviewed PR" was last logged.
@@ -930,9 +930,9 @@ mod tests {
 
     #[test]
     fn log_work_rejects_missing_engagement() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let phantom = Uuid::new_v4().to_string();
-        let err = log_work(&vault, json!({
+        let err = log_work(&project, json!({
             "engagement_id": phantom,
             "content": "x"
         })).unwrap_err();
@@ -962,32 +962,32 @@ mod tests {
 
     #[test]
     fn engagement_create_rejects_empty_repo_strings() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let bad = json!({
             "name": "x",
             "forge": { "kind": "github", "base_url": "https://api.github.com" },
             "repos": [{ "forge_org": "", "forge_repo": "anything" }]
         });
-        let err = engagement_create(&vault, bad).unwrap_err();
+        let err = engagement_create(&project, bad).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("non-empty"), "expected non-empty validation, got: {msg}");
     }
 
     #[test]
     fn resolve_board_column_rejects_unknown_board() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let phantom = Uuid::new_v4().to_string();
-        let err = resolve_board_column(&vault, &json!({ "board_id": phantom })).unwrap_err();
+        let err = resolve_board_column(&project, &json!({ "board_id": phantom })).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("not found"), "got: {msg}");
     }
 
     #[test]
     fn resolve_board_column_rejects_unknown_column() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let board = flynt_core::models::Board::default_sprint("Sprint");
-        vault.store.save_board(&board).unwrap();
-        let err = resolve_board_column(&vault, &json!({
+        project.store.save_board(&board).unwrap();
+        let err = resolve_board_column(&project, &json!({
             "board_id": board.id.0.to_string(),
             "column": "Nonexistent"
         })).unwrap_err();
@@ -997,12 +997,12 @@ mod tests {
 
     #[test]
     fn resolve_board_column_defaults_to_first_when_omitted() {
-        let (_tmp, vault) = fresh_vault();
+        let (_tmp, project) = fresh_vault();
         let board = flynt_core::models::Board::default_sprint("Sprint");
         let board_id_str = board.id.0.to_string();
         let first = board.columns[0].name.clone();
-        vault.store.save_board(&board).unwrap();
-        let (_bid, col) = resolve_board_column(&vault, &json!({
+        project.store.save_board(&board).unwrap();
+        let (_bid, col) = resolve_board_column(&project, &json!({
             "board_id": board_id_str
         })).unwrap();
         assert_eq!(col, first);
@@ -1010,17 +1010,17 @@ mod tests {
 
     // ── materialize_sync_ops: end-to-end without a forge client ────────────
 
-    fn fixture_for_sync() -> (TempDir, Arc<Vault>, EngagementId, BoardId, SyncStore) {
-        let (tmp, vault) = fresh_vault();
-        let created = engagement_create(&vault, engagement_create_params()).unwrap();
+    fn fixture_for_sync() -> (TempDir, Arc<Project>, EngagementId, BoardId, SyncStore) {
+        let (tmp, project) = fresh_vault();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = EngagementId(Uuid::parse_str(
             created.get("id").and_then(|v| v.as_str()).unwrap()
         ).unwrap());
         let board = flynt_core::models::Board::default_sprint("Sprint");
         let bid = board.id.clone();
-        vault.store.save_board(&board).unwrap();
-        let store = sync_store_for(&vault).unwrap();
-        (tmp, vault, eid, bid, store)
+        project.store.save_board(&board).unwrap();
+        let store = sync_store_for(&project).unwrap();
+        (tmp, project, eid, bid, store)
     }
 
     fn fake_issue(number: u64, title: &str) -> styrene_forge::ForgeIssue {
@@ -1041,12 +1041,12 @@ mod tests {
 
     #[test]
     fn materialize_create_local_writes_task_and_issue_map() {
-        let (_tmp, vault, eid, bid, store) = fixture_for_sync();
+        let (_tmp, project, eid, bid, store) = fixture_for_sync();
         let local = Uuid::new_v4();
         let ops = vec![SyncOp::CreateLocal { issue: fake_issue(7, "First"), local_id: local }];
 
         let result = materialize_sync_ops(
-            &vault, &store, &eid, &bid, "Backlog",
+            &project, &store, &eid, &bid, "Backlog",
             "anthropics", "claude-code", &ops,
         ).unwrap();
         assert_eq!(result["created"], 1);
@@ -1054,7 +1054,7 @@ mod tests {
         assert_eq!(result["orphans"].as_array().unwrap().len(), 0);
 
         // Task landed with engagement linkage.
-        let t = vault.store.get_task(&TaskId(local)).unwrap().expect("task should exist");
+        let t = project.store.get_task(&TaskId(local)).unwrap().expect("task should exist");
         assert_eq!(t.title, "First");
         assert_eq!(t.engagement_id, Some(eid.clone()));
         assert!(t.external_refs[0].contains("/issues/7"));
@@ -1067,12 +1067,12 @@ mod tests {
 
     #[test]
     fn materialize_update_local_refreshes_task_and_hash() {
-        let (_tmp, vault, eid, bid, store) = fixture_for_sync();
+        let (_tmp, project, eid, bid, store) = fixture_for_sync();
         let local = Uuid::new_v4();
 
         // Seed: pretend we sync'd #9 once already.
         let _ = materialize_sync_ops(
-            &vault, &store, &eid, &bid, "Backlog",
+            &project, &store, &eid, &bid, "Backlog",
             "anthropics", "claude-code",
             &[SyncOp::CreateLocal { issue: fake_issue(9, "Original"), local_id: local }],
         ).unwrap();
@@ -1081,13 +1081,13 @@ mod tests {
         let new_issue = fake_issue(9, "Updated");
         let new_hash = issue_hash(&new_issue);
         let result = materialize_sync_ops(
-            &vault, &store, &eid, &bid, "Backlog",
+            &project, &store, &eid, &bid, "Backlog",
             "anthropics", "claude-code",
             &[SyncOp::UpdateLocal { local_id: local, issue: new_issue, new_hash: new_hash.clone() }],
         ).unwrap();
         assert_eq!(result["updated"], 1);
         assert_eq!(result["orphans"].as_array().unwrap().len(), 0);
-        let t = vault.store.get_task(&TaskId(local)).unwrap().unwrap();
+        let t = project.store.get_task(&TaskId(local)).unwrap().unwrap();
         assert_eq!(t.title, "Updated");
         let m = store.get_by_issue("anthropics", "claude-code", 9).unwrap().unwrap();
         assert_eq!(m.last_hash.as_deref(), Some(new_hash.as_str()));
@@ -1095,7 +1095,7 @@ mod tests {
 
     #[test]
     fn materialize_orphan_clears_issue_map_and_skips_update() {
-        let (_tmp, vault, eid, bid, store) = fixture_for_sync();
+        let (_tmp, project, eid, bid, store) = fixture_for_sync();
         let local = Uuid::new_v4();
 
         // Seed an IssueMap whose task was never created (simulates
@@ -1114,7 +1114,7 @@ mod tests {
         // UpdateLocal arrives — task is missing.
         let issue = fake_issue(11, "Updated");
         let result = materialize_sync_ops(
-            &vault, &store, &eid, &bid, "Backlog",
+            &project, &store, &eid, &bid, "Backlog",
             "anthropics", "claude-code",
             &[SyncOp::UpdateLocal { local_id: local, issue, new_hash: "new".into() }],
         ).unwrap();
