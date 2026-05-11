@@ -738,6 +738,11 @@ pub struct RuntimeState {
     pub sync_status_rx: Option<tokio::sync::watch::Receiver<flynt_store::sync::AutoSyncStatus>>,
     /// Agent daemon lifecycle manager.
     pub daemon: Arc<crate::daemon_manager::DaemonManager>,
+    /// Push pipeline — drives auto-push for tasks linked to forge issues.
+    /// Held as `Option` so a fallback project (no `.flynt` writable, etc.)
+    /// can still produce a RuntimeState; the pill in the UI degrades to
+    /// LocalOnly silently when it's None.
+    pub push_pipeline: Option<Arc<crate::push_pipeline::PushPipeline>>,
 }
 
 #[derive(Clone, Copy)]
@@ -764,6 +769,10 @@ impl AppContext {
 
     pub fn daemon(&self) -> Arc<crate::daemon_manager::DaemonManager> {
         self.runtime.read().daemon.clone()
+    }
+
+    pub fn push_pipeline(&self) -> Option<Arc<crate::push_pipeline::PushPipeline>> {
+        self.runtime.read().push_pipeline.clone()
     }
 
     pub fn set_runtime(&mut self, runtime: RuntimeState) {
@@ -927,6 +936,25 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
         });
     }
 
+    // Push pipeline — wires flynt-forge's push machinery into the
+    // app. The pipeline implements SaveHook; we install it on Project
+    // so every task save fans out to the debouncer. The drain loop
+    // runs forever, polling ready tasks and pushing them upstream.
+    // Pipeline construction can fail (e.g., .flynt dir not writable
+    // for a read-only / fallback project root); in that case we run
+    // without auto-push — the SyncStatusPill falls back to LocalOnly.
+    let push_pipeline = match crate::push_pipeline::PushPipeline::new(project.clone()) {
+        Ok(p) => {
+            project.install_save_hook(p.clone());
+            p.clone().spawn_drain_loop();
+            Some(p)
+        }
+        Err(e) => {
+            warn!("PushPipeline init failed; auto-push disabled this session: {e}");
+            None
+        }
+    };
+
     RuntimeState {
         project_root,
         project,
@@ -935,6 +963,7 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
         _sync_handle: sync_handle,
         sync_status_rx,
         daemon,
+        push_pipeline,
     }
 }
 

@@ -207,6 +207,14 @@ pub fn TaskMetadataStrip(
                     "↑ design"
                 }
             }
+
+            // Sync status — flush right via flex spacer. Reads state
+            // from PushPipeline; renders LocalOnly / Synced / PendingPush
+            // / Pushing / PushFailed / Conflict per task.
+            div { class: "task-metadata-strip-spacer" }
+            if let Some(id) = frontmatter.id {
+                crate::components::SyncStatusPill { task_id: id }
+            }
         }
     }
 }

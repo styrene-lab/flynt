@@ -1,0 +1,339 @@
+//! Push pipeline — the runtime that wires flynt-forge's push machinery
+//! into the desktop app.
+//!
+//! Owns:
+//! - `PushDebouncer` — fed by `Project`'s SaveHook fan-out
+//! - A drain task that polls `take_ready` and runs `push_task` per task
+//! - A shared status map keyed by task id, broadcast to subscribers
+//!   when entries change so the SyncStatusPill re-renders
+//!
+//! Implements `flynt_store::save_hook::SaveHook` so a single `Arc<Self>`
+//! is both the on-task-saved sink and the source of truth for sync
+//! status — installed via `Project::install_save_hook`.
+//!
+//! ## Token handling
+//!
+//! v1 reads tokens from the environment per-resolve. Resolver name is
+//! whatever the engagement's `forge.token_secret` says (e.g.,
+//! `GITHUB_TOKEN`). Anonymous resolves to no-token requests, which
+//! GitHub handles for public repos and rate-limits aggressively
+//! otherwise. The token-trust note in CONTRIBUTING.md covers why this
+//! is acceptable: the desktop is operator-trusted, same as the agent.
+
+use anyhow::{Context, Result};
+use flynt_core::models::Frontmatter;
+use flynt_core::store::ProjectStore;
+use flynt_forge::{
+    mapping::{self, GitHubMapper, MappingConfig, TaskFieldMapper},
+    push::{push_task, PushDebouncer, PushInput, SyncStatus},
+    store::SyncStore,
+    GitHubForgeClient,
+};
+use flynt_models::engagement::{Engagement, EngagementId};
+use flynt_models::task::{Task, TaskId};
+use flynt_store::project::Project;
+use flynt_store::save_hook::SaveHook;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use styrene_forge::{ForgeClient, ForgeKind};
+use tokio::sync::broadcast;
+use uuid::Uuid;
+
+/// Broadcast on every status transition. Subscribers (the SyncStatusPill
+/// per task) trigger a re-render that re-reads the status map. We
+/// don't multiplex per-task; the pill filters by its own id on the
+/// receive side.
+#[derive(Debug, Clone)]
+pub struct SyncStatusUpdate {
+    pub task_id: Uuid,
+    pub status: SyncStatus,
+}
+
+/// The runtime that drives auto-push for one project.
+///
+/// One instance per AppContext; constructed at bootstrap. Lives for
+/// the lifetime of the project.
+pub struct PushPipeline {
+    debouncer: PushDebouncer,
+    /// Per-task sync state. UI reads via `status_for`; pipeline writes
+    /// after each push.
+    statuses: Arc<RwLock<HashMap<Uuid, SyncStatus>>>,
+    /// Broadcasts on every status change so the pill can re-render.
+    events: broadcast::Sender<SyncStatusUpdate>,
+    project: Arc<Project>,
+    /// Where `IssueMap` rows live (per-project sqlite). Initialized
+    /// once at construction.
+    sync_store: Arc<SyncStore>,
+    /// Mapping config — loaded once, kept stable for the session.
+    mapping: MappingConfig,
+}
+
+impl PushPipeline {
+    pub fn new(project: Arc<Project>) -> Result<Arc<Self>> {
+        // SyncStore — colocated with the project, separate sqlite file
+        // from the document index. Matches what flynt-agent's
+        // `sync_store_for` does for consistency.
+        let sync_db_path = project.root.join(".flynt").join("forge-sync.db");
+        if let Some(parent) = sync_db_path.parent() {
+            std::fs::create_dir_all(parent).context("create .flynt dir")?;
+        }
+        let sync_store = Arc::new(
+            SyncStore::open(&sync_db_path).context("open forge-sync.db")?,
+        );
+
+        let mapping = mapping::load(&project.root).unwrap_or_else(|err| {
+            tracing::warn!(error = %err, "forge-mapping.toml unreadable; using defaults");
+            MappingConfig::default()
+        });
+
+        let (events, _rx) = broadcast::channel(256);
+
+        Ok(Arc::new(Self {
+            debouncer: PushDebouncer::new(),
+            statuses: Arc::new(RwLock::new(HashMap::new())),
+            events,
+            project,
+            sync_store,
+            mapping,
+        }))
+    }
+
+    /// Read the current sync status for a task. Returns `LocalOnly`
+    /// for tasks the pipeline hasn't seen yet — that's the correct
+    /// default since absence of a status mirrors absence of an
+    /// IssueMap.
+    pub fn status_for(&self, task_id: Uuid) -> SyncStatus {
+        self.statuses
+            .read()
+            .map(|m| m.get(&task_id).cloned().unwrap_or(SyncStatus::LocalOnly))
+            .unwrap_or(SyncStatus::LocalOnly)
+    }
+
+    /// Subscribe to status changes. Caller (a Dioxus use_effect)
+    /// loops on `recv` and bumps a local refresh signal when an
+    /// update arrives.
+    pub fn subscribe(&self) -> broadcast::Receiver<SyncStatusUpdate> {
+        self.events.subscribe()
+    }
+
+    /// Spawn the drain loop. Runs forever (scope-tied to the spawning
+    /// runtime). Polls the debouncer every second; processes each
+    /// ready task through `push_task`; updates status map + broadcasts.
+    ///
+    /// Returns the spawned task's handle in case the caller wants to
+    /// `.abort()` on shutdown — flynt-app doesn't today (tokio runtime
+    /// outlives the project, so leaking the task on app close is fine).
+    pub fn spawn_drain_loop(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            // 1s tick. Decoupled from the debouncer's 5s window — the
+            // tick is "how often we check"; the window is "how long
+            // we wait after an edit before pushing."
+            let mut tick = tokio::time::interval(Duration::from_secs(1));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+            loop {
+                tick.tick().await;
+
+                let ready = self.debouncer.take_ready();
+                if ready.is_empty() {
+                    continue;
+                }
+
+                for task_id in ready {
+                    self.process_one(task_id).await;
+                }
+            }
+        })
+    }
+
+    async fn process_one(&self, task_id: Uuid) {
+        // First, mark as Pushing so the pill flashes.
+        self.set_status(task_id, SyncStatus::Pushing);
+
+        let result = self.try_push(task_id).await;
+        let status = match result {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, task = %task_id, "push pipeline error");
+                SyncStatus::PushFailed {
+                    issue_number: self
+                        .existing_map_for(task_id)
+                        .map(|m| m.forge_issue_number),
+                    error: e.to_string(),
+                }
+            }
+        };
+        self.set_status(task_id, status);
+    }
+
+    async fn try_push(&self, task_id: Uuid) -> Result<SyncStatus> {
+        // Load the task + engagement + (optionally) existing IssueMap.
+        let task = self
+            .project
+            .store
+            .get_task(&TaskId(task_id))?
+            .ok_or_else(|| anyhow::anyhow!("task {task_id} not found"))?;
+        let Some(engagement_id) = task.engagement_id.clone() else {
+            return Ok(SyncStatus::LocalOnly);
+        };
+        let engagement = self
+            .project
+            .store
+            .get_engagement(&engagement_id)?
+            .ok_or_else(|| {
+                anyhow::anyhow!("task {task_id} references engagement {engagement_id:?} which doesn't exist")
+            })?;
+
+        let existing_map = self.existing_map_for(task_id);
+
+        // Decide which repo binding to target. For an existing map we
+        // use whatever it's pointing at (the operator could have moved
+        // tasks across repos, but the IssueMap is the source of truth
+        // for "where this lives upstream"). For a fresh task with
+        // multiple repo bindings: first one. v2 could let the operator
+        // pick.
+        let (org, repo) = match &existing_map {
+            Some(m) => (m.forge_org.clone(), m.forge_repo.clone()),
+            None => {
+                let Some(b) = engagement.repos.first() else {
+                    return Ok(SyncStatus::LocalOnly);
+                };
+                (b.forge_org.clone(), b.forge_repo.clone())
+            }
+        };
+
+        // Construct the right mapper + client for the engagement's forge.
+        let client = build_client(&engagement)?;
+        let mapper: Box<dyn TaskFieldMapper> = match engagement.forge.kind {
+            ForgeKind::GitHub => Box::new(GitHubMapper),
+            // Forgejo + GitLab mappers land in the next commit. Until
+            // then, surface a clean "no mapper yet" status rather than
+            // crash.
+            other => {
+                return Ok(SyncStatus::PushFailed {
+                    issue_number: existing_map.as_ref().map(|m| m.forge_issue_number),
+                    error: format!("no mapper for {other:?} yet"),
+                });
+            }
+        };
+
+        let input = PushInput {
+            task: &task,
+            mapping: &self.mapping,
+            mapper: &*mapper,
+            client: &*client,
+            sync_store: &self.sync_store,
+            target_binding: (org, repo),
+            existing_map,
+            auto_create: engagement.auto_create_issues,
+        };
+        Ok(push_task(input).await)
+    }
+
+    fn existing_map_for(&self, task_id: Uuid) -> Option<flynt_forge::IssueMap> {
+        self.sync_store
+            .list_by_local(&task_id)
+            .ok()
+            .and_then(|v| v.into_iter().next())
+    }
+
+    fn set_status(&self, task_id: Uuid, status: SyncStatus) {
+        if let Ok(mut map) = self.statuses.write() {
+            map.insert(task_id, status.clone());
+        }
+        // Broadcast on every transition. Failure to send (no receivers
+        // currently subscribed) is benign — pill components subscribe
+        // lazily as they mount.
+        let _ = self.events.send(SyncStatusUpdate { task_id, status });
+    }
+}
+
+// SaveHook impl — the bridge from flynt-store save paths to our debouncer.
+impl SaveHook for PushPipeline {
+    fn on_task_saved(&self, task_id: Uuid) {
+        self.debouncer.note_edit(task_id);
+        // Surface a PendingPush state immediately so the UI can show
+        // "Push pending…" without waiting for the drain loop's first
+        // tick. The pill subscriber re-renders on this broadcast.
+        let issue_number = self.existing_map_for(task_id).map(|m| m.forge_issue_number);
+        self.set_status(task_id, SyncStatus::PendingPush { issue_number });
+    }
+}
+
+/// Build a ForgeClient for the engagement's forge endpoint.
+///
+/// v1 reads tokens from environment variables (the secret name in
+/// `forge.token_secret` is used as the env var name; defaults to
+/// `GITHUB_TOKEN`). The token-trust model in CONTRIBUTING.md says
+/// the desktop client is trusted with the same tokens as the agent.
+fn build_client(eng: &Engagement) -> Result<Box<dyn ForgeClient>> {
+    match eng.forge.kind {
+        ForgeKind::GitHub => {
+            let secret_name = eng
+                .forge
+                .token_secret
+                .clone()
+                .unwrap_or_else(|| "GITHUB_TOKEN".to_string());
+            let resolver: Arc<dyn flynt_forge::TokenResolver> =
+                Arc::new(move || std::env::var(&secret_name).ok());
+            Ok(Box::new(GitHubForgeClient::new(eng.forge.clone(), resolver)))
+        }
+        other => anyhow::bail!("no client for {other:?} forge yet"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn status_for_unknown_task_is_local_only() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        let unknown = Uuid::new_v4();
+        assert!(matches!(pipeline.status_for(unknown), SyncStatus::LocalOnly));
+    }
+
+    #[tokio::test]
+    async fn save_hook_marks_task_pending() {
+        // on_task_saved transitions to PendingPush immediately so the
+        // pill flashes without waiting for the drain loop.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        let mut rx = pipeline.subscribe();
+
+        let task_id = Uuid::new_v4();
+        pipeline.on_task_saved(task_id);
+
+        match pipeline.status_for(task_id) {
+            SyncStatus::PendingPush { .. } => {}
+            other => panic!("expected PendingPush, got {other:?}"),
+        }
+        // Broadcast fired.
+        let update = rx.try_recv().expect("event delivered");
+        assert_eq!(update.task_id, task_id);
+    }
+
+    #[tokio::test]
+    async fn save_hook_feeds_debouncer() {
+        // The other side of on_task_saved — id ends up in the
+        // debouncer with the current timestamp. take_ready won't
+        // pick it up until the debounce window elapses.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        let task_id = Uuid::new_v4();
+        pipeline.on_task_saved(task_id);
+        // Not ready (default 5s window).
+        assert!(pipeline.debouncer.take_ready().is_empty());
+    }
+
+    /// Use shorthand for the assertion below.
+    fn _unused_keep_imports() {
+        let _ = Frontmatter::default();
+        let _: Task;
+    }
+}

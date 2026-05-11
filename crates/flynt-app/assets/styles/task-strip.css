@@ -105,6 +105,27 @@
   cursor:            default;
 }
 
+/* ── Sync status — flush right ──────────────────────────────────────── */
+
+.task-metadata-strip-spacer {
+  flex:              1 1 auto;
+  min-width:         8px;
+}
+
+.pill-sync {
+  font-size:         11px;
+  text-decoration:   none;
+  display:           inline-flex;
+  align-items:       center;
+  gap:               4px;
+}
+.pill-sync-local    { color: var(--muted-foreground, #64748b); background: transparent; border-color: transparent; }
+.pill-sync-synced   { color: #4ade80; border-color: rgba(74,222,128,0.4); background: rgba(74,222,128,0.08); }
+.pill-sync-pending  { color: #fbbf24; border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.08); }
+.pill-sync-pushing  { color: #38bdf8; border-color: rgba(56,189,248,0.4); background: rgba(56,189,248,0.1); }
+.pill-sync-failed   { color: #f87171; border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.12); font-weight: 500; }
+.pill-sync-conflict { color: #f87171; border-color: rgba(248,113,113,0.6); background: rgba(248,113,113,0.18); font-weight: 600; }
+
 /* ── Picker popover ──────────────────────────────────────────────────── */
 
 .field-picker-popover {
