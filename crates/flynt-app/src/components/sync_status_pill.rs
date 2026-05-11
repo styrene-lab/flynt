@@ -74,7 +74,7 @@ pub fn SyncStatusPill(task_id: Uuid) -> Element {
 
     // Popover open state. Only meaningful for Conflict; other states
     // ignore it.
-    let mut popover_open = use_signal(|| false);
+    let popover_open = use_signal(|| false);
 
     rsx! {
         if is_conflict {
