@@ -156,11 +156,30 @@ async fn update_with_conflict_check(
     input: PushInput<'_>,
     map: IssueMap,
 ) -> Result<SyncStatus> {
-    let current = input
+    // GET upstream. Treat 404 specially — the issue was deleted on
+    // the forge side. Returning generic PushFailed would surface as
+    // a transient error and retry next edit; the operator needs to
+    // see "your link is dead, decide what to do" instead. We don't
+    // auto-recreate (operator might have deleted intentionally),
+    // don't auto-delete the IssueMap (operator might want the link
+    // back). Just stop pushing and surface clearly.
+    let current = match input
         .client
         .get_issue(&map.forge_org, &map.forge_repo, map.forge_issue_number)
         .await
-        .context("get_issue")?;
+    {
+        Ok(c) => c,
+        Err(styrene_forge::ForgeError::NotFound(_)) => {
+            return Ok(SyncStatus::PushFailed {
+                issue_number: Some(map.forge_issue_number),
+                error: format!(
+                    "Upstream issue #{} no longer exists. Clear the link manually or recreate.",
+                    map.forge_issue_number
+                ),
+            });
+        }
+        Err(e) => return Err(anyhow::anyhow!(e).context("get_issue")),
+    };
 
     let current_hash = content_hash(
         &current.title,
@@ -615,6 +634,46 @@ mod tests {
         // Did NOT push — upstream unchanged.
         let upstream = client.issues.lock().unwrap().get(&42).cloned().unwrap();
         assert_eq!(upstream.title, "Someone changed it");
+    }
+
+    #[tokio::test]
+    async fn push_surfaces_404_as_dead_link_not_generic_failure() {
+        // Issue deleted upstream — get_issue returns NotFound. The
+        // operator needs to see "your link is dead, decide what to do"
+        // rather than a generic "push failed (will retry)" pattern.
+        let task = make_task();
+        let client = Arc::new(MockClient::new()); // no issues in mock
+        let store = fresh_store();
+        let map = IssueMap {
+            local_id: task.id.0,
+            board_id: task.board_id.0,
+            forge_org: "org".into(),
+            forge_repo: "repo".into(),
+            forge_issue_number: 42,
+            last_synced: Utc::now(),
+            last_hash: Some("anything".into()),
+            forge_url: Some("https://mock/42".into()),
+        };
+
+        let status = push_task(PushInput {
+            task: &task,
+            mapping: &MappingConfig::default(),
+            mapper: &GitHubMapper,
+            client: &*client,
+            sync_store: &store,
+            target_binding: ("org".into(), "repo".into()),
+            existing_map: Some(map),
+            auto_create: false,
+        }).await;
+
+        match status {
+            SyncStatus::PushFailed { issue_number, error } => {
+                assert_eq!(issue_number, Some(42));
+                assert!(error.contains("no longer exists"),
+                        "informative error mentions deletion: {error}");
+            }
+            other => panic!("expected PushFailed with dead-link message, got {other:?}"),
+        }
     }
 
     #[tokio::test]

@@ -34,6 +34,7 @@ use flynt_models::task::{Task, TaskId};
 use flynt_store::project::Project;
 use flynt_store::save_hook::SaveHook;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use styrene_forge::{ForgeClient, ForgeKind};
@@ -67,6 +68,11 @@ pub struct PushPipeline {
     sync_store: Arc<SyncStore>,
     /// Mapping config — loaded once, kept stable for the session.
     mapping: MappingConfig,
+    /// Set true by `shutdown()`. The drain loop checks this on each
+    /// tick and exits cleanly. Without this, switching projects via
+    /// AppContext::set_runtime would leak the old drain task forever
+    /// because it holds an Arc<Self> internally.
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl PushPipeline {
@@ -96,7 +102,18 @@ impl PushPipeline {
             project,
             sync_store,
             mapping,
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         }))
+    }
+
+    /// Signal the drain loop to exit on its next tick. Called by
+    /// `AppContext::set_runtime` before installing a fresh runtime
+    /// so the old pipeline doesn't leak.
+    ///
+    /// Idempotent. Safe to call multiple times. Doesn't block — the
+    /// drain loop exits up to ~1s later (on the next tick boundary).
+    pub fn shutdown(&self) {
+        self.shutdown_flag.store(true, Ordering::SeqCst);
     }
 
     /// Read the current sync status for a task. Returns `LocalOnly`
@@ -135,12 +152,23 @@ impl PushPipeline {
             loop {
                 tick.tick().await;
 
+                if self.shutdown_flag.load(Ordering::SeqCst) {
+                    tracing::debug!("PushPipeline drain loop exiting (shutdown requested)");
+                    break;
+                }
+
                 let ready = self.debouncer.take_ready();
                 if ready.is_empty() {
                     continue;
                 }
 
                 for task_id in ready {
+                    // Re-check shutdown between tasks — a burst of
+                    // ready tasks after shutdown was requested should
+                    // exit promptly, not push everything queued first.
+                    if self.shutdown_flag.load(Ordering::SeqCst) {
+                        break;
+                    }
                     self.process_one(task_id).await;
                 }
             }
@@ -149,6 +177,14 @@ impl PushPipeline {
 
     async fn process_one(&self, task_id: Uuid) {
         // First, mark as Pushing so the pill flashes.
+        //
+        // If `try_push` panics, the status stays "Pushing" forever in
+        // the shared map — tokio catches the panic at the task
+        // boundary but doesn't unwind our state. Self-healing: any
+        // subsequent edit fires `on_task_saved` which overwrites the
+        // stale Pushing with PendingPush. So a panic-stuck task heals
+        // on the operator's next edit; no zombie state across sessions
+        // (the map is in-memory only).
         self.set_status(task_id, SyncStatus::Pushing);
 
         let result = self.try_push(task_id).await;
@@ -334,6 +370,34 @@ mod tests {
         pipeline.on_task_saved(task_id);
         // Not ready (default 5s window).
         assert!(pipeline.debouncer.take_ready().is_empty());
+    }
+
+    #[tokio::test]
+    async fn shutdown_breaks_drain_loop_on_next_tick() {
+        // The fix for the leak across set_runtime: shutdown() flips
+        // the flag; the spawned drain loop checks on each tick and
+        // exits. We can verify the JoinHandle completes after we
+        // signal shutdown.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        let handle = pipeline.clone().spawn_drain_loop();
+        // Give the loop a moment to start ticking.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        pipeline.shutdown();
+        // Wait up to 3s for the loop to exit (it polls every ~1s).
+        let result = tokio::time::timeout(Duration::from_secs(3), handle).await;
+        assert!(result.is_ok(), "drain loop should exit after shutdown()");
+    }
+
+    #[tokio::test]
+    async fn shutdown_is_idempotent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        pipeline.shutdown();
+        pipeline.shutdown(); // second call doesn't panic
+        assert!(pipeline.shutdown_flag.load(Ordering::SeqCst));
     }
 
     /// Use shorthand for the assertion below.

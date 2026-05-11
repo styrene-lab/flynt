@@ -777,6 +777,13 @@ impl AppContext {
 
     pub fn set_runtime(&mut self, runtime: RuntimeState) {
         use dioxus::prelude::WritableExt;
+        // Shut down the outgoing pipeline so its drain loop exits.
+        // Without this, project switches leak the old drain task
+        // forever (it holds an Arc<Self> internally, so dropping
+        // RuntimeState doesn't reclaim it).
+        if let Some(old) = self.runtime.read().push_pipeline.clone() {
+            old.shutdown();
+        }
         *self.runtime.write() = runtime;
     }
 }

@@ -74,16 +74,26 @@ pub fn SyncStatusPill(task_id: Uuid) -> Element {
     rsx! {
         if let Some(url) = click_url {
             // Synced + Conflict states get a clickable pill that opens
-            // the upstream URL in the system browser. Plain anchor —
-            // the OS picks the default browser; no Tauri/Dioxus dialog
-            // needed.
-            a {
-                class: "{class}",
-                href: "{url}",
-                title: "{title}",
-                target: "_blank",
-                rel: "noopener",
-                "{label}"
+            // the upstream URL in the system browser.
+            //
+            // Why not `<a target="_blank">`: wry webviews sandbox link
+            // navigation; target="_blank" silently does nothing. The
+            // `open` crate routes through the OS shell (open / xdg-open
+            // / etc.) which actually launches a browser.
+            {
+                let url_for_click = url.clone();
+                rsx! {
+                    button {
+                        class: "{class}",
+                        title: "{title}",
+                        onclick: move |_| {
+                            if let Err(e) = open::that(&url_for_click) {
+                                tracing::warn!(error = %e, url = %url_for_click, "failed to open issue URL");
+                            }
+                        },
+                        "{label}"
+                    }
+                }
             }
         } else {
             span {
