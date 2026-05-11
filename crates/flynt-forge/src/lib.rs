@@ -36,7 +36,9 @@ pub use styrene_forge::{
 
 pub use auth::{StaticToken, TokenResolver};
 pub use clients::GitHubForgeClient;
-pub use mapping::{MappingConfig, TaskFieldMapper};
+pub use mapping::{
+    mapper_for_kind, ForgejoMapper, GitHubMapper, GitlabMapper, MappingConfig, TaskFieldMapper,
+};
 pub use push::{push_task, PushDebouncer, PushInput, SyncStatus};
 pub use store::{IssueMap, SyncStore};
 pub use sync::{SyncEngine, SyncOp, content_hash, issue_hash};

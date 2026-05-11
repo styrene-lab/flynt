@@ -37,9 +37,28 @@
 //! `MappingConfig::owned_label_prefixes` exposes the prefix set so the
 //! push code knows which labels to rewrite.
 
+pub mod forgejo;
 pub mod github;
+pub mod gitlab;
 
+pub use forgejo::ForgejoMapper;
 pub use github::GitHubMapper;
+pub use gitlab::GitlabMapper;
+
+use styrene_forge::ForgeKind;
+
+/// Construct the right mapper for an engagement's forge kind.
+///
+/// Boxed because callers store the mapper in a generic `PushInput`
+/// that has `mapper: &dyn TaskFieldMapper`. The mapper structs are
+/// zero-sized so the allocation is negligible.
+pub fn mapper_for_kind(kind: ForgeKind) -> Box<dyn TaskFieldMapper> {
+    match kind {
+        ForgeKind::GitHub => Box::new(GitHubMapper),
+        ForgeKind::Forgejo => Box::new(ForgejoMapper),
+        ForgeKind::GitLab => Box::new(GitlabMapper),
+    }
+}
 
 use anyhow::Result;
 use flynt_models::task::{Task, TaskPatch};

@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use flynt_core::models::Frontmatter;
 use flynt_core::store::ProjectStore;
 use flynt_forge::{
-    mapping::{self, GitHubMapper, MappingConfig, TaskFieldMapper},
+    mapping::{self, mapper_for_kind, MappingConfig, TaskFieldMapper},
     push::{push_task, PushDebouncer, PushInput, SyncStatus},
     store::SyncStore,
     GitHubForgeClient,
@@ -203,17 +203,22 @@ impl PushPipeline {
             }
         };
 
-        // Construct the right mapper + client for the engagement's forge.
-        let client = build_client(&engagement)?;
-        let mapper: Box<dyn TaskFieldMapper> = match engagement.forge.kind {
-            ForgeKind::GitHub => Box::new(GitHubMapper),
-            // Forgejo + GitLab mappers land in the next commit. Until
-            // then, surface a clean "no mapper yet" status rather than
-            // crash.
-            other => {
+        // Mapper from the factory — same field translation regardless
+        // of forge kind in v1; per-provider mappers diverge as quirks
+        // surface (GitLab scoped labels, Forgejo extensions, etc.).
+        let mapper = mapper_for_kind(engagement.forge.kind);
+
+        // Client construction is still GitHub-only at the network
+        // layer (GitlabForgeClient / ForgejoForgeClient haven't been
+        // ported into flynt-forge yet). Surface a clean error until
+        // they land — better than a crash, gives the operator a
+        // signal to fix.
+        let client = match build_client(&engagement) {
+            Ok(c) => c,
+            Err(e) => {
                 return Ok(SyncStatus::PushFailed {
                     issue_number: existing_map.as_ref().map(|m| m.forge_issue_number),
-                    error: format!("no mapper for {other:?} yet"),
+                    error: e.to_string(),
                 });
             }
         };
