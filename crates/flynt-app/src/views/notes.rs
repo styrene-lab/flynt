@@ -1225,10 +1225,19 @@ pub fn NotesView() -> Element {
 
     // Phase 1: synchronous document read — no spawn_blocking, no async overhead.
     //
-    // Tuple holds (path, title, body, frontmatter). Frontmatter is included so
-    // the metadata strip can render without a second sqlite read; the indexer
-    // already parsed it on save.
-    let mut doc_data: Signal<Option<(std::path::PathBuf, String, String, flynt_core::models::Frontmatter)>> = use_signal(|| None);
+    // Tuple holds (id, path, title, body, frontmatter). Carrying the id
+    // alongside the rest is what the sync effect below uses to detect
+    // "is this still the doc we just asked for?" — without it, a stale
+    // doc_data value (from a previous tab) could be propagated to the
+    // editor when the sync effect fires before doc_data has refreshed
+    // for the newly active tab.
+    let mut doc_data: Signal<Option<(
+        flynt_core::models::DocumentId,
+        std::path::PathBuf,
+        String,
+        String,
+        flynt_core::models::Frontmatter,
+    )>> = use_signal(|| None);
     use_effect(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
@@ -1240,6 +1249,7 @@ pub fn NotesView() -> Element {
         let project = ctx_res.project();
         if let Ok(Some(doc)) = project.store.get_document(&doc_id) {
             *doc_data.write() = Some((
+                doc.id.clone(),
                 doc.path.clone(),
                 doc.title.clone(),
                 doc.content.clone(),
@@ -1348,21 +1358,34 @@ pub fn NotesView() -> Element {
     // doesn't subscribe, so if the init effect's scheduler tick ran
     // before edit_body was written, CM6 inited with an empty doc and
     // stayed blank until the operator toggled Source → Live.
+    //
+    // The critical correctness check is the `doc_id == active_id`
+    // comparison below: when a tab switch happens, this effect can
+    // race against doc_data's refresh. Without the id-equality gate,
+    // we'd write the OLD doc's body into cm6_load_source under the
+    // NEW doc's id, then `synced_doc_id` would silently latch the new
+    // id (blocking any correction when doc_data finally catches up).
+    // Symptom: opening a second tab showed the first tab's body
+    // under the second tab's title.
     let mut synced_doc_id: Signal<Option<flynt_core::models::DocumentId>> = use_signal(|| None);
     let mut cm6_load_source: Signal<Option<(flynt_core::models::DocumentId, String)>> =
         use_signal(|| None);
     use_effect(move || {
         let current_id = tab_state.read().active_id().cloned();
-        if current_id == *synced_doc_id.peek() { return; }
-        // Try phase 1 data first (immediate), fall back to rendered cache
-        if let Some((_, _, body, _)) = &*doc_data.read() {
-            *synced_doc_id.write() = current_id.clone();
-            *edit_body.write() = body.clone();
-            *save_state.write() = SaveState::Clean;
-            if let Some(id) = current_id {
-                *cm6_load_source.write() = Some((id, body.clone()));
-            }
-        }
+        let Some(active_id) = current_id else { return };
+        if Some(&active_id) == synced_doc_id.peek().as_ref() { return; }
+        // Read doc_data and confirm it's for THIS tab — not a stale
+        // value from the previous tab's read. If the ids don't match,
+        // doc_data hasn't refreshed yet; bail and wait for the next
+        // re-fire (the effect subscribes to doc_data, so it will).
+        let body = match &*doc_data.read() {
+            Some((doc_id, _, _, body, _)) if doc_id == &active_id => body.clone(),
+            _ => return,
+        };
+        *synced_doc_id.write() = Some(active_id.clone());
+        *edit_body.write() = body.clone();
+        *save_state.write() = SaveState::Clean;
+        *cm6_load_source.write() = Some((active_id, body));
     });
 
     let has_active = tab_state.read().active_id().is_some();
@@ -1488,7 +1511,7 @@ pub fn NotesView() -> Element {
 
     // Gate on doc_data (synchronous, instant) not rendered (async, slow).
     // The editor gets raw content immediately; HTML preview swaps in when ready.
-    let Some((rel_path, title, body, frontmatter)) = doc_data.read().clone() else {
+    let Some((_doc_id, rel_path, title, body, frontmatter)) = doc_data.read().clone() else {
         return rsx! {
             crate::components::TabBar {}
             if has_active {
