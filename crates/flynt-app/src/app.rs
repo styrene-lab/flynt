@@ -11,8 +11,20 @@ use std::path::PathBuf;
 
 #[component]
 pub fn App() -> Element {
-    let initial_runtime = bootstrap_from_env();
-    let runtime = use_signal(|| initial_runtime.clone());
+    // bootstrap_from_env opens the project on disk + spawns a watcher +
+    // initializes daemons + push pipeline. It must run ONCE per app
+    // lifetime, not per render. The previous shape called it
+    // unconditionally outside use_signal — so every App re-render (and
+    // there are many: every set_runtime, every signal write that
+    // cascades) re-opened /Documents/Flynt (the env-var default),
+    // discarded the result, and leaked the spawned watcher / pipeline.
+    // Symptoms: stray "Project opened at /Documents/Flynt" log lines
+    // appearing seconds after a project switch.
+    //
+    // Moving the call inside the use_signal init closure binds it to
+    // the component's mount lifecycle — runs once, persists across
+    // re-renders.
+    let runtime = use_signal(bootstrap_from_env);
     let ctx = AppContext { runtime };
     use_context_provider(|| ctx.clone());
 
