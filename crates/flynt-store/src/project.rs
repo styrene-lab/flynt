@@ -316,6 +316,23 @@ impl Project {
     /// kept as-is (raw `+++` block). For files without existing
     /// frontmatter, the content is written as-is.
     pub fn save_document_content(&self, rel_path: &Path, content: &str) -> Result<()> {
+        self.save_document_content_inner(rel_path, content, true)
+    }
+
+    /// Same as [`save_document_content`] but does NOT fire the save hook.
+    /// Use this for writes that originate from a remote source (forge
+    /// pull, etc.) — without it, a pulled change would immediately
+    /// re-trigger the push pipeline and create an infinite sync loop.
+    pub fn save_document_content_silent(&self, rel_path: &Path, content: &str) -> Result<()> {
+        self.save_document_content_inner(rel_path, content, false)
+    }
+
+    fn save_document_content_inner(
+        &self,
+        rel_path: &Path,
+        content: &str,
+        notify: bool,
+    ) -> Result<()> {
         let abs_path = self.root.join(rel_path);
         if let Some(parent) = abs_path.parent() {
             fs::create_dir_all(parent)?;
@@ -334,7 +351,9 @@ impl Project {
         };
         fs::write(&abs_path, &to_write)?;
         self.index_file(&abs_path)?;
-        self.notify_task_saved(rel_path);
+        if notify {
+            self.notify_task_saved(rel_path);
+        }
         Ok(())
     }
 
@@ -431,6 +450,29 @@ impl Project {
         key: &str,
         value: toml_edit::Value,
     ) -> Result<()> {
+        self.set_data_field_inner(rel_path, key, value, true)
+    }
+
+    /// Same as [`set_data_field`] but does NOT fire the save hook.
+    /// Use this for writes that originate from a remote source (forge
+    /// pull, etc.) — without it, a pulled field change would
+    /// immediately re-trigger the push pipeline.
+    pub fn set_data_field_silent(
+        &self,
+        rel_path: &Path,
+        key: &str,
+        value: toml_edit::Value,
+    ) -> Result<()> {
+        self.set_data_field_inner(rel_path, key, value, false)
+    }
+
+    fn set_data_field_inner(
+        &self,
+        rel_path: &Path,
+        key: &str,
+        value: toml_edit::Value,
+        notify: bool,
+    ) -> Result<()> {
         if !self.config.indexing.should_write_frontmatter(rel_path) {
             anyhow::bail!(
                 "Cannot edit data field on discoverable file {:?} — configure an indexing scope to manage this path",
@@ -480,9 +522,11 @@ impl Project {
         fs::write(&abs_path, &new_raw)
             .with_context(|| format!("write {}", abs_path.display()))?;
         self.index_file(&abs_path)?;
-        // Fan out to the save hook (push debouncer when installed).
-        // No-op when no hook is registered (tests, headless agents).
-        self.notify_task_saved(rel_path);
+        if notify {
+            // Fan out to the save hook (push debouncer when installed).
+            // No-op when no hook is registered (tests, headless agents).
+            self.notify_task_saved(rel_path);
+        }
         Ok(())
     }
 
@@ -826,6 +870,41 @@ impl Project {
     /// project root, no inner-project routing needed.
     pub fn persist_task(&self, task: &Task) -> Result<()> {
         self.save_any_task(task).map(|_| ())
+    }
+
+    /// Delete a task: remove the sqlite row, delete the on-disk `.md`
+    /// file if known, and fan out to the save hook so the push pipeline
+    /// can drop debouncer entries, status, and sync mappings.
+    ///
+    /// Returns true if the task existed and was removed. The hook fires
+    /// only on the existed-and-deleted path — a no-op delete (task
+    /// already gone) doesn't trigger sync cleanup since there's nothing
+    /// to clean.
+    pub fn delete_task(&self, id: &TaskId) -> Result<bool> {
+        // Need to look up the file path before deleting the sqlite row,
+        // since the path is stored in task_files alongside the task.
+        let existed = self.store.get_task(id)?.is_some();
+        if !existed {
+            return Ok(false);
+        }
+        let path = self.store.task_file_path(id)?;
+        self.store.delete_task(id)?;
+        if let Some(rel) = path {
+            let abs = self.root.join(rel.as_str());
+            // Best-effort: a missing file is fine (operator may have
+            // already deleted it manually); a permissions error gets
+            // logged but doesn't fail the delete since the DB row is
+            // already gone.
+            if let Err(e) = std::fs::remove_file(&abs) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!(error = %e, path = %abs.display(), "delete_task: removing file");
+                }
+            }
+        }
+        if let Some(hook) = self.save_hook.get() {
+            hook.on_task_deleted(id.0);
+        }
+        Ok(true)
     }
 
     /// Persist a task: write `.md` file to disk + sqlite + remember the
@@ -1809,18 +1888,30 @@ Original body content.
     // ── save hook ────────────────────────────────────────────────────
 
     /// Recording hook for tests — pushes every notified id into a Vec.
-    struct RecordingHook(std::sync::Mutex<Vec<uuid::Uuid>>);
+    struct RecordingHook {
+        saved: std::sync::Mutex<Vec<uuid::Uuid>>,
+        deleted: std::sync::Mutex<Vec<uuid::Uuid>>,
+    }
     impl crate::save_hook::SaveHook for RecordingHook {
         fn on_task_saved(&self, task_id: uuid::Uuid) {
-            self.0.lock().unwrap().push(task_id);
+            self.saved.lock().unwrap().push(task_id);
+        }
+        fn on_task_deleted(&self, task_id: uuid::Uuid) {
+            self.deleted.lock().unwrap().push(task_id);
         }
     }
     impl RecordingHook {
         fn new() -> std::sync::Arc<Self> {
-            std::sync::Arc::new(Self(std::sync::Mutex::new(Vec::new())))
+            std::sync::Arc::new(Self {
+                saved: std::sync::Mutex::new(Vec::new()),
+                deleted: std::sync::Mutex::new(Vec::new()),
+            })
         }
         fn fired(&self) -> Vec<uuid::Uuid> {
-            self.0.lock().unwrap().clone()
+            self.saved.lock().unwrap().clone()
+        }
+        fn deleted(&self) -> Vec<uuid::Uuid> {
+            self.deleted.lock().unwrap().clone()
         }
     }
 
@@ -1887,6 +1978,103 @@ Original body content.
 
         assert_eq!(hook1.fired().len(), 1, "first hook still fires");
         assert!(hook2.fired().is_empty(), "second hook never installed");
+    }
+
+    #[test]
+    fn set_data_field_silent_does_not_fire_save_hook() {
+        // The pull direction (future: forge → local) needs to write
+        // without re-triggering push. Without a silent variant, a
+        // pulled field change would immediately fan out to the push
+        // pipeline and create an infinite sync loop.
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let path = write_task_file(&project, "Tasks/x/t.md");
+        project.set_data_field_silent(&path, "status", toml_edit::Value::from("done")).unwrap();
+
+        assert!(hook.fired().is_empty(), "silent variant must not fire");
+        // But the write actually happened.
+        let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(raw.contains("status = \"done\""), "write still happened: {raw}");
+    }
+
+    #[test]
+    fn save_document_content_silent_does_not_fire_save_hook() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let path = write_task_file(&project, "Tasks/x/t.md");
+        project.save_document_content_silent(&path, "Pulled body from upstream").unwrap();
+
+        assert!(hook.fired().is_empty(), "silent variant must not fire");
+        let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(raw.contains("Pulled body from upstream"), "body written: {raw}");
+    }
+
+    #[test]
+    fn delete_task_fires_hook_and_removes_file() {
+        use flynt_models::task::{BoardId, Priority, Task, TaskId, TaskStatus};
+
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let board_id = BoardId(uuid::Uuid::new_v4());
+        let board = flynt_core::models::Board::minimalist("Default");
+        let board = flynt_core::models::Board { id: board_id.clone(), ..board };
+        project.store.save_board(&board).unwrap();
+
+        let task_id = TaskId(uuid::Uuid::new_v4());
+        let task = Task {
+            id: task_id.clone(),
+            board_id,
+            column: "Active".into(),
+            title: "Delete me".into(),
+            description: "Body".into(),
+            priority: Priority::Medium,
+            status: TaskStatus::Todo,
+            tags: vec![],
+            document_refs: vec![],
+            external_refs: vec![],
+            due_date: None,
+            position: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            decay: flynt_models::task::DecayRate::Natural,
+            last_touched_at: None,
+            design_node_id: None,
+            execution: None,
+            openspec_change: None,
+            engagement_id: None,
+        };
+        let written_path = project.save_any_task(&task).unwrap();
+        let abs = project.root.join(&written_path);
+        assert!(abs.exists(), "task file written");
+
+        let removed = project.delete_task(&task_id).unwrap();
+        assert!(removed, "task existed and was removed");
+        assert!(!abs.exists(), "task file gone");
+        assert_eq!(hook.deleted(), vec![task_id.0], "on_task_deleted fired once");
+        assert!(project.store.get_task(&task_id).unwrap().is_none(),
+                "sqlite row gone");
+    }
+
+    #[test]
+    fn delete_task_missing_id_returns_false_and_no_hook() {
+        let tmp = TempDir::new().unwrap();
+        let project = Project::open(tmp.path()).unwrap();
+        let hook = RecordingHook::new();
+        project.install_save_hook(hook.clone());
+
+        let bogus = flynt_models::task::TaskId(uuid::Uuid::new_v4());
+        let removed = project.delete_task(&bogus).unwrap();
+        assert!(!removed, "no-op delete returns false");
+        assert!(hook.deleted().is_empty(), "no hook fire for no-op delete");
     }
 
     #[test]

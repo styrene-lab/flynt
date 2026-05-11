@@ -39,6 +39,6 @@ pub use clients::GitHubForgeClient;
 pub use mapping::{
     mapper_for_kind, ForgejoMapper, GitHubMapper, GitlabMapper, MappingConfig, TaskFieldMapper,
 };
-pub use push::{push_task, PushDebouncer, PushInput, SyncStatus};
+pub use push::{projected_local_hash, push_task, PushDebouncer, PushInput, SyncStatus};
 pub use store::{IssueMap, SyncStore};
 pub use sync::{SyncEngine, SyncOp, content_hash, issue_hash};

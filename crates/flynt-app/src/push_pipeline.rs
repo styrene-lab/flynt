@@ -21,16 +21,15 @@
 //! is acceptable: the desktop is operator-trusted, same as the agent.
 
 use anyhow::{Context, Result};
-use flynt_core::models::Frontmatter;
 use flynt_core::store::ProjectStore;
 use flynt_forge::{
-    mapping::{self, mapper_for_kind, MappingConfig, TaskFieldMapper},
-    push::{push_task, PushDebouncer, PushInput, SyncStatus},
+    mapping::{self, mapper_for_kind, MappingConfig},
+    push::{projected_local_hash, push_task, PushDebouncer, PushInput, SyncStatus},
     store::SyncStore,
     GitHubForgeClient,
 };
-use flynt_models::engagement::{Engagement, EngagementId};
-use flynt_models::task::{Task, TaskId};
+use flynt_models::engagement::Engagement;
+use flynt_models::task::TaskId;
 use flynt_store::project::Project;
 use flynt_store::save_hook::SaveHook;
 use std::collections::HashMap;
@@ -73,6 +72,13 @@ pub struct PushPipeline {
     /// AppContext::set_runtime would leak the old drain task forever
     /// because it holds an Arc<Self> internally.
     shutdown_flag: Arc<AtomicBool>,
+    /// Cached projected hash from the last successful push per task.
+    /// Used to short-circuit `try_push` when the task hasn't changed
+    /// since we last sync'd — saves the GET-issue API call that would
+    /// otherwise fire for flynt-only edits (column moves, position
+    /// changes). In-memory only; on app restart we'll burn one
+    /// redundant GET per task on first edit and re-populate from there.
+    last_push_hashes: Arc<RwLock<HashMap<Uuid, String>>>,
 }
 
 impl PushPipeline {
@@ -103,6 +109,7 @@ impl PushPipeline {
             sync_store,
             mapping,
             shutdown_flag: Arc::new(AtomicBool::new(false)),
+            last_push_hashes: Arc::new(RwLock::new(HashMap::new())),
         }))
     }
 
@@ -244,6 +251,28 @@ impl PushPipeline {
         // surface (GitLab scoped labels, Forgejo extensions, etc.).
         let mapper = mapper_for_kind(engagement.forge.kind);
 
+        // Short-circuit: if there's an existing map AND we already
+        // pushed this exact task content earlier in this process,
+        // there's nothing to push. Skips the GET that update_with_
+        // conflict_check would otherwise issue — saves an API call
+        // per flynt-only edit (column move, etc.). Process-local
+        // cache; on restart we'll do one redundant GET and repopulate.
+        let projected = projected_local_hash(&task, &self.mapping, &*mapper);
+        if let Some(ref map) = existing_map {
+            let cached = self
+                .last_push_hashes
+                .read()
+                .ok()
+                .and_then(|m| m.get(&task_id).cloned());
+            if cached.as_deref() == Some(projected.as_str()) {
+                tracing::debug!(task = %task_id, "push: local unchanged since last sync, skipping GET");
+                return Ok(SyncStatus::Synced {
+                    issue_number: map.forge_issue_number,
+                    url: map.forge_url.clone(),
+                });
+            }
+        }
+
         // Client construction is still GitHub-only at the network
         // layer (GitlabForgeClient / ForgejoForgeClient haven't been
         // ported into flynt-forge yet). Surface a clean error until
@@ -269,7 +298,18 @@ impl PushPipeline {
             existing_map,
             auto_create: engagement.auto_create_issues,
         };
-        Ok(push_task(input).await)
+        let status = push_task(input).await;
+
+        // Cache the projected hash on success so the next try_push for
+        // this task can short-circuit if nothing changed. We only
+        // cache on Synced — PushFailed/Conflict leave the cache as-is
+        // so the next attempt does the full path.
+        if matches!(status, SyncStatus::Synced { .. }) {
+            if let Ok(mut m) = self.last_push_hashes.write() {
+                m.insert(task_id, projected);
+            }
+        }
+        Ok(status)
     }
 
     fn existing_map_for(&self, task_id: Uuid) -> Option<flynt_forge::IssueMap> {
@@ -299,6 +339,22 @@ impl SaveHook for PushPipeline {
         // tick. The pill subscriber re-renders on this broadcast.
         let issue_number = self.existing_map_for(task_id).map(|m| m.forge_issue_number);
         self.set_status(task_id, SyncStatus::PendingPush { issue_number });
+    }
+
+    fn on_task_deleted(&self, task_id: Uuid) {
+        // Drop all per-task state so the deleted task doesn't keep
+        // ticking through the drain loop. The IssueMap row is kept
+        // — the operator may have deleted the local task while
+        // intending to leave the upstream issue alone; cleaning up
+        // the link would require a deliberate "stop syncing" action
+        // (v2 surface). For now, we just stop pushing.
+        self.debouncer.forget(task_id);
+        if let Ok(mut m) = self.statuses.write() {
+            m.remove(&task_id);
+        }
+        if let Ok(mut h) = self.last_push_hashes.write() {
+            h.remove(&task_id);
+        }
     }
 }
 
@@ -373,6 +429,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn on_task_deleted_clears_per_task_state() {
+        // Verifies the cleanup contract: after on_task_deleted fires,
+        // the debouncer, status map, and hash cache no longer hold an
+        // entry for that task. Without this, a deleted task would keep
+        // ticking through the drain loop forever.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+
+        let task_id = Uuid::new_v4();
+        // Seed state: simulate an edit + cached hash.
+        pipeline.on_task_saved(task_id);
+        if let Ok(mut h) = pipeline.last_push_hashes.write() {
+            h.insert(task_id, "fake-hash".into());
+        }
+        assert_eq!(pipeline.debouncer.pending_count(), 1);
+        assert!(pipeline.last_push_hashes.read().unwrap().contains_key(&task_id));
+        assert!(!matches!(pipeline.status_for(task_id), SyncStatus::LocalOnly));
+
+        pipeline.on_task_deleted(task_id);
+
+        assert_eq!(pipeline.debouncer.pending_count(), 0, "debouncer cleared");
+        assert!(!pipeline.last_push_hashes.read().unwrap().contains_key(&task_id),
+                "hash cache cleared");
+        // Status reverts to LocalOnly because the map entry is gone.
+        assert!(matches!(pipeline.status_for(task_id), SyncStatus::LocalOnly));
+    }
+
+    #[tokio::test]
     async fn shutdown_breaks_drain_loop_on_next_tick() {
         // The fix for the leak across set_runtime: shutdown() flips
         // the flag; the spawned drain loop checks on each tick and
@@ -400,9 +485,4 @@ mod tests {
         assert!(pipeline.shutdown_flag.load(Ordering::SeqCst));
     }
 
-    /// Use shorthand for the assertion below.
-    fn _unused_keep_imports() {
-        let _ = Frontmatter::default();
-        let _: Task;
-    }
 }

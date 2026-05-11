@@ -35,7 +35,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use flynt_models::task::Task;
+use flynt_models::task::{Task, TaskStatus};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -43,9 +43,44 @@ use styrene_forge::{ForgeClient, ForgeIssue};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::mapping::{MappingConfig, TaskFieldMapper};
+use crate::mapping::{MappingConfig, ProviderState, TaskFieldMapper};
 use crate::store::SyncStore;
 use crate::sync::{content_hash, IssueMap};
+
+/// Deterministic hash of "what we would push for this task right now."
+///
+/// Uses the mapper's `task_to_issue_create` projection so the inputs are
+/// exactly the title/body/labels we'd send upstream, plus the derived
+/// state. Callers cache this on successful push; if the next push tick
+/// computes the same hash, no API call is needed — the task hasn't
+/// changed in any forge-relevant way.
+///
+/// Does NOT include operator-managed labels that ride along on the
+/// issue — those come from upstream, not the task, and can't be
+/// projected locally. That's fine for the "did local change?" check;
+/// upstream divergence is still handled by the conflict path when an
+/// actual push happens.
+pub fn projected_local_hash(
+    task: &Task,
+    cfg: &MappingConfig,
+    mapper: &dyn TaskFieldMapper,
+) -> String {
+    let create = mapper.task_to_issue_create(task, cfg);
+    let state = match cfg.status_to_state.for_status(task_status_to_str(task.status)) {
+        ProviderState::Open => "open",
+        ProviderState::Closed => "closed",
+    };
+    content_hash(&create.title, &create.body, state, &create.labels)
+}
+
+fn task_status_to_str(s: TaskStatus) -> &'static str {
+    match s {
+        TaskStatus::Todo => "todo",
+        TaskStatus::InProgress => "in_progress",
+        TaskStatus::Done => "done",
+        TaskStatus::Archived => "archived",
+    }
+}
 
 /// Current sync state of one task. Surfaced via the metadata strip's
 /// SyncStatusPill. Two-direction: this enum is what the UI consumes;
@@ -323,8 +358,9 @@ impl PushDebouncer {
         ready
     }
 
-    /// Test-only: count of tasks currently in the queue.
-    #[cfg(test)]
+    /// Count of tasks currently in the queue. Useful for tests in
+    /// downstream crates that need to verify debouncer state without
+    /// timing on the actual debounce window.
     pub fn pending_count(&self) -> usize {
         self.inner.lock().unwrap().len()
     }
@@ -777,6 +813,58 @@ mod tests {
         let after = client.issues.lock().unwrap().get(&1).cloned().unwrap();
         assert_eq!(after.updated_at, before_updated,
                    "no update_issue call — upstream timestamp unchanged");
+    }
+
+    // ── projected_local_hash ─────────────────────────────────────────────
+
+    #[test]
+    fn projected_hash_is_deterministic_for_same_task() {
+        let task = make_task();
+        let mapper = GitHubMapper;
+        let cfg = MappingConfig::default();
+        let h1 = projected_local_hash(&task, &cfg, &mapper);
+        let h2 = projected_local_hash(&task, &cfg, &mapper);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn projected_hash_changes_when_title_changes() {
+        let mut task = make_task();
+        let mapper = GitHubMapper;
+        let cfg = MappingConfig::default();
+        let before = projected_local_hash(&task, &cfg, &mapper);
+        task.title = "Different".into();
+        let after = projected_local_hash(&task, &cfg, &mapper);
+        assert_ne!(before, after, "title change must change projected hash");
+    }
+
+    #[test]
+    fn projected_hash_changes_when_status_changes() {
+        // Status flips Open/Closed via status_to_state map. Different
+        // state string → different hash.
+        let mut task = make_task();
+        let mapper = GitHubMapper;
+        let cfg = MappingConfig::default();
+        task.status = TaskStatus::Todo;
+        let before = projected_local_hash(&task, &cfg, &mapper);
+        task.status = TaskStatus::Done;
+        let after = projected_local_hash(&task, &cfg, &mapper);
+        assert_ne!(before, after, "Todo→Done flips state open→closed");
+    }
+
+    #[test]
+    fn projected_hash_does_not_change_when_column_changes() {
+        // The whole point: flynt-only fields (column, position) don't
+        // affect the projection. Without this, every kanban drag would
+        // burn a GET-issue API call after the debouncer fires.
+        let mut task = make_task();
+        let mapper = GitHubMapper;
+        let cfg = MappingConfig::default();
+        let before = projected_local_hash(&task, &cfg, &mapper);
+        task.column = "Archive".into();
+        task.position = 42;
+        let after = projected_local_hash(&task, &cfg, &mapper);
+        assert_eq!(before, after, "column/position aren't pushed; hash must match");
     }
 
     // ── PushDebouncer ────────────────────────────────────────────────────

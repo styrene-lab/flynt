@@ -27,4 +27,11 @@ pub trait SaveHook: Send + Sync {
     /// A task file (`kind = "task"`) was just saved to disk + indexed.
     /// `task_id` is the task's UUID, matching the document id.
     fn on_task_saved(&self, task_id: Uuid);
+
+    /// A task was deleted. Implementors should drop any per-task state
+    /// they hold (debouncer entries, cached hashes, sync mappings).
+    ///
+    /// Default no-op so impls written against the original trait keep
+    /// compiling. Callers that care about delete will override.
+    fn on_task_deleted(&self, _task_id: Uuid) {}
 }
