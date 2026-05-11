@@ -139,6 +139,49 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "engagement_update",
+            "label": "Update Engagement",
+            "description": "Patch fields on an existing engagement. Only the fields you pass are touched; everything else stays as-is. Required: engagement_id. Common flips: auto_create_issues true/false.",
+            "parameters": {
+                "type": "object",
+                "required": ["engagement_id"],
+                "properties": {
+                    "engagement_id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string", "description": "Pass empty string to clear." },
+                    "status": { "type": "string", "description": "active | paused | completed | archived" },
+                    "auto_create_issues": {
+                        "type": "boolean",
+                        "description": "Toggle auto-push: when true, every linked task auto-creates an upstream issue on first save."
+                    },
+                    "forge": {
+                        "type": "object",
+                        "description": "Replace the forge endpoint. All four fields required when set.",
+                        "properties": {
+                            "id": { "type": "string" },
+                            "kind": { "type": "string", "enum": ["github", "forgejo", "gitlab"] },
+                            "base_url": { "type": "string" },
+                            "token_secret": { "type": "string" }
+                        }
+                    },
+                    "repos": {
+                        "type": "array",
+                        "description": "If passed, replaces the entire repo bindings list. Omit to leave bindings unchanged.",
+                        "items": {
+                            "type": "object",
+                            "required": ["forge_org", "forge_repo"],
+                            "properties": {
+                                "forge_org": { "type": "string" },
+                                "forge_repo": { "type": "string" },
+                                "sync_issues": { "type": "boolean", "default": true },
+                                "sync_prs": { "type": "boolean", "default": false }
+                            }
+                        }
+                    }
+                }
+            }
+        }),
+        json!({
             "name": "engagement_list",
             "label": "List Engagements",
             "description": "List all engagements with id, name, status, repo count.",
@@ -409,6 +452,74 @@ pub fn engagement_create(project: &Project, params: Value) -> ExtResult<Value> {
             if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) { b.sync_prs = v; }
             e.repos.push(b);
         }
+    }
+
+    project.store.save_engagement(&e)
+        .map_err(|err| ExtError::internal_error(err.to_string()))?;
+    Ok(serde_json::to_value(&e).unwrap_or(json!({})))
+}
+
+/// Patch an existing engagement. Only fields present in `params` are
+/// touched — everything else is preserved verbatim. Returns the updated
+/// engagement so the caller can confirm what landed.
+pub fn engagement_update(project: &Project, params: Value) -> ExtResult<Value> {
+    let eid = parse_eid(&params)?;
+    let mut e = load_engagement(project, &eid)?;
+
+    if let Some(v) = params.get("name").and_then(|v| v.as_str()) {
+        e.name = v.to_string();
+    }
+    if let Some(v) = params.get("description") {
+        e.description = match v {
+            // Pass null to clear; pass "" to set to empty Some(""). The
+            // explicit null path matches the agent's general convention
+            // for optional fields — JSON has no other way to express
+            // "unset this."
+            Value::Null => None,
+            Value::String(s) => Some(s.clone()),
+            _ => return Err(ExtError::invalid_params("description must be string or null")),
+        };
+    }
+    if let Some(v) = params.get("status").and_then(|v| v.as_str()) {
+        e.status = serde_json::from_value(json!(v))
+            .map_err(|err| ExtError::invalid_params(format!("status: {err}")))?;
+    }
+    if let Some(v) = params.get("auto_create_issues").and_then(|v| v.as_bool()) {
+        e.auto_create_issues = v;
+    }
+    if let Some(forge) = params.get("forge") {
+        let kind_str = forge.get("kind").and_then(|v| v.as_str())
+            .ok_or_else(|| ExtError::invalid_params("forge.kind is required when forge is set"))?;
+        let kind: ForgeKind = serde_json::from_value(json!(kind_str))
+            .map_err(|err| ExtError::invalid_params(format!("forge.kind: {err}")))?;
+        let base_url = forge.get("base_url").and_then(|v| v.as_str())
+            .ok_or_else(|| ExtError::invalid_params("forge.base_url is required when forge is set"))?
+            .to_string();
+        e.forge = ForgeEndpoint {
+            id: forge.get("id").and_then(|v| v.as_str()).unwrap_or(kind_str).to_string(),
+            kind,
+            base_url,
+            token_secret: forge.get("token_secret").and_then(|v| v.as_str()).map(String::from),
+        };
+    }
+    if let Some(arr) = params.get("repos").and_then(|v| v.as_array()) {
+        let mut new_repos = Vec::with_capacity(arr.len());
+        for r in arr {
+            let org = r.get("forge_org").and_then(|v| v.as_str())
+                .ok_or_else(|| ExtError::invalid_params("repos[].forge_org is required"))?;
+            let name = r.get("forge_repo").and_then(|v| v.as_str())
+                .ok_or_else(|| ExtError::invalid_params("repos[].forge_repo is required"))?;
+            if org.trim().is_empty() || name.trim().is_empty() {
+                return Err(ExtError::invalid_params(
+                    "repos[].forge_org and forge_repo must be non-empty"
+                ));
+            }
+            let mut b = RepoBinding::new(org, name);
+            if let Some(v) = r.get("sync_issues").and_then(|v| v.as_bool()) { b.sync_issues = v; }
+            if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) { b.sync_prs = v; }
+            new_repos.push(b);
+        }
+        e.repos = new_repos;
     }
 
     project.store.save_engagement(&e)
@@ -840,6 +951,83 @@ mod tests {
         let status = engagement_status(&project, json!({ "engagement_id": eid })).unwrap();
         assert_eq!(status["task_count"], 0);
         assert_eq!(status["repos"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn engagement_update_toggles_auto_create_issues() {
+        // The main reason this tool exists: let operators / agents
+        // flip auto_create_issues without re-creating the engagement.
+        let (_tmp, project) = fresh_project();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
+        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        // Default is false (local-first).
+        assert_eq!(created["auto_create_issues"], false);
+
+        let updated = engagement_update(&project, json!({
+            "engagement_id": eid.clone(),
+            "auto_create_issues": true
+        })).unwrap();
+        assert_eq!(updated["auto_create_issues"], true);
+
+        // Persisted: reload via status.
+        let status = engagement_status(&project, json!({ "engagement_id": eid })).unwrap();
+        assert_eq!(status["engagement"]["auto_create_issues"], true);
+    }
+
+    #[test]
+    fn engagement_update_preserves_unmentioned_fields() {
+        // Partial patch: only touch the fields the caller passed.
+        let (_tmp, project) = fresh_project();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
+        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        let original_repos = created["repos"].clone();
+
+        let updated = engagement_update(&project, json!({
+            "engagement_id": eid,
+            "name": "Renamed"
+        })).unwrap();
+        assert_eq!(updated["name"], "Renamed");
+        assert_eq!(updated["repos"], original_repos, "repos preserved when not in patch");
+        assert_eq!(updated["description"], "test", "description preserved");
+    }
+
+    #[test]
+    fn engagement_update_replaces_repos_when_passed() {
+        let (_tmp, project) = fresh_project();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
+        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+
+        let updated = engagement_update(&project, json!({
+            "engagement_id": eid,
+            "repos": [
+                { "forge_org": "newco", "forge_repo": "newrepo" }
+            ]
+        })).unwrap();
+        let repos = updated["repos"].as_array().unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0]["forge_org"], "newco");
+        assert_eq!(repos[0]["forge_repo"], "newrepo");
+    }
+
+    #[test]
+    fn engagement_update_clears_description_on_null() {
+        let (_tmp, project) = fresh_project();
+        let created = engagement_create(&project, engagement_create_params()).unwrap();
+        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        assert_eq!(created["description"], "test");
+
+        let updated = engagement_update(&project, json!({
+            "engagement_id": eid,
+            "description": null
+        })).unwrap();
+        assert!(updated["description"].is_null(), "null clears the field");
+    }
+
+    #[test]
+    fn engagement_update_missing_id_errors() {
+        let (_tmp, project) = fresh_project();
+        let err = engagement_update(&project, json!({})).unwrap_err();
+        let _ = format!("{err:?}");
     }
 
     #[test]

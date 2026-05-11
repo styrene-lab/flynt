@@ -26,7 +26,7 @@ use flynt_forge::{
     mapping::{self, mapper_for_kind, MappingConfig},
     push::{projected_local_hash, push_task, PushDebouncer, PushInput, SyncStatus},
     store::SyncStore,
-    GitHubForgeClient,
+    ForgejoForgeClient, GitHubForgeClient, GitlabForgeClient,
 };
 use flynt_models::engagement::Engagement;
 use flynt_models::task::TaskId;
@@ -312,6 +312,134 @@ impl PushPipeline {
         Ok(status)
     }
 
+    /// Conflict resolution: fetch upstream and overwrite the local
+    /// task with whatever the forge says. Updates `IssueMap.last_hash`
+    /// to the freshly-fetched upstream hash and clears the
+    /// pipeline-cached projected hash. After this the next save-hook
+    /// fire will project a fresh hash and only push if local changes
+    /// going forward.
+    ///
+    /// The local write uses [`Project::update_any_task`] which doesn't
+    /// fire the save hook — without that, the pulled state would
+    /// immediately turn around and try to re-push.
+    pub async fn resolve_pull_theirs(&self, task_id: Uuid) -> Result<()> {
+        let task = self
+            .project
+            .store
+            .get_task(&TaskId(task_id))?
+            .ok_or_else(|| anyhow::anyhow!("task {task_id} not found"))?;
+        let Some(engagement_id) = task.engagement_id.clone() else {
+            anyhow::bail!("task has no engagement; nothing to pull from");
+        };
+        let engagement = self
+            .project
+            .store
+            .get_engagement(&engagement_id)?
+            .ok_or_else(|| anyhow::anyhow!("engagement {engagement_id:?} not found"))?;
+        let map = self
+            .existing_map_for(task_id)
+            .ok_or_else(|| anyhow::anyhow!("no IssueMap for task — nothing to pull"))?;
+        let mapper = mapper_for_kind(engagement.forge.kind);
+        let client = build_client(&engagement).context("build forge client for pull")?;
+
+        let issue = client
+            .get_issue(&map.forge_org, &map.forge_repo, map.forge_issue_number)
+            .await
+            .context("get_issue")?;
+        let patch = mapper.issue_to_task_patch(&issue, &self.mapping);
+
+        // Apply the patch silently — update_any_task doesn't fire the
+        // save hook, so the pulled state won't immediately re-queue
+        // through the push pipeline.
+        self.project
+            .update_any_task(&TaskId(task_id), &patch)
+            .context("apply pull patch")?;
+
+        // Record the new last_hash so subsequent pushes can detect
+        // future divergence relative to "where we are now."
+        let new_hash = flynt_forge::issue_hash(&issue);
+        let mut updated = map.clone();
+        updated.last_synced = chrono::Utc::now();
+        updated.last_hash = Some(new_hash);
+        updated.forge_url = Some(issue.url.clone());
+        self.sync_store.upsert(&updated).context("sync_store.upsert")?;
+
+        // Clear the cached projected hash so the next save (or the
+        // next try_push) compares against fresh data.
+        if let Ok(mut h) = self.last_push_hashes.write() {
+            h.remove(&task_id);
+        }
+
+        // Surface the new Synced state immediately so the pill flips.
+        self.set_status(
+            task_id,
+            SyncStatus::Synced {
+                issue_number: map.forge_issue_number,
+                url: Some(issue.url),
+            },
+        );
+        Ok(())
+    }
+
+    /// Conflict resolution: align `IssueMap.last_hash` to whatever
+    /// upstream looks like NOW, then re-queue for a normal push. The
+    /// next push will see no conflict (hash matches stored), diff the
+    /// task against current upstream, and overwrite — effectively a
+    /// "we won, take our version" force.
+    ///
+    /// Doesn't touch the local task; preserves whatever's there as
+    /// the authoritative version.
+    pub async fn resolve_force_push(&self, task_id: Uuid) -> Result<()> {
+        let task = self
+            .project
+            .store
+            .get_task(&TaskId(task_id))?
+            .ok_or_else(|| anyhow::anyhow!("task {task_id} not found"))?;
+        let Some(engagement_id) = task.engagement_id.clone() else {
+            anyhow::bail!("task has no engagement; nothing to push to");
+        };
+        let engagement = self
+            .project
+            .store
+            .get_engagement(&engagement_id)?
+            .ok_or_else(|| anyhow::anyhow!("engagement {engagement_id:?} not found"))?;
+        let map = self
+            .existing_map_for(task_id)
+            .ok_or_else(|| anyhow::anyhow!("no IssueMap for task — nothing to push over"))?;
+        let client = build_client(&engagement).context("build forge client for force push")?;
+
+        // Realign last_hash to current upstream. After this the regular
+        // push path's conflict check passes (hash matches GET result),
+        // and the diff against current is whatever local says.
+        let current = client
+            .get_issue(&map.forge_org, &map.forge_repo, map.forge_issue_number)
+            .await
+            .context("get_issue")?;
+        let realigned = flynt_forge::issue_hash(&current);
+        let mut updated = map.clone();
+        updated.last_synced = chrono::Utc::now();
+        updated.last_hash = Some(realigned);
+        updated.forge_url = Some(current.url.clone());
+        self.sync_store.upsert(&updated).context("sync_store.upsert")?;
+
+        // Clear projection cache so the upcoming push doesn't
+        // short-circuit thinking local hasn't changed.
+        if let Ok(mut h) = self.last_push_hashes.write() {
+            h.remove(&task_id);
+        }
+
+        // Surface PendingPush + queue. The drain loop will pick it up
+        // on the next tick — same shape as a regular save.
+        self.debouncer.note_edit(task_id);
+        self.set_status(
+            task_id,
+            SyncStatus::PendingPush {
+                issue_number: Some(map.forge_issue_number),
+            },
+        );
+        Ok(())
+    }
+
     fn existing_map_for(&self, task_id: Uuid) -> Option<flynt_forge::IssueMap> {
         self.sync_store
             .list_by_local(&task_id)
@@ -360,23 +488,32 @@ impl SaveHook for PushPipeline {
 
 /// Build a ForgeClient for the engagement's forge endpoint.
 ///
-/// v1 reads tokens from environment variables (the secret name in
-/// `forge.token_secret` is used as the env var name; defaults to
-/// `GITHUB_TOKEN`). The token-trust model in CONTRIBUTING.md says
-/// the desktop client is trusted with the same tokens as the agent.
+/// Dispatches on `forge.kind`. Token resolution is uniform across
+/// providers: read the env var named by `forge.token_secret` (defaults
+/// to the provider's canonical name — `GITHUB_TOKEN`, `FORGEJO_TOKEN`,
+/// `GITLAB_TOKEN`). The token-trust model in CONTRIBUTING.md says the
+/// desktop client is trusted with the same tokens as the agent.
 fn build_client(eng: &Engagement) -> Result<Box<dyn ForgeClient>> {
+    let secret_name = eng
+        .forge
+        .token_secret
+        .clone()
+        .unwrap_or_else(|| default_secret_name(eng.forge.kind).to_string());
+    let resolver: Arc<dyn flynt_forge::TokenResolver> =
+        Arc::new(move || std::env::var(&secret_name).ok());
+
     match eng.forge.kind {
-        ForgeKind::GitHub => {
-            let secret_name = eng
-                .forge
-                .token_secret
-                .clone()
-                .unwrap_or_else(|| "GITHUB_TOKEN".to_string());
-            let resolver: Arc<dyn flynt_forge::TokenResolver> =
-                Arc::new(move || std::env::var(&secret_name).ok());
-            Ok(Box::new(GitHubForgeClient::new(eng.forge.clone(), resolver)))
-        }
-        other => anyhow::bail!("no client for {other:?} forge yet"),
+        ForgeKind::GitHub => Ok(Box::new(GitHubForgeClient::new(eng.forge.clone(), resolver))),
+        ForgeKind::Forgejo => Ok(Box::new(ForgejoForgeClient::new(eng.forge.clone(), resolver))),
+        ForgeKind::GitLab => Ok(Box::new(GitlabForgeClient::new(eng.forge.clone(), resolver))),
+    }
+}
+
+fn default_secret_name(kind: ForgeKind) -> &'static str {
+    match kind {
+        ForgeKind::GitHub => "GITHUB_TOKEN",
+        ForgeKind::Forgejo => "FORGEJO_TOKEN",
+        ForgeKind::GitLab => "GITLAB_TOKEN",
     }
 }
 
@@ -455,6 +592,26 @@ mod tests {
                 "hash cache cleared");
         // Status reverts to LocalOnly because the map entry is gone.
         assert!(matches!(pipeline.status_for(task_id), SyncStatus::LocalOnly));
+    }
+
+    #[tokio::test]
+    async fn resolve_pull_theirs_errors_when_task_missing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        // No task in the store — pull should surface a clean error
+        // rather than panic.
+        let err = pipeline.resolve_pull_theirs(Uuid::new_v4()).await.unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn resolve_force_push_errors_when_task_missing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = Arc::new(Project::open(tmp.path()).unwrap());
+        let pipeline = PushPipeline::new(project).unwrap();
+        let err = pipeline.resolve_force_push(Uuid::new_v4()).await.unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
     }
 
     #[tokio::test]

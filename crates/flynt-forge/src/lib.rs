@@ -35,7 +35,7 @@ pub use styrene_forge::{
 };
 
 pub use auth::{StaticToken, TokenResolver};
-pub use clients::GitHubForgeClient;
+pub use clients::{ForgejoForgeClient, GitHubForgeClient, GitlabForgeClient};
 pub use mapping::{
     mapper_for_kind, ForgejoMapper, GitHubMapper, GitlabMapper, MappingConfig, TaskFieldMapper,
 };

@@ -4,22 +4,22 @@
 //! Reads state from the PushPipeline held in AppContext. Re-renders
 //! when the pipeline broadcasts a status change for our task id.
 //!
-//! ## v1 scope
+//! ## Behavior
 //!
 //! - Renders the current state (LocalOnly / Synced / PendingPush /
 //!   Pushing / PushFailed / Conflict)
-//! - Click on a Synced or Conflict pill opens the upstream issue
-//!   URL in the system browser (the cheap Zed-handoff path; deep
-//!   conflict resolution is a v2 popover)
+//! - Click on a Synced pill opens the upstream issue URL in the
+//!   system browser (the cheap Zed-handoff path)
+//! - Click on a Conflict pill opens a popover with three actions:
+//!   Pull Theirs, Force Push, Open in Browser — see
+//!   [`PushPipeline::resolve_pull_theirs`] and
+//!   [`PushPipeline::resolve_force_push`] for the wiring.
 //! - PushFailed pill shows the error in its title attribute on hover
 //!
 //! ## What's not here yet
 //!
-//! - Pull-theirs / Force-push popover (v2 — needs the resolve actions
-//!   wired through PushPipeline)
-//! - Auto-create toggle for engagements without it (v2 — depends on
-//!   an engagement_update tool that doesn't exist yet)
-//! - "Open in Zed" deep-link (v2 — once we know which file to point at)
+//! - "Open in Zed" deep-link (would need the engagement to surface a
+//!   filesystem path for the issue's mirror file)
 
 use crate::bootstrap::AppContext;
 use dioxus::prelude::*;
@@ -70,11 +70,24 @@ pub fn SyncStatusPill(task_id: Uuid) -> Element {
     };
 
     let (class, label, title, click_url) = render_status(&status);
+    let is_conflict = matches!(status, SyncStatus::Conflict { .. });
+
+    // Popover open state. Only meaningful for Conflict; other states
+    // ignore it.
+    let mut popover_open = use_signal(|| false);
 
     rsx! {
-        if let Some(url) = click_url {
-            // Synced + Conflict states get a clickable pill that opens
-            // the upstream URL in the system browser.
+        if is_conflict {
+            ConflictPill {
+                task_id,
+                class: class.clone(),
+                label: label.clone(),
+                title: title.clone(),
+                url: click_url.clone(),
+                popover_open,
+            }
+        } else if let Some(url) = click_url {
+            // Synced state gets a click-through to upstream.
             //
             // Why not `<a target="_blank">`: wry webviews sandbox link
             // navigation; target="_blank" silently does nothing. The
@@ -100,6 +113,134 @@ pub fn SyncStatusPill(task_id: Uuid) -> Element {
                 class: "{class}",
                 title: "{title}",
                 "{label}"
+            }
+        }
+    }
+}
+
+/// The Conflict variant — pill plus a popover with resolution actions.
+///
+/// Split out from the main component so the popover state and the
+/// async resolve calls live in their own scope. Three actions:
+///
+/// - **Pull Theirs**: overwrite local with upstream. Useful when the
+///   local change was experimental and upstream has the canonical edit.
+/// - **Force Push**: realign last_hash to current upstream, then push
+///   local on top. Useful when local IS the canonical edit and
+///   upstream is the divergence.
+/// - **Open in Browser**: the fallback Zed-handoff path. Operator
+///   resolves manually using whatever git tooling they prefer, then
+///   re-edits locally to trigger a fresh push.
+#[component]
+fn ConflictPill(
+    task_id: Uuid,
+    class: String,
+    label: String,
+    title: String,
+    url: Option<String>,
+    popover_open: Signal<bool>,
+) -> Element {
+    let ctx = use_context::<AppContext>();
+    let mut popover_open = popover_open;
+
+    // Per-action busy flag — disables the buttons while a resolve is
+    // in flight so the operator can't fire two pulls in parallel.
+    let mut busy = use_signal(|| false);
+    let mut error_msg = use_signal::<Option<String>>(|| None);
+
+    let url_for_browser = url.clone();
+
+    rsx! {
+        div { class: "sync-conflict-wrapper",
+            button {
+                class: "{class}",
+                title: "{title}",
+                onclick: move |_| {
+                    let next = !*popover_open.read();
+                    popover_open.set(next);
+                },
+                "{label}"
+            }
+            if *popover_open.read() {
+                div { class: "sync-conflict-popover",
+                    div { class: "sync-conflict-popover-title", "Resolve upstream conflict" }
+                    div { class: "sync-conflict-popover-body",
+                        "Upstream changed since the last sync. Pick how to reconcile."
+                    }
+                    if let Some(msg) = error_msg.read().as_ref() {
+                        div { class: "sync-conflict-popover-error", "{msg}" }
+                    }
+                    div { class: "sync-conflict-popover-actions",
+                        button {
+                            class: "btn btn-secondary",
+                            disabled: *busy.read(),
+                            title: "Discard local diff, take upstream as truth.",
+                            onclick: move |_| {
+                                let pipeline = ctx.push_pipeline();
+                                busy.set(true);
+                                error_msg.set(None);
+                                spawn(async move {
+                                    let Some(p) = pipeline else {
+                                        error_msg.set(Some("no push pipeline".into()));
+                                        busy.set(false);
+                                        return;
+                                    };
+                                    match p.resolve_pull_theirs(task_id).await {
+                                        Ok(()) => {
+                                            popover_open.set(false);
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(error = %e, task = %task_id, "pull-theirs failed");
+                                            error_msg.set(Some(format!("Pull failed: {e}")));
+                                        }
+                                    }
+                                    busy.set(false);
+                                });
+                            },
+                            "Pull Theirs"
+                        }
+                        button {
+                            class: "btn btn-secondary",
+                            disabled: *busy.read(),
+                            title: "Realign sync state and re-push your local version.",
+                            onclick: move |_| {
+                                let pipeline = ctx.push_pipeline();
+                                busy.set(true);
+                                error_msg.set(None);
+                                spawn(async move {
+                                    let Some(p) = pipeline else {
+                                        error_msg.set(Some("no push pipeline".into()));
+                                        busy.set(false);
+                                        return;
+                                    };
+                                    match p.resolve_force_push(task_id).await {
+                                        Ok(()) => {
+                                            popover_open.set(false);
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(error = %e, task = %task_id, "force-push failed");
+                                            error_msg.set(Some(format!("Force push failed: {e}")));
+                                        }
+                                    }
+                                    busy.set(false);
+                                });
+                            },
+                            "Force Push"
+                        }
+                        if let Some(u) = url_for_browser.clone() {
+                            button {
+                                class: "btn btn-tertiary",
+                                disabled: *busy.read(),
+                                onclick: move |_| {
+                                    if let Err(e) = open::that(&u) {
+                                        tracing::warn!(error = %e, url = %u, "failed to open issue URL");
+                                    }
+                                },
+                                "Open in Browser"
+                            }
+                        }
+                    }
+                }
             }
         }
     }

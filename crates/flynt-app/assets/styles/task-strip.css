@@ -126,6 +126,56 @@
 .pill-sync-failed   { color: #f87171; border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.12); font-weight: 500; }
 .pill-sync-conflict { color: #f87171; border-color: rgba(248,113,113,0.6); background: rgba(248,113,113,0.18); font-weight: 600; }
 
+/* ── Sync-conflict resolution popover ────────────────────────────────── */
+
+.sync-conflict-wrapper {
+  position:          relative;
+  display:           inline-block;
+}
+
+.sync-conflict-popover {
+  position:          absolute;
+  top:               100%;
+  right:             0;
+  margin-top:        4px;
+  z-index:           30;
+  min-width:         280px;
+  background:        var(--background, #0b0f16);
+  border:            1px solid var(--prose-pre-border, #1e293b);
+  border-radius:     6px;
+  box-shadow:        0 4px 12px rgba(0, 0, 0, 0.4);
+  padding:           10px 12px;
+  font-size:         12px;
+  color:             var(--foreground, #e5e7eb);
+}
+
+.sync-conflict-popover-title {
+  font-weight:       600;
+  margin-bottom:     4px;
+}
+
+.sync-conflict-popover-body {
+  color:             var(--muted-foreground, #94a3b8);
+  margin-bottom:     8px;
+}
+
+.sync-conflict-popover-error {
+  color:             #f87171;
+  margin-bottom:     8px;
+  font-size:         11px;
+}
+
+.sync-conflict-popover-actions {
+  display:           flex;
+  gap:               6px;
+  flex-wrap:         wrap;
+}
+
+.sync-conflict-popover-actions button:disabled {
+  opacity:           0.5;
+  cursor:            not-allowed;
+}
+
 /* ── Picker popover ──────────────────────────────────────────────────── */
 
 .field-picker-popover {

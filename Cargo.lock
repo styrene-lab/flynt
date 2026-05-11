@@ -2327,6 +2327,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "flynt-models",
+ "percent-encoding",
  "reqwest",
  "rusqlite",
  "serde",

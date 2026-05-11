@@ -1310,6 +1310,7 @@ impl Extension for FlyntExtension {
             "bootstrap_secrets" => forge_tools::bootstrap_secrets(&self.secrets, params),
 
             "execute_engagement_create" => forge_tools::engagement_create(&self.project, params),
+            "execute_engagement_update" => forge_tools::engagement_update(&self.project, params),
             "execute_engagement_list"   => forge_tools::engagement_list(&self.project, params),
             "execute_engagement_status" => forge_tools::engagement_status(&self.project, params),
             "execute_forge_status"      => forge_tools::forge_status(&self.project, &self.secrets, params),
@@ -1784,7 +1785,7 @@ mod tests {
         assert!(names.contains(&"create_board".to_string()));
         // Phase 3 — scribe-absorbed forge / engagement tools.
         for n in [
-            "engagement_create", "engagement_list", "engagement_status",
+            "engagement_create", "engagement_update", "engagement_list", "engagement_status",
             "forge_status", "forge_list_issues", "forge_sync_issues",
             "forge_create_issue", "log_work", "timeline",
         ] {
