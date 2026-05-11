@@ -1338,51 +1338,52 @@ pub fn NotesView() -> Element {
         }
     });
 
-    // Sync edit_body from phase 1 (instant) — don't wait for HTML render
+    // Sync edit_body from phase 1 (instant) — don't wait for HTML render.
+    //
+    // `cm6_load_source` carries (doc_id, body) atomically — it changes
+    // ONLY on a fresh doc load, never on keystrokes. The CM6 init effect
+    // subscribes to this signal so it fires exactly once per doc load
+    // with the correct content in hand. The earlier shape gated on
+    // `synced_doc_id` alone and read `edit_body.peek()` — but `.peek()`
+    // doesn't subscribe, so if the init effect's scheduler tick ran
+    // before edit_body was written, CM6 inited with an empty doc and
+    // stayed blank until the operator toggled Source → Live.
     let mut synced_doc_id: Signal<Option<flynt_core::models::DocumentId>> = use_signal(|| None);
+    let mut cm6_load_source: Signal<Option<(flynt_core::models::DocumentId, String)>> =
+        use_signal(|| None);
     use_effect(move || {
         let current_id = tab_state.read().active_id().cloned();
         if current_id == *synced_doc_id.peek() { return; }
         // Try phase 1 data first (immediate), fall back to rendered cache
         if let Some((_, _, body, _)) = &*doc_data.read() {
-            *synced_doc_id.write() = current_id;
+            *synced_doc_id.write() = current_id.clone();
             *edit_body.write() = body.clone();
             *save_state.write() = SaveState::Clean;
+            if let Some(id) = current_id {
+                *cm6_load_source.write() = Some((id, body.clone()));
+            }
         }
     });
 
     let has_active = tab_state.read().active_id().is_some();
 
-    // Initialize CM6 when: new document loaded OR mode switched back to Live
+    // Initialize CM6 when: new document loaded OR mode switched back to Live.
+    //
+    // Subscribes to `cm6_load_source` so the effect runs with the exact
+    // body that came from the doc load — no race against edit_body.
+    // Also subscribes to `mode` so toggling Source → Live re-fires the
+    // init (calling cm6_init_js's swap path with the latest content).
     let is_drawing_mode = use_context::<Signal<bool>>();
     use_effect(move || {
-        // Gate on synced_doc_id (not on a tab-change ver). synced_doc_id
-        // is set AFTER doc_data → edit_body have populated, so by the
-        // time this fires, edit_body has the body for the new tab.
-        // Previously this gated on a manual ver counter that bumped on
-        // tab change, racing the doc_data effect — empty edit_body
-        // caused init to bail and CM6 stayed blank.
-        let synced = synced_doc_id.read().clone();
-        if synced.is_none() { return; }
+        let source = cm6_load_source.read().clone();
+        let Some((doc_id, body)) = source else { return };
         if *is_drawing_mode.read() { return; }
         if !matches!(&*mode.read(), EditMode::Live) { return; }
-        tracing::info!("CM6 init effect triggered for synced_doc_id={:?}", synced);
-        // edit_body is now the post-sync source of truth; rendered is a
-        // fallback for documents loaded via the slow path.
-        let content = {
-            let eb = edit_body.peek().clone();
-            if !eb.is_empty() {
-                eb
-            } else if let Some(Some((_, _, body, _, _))) = &*rendered.peek() {
-                body.clone()
-            } else {
-                // synced is Some but edit_body is empty AND rendered
-                // empty — genuinely empty document. Init CM6 with empty
-                // string so the editor is ready for input.
-                String::new()
-            }
-        };
-        document::eval(&cm6_init_js(&content));
+        tracing::info!(
+            "CM6 init effect triggered for doc_id={:?} body_len={}",
+            doc_id, body.len()
+        );
+        document::eval(&cm6_init_js(&body));
     });
 
     // Persistent message bridge — one eval that polls a global queue.
