@@ -4756,8 +4756,8 @@ dependencies = [
 
 [[package]]
 name = "omegon-extension"
-version = "0.17.0-rc.1"
-source = "git+https://github.com/styrene-lab/omegon.git?rev=295d790e#295d790e92d2b6723735b90879987319deaa382a"
+version = "0.20.0"
+source = "git+https://github.com/styrene-lab/omegon.git?tag=v0.20.0#9d4c3456124dc7a42c6119cf22b9127bc1b3d70a"
 dependencies = [
  "anyhow",
  "async-trait",

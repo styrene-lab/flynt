@@ -22,7 +22,7 @@ chrono      = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }
 tracing-subscriber = { workspace = true }
-omegon-extension = { git = "https://github.com/styrene-lab/omegon.git", rev = "295d790e" }
+omegon-extension = { git = "https://github.com/styrene-lab/omegon.git", tag = "v0.20.0" }
 async-trait = "0.1"
 dirs        = "5"
 clap = { version = "4", features = ["derive", "env"] }
