@@ -1,6 +1,7 @@
 use flynt_core::store::ProjectStore;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
+use std::time::Duration;
 use crate::{bootstrap::AppContext, state::{Route, TabState}};
 
 #[derive(Clone, PartialEq)]
@@ -269,18 +270,35 @@ fn cm6_init_js(content: &str) -> String {
     if (!container) {{ setTimeout(_initCM, 16); return; }}
 
     console.time('cm6-total');
-    // Fast path: if CM6 already exists, just swap the document content.
+    // Fast path: if CM6 already exists AND its DOM is still attached
+    // to the current container, swap the document content in place.
+    //
+    // Why the attachment check: when the operator toggles Source then
+    // back to Live, Dioxus unmounts the editor div and mounts a fresh
+    // one (same id, different DOM node). `window._flyntCM` still
+    // references the OLD editor whose root DOM is now detached.
+    // Dispatching content to that editor draws nothing — the new div
+    // stays blank until a re-init. So if attachment is broken, fall
+    // through to the full init path which rebuilds the editor under
+    // the fresh container.
     if (window._flyntCM) {{
-        console.time('cm6-swap');
-        const newContent = {escaped};
         const cm = window._flyntCM;
-        cm.dispatch({{
-            changes: {{ from: 0, to: cm.state.doc.length, insert: newContent }}
-        }});
-        cm.scrollDOM.scrollTop = 0;
-        console.timeEnd('cm6-swap');
-        console.timeEnd('cm6-total');
-        return;
+        const stillAttached = cm.dom && container.contains(cm.dom);
+        if (stillAttached) {{
+            console.time('cm6-swap');
+            const newContent = {escaped};
+            cm.dispatch({{
+                changes: {{ from: 0, to: cm.state.doc.length, insert: newContent }}
+            }});
+            cm.scrollDOM.scrollTop = 0;
+            console.timeEnd('cm6-swap');
+            console.timeEnd('cm6-total');
+            return;
+        }} else {{
+            try {{ cm.destroy(); }} catch(e) {{}}
+            window._flyntCM = null;
+            // fall through to full init
+        }}
     }}
     console.time('cm6-init');
     container.innerHTML = '';
@@ -1241,14 +1259,22 @@ pub fn NotesView() -> Element {
         };
         // Synchronous SQLite read — <1ms for any document
         let project = ctx_res.project();
-        if let Ok(Some(doc)) = project.store.get_document(&doc_id) {
-            *doc_data.write() = Some((
-                doc.id.clone(),
-                doc.path.clone(),
-                doc.title.clone(),
-                doc.content.clone(),
-                doc.frontmatter.clone(),
-            ));
+        match project.store.get_document(&doc_id) {
+            Ok(Some(doc)) => {
+                *doc_data.write() = Some((
+                    doc.id.clone(),
+                    doc.path.clone(),
+                    doc.title.clone(),
+                    doc.content.clone(),
+                    doc.frontmatter.clone(),
+                ));
+            }
+            Ok(None) => {
+                tracing::warn!("doc_data_effect: doc {:?} not found in store", doc_id);
+            }
+            Err(e) => {
+                tracing::warn!("doc_data_effect: store error for {:?}: {e}", doc_id);
+            }
         }
     });
 
@@ -1342,41 +1368,69 @@ pub fn NotesView() -> Element {
         }
     });
 
-    // Sync edit_body from phase 1 (instant) — don't wait for HTML render.
+    // The signal that drives CM6 loading. Its (id, body) value is the
+    // "last content we asked CM6 to display." The CM6 init effect
+    // subscribes to it; whenever it changes, CM6 swaps to the new body.
     //
-    // `cm6_load_source` carries (doc_id, body) atomically — it changes
-    // ONLY on a fresh doc load, never on keystrokes. The CM6 init effect
-    // subscribes to this signal so it fires exactly once per doc load
-    // with the correct content in hand. The earlier shape gated on
-    // `synced_doc_id` alone and read `edit_body.peek()` — but `.peek()`
-    // doesn't subscribe, so if the init effect's scheduler tick ran
-    // before edit_body was written, CM6 inited with an empty doc and
-    // stayed blank until the operator toggled Source → Live.
-    //
-    // The critical correctness check is the `doc_id == active_id`
-    // comparison below: when a tab switch happens, this effect can
-    // race against doc_data's refresh. Without the id-equality gate,
-    // we'd write the OLD doc's body into cm6_load_source under the
-    // NEW doc's id, then `synced_doc_id` would silently latch the new
-    // id (blocking any correction when doc_data finally catches up).
-    // Symptom: opening a second tab showed the first tab's body
-    // under the second tab's title.
-    let mut synced_doc_id: Signal<Option<flynt_core::models::DocumentId>> = use_signal(|| None);
+    // Single source of truth for de-dup — no separate `synced_doc_id`.
+    // The previous shape gated on synced_doc_id alone, which prevented
+    // post-save propagation: after a save, doc_data refreshed with new
+    // content but `already_synced` was true so cm6_load_source was
+    // never updated. CM6 kept the pre-save body; the operator's saved
+    // edits never appeared in Live mode.
     let mut cm6_load_source: Signal<Option<(flynt_core::models::DocumentId, String)>> =
         use_signal(|| None);
     use_effect(move || {
         let current_id = tab_state.read().active_id().cloned();
         let Some(active_id) = current_id else { return };
-        if Some(&active_id) == synced_doc_id.peek().as_ref() { return; }
-        // Read doc_data and confirm it's for THIS tab — not a stale
-        // value from the previous tab's read. If the ids don't match,
-        // doc_data hasn't refreshed yet; bail and wait for the next
-        // re-fire (the effect subscribes to doc_data, so it will).
+        // Confirm doc_data is for this tab (not a stale value from
+        // the previous tab's load). If the ids mismatch, bail and
+        // wait for doc_data to refresh — the effect subscribes to
+        // doc_data so it will re-fire.
         let body = match &*doc_data.read() {
             Some((doc_id, _, _, body, _)) if doc_id == &active_id => body.clone(),
             _ => return,
         };
-        *synced_doc_id.write() = Some(active_id.clone());
+        // De-dup. Three cases trigger a load:
+        //   1. First load (no prior cm6_load_source) — propagate.
+        //   2. Tab switch (id changed) — propagate.
+        //   3. Same tab, body on disk changed AND operator hasn't
+        //      typed anything we'd be clobbering. We detect the
+        //      no-clobber condition by checking edit_body against
+        //      the previously-loaded body — if they match, the user
+        //      has no unsaved divergence and it's safe to refresh.
+        let action = match &*cm6_load_source.peek() {
+            None => Some("first-load"),
+            Some((prev_id, _)) if prev_id != &active_id => Some("tab-switch"),
+            Some((_, prev_body)) => {
+                if body != *prev_body {
+                    // Body on disk changed since last load. Safe to
+                    // overwrite only if edit_body matches what we last
+                    // loaded (no unsaved divergence in CM6 / textarea).
+                    let eb = edit_body.peek().clone();
+                    if eb == *prev_body {
+                        Some("disk-changed-no-divergence")
+                    } else if eb == body {
+                        // edit_body matches new body — operator just
+                        // saved their own edits. Propagate so CM6
+                        // catches up to the saved content.
+                        Some("save-propagation")
+                    } else {
+                        // edit_body has uncommitted divergence AND
+                        // disk changed externally. Keep their work;
+                        // they'll have to resolve manually.
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+        let Some(reason) = action else { return };
+        tracing::debug!(
+            "sync_effect: propagating ({}) active_id={:?} body_len={}",
+            reason, active_id, body.len()
+        );
         *edit_body.write() = body.clone();
         *save_state.write() = SaveState::Clean;
         *cm6_load_source.write() = Some((active_id, body));
@@ -1403,6 +1457,53 @@ pub fn NotesView() -> Element {
         document::eval(&cm6_init_js(&body));
     });
 
+    // Autosave for Source mode (textarea path). CM6 already has its own
+    // autosave wired through the bridge; this gives Source-mode editing
+    // the same behavior so operators don't have to ⌘S manually after
+    // typing in the textarea.
+    //
+    // Debounced: each edit_body change resets a 1.5s timer; the save
+    // fires only after the operator has been quiet that long. Skips
+    // when edit_body matches what's already on disk (no actual diff).
+    let mut autosave_token = use_signal(|| 0u64);
+    let autosave_ctx = ctx.clone();
+    use_effect(move || {
+        let body = edit_body.read().clone();
+        if !matches!(&*mode.read(), EditMode::Source) { return; }
+        // Resolve the path from doc_data — we need the relative path
+        // to save to. If doc_data isn't loaded yet, skip.
+        let (disk_body, path) = match &*doc_data.peek() {
+            Some((_, p, _, b, _)) => (b.clone(), p.clone()),
+            None => return,
+        };
+        if body == disk_body { return; } // no diff vs. disk
+        let token = autosave_token.peek().wrapping_add(1);
+        *autosave_token.write() = token;
+        let mut bump = render_ver;
+        let mut state = save_state;
+        let mut err = save_err;
+        let c = autosave_ctx.clone();
+        spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            // Newer edit superseded this one — bail.
+            if *autosave_token.peek() != token { return; }
+            let project = c.project();
+            let path_for_save = path.clone();
+            let body_for_save = body.clone();
+            match tokio::task::spawn_blocking(move || {
+                project.save_document_content(&path_for_save, &body_for_save)
+            }).await {
+                Ok(Ok(())) => {
+                    *bump.write() += 1;
+                    *err.write() = None;
+                    *state.write() = SaveState::Saved;
+                }
+                Ok(Err(e)) => *err.write() = Some(format!("Autosave failed — {e}")),
+                Err(e) => *err.write() = Some(format!("Autosave interrupted — {e}")),
+            }
+        });
+    });
+
     // Persistent message bridge — one eval that polls a global queue.
     // CM6 pushes messages to the queue; this loop drains them to Rust.
     let ctx_link = ctx.clone();
@@ -1424,11 +1525,19 @@ pub fn NotesView() -> Element {
 
                 match msg_type {
                     "edit" => {
-                        // Do NOT write to edit_body here — it triggers Dioxus re-render
-                        // which destroys and recreates CM6. edit_body is synced from CM6
-                        // directly when switching to source mode.
-                        // Update save indicator via DOM — no Dioxus signal write
-                        document::eval("document.querySelectorAll('.save-status').forEach(e => {{ e.textContent = 'unsaved'; e.className = 'save-status dirty'; }});");
+                        // Keep edit_body in sync with CM6's live content.
+                        // The CM6 div has a stable id (`flynt-cm-editor`), so
+                        // Dioxus reconciles it as the same element on re-render
+                        // — the editor instance is not torn down. The earlier
+                        // shape avoided this write and relied on a CM6 read at
+                        // toggle time, which raced against post-save CM6
+                        // re-init: a stale CM6 (still showing N-1 before its
+                        // re-init ran) was adopted into edit_body, reverting
+                        // the operator's saved edits when they toggled back
+                        // to Source. With this write, edit_body is the single
+                        // source of truth for "the current document contents."
+                        *edit_body.write() = data.to_string();
+                        *save_state.write() = SaveState::Dirty;
                     }
                     "save" | "autosave" => {
                         let content = data.to_string();
@@ -1450,13 +1559,9 @@ pub fn NotesView() -> Element {
                     }
                     "mode" => {
                         if data == "source" {
-                            // Sync edit_body from CM6 before switching
-                            let mut sync_eval = document::eval("if(window._flyntCM){dioxus.send(window._flyntCM.state.doc.toString())}else{dioxus.send('')}");
-                            if let Ok(content) = sync_eval.recv::<String>().await {
-                                if !content.is_empty() {
-                                    *edit_body.write() = content;
-                                }
-                            }
+                            // edit_body is already the source of truth —
+                            // the "edit" message handler above keeps it in
+                            // sync with CM6. No read-CM6 dance needed.
                             *mode.write() = EditMode::Source;
                         }
                     }
@@ -1780,7 +1885,12 @@ pub fn NotesView() -> Element {
                                             Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
                                         }
                                     });
-                                    *mode.write() = EditMode::Live;
+                                    // Stay in Source mode — operator hits
+                                    // "Live" explicitly when ready to review.
+                                    // Auto-flipping caused a race where CM6
+                                    // re-init lagged behind the mode change,
+                                    // and the subsequent Source-toggle would
+                                    // adopt CM6's stale content into edit_body.
                                 },
                                 "Save"
                             }
@@ -1883,7 +1993,8 @@ pub fn NotesView() -> Element {
                                                     Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
                                                 }
                                             });
-                                            *mode.write() = EditMode::Live;
+                                            // ⌘S stays in Source mode; the
+                                            // operator clicks Live explicitly.
                                         }
                                     },
                                 }
@@ -1894,11 +2005,13 @@ pub fn NotesView() -> Element {
                                 class: "preview-pane",
                                 div {
                                     class: "markdown-body",
-                                    dangerous_inner_html: if let Some(ref cached_html) = rendered_html {
-                                        "{cached_html}"
-                                    } else {
-                                        "{render_html(&edit_body.read())}"
-                                    },
+                                    // Source mode renders directly from edit_body
+                                    // so the preview tracks keystrokes live. The
+                                    // cached `rendered_html` is for Live mode's
+                                    // post-save HTML — using it here would mean
+                                    // the preview lags behind by a save cycle and
+                                    // operators see no update while typing.
+                                    dangerous_inner_html: "{render_html(&edit_body.read())}",
                                 }
                             }
                         }
