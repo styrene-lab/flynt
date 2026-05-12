@@ -1,0 +1,45 @@
+# release-plz configuration for the flynt workspace.
+#
+# Currently dormant — every crate has publish = false because flynt's
+# library crates (flynt-models, flynt-core, flynt-store, flynt-forge,
+# flynt-agent) aren't on crates.io yet. The release-plz workflow is
+# wired (.github/workflows/release-plz.yml) but only runs on manual
+# workflow_dispatch.
+#
+# When ready to publish a crate:
+#   1. Add the `push` trigger back to release-plz.yml
+#   2. Flip the matching `[[package]]` entry below to `publish = true`
+#      and `release = true`
+#   3. Push to main — release-plz opens the first release PR
+
+[workspace]
+publish = false
+release = false
+
+[[package]]
+name = "flynt-models"
+publish = false
+release = false
+
+[[package]]
+name = "flynt-core"
+publish = false
+release = false
+
+[[package]]
+name = "flynt-store"
+publish = false
+release = false
+
+[[package]]
+name = "flynt-forge"
+publish = false
+release = false
+
+[[package]]
+name = "flynt-agent"
+publish = false
+release = false
+
+# Binary crates — never publishable as libraries.
+# flynt-app, flynt-git-helper, flynt-mobile, omegon-design stay opted-out.
