@@ -1195,12 +1195,6 @@ pub fn NotesView() -> Element {
     let mut render_ver = use_signal(|| 0u32);
     let mut conflict_detected = use_signal(|| false);
 
-    // Render cache — avoids re-rendering when switching between tabs
-    let mut render_cache: Signal<std::collections::HashMap<
-        flynt_core::models::DocumentId,
-        (std::path::PathBuf, String, String, String, bool),
-    >> = use_signal(std::collections::HashMap::new);
-
     // ── Two-phase rendering ───────────────────────────────────────────
     // Phase 1 (instant): read document from SQLite synchronously — <1ms.
     //   Sets edit_body and raw content immediately so the editor is responsive.
@@ -1576,8 +1570,15 @@ pub fn NotesView() -> Element {
         }
     }
 
-    // Clear drawing mode flag
-    is_drawing.set(false);
+    // Clear drawing mode flag — but ONLY if it was set. Dioxus signals
+    // notify subscribers on every `set`, even when the value didn't
+    // change. The CM6 init effect subscribes to is_drawing_mode, so an
+    // unconditional `set(false)` here fires that effect twice per
+    // tab-switch (once for the cm6_load_source write, once for this
+    // no-op is_drawing toggle) — wasted work and log noise.
+    if *is_drawing.peek() {
+        is_drawing.set(false);
+    }
 
     // edit_body is seeded by the use_effect that watches rendered,
     // and synced from CM6 on mode switch. No eager write here.
