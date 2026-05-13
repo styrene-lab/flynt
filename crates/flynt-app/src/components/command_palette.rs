@@ -102,12 +102,13 @@ fn execute_command(
     ctx: AppContext,
     tab_state: &mut Signal<TabState>,
     active_route: &mut Signal<Route>,
+    settings_open: &mut Signal<crate::state::SettingsOpen>,
 ) {
     match id {
         "view-notes" => *active_route.write() = Route::Notes,
         "view-board" => *active_route.write() = Route::Kanban,
         "view-graph" => *active_route.write() = Route::Graph,
-        "view-settings" => *active_route.write() = Route::Settings,
+        "view-settings" => *settings_open.write() = crate::state::SettingsOpen(true),
         "view-welcome" => *active_route.write() = Route::Welcome,
         "new-note" => {
             let c = ctx;
@@ -330,6 +331,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
     let ctx = use_context::<AppContext>();
     let mut tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
+    let mut settings_open = use_context::<Signal<crate::state::SettingsOpen>>();
 
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
@@ -458,7 +460,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                     }
                                     Key::Enter => {
                                         if let Some(cmd) = filtered.get(sel) {
-                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route);
+                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open);
                                             close();
                                         }
                                     }
@@ -477,7 +479,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             key: "{i}-{cmd_id}",
                                             class: if i == sel { "palette-item selected" } else { "palette-item" },
                                             onclick: move |_| {
-                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route);
+                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open);
                                                 close();
                                             },
                                             span { class: "palette-category", "{cmd.category}" }
@@ -531,8 +533,10 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             match *route {
                                                 Route::Kanban => ctx_parts.push("[On: Tasks view]".into()),
                                                 Route::Graph => ctx_parts.push("[On: Graph view]".into()),
-                                                Route::Settings => ctx_parts.push("[On: Settings]".into()),
                                                 _ => {}
+                                            }
+                                            if settings_open.read().0 {
+                                                ctx_parts.push("[Settings modal open]".into());
                                             }
                                             if ctx_parts.is_empty() {
                                                 String::new()

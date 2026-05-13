@@ -116,7 +116,9 @@ pub fn OmegonSettingsSection() -> Element {
                 }
 
                 // ── Thinking Level ──
-                SettingsRow { label: "Thinking level",
+                SettingsRow {
+                    label: "Thinking level",
+                    hint: "How much extended reasoning the agent allocates per turn. Higher levels handle complex multi-step tasks better; lower levels are faster and cheaper.",
                     select {
                         class: "input settings-input",
                         value: "{config.read().thinking}",
@@ -134,7 +136,9 @@ pub fn OmegonSettingsSection() -> Element {
                 }
 
                 // ── Posture ──
-                SettingsRow { label: "Posture",
+                SettingsRow {
+                    label: "Posture",
+                    hint: "The agent's behavioral stance: how aggressive, exploratory, or conservative it should be. Built-ins cover the common shapes; custom .pkl postures dropped into ~/.omegon/postures/ also show up.",
                     super::PosturePicker {
                         current: config.read().posture.clone(),
                         on_change: move |v: String| {
@@ -148,7 +152,9 @@ pub fn OmegonSettingsSection() -> Element {
                 }
 
                 // ── Max Turns ──
-                SettingsRow { label: "Max turns",
+                SettingsRow {
+                    label: "Max turns",
+                    hint: "Maximum back-and-forth turns the agent runs before stopping. Caps runaway loops; raise it for long autonomous tasks, lower it for tighter control.",
                     input {
                         class: "input settings-input settings-input-narrow",
                         r#type: "number",
@@ -164,13 +170,14 @@ pub fn OmegonSettingsSection() -> Element {
                 }
 
                 // ── Persona ──
-                SettingsRow { label: "Persona",
-                    input {
-                        class: "input settings-input",
-                        r#type: "text",
-                        value: "{config.read().active_persona}",
-                        placeholder: "off",
-                        oninput: move |e| config.write().active_persona = e.value(),
+                SettingsRow {
+                    label: "Persona",
+                    hint: "Named character overlay applied on top of the base posture. Personas add directives like \"systems engineer\" or \"code reviewer\" without changing the underlying behavior model. Manage via `omegon persona` or install from the Armory.",
+                    super::PersonaPicker {
+                        current: config.read().active_persona.clone(),
+                        on_change: move |v: String| {
+                            config.write().active_persona = v;
+                        },
                     }
                 }
 
@@ -298,12 +305,24 @@ pub fn OmegonSettingsSection() -> Element {
     }
 }
 
-/// Reusable settings row (label + control). Same pattern as settings.rs.
+/// Reusable settings row (label + control). Same pattern as settings.rs —
+/// the omegon panel has its own local copy because it predates the
+/// shared component. Tracks the same `hint` prop so the help-hint
+/// pattern is consistent across both sites.
 #[component]
-fn SettingsRow(label: &'static str, children: Element) -> Element {
+fn SettingsRow(
+    label: &'static str,
+    children: Element,
+    #[props(default = "")] hint: &'static str,
+) -> Element {
     rsx! {
         div { class: "settings-row",
-            span { class: "settings-label", "{label}" }
+            span { class: "settings-label",
+                "{label}"
+                if !hint.is_empty() {
+                    crate::components::HelpHint { text: hint.to_string() }
+                }
+            }
             div { class: "settings-control", {children} }
         }
     }

@@ -1,6 +1,6 @@
 use crate::acp::{AcpEvent, AcpSession, ConfigOption, SlashCommand};
 use crate::bootstrap::AppContext;
-use crate::state::{Route, SettingsTab};
+use crate::state::SettingsPage;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
 use std::path::{Path, PathBuf};
@@ -365,8 +365,8 @@ pub fn AgentRail() -> Element {
     let filter_text = if slash_prefix { input_val.trim_start_matches('/').to_lowercase() } else { String::new() };
 
     let launch_error = use_context::<Signal<Option<String>>>();
-    let mut active_route = use_context::<Signal<Route>>();
-    let mut settings_tab = use_context::<Signal<SettingsTab>>();
+    let mut settings_page = use_context::<Signal<SettingsPage>>();
+    let mut settings_open = use_context::<Signal<crate::state::SettingsOpen>>();
 
     let version_label = omegon_binary
         .as_ref()
@@ -380,8 +380,10 @@ pub fn AgentRail() -> Element {
             div {
                 class: "agent-status-bar agent-status-bar-clickable",
                 onclick: move |_| {
-                    *settings_tab.write() = SettingsTab::Omegon;
-                    *active_route.write() = Route::Settings;
+                    // Land on the Profile sub-page when entering Omegon
+                    // settings from the agent rail.
+                    *settings_page.write() = SettingsPage::OmegonProfile;
+                    *settings_open.write() = crate::state::SettingsOpen(true);
                 },
                 title: "Open Omegon settings",
                 div { class: "agent-status-row",

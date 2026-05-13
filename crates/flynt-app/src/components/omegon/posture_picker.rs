@@ -115,7 +115,10 @@ fn extract_pkl_field(content: &str, field: &str) -> Option<String> {
 }
 
 /// Posture picker component. Shows built-in presets + discovered custom
-/// postures as radio buttons.
+/// postures as clickable cards. Each card has a name + short
+/// description; the selected one is highlighted with the primary
+/// accent. Replaces the earlier `<input type=radio>` layout which
+/// rendered as bare OS radios and didn't communicate the affordance.
 #[component]
 pub fn PosturePicker(
     current: String,
@@ -137,26 +140,23 @@ pub fn PosturePicker(
     rsx! {
         div { class: "posture-picker",
             for posture in all_postures.read().as_ref().unwrap_or(&vec![]).iter() {
-                label { class: "posture-option",
-                    input {
-                        r#type: "radio",
-                        name: "posture",
-                        value: "{posture.id}",
-                        checked: current == posture.id,
-                        onchange: {
-                            let id = posture.id.clone();
-                            move |_| on_change.call(id.clone())
-                        },
-                    }
-                    div { class: "posture-info",
-                        span { class: "posture-name",
-                            "{posture.name}"
-                            if !posture.is_builtin {
-                                span { class: "posture-badge", " (custom)" }
+                {
+                    let id = posture.id.clone();
+                    let is_active = current == posture.id;
+                    rsx! {
+                        button {
+                            r#type: "button",
+                            class: if is_active { "posture-card active" } else { "posture-card" },
+                            onclick: move |_| on_change.call(id.clone()),
+                            div { class: "posture-card-header",
+                                span { class: "posture-card-name", "{posture.name}" }
+                                if !posture.is_builtin {
+                                    span { class: "posture-card-badge", "custom" }
+                                }
                             }
-                        }
-                        if !posture.description.is_empty() {
-                            span { class: "posture-desc muted", "{posture.description}" }
+                            if !posture.description.is_empty() {
+                                div { class: "posture-card-desc", "{posture.description}" }
+                            }
                         }
                     }
                 }

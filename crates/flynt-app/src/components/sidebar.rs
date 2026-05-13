@@ -13,6 +13,7 @@ use rfd::FileDialog;
 pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
     let ctx     = use_context::<AppContext>();
     let mut refresh = use_context_provider(|| Signal::new(0_u64));
+    let mut settings_open = use_context::<Signal<crate::state::SettingsOpen>>();
 
     // Debounced project watcher — coalesces rapid-fire events (e.g., during
     // reindex of 1000+ files) into a single sidebar refresh after 500ms of quiet.
@@ -118,9 +119,9 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_GRAPH }
                 }
                 button {
-                    class: if *active_route.read() == Route::Settings { "nav-btn active" } else { "nav-btn" },
+                    class: if settings_open.read().0 { "nav-btn active" } else { "nav-btn" },
                     title: "Settings",
-                    onclick: move |_| *active_route.write() = Route::Settings,
+                    onclick: move |_| *settings_open.write() = crate::state::SettingsOpen(true),
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
                 }
             }

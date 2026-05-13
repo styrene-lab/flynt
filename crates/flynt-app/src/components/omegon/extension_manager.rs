@@ -102,9 +102,43 @@ pub fn ExtensionManagerSection() -> Element {
     let mut install_uri = use_signal(String::new);
     let mut show_install = use_signal(|| false);
 
+    // For the empty-state CTA — clicking "Browse the Armory" should
+    // flip the active settings page to Armory.
+    let mut settings_page = use_context::<Signal<crate::state::SettingsPage>>();
+
+    let installed_count = extensions.read().as_ref().map(|v| v.len()).unwrap_or(0);
+
     rsx! {
         section { class: "settings-section",
             h2 { class: "settings-heading", "Extensions" }
+
+            if installed_count == 0 && extensions.read().is_some() {
+                // Empty state: no extensions installed yet. Surface the
+                // Armory rather than leave the operator staring at a
+                // bare panel wondering what to do.
+                div { class: "extensions-empty-state",
+                    div { class: "extensions-empty-icon", "\u{1F4E6}" }
+                    h3 { class: "extensions-empty-title", "No extensions installed" }
+                    p { class: "extensions-empty-body",
+                        "Extensions add tools, integrations, and data sources to omegon — anything from a Linear connector to a custom code-search backend. Browse the Armory to install one."
+                    }
+                    div { class: "extensions-empty-actions",
+                        button {
+                            class: "btn btn-primary",
+                            onclick: move |_| {
+                                *settings_page.write() = crate::state::SettingsPage::OmegonArmory;
+                            },
+                            "Browse the Armory"
+                        }
+                        button {
+                            class: "btn btn-ghost",
+                            onclick: move |_| { *show_install.write() = true; },
+                            "Install by URI\u{2026}"
+                        }
+                    }
+                }
+            }
+
             div { class: "settings-rows",
                 for ext in extensions.read().as_ref().unwrap_or(&vec![]).iter() {
                     {
