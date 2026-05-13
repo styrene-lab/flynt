@@ -53,6 +53,7 @@ jobs:
             libxdo-dev \
             libayatana-appindicator3-dev \
             libpipewire-0.3-dev \
+            libgbm-dev \
             pkg-config \
             cmake
 
