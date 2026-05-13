@@ -52,11 +52,17 @@ jobs:
             libglib2.0-dev \
             libxdo-dev \
             libayatana-appindicator3-dev \
+            libpipewire-0.3-dev \
             pkg-config \
             cmake
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli --locked
+        # Pulls the prebuilt `dx` binary from the dioxus release page
+        # rather than recompiling from source on every job.
+        run: cargo binstall --no-confirm dioxus-cli
 
       # Probe cargo build first — dx swallows cargo's stderr on Linux, so
       # if we go straight to `dx build` and there's a real compile error
@@ -177,8 +183,13 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli --locked
+        # Pulls the prebuilt `dx` binary from the dioxus release page
+        # rather than recompiling from source on every job.
+        run: cargo binstall --no-confirm dioxus-cli
 
       - name: Build desktop release
         run: |
@@ -382,8 +393,13 @@ jobs:
         with:
           targets: aarch64-apple-ios
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli --locked
+        # Pulls the prebuilt `dx` binary from the dioxus release page
+        # rather than recompiling from source on every job.
+        run: cargo binstall --no-confirm dioxus-cli
 
       - name: Import signing certs & profiles
         if: env.APPLE_DIST_CERT_P12_B64 != ''
