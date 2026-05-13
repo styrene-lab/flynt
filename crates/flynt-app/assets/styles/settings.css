@@ -5,7 +5,38 @@
 .settings-root {
   height:     100%;
   overflow-y: auto;
+  /* Reserve gutter so macOS overlay scrollbar appearing on hover
+     doesn't reflow content by ~15px. Without this, text rewrap
+     flickers as the operator moves the mouse near the right edge. */
+  scrollbar-gutter: stable;
   background: var(--background);
+}
+
+/* Split layout: sidebar (left) + scrollable content (right).
+   `.settings-root-split` opts into the layout so legacy callers
+   that just need a scroll container can keep using `.settings-root`
+   alone. */
+.settings-root-split {
+  display:       grid;
+  grid-template-columns: 220px 1fr;
+  height:        100%;
+  overflow:      hidden;
+}
+
+.settings-root-split .settings-scroll {
+  /* Fills the entire content column of the grid — no max-width, no
+     auto-centering. The previous shape capped the scroll container
+     at 960px and `margin: 0 auto`-centered it, which created wasted
+     gutters on both sides at narrower widths AND clipped content on
+     the left when the modal got compact (the overflow:hidden ancestor
+     cropped the centered overflow). Letting it stretch makes the
+     usable area match the visual area. */
+  margin:     0;
+  padding:    var(--space-8) var(--space-10) var(--space-16);
+  overflow-y: auto;
+  /* See .settings-root for the scrollbar-gutter rationale. */
+  scrollbar-gutter: stable;
+  height:     100%;
 }
 
 .settings-scroll {
@@ -14,7 +45,62 @@
   padding:    var(--space-8) var(--space-10);
 }
 
-/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.settings-sidebar {
+  border-right:  1px solid var(--border);
+  background:    var(--background);
+  padding:       var(--space-6) var(--space-3);
+  overflow-y:    auto;
+  scrollbar-gutter: stable;
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--space-2);
+}
+
+.settings-nav-item {
+  display:       block;
+  width:         100%;
+  text-align:    left;
+  padding:       6px 10px;
+  font-size:     var(--font-size-sm);
+  color:         var(--foreground);
+  background:    transparent;
+  border:        none;
+  border-radius: 4px;
+  cursor:        pointer;
+  transition:    background var(--duration-fast) var(--ease);
+}
+
+.settings-nav-item:hover { background: var(--surface, rgba(255,255,255,0.04)); }
+
+.settings-nav-item.active {
+  color:      var(--primary);
+  background: var(--surface-active, rgba(42, 180, 200, 0.10));
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-nav-item.nested {
+  padding-left: 22px;
+  font-size:    13px;
+}
+
+.settings-nav-group {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  margin-top:     var(--space-2);
+}
+
+.settings-nav-group-header {
+  padding:        6px 10px 2px;
+  font-size:      11px;
+  font-weight:    var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color:          var(--muted-foreground);
+}
+
+/* ── Tab bar (legacy — preserved for any non-split layouts) ────────────── */
 .settings-tab-bar {
   display:         flex;
   gap:             0;
@@ -846,3 +932,599 @@
 .font-md .markdown-body { font-size: var(--font-size-md);   }
 .font-lg .markdown-body { font-size: 17px;                  }
 .font-xl .markdown-body { font-size: 19px;                  }
+
+/* ── Armory (browse + install extensions from omegon registry) ─────────── */
+.armory-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.armory-header {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.armory-search {
+  flex: 1;
+}
+
+.armory-split {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--space-4);
+  align-items: stretch;
+  min-height: 320px;
+}
+
+.armory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--background);
+}
+
+.armory-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease);
+}
+
+.armory-item:hover { background: var(--surface, rgba(255,255,255,0.04)); }
+
+.armory-item.active {
+  background: var(--surface-active, rgba(42, 180, 200, 0.10));
+}
+
+.armory-item-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--foreground);
+}
+
+.armory-item-version {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+}
+
+.armory-item-desc {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.armory-detail {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: var(--space-5);
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.armory-detail-empty {
+  align-self: center;
+  margin: auto;
+  text-align: center;
+}
+
+.armory-detail-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.armory-detail-name {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--primary-bright, var(--primary));
+}
+
+.armory-detail-version {
+  font-size: var(--font-size-sm);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+}
+
+.armory-detail-author {
+  font-size: var(--font-size-sm);
+  color: var(--muted-foreground);
+}
+
+.armory-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.armory-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--surface, rgba(255,255,255,0.04));
+  color: var(--muted-foreground);
+}
+
+.armory-detail-desc {
+  color: var(--foreground);
+  line-height: 1.5;
+}
+
+.armory-detail-uri code {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.armory-detail-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.armory-status {
+  font-size: var(--font-size-sm);
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+
+.armory-status.ok { color: var(--success, #22c55e); background: rgba(34, 197, 94, 0.10); }
+.armory-status.err { color: var(--error, #ef4444); background: rgba(239, 68, 68, 0.10); }
+.armory-status.running { color: var(--muted-foreground); background: var(--surface, rgba(255,255,255,0.04)); }
+
+.armory-empty,
+.armory-loading,
+.armory-error {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.armory-error { color: var(--error, #ef4444); }
+
+/* ── Posture picker (card layout, replaces radio buttons) ───────────────── */
+.posture-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  max-width: 720px;
+}
+
+.posture-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card, transparent);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease),
+              background var(--duration-fast) var(--ease);
+}
+
+.posture-card:hover {
+  border-color: var(--primary-muted, var(--primary));
+}
+
+.posture-card.active {
+  border-color: var(--primary);
+  background: rgba(42, 180, 200, 0.08);
+}
+
+.posture-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.posture-card-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+.posture-card-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--surface, rgba(255,255,255,0.04));
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.posture-card-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+/* ── Persona picker (dropdown + custom escape hatch) ───────────────────── */
+.persona-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  max-width: 360px;
+}
+
+.persona-picker select.input {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--card, transparent);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%2394a3b8' d='M0 0l5 6 5-6z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.persona-custom-input {
+  width: 100%;
+}
+
+.persona-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 360px;
+}
+
+.persona-refresh {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+/* ── Settings modal overlay ─────────────────────────────────────────────── */
+.settings-modal-overlay {
+  /* Fits inside the modal-overlay base; we widen the dialog and let
+     SettingsView's split layout fill it. */
+}
+
+.settings-modal-dialog {
+  /* Override the base .modal-dialog's 480px width — settings needs the
+     sidebar + content together. Capped at 1100px so it doesn't sprawl
+     on ultrawide displays. */
+  width: 1100px;
+  max-width: 95vw;
+  height: 80vh;
+  max-height: 800px;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Close button sits in the top-right of the modal, outside the split. */
+.settings-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease),
+              color      var(--duration-fast) var(--ease);
+}
+
+.settings-modal-close:hover {
+  background: var(--surface, rgba(255,255,255,0.06));
+  color: var(--foreground);
+}
+
+/* Settings root inside the modal: drop the outer height: 100% chain
+   and let the modal dimensions drive sizing. */
+.settings-modal-dialog .settings-root {
+  height: 100%;
+  background: var(--background);
+}
+
+.settings-modal-dialog .settings-root-split {
+  height: 100%;
+}
+
+/* ── Help hint (?) icon + hover tooltip ────────────────────────────────── */
+.help-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  vertical-align: middle;
+  cursor: help;
+  outline: none;
+}
+
+.help-hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  transition: background var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+
+.help-hint:hover .help-hint-icon,
+.help-hint:focus-visible .help-hint-icon {
+  background: var(--primary-muted, rgba(42, 180, 200, 0.18));
+  border-color: var(--primary-muted, var(--primary));
+  color: var(--primary);
+}
+
+/* Tooltip uses position:fixed so it escapes overflow:hidden ancestors
+   (the settings modal in particular has overflow:hidden for border-radius
+   clipping). A global mouseover listener — installed in app.rs via
+   document::eval — sets `top` and `left` inline on hover so the tooltip
+   appears above the hovered icon. */
+.help-hint-tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 240px;
+  padding: 8px 11px;
+  background: var(--background, #0b0f16);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  font-weight: var(--font-weight-normal, 400);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease, ease);
+  z-index: 10000;
+}
+
+.help-hint:hover .help-hint-tooltip,
+.help-hint:focus-visible .help-hint-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Sync backend radio: disabled + warning states ─────────────────────── */
+/* Disabled is just dimmed — no dashed border, no extra visual chrome.
+   The HelpHint tooltip explains why; the inline prereq banner reiterates
+   when the operator's current selection is the blocked one. */
+.radio-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.radio-btn.disabled:hover {
+  background: transparent;
+}
+
+/* Warning state: no border tint either. The inline banner below is
+   loud enough; double-marking the button adds noise. */
+.radio-dot.disabled {
+  border-color: var(--muted-foreground);
+  background: transparent;
+}
+
+.settings-prereq-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: var(--space-3);
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--foreground);
+  line-height: 1.4;
+}
+
+.settings-prereq-warning-icon {
+  font-size: 14px;
+  line-height: 1;
+  margin-top: 1px;
+  color: var(--warning, #f59e0b);
+}
+
+/* ── Extensions empty state ────────────────────────────────────────────── */
+.extensions-empty-state {
+  text-align: center;
+  padding: var(--space-10) var(--space-6);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface, rgba(255,255,255,0.02));
+  margin-bottom: var(--space-6);
+}
+
+.extensions-empty-icon {
+  font-size: 32px;
+  line-height: 1;
+  margin-bottom: var(--space-3);
+  opacity: 0.6;
+}
+
+.extensions-empty-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.extensions-empty-body {
+  font-size: var(--font-size-sm);
+  color: var(--muted-foreground);
+  line-height: 1.5;
+  max-width: 480px;
+  margin: 0 auto var(--space-5);
+}
+
+.extensions-empty-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ── Armory empty state ────────────────────────────────────────────────── */
+.armory-empty-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  margin-bottom: 6px;
+}
+
+.armory-empty-body {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+  margin-bottom: var(--space-3);
+}
+
+/* ── Advanced page caution banner ──────────────────────────────────────── */
+.settings-advanced-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: var(--space-6);
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+}
+
+.settings-advanced-warning-icon {
+  font-size: 20px;
+  line-height: 1;
+  margin-top: 2px;
+  color: var(--warning, #f59e0b);
+}
+
+.settings-advanced-warning-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.settings-advanced-warning-body {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+/* ── Providers page hint banner ────────────────────────────────────────── */
+.settings-providers-hint {
+  padding: 10px 14px;
+  margin-bottom: var(--space-5);
+  background: var(--surface, rgba(255,255,255,0.03));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+/* Inline row layout used inside Sync's Git credentials row — keeps
+   the status indicator, message, and "Manage tokens" link on one line. */
+.settings-row-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.settings-providers-link {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── Armory launch-session panel (shown when no AcpSession is alive) ──── */
+.armory-launch-panel {
+  text-align: center;
+  padding: var(--space-10) var(--space-6);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface, rgba(255,255,255,0.02));
+}
+
+.armory-launch-icon {
+  font-size: 32px;
+  line-height: 1;
+  margin-bottom: var(--space-3);
+  opacity: 0.7;
+}
+
+.armory-launch-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.armory-launch-body {
+  font-size: var(--font-size-sm);
+  color: var(--muted-foreground);
+  line-height: 1.5;
+  max-width: 480px;
+  margin: 0 auto var(--space-5);
+}
+
+.armory-launch-error {
+  font-size: 12px;
+  color: var(--error, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 auto var(--space-4);
+  max-width: 480px;
+  text-align: left;
+  line-height: 1.45;
+}
+
+.armory-launch-error code {
+  font-family: var(--font-mono);
+  background: rgba(255,255,255,0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.armory-launch-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+}

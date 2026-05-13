@@ -4,6 +4,7 @@ use flynt_core::daemon::{
 use dioxus::prelude::*;
 
 use crate::bootstrap::AppContext;
+use crate::components::HelpHint;
 
 #[component]
 pub fn DaemonSettingsSection(
@@ -11,6 +12,13 @@ pub fn DaemonSettingsSection(
 ) -> Element {
     let ctx = use_context::<AppContext>();
     let daemon = ctx.daemon();
+
+    // Prereq: the daemon is `omegon serve` — need the binary on disk.
+    let omegon_binary = ctx.omegon().resolve_binary();
+    let prereq = crate::sync_prereq::evaluate_daemon(&omegon_binary);
+    let prereq_blocked = prereq.is_blocked();
+    let prereq_msg = prereq.explanation().map(String::from);
+
     let mut enabled = use_signal(|| config.read().enabled);
     let mut auto_start = use_signal(|| config.read().auto_start);
     let mut model = use_signal(|| config.read().model.clone().unwrap_or_default());
@@ -74,11 +82,22 @@ pub fn DaemonSettingsSection(
     rsx! {
         section { class: "settings-section",
             h2 { class: "settings-heading", "Agent Daemon" }
+
+            if let Some(msg) = prereq_msg.as_ref() {
+                div { class: "settings-prereq-warning",
+                    span { class: "settings-prereq-warning-icon", "\u{26A0}" }
+                    span { "{msg}" }
+                }
+            }
+
             div { class: "settings-rows",
 
                 // Status indicator
                 div { class: "settings-row",
-                    span { class: "settings-label", "Status" }
+                    span { class: "settings-label",
+                        "Status"
+                        HelpHint { text: "Current state of the local daemon process. Running means it's accepting connections from other agents; Stopped means flynt isn't hosting one for this project right now.".to_string() }
+                    }
                     div { class: "settings-control",
                         div { class: "daemon-status-row",
                             span { class: status_class }
@@ -89,12 +108,16 @@ pub fn DaemonSettingsSection(
 
                 // Enable / Auto-start
                 div { class: "settings-row",
-                    span { class: "settings-label", "Enabled" }
+                    span { class: "settings-label",
+                        "Enabled"
+                        HelpHint { text: "Allow flynt to run a long-lived background daemon for this project. The daemon hosts MCP / JSON-RPC endpoints other tools (Zed, Claude Code, etc.) can connect to.".to_string() }
+                    }
                     div { class: "settings-control",
                         label { class: "checkbox-label",
                             input {
                                 r#type: "checkbox",
                                 checked: *enabled.read(),
+                                disabled: prereq_blocked,
                                 onchange: move |e| {
                                     *enabled.write() = e.checked();
                                     sync_config();
@@ -106,12 +129,16 @@ pub fn DaemonSettingsSection(
                 }
 
                 div { class: "settings-row",
-                    span { class: "settings-label", "Auto-start" }
+                    span { class: "settings-label",
+                        "Auto-start"
+                        HelpHint { text: "Start the daemon automatically every time flynt launches. Off means you'll have to hit Start manually.".to_string() }
+                    }
                     div { class: "settings-control",
                         label { class: "checkbox-label",
                             input {
                                 r#type: "checkbox",
                                 checked: *auto_start.read(),
+                                disabled: prereq_blocked,
                                 onchange: move |e| {
                                     *auto_start.write() = e.checked();
                                     sync_config();
@@ -124,12 +151,15 @@ pub fn DaemonSettingsSection(
 
                 // Controls
                 div { class: "settings-row",
-                    span { class: "settings-label", "Controls" }
+                    span { class: "settings-label",
+                        "Controls"
+                        HelpHint { text: "Manually start/stop/restart the daemon without changing the config. Stop releases the port; Start re-spawns the omegon process.".to_string() }
+                    }
                     div { class: "settings-control",
                         div { class: "row gap-2",
                             button {
                                 class: "btn btn-primary btn-sm",
-                                disabled: is_running || !*enabled.read(),
+                                disabled: is_running || !*enabled.read() || prereq_blocked,
                                 onclick: move |_| {
                                     let d = daemon_start.clone();
                                     spawn(async move { let _ = d.start().await; });
@@ -160,7 +190,10 @@ pub fn DaemonSettingsSection(
 
                 // Model
                 div { class: "settings-row",
-                    span { class: "settings-label", "Model" }
+                    span { class: "settings-label",
+                        "Model"
+                        HelpHint { text: "Model identifier the daemon advertises to connected agents. Format is `provider:model` (e.g. `anthropic:claude-sonnet-4-7`). Leave blank to inherit flynt's project-level model.".to_string() }
+                    }
                     div { class: "settings-control",
                         input {
                             class: "input settings-input",
@@ -177,7 +210,10 @@ pub fn DaemonSettingsSection(
 
                 // Posture
                 div { class: "settings-row",
-                    span { class: "settings-label", "Posture" }
+                    span { class: "settings-label",
+                        "Posture"
+                        HelpHint { text: "Behavioral stance the daemon adopts when remote agents connect. Defaults to flynt's project posture; override here if the daemon needs a different shape.".to_string() }
+                    }
                     div { class: "settings-control",
                         div { class: "radio-group",
                             for (value, label) in [
@@ -202,7 +238,10 @@ pub fn DaemonSettingsSection(
 
                 // Persona
                 div { class: "settings-row",
-                    span { class: "settings-label", "Persona" }
+                    span { class: "settings-label",
+                        "Persona"
+                        HelpHint { text: "Persona overlay for the daemon. Leave blank to use the global persona from Profile, or specify an installed persona id.".to_string() }
+                    }
                     div { class: "settings-control",
                         input {
                             class: "input settings-input",
@@ -219,7 +258,10 @@ pub fn DaemonSettingsSection(
 
                 // Port
                 div { class: "settings-row",
-                    span { class: "settings-label", "Port" }
+                    span { class: "settings-label",
+                        "Port"
+                        HelpHint { text: "Local TCP port the daemon binds to. Default 7842. Change only if you have a conflict; other tools discover the daemon by reading this value from the project config.".to_string() }
+                    }
                     div { class: "settings-control",
                         input {
                             class: "input settings-input settings-input-sm",
@@ -236,7 +278,10 @@ pub fn DaemonSettingsSection(
 
                 // Capabilities
                 div { class: "settings-row",
-                    span { class: "settings-label", "Capabilities" }
+                    span { class: "settings-label",
+                        "Capabilities"
+                        HelpHint { text: "Which inbound tool surfaces the daemon exposes to connected agents. Limit to the capabilities you actually need — each one widens the trust boundary.".to_string() }
+                    }
                     div { class: "settings-control",
                         div { class: "capabilities-grid",
                             for cap in InboundCapability::all() {

@@ -9,5 +9,6 @@ pub mod canvas_capture;
 pub mod components;
 pub mod push_pipeline;
 pub mod state;
+pub mod sync_prereq;
 pub mod ui_state;
 pub mod views;

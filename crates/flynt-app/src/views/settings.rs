@@ -3,7 +3,7 @@ use crate::{
     components::daemon_settings::DaemonSettingsSection,
     components::identity_settings::IdentitySettingsSection,
     components::provider_settings::ProviderSettingsSection,
-    state::{SettingsTab, ThemeName},
+    state::{SettingsCategory, SettingsPage, ThemeName},
     views::{IndexingScopesEditor, PublicationRulesEditor},
 };
 use flynt_core::models::{
@@ -137,7 +137,7 @@ pub fn SettingsView() -> Element {
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
     let publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
-    let mut active_tab = use_context::<Signal<SettingsTab>>();
+    let mut active_page = use_context::<Signal<SettingsPage>>();
 
     let project = ctx.project();
     let omegon = ctx.omegon();
@@ -286,14 +286,46 @@ pub fn SettingsView() -> Element {
     };
 
     rsx! {
-        div { class: "settings-root",
-            // ── Tab bar ──────────────────────────────────────────────────
-            div { class: "settings-tab-bar",
-                for tab in SettingsTab::all() {
-                    button {
-                        class: if *active_tab.read() == *tab { "settings-tab active" } else { "settings-tab" },
-                        onclick: move |_| *active_tab.write() = *tab,
-                        "{tab.label()}"
+        div { class: "settings-root settings-root-split",
+            // ── Sidebar ──────────────────────────────────────────────────
+            // Hierarchical category → page navigation. Categories with
+            // a single page (General, Project, Advanced) render as a
+            // direct link. Categories with multiple pages (Omegon)
+            // render as a header with nested children.
+            nav { class: "settings-sidebar",
+                for cat in SettingsCategory::all() {
+                    {
+                        let pages = SettingsPage::in_category(*cat);
+                        let single = pages.len() == 1;
+                        if single {
+                            let page = pages[0];
+                            let is_active = *active_page.read() == page;
+                            rsx! {
+                                button {
+                                    class: if is_active { "settings-nav-item active" } else { "settings-nav-item" },
+                                    onclick: move |_| *active_page.write() = page,
+                                    "{cat.label()}"
+                                }
+                            }
+                        } else {
+                            rsx! {
+                                div { class: "settings-nav-group",
+                                    div { class: "settings-nav-group-header", "{cat.label()}" }
+                                    for page in pages {
+                                        {
+                                            let is_active = *active_page.read() == page;
+                                            rsx! {
+                                                button {
+                                                    class: if is_active { "settings-nav-item nested active" } else { "settings-nav-item nested" },
+                                                    onclick: move |_| *active_page.write() = page,
+                                                    "{page.label()}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -301,12 +333,14 @@ pub fn SettingsView() -> Element {
             div { class: "settings-scroll",
 
                 // ════════════════════════════════════════════════════════════
-                // General: Appearance, Project, Sync, Identity, Providers
+                // General → Appearance: theme + font size
                 // ════════════════════════════════════════════════════════════
-                if *active_tab.read() == SettingsTab::General {
+                if *active_page.read() == SettingsPage::GeneralAppearance {
 
                 SettingsSection { heading: "Appearance",
-                    SettingsRow { label: "Theme",
+                    SettingsRow {
+                        label: "Theme",
+                        hint: "Visual theme applied across the sidebar, editor, and rendered preview.",
                         div { class: "theme-grid",
                             for entry in THEMES {
                                 ThemeCard {
@@ -319,7 +353,9 @@ pub fn SettingsView() -> Element {
                             }
                         }
                     }
-                    SettingsRow { label: "Font size",
+                    SettingsRow {
+                        label: "Font size",
+                        hint: "Base font scale for the editor and rendered preview. Sidebar and chrome text stay fixed.",
                         div { class: "font-size-row",
                             for preset in [FontSizePreset::Small, FontSizePreset::Medium,
                                            FontSizePreset::Large, FontSizePreset::XLarge] {
@@ -333,41 +369,70 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                SettingsSection { heading: "Project",
-                    SettingsRow { label: "Name",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{project_name}",
-                            oninput: move |e| *project_name.write() = e.value(),
-                        }
-                    }
-                    SettingsRow { label: "Location",
-                        span { class: "settings-path muted", "{ctx.project_root().display()}" }
-                    }
-                }
+                } // end Appearance
+
+                // ════════════════════════════════════════════════════════════
+                // General → Sync: backend picker + git config (if Git is active)
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::GeneralSync {
 
                 SettingsSection { heading: "Sync",
-                    SettingsRow { label: "Backend",
-                        div { class: "radio-group",
-                            SyncRadio {
-                                label: "None",
-                                active: matches!(*sync_config.read(), SyncConfig::None),
-                                on_select: move |_| *sync_config.write() = SyncConfig::None,
-                            }
-                            SyncRadio {
-                                label: "iCloud",
-                                active: matches!(*sync_config.read(), SyncConfig::ICloud),
-                                on_select: move |_| *sync_config.write() = SyncConfig::ICloud,
-                            }
-                            SyncRadio {
-                                label: "Git",
-                                active: matches!(*sync_config.read(), SyncConfig::Git { .. }),
-                                on_select: move |_| *sync_config.write() = SyncConfig::Git {
-                                    remote: "origin".into(),
-                                    branch: "main".into(),
-                                    auto_commit_seconds: 60,
-                                },
+                    SettingsRow {
+                        label: "Backend",
+                        hint: "How flynt mirrors this project off-device. Hover an option to see what it does and any prerequisites you need to satisfy first.",
+                        {
+                            // Evaluate prerequisites once per render so each
+                            // radio knows whether it should be selectable,
+                            // disabled, or selectable-with-warning. Reading
+                            // the project root reactively isn't required —
+                            // it doesn't change without a project switch
+                            // (which would re-mount the settings panel).
+                            let project_root = ctx.project_root();
+                            let icloud_status = crate::sync_prereq::evaluate_icloud(&project_root);
+                            let git_status = crate::sync_prereq::evaluate_git();
+                            let blocking_msg = if matches!(*sync_config.read(), SyncConfig::ICloud)
+                                && icloud_status.is_blocked() {
+                                icloud_status.explanation().map(String::from)
+                            } else if matches!(*sync_config.read(), SyncConfig::Git { .. })
+                                && git_status.is_blocked() {
+                                git_status.explanation().map(String::from)
+                            } else {
+                                None
+                            };
+                            rsx! {
+                                div { class: "radio-group",
+                                    SyncRadio {
+                                        label: "None",
+                                        description: "Flynt won't push anywhere. Notes live only on this machine.",
+                                        active: matches!(*sync_config.read(), SyncConfig::None),
+                                        status: crate::sync_prereq::evaluate_none(),
+                                        on_select: move |_| *sync_config.write() = SyncConfig::None,
+                                    }
+                                    SyncRadio {
+                                        label: "iCloud",
+                                        description: "Sync via iCloud Drive. macOS-only; requires the project folder to live inside iCloud Drive.",
+                                        active: matches!(*sync_config.read(), SyncConfig::ICloud),
+                                        status: icloud_status.clone(),
+                                        on_select: move |_| *sync_config.write() = SyncConfig::ICloud,
+                                    }
+                                    SyncRadio {
+                                        label: "Git",
+                                        description: "Auto-commit and push to a git remote. Requires git installed and a configured provider token (GitHub, GitLab, etc).",
+                                        active: matches!(*sync_config.read(), SyncConfig::Git { .. }),
+                                        status: git_status.clone(),
+                                        on_select: move |_| *sync_config.write() = SyncConfig::Git {
+                                            remote: "origin".into(),
+                                            branch: "main".into(),
+                                            auto_commit_seconds: 60,
+                                        },
+                                    }
+                                }
+                                if let Some(msg) = blocking_msg {
+                                    div { class: "settings-prereq-warning",
+                                        span { class: "settings-prereq-warning-icon", "\u{26A0}" }
+                                        span { "{msg}" }
+                                    }
+                                }
                             }
                         }
                     }
@@ -417,22 +482,45 @@ pub fn SettingsView() -> Element {
                             let cred_status = provider_id.and_then(|pid| {
                                 flynt_core::providers::PROVIDERS.iter().find(|p| p.id == pid)
                             }).map(|p| flynt_core::providers::probe_provider(p));
+                            // Shared deep-link to the Providers page for the
+                            // operator to manage the credential. Same control
+                            // for both authenticated + missing cases — the
+                            // message changes, the destination doesn't.
+                            let mut goto_providers = active_page;
+                            let providers_link = rsx! {
+                                button {
+                                    class: "btn btn-ghost btn-sm settings-providers-link",
+                                    onclick: move |_| {
+                                        *goto_providers.write() = SettingsPage::OmegonProviders;
+                                    },
+                                    "Manage tokens \u{2192}"
+                                }
+                            };
                             match (provider_id, cred_status) {
                                 (Some(pid), Some(flynt_core::providers::CredentialStatus::Authenticated { source })) => rsx! {
                                     SettingsRow { label: "Git credentials",
-                                        span { class: "provider-status authenticated" }
-                                        span { class: "provider-status-text", "Authenticated ({source}) — {pid}" }
+                                        div { class: "settings-row-inline",
+                                            span { class: "provider-status authenticated" }
+                                            span { class: "provider-status-text", "Authenticated ({source}) — {pid}" }
+                                            {providers_link}
+                                        }
                                     }
                                 },
                                 (Some(pid), _) => rsx! {
                                     SettingsRow { label: "Git credentials",
-                                        span { class: "provider-status missing" }
-                                        span { class: "provider-status-text", "Not configured — add a token for {pid} in Providers" }
+                                        div { class: "settings-row-inline",
+                                            span { class: "provider-status missing" }
+                                            span { class: "provider-status-text", "No token for {pid} yet — push will fail until you add one" }
+                                            {providers_link}
+                                        }
                                     }
                                 },
                                 _ => rsx! {
                                     SettingsRow { label: "Git credentials",
-                                        span { class: "settings-hint muted", "Unknown host — credentials managed by system git" }
+                                        div { class: "settings-row-inline",
+                                            span { class: "settings-hint muted", "Unknown host — credentials managed by system git" }
+                                            {providers_link}
+                                        }
                                     }
                                 },
                             }
@@ -440,15 +528,37 @@ pub fn SettingsView() -> Element {
                     }
                 }
 
-                IdentitySettingsSection {}
-                ProviderSettingsSection {}
-
-                } // end General
+                } // end Sync
 
                 // ════════════════════════════════════════════════════════════
-                // Project: Indexing, Visualization, Publication
+                // General → Identity: passphrase / biometric identity setup
                 // ════════════════════════════════════════════════════════════
-                if *active_tab.read() == SettingsTab::Project {
+                if *active_page.read() == SettingsPage::GeneralIdentity {
+                    IdentitySettingsSection {}
+                }
+
+                // ════════════════════════════════════════════════════════════
+                // Project: Name + Location + Indexing + Visualization + Publication
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::Project {
+
+                SettingsSection { heading: "Identity",
+                    SettingsRow {
+                        label: "Name",
+                        hint: "Display name for this project. Shows up in the project picker, the tab bar title, and the agent context. Doesn't rename the folder on disk.",
+                        input {
+                            class: "input settings-input",
+                            r#type: "text",
+                            value: "{project_name}",
+                            oninput: move |e| *project_name.write() = e.value(),
+                        }
+                    }
+                    SettingsRow {
+                        label: "Location",
+                        hint: "Folder on disk where this project's notes, .flynt/ index, and config live. Change it by opening a different project from the welcome screen.",
+                        span { class: "settings-path muted", "{ctx.project_root().display()}" }
+                    }
+                }
 
                 SettingsSection { heading: "Indexing",
                     SettingsRow { label: "Write frontmatter",
@@ -530,89 +640,159 @@ pub fn SettingsView() -> Element {
                 } // end Project
 
                 // ════════════════════════════════════════════════════════════
-                // Omegon: Agent config, Extensions, Skills, Daemon
+                // Omegon → Profile: agent profile + posture
                 // ════════════════════════════════════════════════════════════
-                if *active_tab.read() == SettingsTab::Omegon {
+                if *active_page.read() == SettingsPage::OmegonProfile {
+                    crate::components::omegon::OmegonSettingsSection {}
+                }
 
-                crate::components::omegon::OmegonSettingsSection {}
-                crate::components::omegon::ExtensionManagerSection {}
+                // ════════════════════════════════════════════════════════════
+                // Omegon → Providers: AI provider credentials AND git-hosting
+                // tokens (GitHub, GitLab, Forgejo). One credential store
+                // because omegon's auth.json holds both — the agent uses AI
+                // providers directly, and flynt's git sync + push pipeline
+                // read forge tokens from the same place.
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::OmegonProviders {
+                    div { class: "settings-providers-hint",
+                        "Tokens for AI providers (Anthropic, OpenAI\u{2026}) and git hosting (GitHub, GitLab\u{2026}) live here. The agent uses the AI providers; flynt's Sync section reads the forge tokens for push/pull."
+                    }
+                    ProviderSettingsSection {}
+                }
 
-                {
-                    let omegon_ctx = ctx.omegon();
-                    let current_skills = ctx.omegon().load_operator_settings().enabled_skills;
-                    rsx! {
-                        crate::components::omegon::SkillSettingsSection {
-                            enabled_skills: current_skills,
-                            on_change: move |updated: Vec<String>| {
-                                let omegon = omegon_ctx.clone();
-                                let mut settings = omegon.load_operator_settings();
-                                settings.enabled_skills = updated;
-                                let _ = omegon.save_operator_settings(&settings);
-                            },
-                            extensions_dir: ctx.omegon().extensions_dir.clone(),
-                            skills_dir: ctx.omegon().home_dir.join("skills"),
+                // ════════════════════════════════════════════════════════════
+                // Omegon → Extensions: installed extensions manager
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::OmegonExtensions {
+                    crate::components::omegon::ExtensionManagerSection {}
+                }
+
+                // ════════════════════════════════════════════════════════════
+                // Omegon → Armory: browse + install extensions from the
+                // omegon registry. The `extensions_search` ACP call hits
+                // the running omegon host, which talks to the registry.
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::OmegonArmory {
+                    crate::components::omegon::ArmorySection {}
+                }
+
+                // ════════════════════════════════════════════════════════════
+                // Omegon → Skills: enable/disable bundled + custom skills
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::OmegonSkills {
+                    {
+                        let omegon_ctx = ctx.omegon();
+                        let current_skills = ctx.omegon().load_operator_settings().enabled_skills;
+                        rsx! {
+                            crate::components::omegon::SkillSettingsSection {
+                                enabled_skills: current_skills,
+                                on_change: move |updated: Vec<String>| {
+                                    let omegon = omegon_ctx.clone();
+                                    let mut settings = omegon.load_operator_settings();
+                                    settings.enabled_skills = updated;
+                                    let _ = omegon.save_operator_settings(&settings);
+                                },
+                                extensions_dir: ctx.omegon().extensions_dir.clone(),
+                                skills_dir: ctx.omegon().home_dir.join("skills"),
+                            }
                         }
                     }
                 }
 
-                DaemonSettingsSection { config: daemon_config }
+                // ════════════════════════════════════════════════════════════
+                // Omegon → Daemon: background agent daemon config
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::OmegonDaemon {
+                    DaemonSettingsSection { config: daemon_config }
+                }
 
-                SettingsSection { heading: "Runtime",
-                    SettingsRow { label: "Omegon channel",
-                        div { class: "radio-group",
-                            for ch in flynt_core::models::OmegonChannel::all_named() {
-                                {
-                                    let ch_clone = ch.clone();
-                                    let lbl = ch.label().to_string();
-                                    rsx! {
-                                        button {
-                                            class: if *omegon_channel.read() == *ch { "radio-btn active" } else { "radio-btn" },
-                                            onclick: move |_| *omegon_channel.write() = ch_clone.clone(),
-                                            "{lbl}"
+                // ════════════════════════════════════════════════════════════
+                // Omegon → Runtime: channel, binary override, runtime paths
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::OmegonRuntime {
+                    SettingsSection { heading: "Runtime",
+                        SettingsRow {
+                            label: "Channel",
+                            hint: "Which release stream flynt resolves to when no binary override is set. Stable = production builds. RC = release candidates, near-stable. Nightly = latest unreleased work, may break.",
+                            div { class: "radio-group",
+                                for ch in flynt_core::models::OmegonChannel::all_named() {
+                                    {
+                                        let ch_clone = ch.clone();
+                                        let lbl = ch.label().to_string();
+                                        let is_nightly = matches!(ch, flynt_core::models::OmegonChannel::Nightly);
+                                        let mut class = String::from("radio-btn");
+                                        if *omegon_channel.read() == *ch { class.push_str(" active"); }
+                                        rsx! {
+                                            button {
+                                                class: "{class}",
+                                                onclick: move |_| *omegon_channel.write() = ch_clone.clone(),
+                                                "{lbl}"
+                                                if is_nightly {
+                                                    crate::components::HelpHint {
+                                                        text: "Nightly builds can contain unreleased breaking changes. Use only if you're comfortable downgrading via `omegon switch` when something breaks.".to_string()
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    SettingsRow { label: "Omegon binary",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{omegon_bin_override}",
-                            placeholder: "Auto-detect from channel",
-                            oninput: move |e| *omegon_bin_override.write() = e.value(),
+                        SettingsRow {
+                            label: "Binary path",
+                            hint: "Explicit path to an omegon executable. Highest-priority override — wins over the OMEGON_BIN env var and the channel resolver. Leave blank to auto-detect from channel.",
+                            input {
+                                class: "input settings-input",
+                                r#type: "text",
+                                value: "{omegon_bin_override}",
+                                placeholder: "Auto-detect from channel",
+                                oninput: move |e| *omegon_bin_override.write() = e.value(),
+                            }
                         }
-                    }
-                    SettingsRow { label: "Omegon runtime root",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{omegon_runtime_root}",
-                            placeholder: "optional absolute path",
-                            oninput: move |e| *omegon_runtime_root.write() = e.value(),
+                        SettingsRow {
+                            label: "Runtime root",
+                            hint: "Override for omegon's runtime directory (where sessions, secrets, and per-extension state live). Defaults to ~/.omegon — only set this if you're isolating workspaces.",
+                            input {
+                                class: "input settings-input",
+                                r#type: "text",
+                                value: "{omegon_runtime_root}",
+                                placeholder: "optional absolute path",
+                                oninput: move |e| *omegon_runtime_root.write() = e.value(),
+                            }
                         }
-                    }
-                    SettingsRow { label: "Omegon mind DB",
-                        input {
-                            class: "input settings-input",
-                            r#type: "text",
-                            value: "{omegon_mind_db_path}",
-                            placeholder: "optional absolute path",
-                            oninput: move |e| *omegon_mind_db_path.write() = e.value(),
+                        SettingsRow {
+                            label: "Memory DB",
+                            hint: "Path to omegon's persistent memory database (its long-term knowledge store). Defaults to a file inside the runtime root. Override to share memory across workspaces or store it somewhere durable.",
+                            input {
+                                class: "input settings-input",
+                                r#type: "text",
+                                value: "{omegon_mind_db_path}",
+                                placeholder: "optional absolute path",
+                                oninput: move |e| *omegon_mind_db_path.write() = e.value(),
+                            }
                         }
                     }
                 }
 
-                } // end Omegon
-
                 // ════════════════════════════════════════════════════════════
                 // Advanced: Local paths, Config file editor
                 // ════════════════════════════════════════════════════════════
-                if *active_tab.read() == SettingsTab::Advanced {
+                if *active_page.read() == SettingsPage::Advanced {
+
+                div { class: "settings-advanced-warning",
+                    span { class: "settings-advanced-warning-icon", "\u{26A0}" }
+                    div {
+                        div { class: "settings-advanced-warning-title", "Here be dragons" }
+                        div { class: "settings-advanced-warning-body",
+                            "These settings affect storage paths and raw config. Editing them incorrectly can break the project's index, lose recent state, or prevent flynt from launching. Snapshot the .flynt directory before changing anything you don't recognize."
+                        }
+                    }
+                }
 
                 SettingsSection { heading: "Local paths",
-                    SettingsRow { label: "State root",
+                    SettingsRow {
+                        label: "State root",
+                        hint: "Override for the per-project local-state directory (defaults to <project>/.flynt-local/). Holds the index DB and ephemeral runtime state. Useful only when isolating workspaces.",
                         input {
                             class: "input settings-input",
                             r#type: "text",
@@ -621,7 +801,9 @@ pub fn SettingsView() -> Element {
                             oninput: move |e| *local_state_root.write() = e.value(),
                         }
                     }
-                    SettingsRow { label: "Flynt index DB",
+                    SettingsRow {
+                        label: "Index DB",
+                        hint: "Override for the SQLite full-text index database. Defaults to a file inside the state root. Move it to a fast SSD location if you have a huge project.",
                         input {
                             class: "input settings-input",
                             r#type: "text",
@@ -722,7 +904,7 @@ pub fn SettingsView() -> Element {
                 // ── Save bar ─────────────────────────────────────────────────
                 div { class: "settings-save-bar",
                     button { class: "btn btn-primary", onclick: save, "Save changes" }
-                    if *active_tab.read() == SettingsTab::Project {
+                    if *active_page.read() == SettingsPage::Project {
                         button { class: "btn btn-ghost", onclick: publish_preview, "Export local preview" }
                     }
                     if let Some((kind, msg)) = *save_msg.read() {
@@ -774,10 +956,23 @@ fn SettingsSection(heading: &'static str, children: Element) -> Element {
 }
 
 #[component]
-fn SettingsRow(label: &'static str, children: Element) -> Element {
+fn SettingsRow(
+    label: &'static str,
+    children: Element,
+    /// Optional one-line explanation surfaced via a hover `(?)` icon
+    /// next to the label. Use it when the setting's meaning isn't
+    /// self-evident from the label alone.
+    #[props(default = "")]
+    hint: &'static str,
+) -> Element {
     rsx! {
         div { class: "settings-row",
-            span { class: "settings-label", "{label}" }
+            span { class: "settings-label",
+                "{label}"
+                if !hint.is_empty() {
+                    crate::components::HelpHint { text: hint.to_string() }
+                }
+            }
             div { class: "settings-control", {children} }
         }
     }
@@ -815,13 +1010,47 @@ fn ThemeCard(entry: &'static ThemeEntry, active: bool, on_select: EventHandler<S
 }
 
 #[component]
-fn SyncRadio(label: &'static str, active: bool, on_select: EventHandler<()>) -> Element {
+fn SyncRadio(
+    label: &'static str,
+    active: bool,
+    on_select: EventHandler<()>,
+    /// Prerequisite status — drives the disabled state, the inline
+    /// caution/error message, and the help-hint tooltip.
+    #[props(default = crate::sync_prereq::SyncBackendStatus::Available)]
+    status: crate::sync_prereq::SyncBackendStatus,
+    /// Always-on description of what the backend does. The disabled
+    /// reason is appended on hover when applicable.
+    description: &'static str,
+) -> Element {
+    let blocked = status.is_blocked();
+    let explanation = status.explanation().map(String::from);
+    let tooltip_text = match explanation.as_deref() {
+        Some(reason) => format!("{description}\n\n{reason}"),
+        None => description.to_string(),
+    };
+    let class = match (active, &status) {
+        (true, _) => "radio-btn active",
+        (false, crate::sync_prereq::SyncBackendStatus::Blocked(_)) => "radio-btn disabled",
+        (false, crate::sync_prereq::SyncBackendStatus::Warning(_)) => "radio-btn warning",
+        _ => "radio-btn",
+    };
+    let dot_class = match (active, &status) {
+        (true, _) => "radio-dot active",
+        (false, crate::sync_prereq::SyncBackendStatus::Blocked(_)) => "radio-dot disabled",
+        _ => "radio-dot",
+    };
     rsx! {
         button {
-            class: if active { "radio-btn active" } else { "radio-btn" },
-            onclick: move |_| on_select.call(()),
-            div { class: if active { "radio-dot active" } else { "radio-dot" } }
+            class: "{class}",
+            disabled: blocked && !active,
+            onclick: move |_| {
+                if !blocked || active {
+                    on_select.call(());
+                }
+            },
+            div { class: "{dot_class}" }
             "{label}"
+            crate::components::HelpHint { text: tooltip_text }
         }
     }
 }

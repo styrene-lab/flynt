@@ -45,7 +45,6 @@ fn route_label(route: &Route) -> &'static str {
         Route::Search => "search",
         Route::Kanban => "kanban",
         Route::Graph => "graph",
-        Route::Settings => "settings",
     }
 }
 

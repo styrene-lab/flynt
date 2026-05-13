@@ -1,7 +1,7 @@
 use crate::{
     bootstrap::{bootstrap_from_env, runtime_state_for_project_root, AppContext, OmegonRuntimeContext, PendingProjectSetup},
     components::{initial_note_id_for_project, AgentRail, CommandPalette, Sidebar, Toolbar},
-    state::{Route, SettingsTab, SyncStatus, TabState, ThemeName},
+    state::{Route, SettingsOpen, SettingsPage, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use flynt_core::store::ProjectStore;
@@ -57,7 +57,11 @@ pub fn App() -> Element {
     use_context_provider(|| Signal::new(crate::state::RenameTrigger(0)));
 
     // Settings tab — which panel is shown in SettingsView
-    use_context_provider(|| Signal::new(SettingsTab::default()));
+    use_context_provider(|| Signal::new(SettingsPage::default()));
+
+    // Settings modal open state — global signal so any component can
+    // toggle it (menu, command palette, sidebar gear button, agent rail).
+    use_context_provider(|| Signal::new(SettingsOpen(false)));
 
 
     // Route — provided via context so search view can navigate back
@@ -132,12 +136,13 @@ pub fn App() -> Element {
     // ── Native menu event handler ────────────────────────────────────────
     let ctx_menu_handler = ctx.clone();
     let mut show_agent_menu = show_agent;
+    let mut settings_open_menu = use_context::<Signal<SettingsOpen>>();
     dioxus::desktop::use_muda_event_handler(move |event| {
         match event.id().0.as_str() {
             crate::menu::VIEW_NOTES => *active_route.write() = Route::Notes,
             crate::menu::VIEW_BOARD => *active_route.write() = Route::Kanban,
             crate::menu::VIEW_GRAPH => *active_route.write() = Route::Graph,
-            crate::menu::VIEW_SETTINGS => *active_route.write() = Route::Settings,
+            crate::menu::VIEW_SETTINGS => *settings_open_menu.write() = SettingsOpen(true),
             crate::menu::TOGGLE_AGENT => {
                 let v = *show_agent_menu.read();
                 *show_agent_menu.write() = !v;
@@ -450,6 +455,38 @@ pub fn App() -> Element {
         // Reveal body after stylesheets are loaded
         document::Script { "document.body.classList.add('ready');" }
 
+        // Global help-hint tooltip positioner. The tooltip itself is
+        // `position: fixed` so it can escape overflow:hidden ancestors
+        // (the settings modal in particular). This delegated listener
+        // sets the tooltip's top/left to sit above the hovered icon,
+        // clamping to viewport bounds so it never overflows.
+        document::Script {
+            r#"
+            (function() {{
+                if (window._flyntHelpHintWired) return;
+                window._flyntHelpHintWired = true;
+                const TIP_W = 240;
+                const GAP = 6;
+                document.addEventListener('mouseover', function(e) {{
+                    const hint = e.target && e.target.closest && e.target.closest('.help-hint');
+                    if (!hint) return;
+                    const tip = hint.querySelector('.help-hint-tooltip');
+                    if (!tip) return;
+                    const r = hint.getBoundingClientRect();
+                    const tipH = tip.offsetHeight || 60;
+                    let top = r.top - tipH - GAP;
+                    let left = r.left;
+                    if (top < 8) top = r.bottom + GAP;
+                    const maxLeft = window.innerWidth - TIP_W - 8;
+                    if (left > maxLeft) left = maxLeft;
+                    if (left < 8) left = 8;
+                    tip.style.top = top + 'px';
+                    tip.style.left = left + 'px';
+                }});
+            }})();
+            "#
+        }
+
         div {
             class: "flynt-shell {font_size.read().css_class()}",
             "data-theme": "{theme.read().0}",
@@ -666,7 +703,40 @@ pub fn App() -> Element {
                         Route::Search   => rsx! { SearchView { search_query } },
                         Route::Kanban   => rsx! { KanbanView {} },
                         Route::Graph    => rsx! { GraphView {} },
-                        Route::Settings => rsx! { SettingsView {} },
+                    }
+                }
+                // Settings modal — overlays the active route so operators
+                // can glance at a setting and return to their work without
+                // losing the underlying view. Closes on Escape, backdrop
+                // click, or the close button inside the modal.
+                {
+                    let settings_open_signal = use_context::<Signal<SettingsOpen>>();
+                    let is_open = settings_open_signal.read().0;
+                    let mut close_settings = settings_open_signal;
+                    rsx! {
+                        if is_open {
+                            div {
+                                class: "modal-overlay settings-modal-overlay",
+                                onclick: move |_| *close_settings.write() = SettingsOpen(false),
+                                onkeydown: move |e| {
+                                    if e.key() == Key::Escape {
+                                        *close_settings.write() = SettingsOpen(false);
+                                    }
+                                },
+                                tabindex: 0,
+                                div {
+                                    class: "modal-dialog settings-modal-dialog",
+                                    onclick: move |e| e.stop_propagation(),
+                                    button {
+                                        class: "settings-modal-close",
+                                        title: "Close (Esc)",
+                                        onclick: move |_| *close_settings.write() = SettingsOpen(false),
+                                        "\u{00D7}"
+                                    }
+                                    SettingsView {}
+                                }
+                            }
+                        }
                     }
                 }
                 // Clone remote project dialog

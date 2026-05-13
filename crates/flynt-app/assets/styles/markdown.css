@@ -72,6 +72,10 @@
 .notes-scroll {
   flex:       1;
   overflow-y: auto;
+  /* Reserve scrollbar gutter so the macOS overlay scrollbar appearing
+     on hover doesn't reflow body content by ~15px (visible as text
+     re-wrapping as the operator moves the mouse). */
+  scrollbar-gutter: stable;
   padding:    var(--space-8) var(--space-10);
 }
 
@@ -265,7 +269,9 @@
   color:     var(--dim);
 }
 
-/* Notes top bar: title + actions row */
+/* Notes top bar: title + actions row.
+   Right padding is intentionally generous so the action buttons
+   (Save / Live) never crowd against the window edge. */
 .notes-topbar {
   display:         flex;
   align-items:     center;
@@ -273,7 +279,8 @@
   gap:             var(--space-4);
   flex-shrink:     0;
   background:      var(--background);
-  padding:         8px var(--space-10);
+  padding:         var(--space-3) var(--space-10);
+  padding-right:   var(--space-12);
   border-bottom:   1px solid var(--border);
 }
 
@@ -617,7 +624,10 @@
   background:  var(--surface);
   border:      none;
   border-right: none;
-  padding:     var(--space-8) var(--space-6);
+  /* Generous bottom padding (1.5× the top) so the cursor never sits
+     flush against the viewport edge — operators get a buffer to scroll
+     past the current line. */
+  padding:     var(--space-8) var(--space-6) var(--space-12);
   font-family: var(--font-mono);
   font-size:   var(--font-size-sm);
   color:       var(--foreground);
@@ -633,10 +643,19 @@
 }
 
 .preview-pane {
-  flex:       1;
-  overflow-y: auto;
-  padding:    var(--space-8) var(--space-8);
-  min-width:  0;
+  flex:          1;
+  overflow-y:    auto;
+  scrollbar-gutter: stable;
+  /* Symmetric horizontal padding plus an extra-tall bottom buffer so
+     the rendered content doesn't sit flush against the viewport edge.
+     Constrains readability width on very wide displays. */
+  padding:       var(--space-8) var(--space-10) var(--space-16);
+  padding-right: var(--space-12);
+  min-width:     0;
+}
+
+.preview-pane .markdown-body {
+  max-width: 720px;
 }
 
 /* ── highlight.js integration ─────────────────────────────────────────────── */
