@@ -270,7 +270,7 @@ jobs:
 
           codesign -f -s "$APPLE_CODESIGN_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" --options runtime --timestamp \
-            --entitlements crates/flynt-app/Codex.entitlements \
+            --entitlements crates/flynt-app/Flynt.entitlements \
             "$APP"
 
       - name: Create DMG
@@ -532,7 +532,7 @@ jobs:
             --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
             "$PLUGINS/FlyntShare.appex"
           codesign --force \
-            --entitlements crates/flynt-mobile/ios/Codex.entitlements \
+            --entitlements crates/flynt-mobile/ios/Flynt.entitlements \
             --sign "$DIST_IDENTITY" --keychain "$KEYCHAIN_PATH" \
             "$APP"
 

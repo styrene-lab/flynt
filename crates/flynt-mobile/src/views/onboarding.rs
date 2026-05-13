@@ -111,7 +111,7 @@ pub fn OnboardingView(on_complete: EventHandler<PathBuf>) -> Element {
                                     class: "input",
                                     r#type: "url",
                                     value: "{repo_url}",
-                                    placeholder: "https://github.com/you/codex-manifest.git",
+                                    placeholder: "https://github.com/you/flynt-manifest.git",
                                     oninput: move |e| *repo_url.write() = e.value(),
                                 }
                             }
