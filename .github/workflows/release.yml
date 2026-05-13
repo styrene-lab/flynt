@@ -61,6 +61,13 @@ jobs:
         # so unpinned `cargo install` silently picks up an incompatible CLI.
         run: cargo install dioxus-cli --locked --version 0.7.7
 
+      # Probe cargo build first — dx swallows cargo's stderr on Linux, so
+      # if we go straight to `dx build` and there's a real compile error
+      # all we see is `cargo build finished with errors` and no detail.
+      # Running cargo directly surfaces the actual error in CI logs.
+      - name: Probe cargo build (Linux)
+        run: cargo build --release -p flynt-app
+
       - name: Build desktop release
         run: |
           cd crates/flynt-app
