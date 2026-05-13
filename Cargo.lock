@@ -6484,6 +6484,8 @@ dependencies = [
 [[package]]
 name = "styrene-forge"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cf75140931f33a8ce20354bf4aeb042e47ea43bf7fa5189d6c5dc09976e2fca"
 dependencies = [
  "async-trait",
  "chrono",
