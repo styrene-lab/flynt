@@ -22,6 +22,12 @@ Tagged releases publish:
 - `flynt-v{version}-linux-arm64.tar.gz`
 - `flynt-agent-*` tarballs for supported platforms
 
+Manual release dispatches are macOS-first by default so the team can validate
+direct-download DMG/PKG changes without rebuilding every platform. Use the
+workflow inputs `include_linux` and `include_ios` when a manual dispatch should
+also build those artifacts. Tag pushes still build the full first-party release
+set.
+
 The macOS DMG is the primary direct-download artifact. It must be Developer ID
 signed, notarized, and stapled before publication.
 
@@ -59,6 +65,10 @@ Required CI secrets for the `v0.10.0` direct-download PKG:
 For backward compatibility, CI will also inspect `APPLE_INSTALLER_CERT_P12_B64`
 if the explicit Developer ID Installer secret is absent, but the release fails
 unless the imported identity is actually `Developer ID Installer`.
+
+The release workflow installs the prebuilt Dioxus CLI binary for the runner
+target and verifies its checksum. It must not compile `dioxus-cli` from source
+inside release jobs.
 
 ## Deferred Channels
 

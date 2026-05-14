@@ -85,5 +85,7 @@ Planned secrets:
 ## Policy
 
 Mobile release work should not block desktop GitHub Releases, Homebrew, or Nix.
-The mobile jobs can run in parallel and upload artifacts, but desktop release
-publication remains gated by macOS and Linux only until mobile reaches parity.
+Manual desktop release dispatches are macOS-first by default; mobile jobs run
+only when explicitly requested through workflow inputs or when a tag push builds
+the full release set. Mobile artifacts stay non-blocking until mobile reaches
+parity.
