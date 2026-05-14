@@ -2,6 +2,40 @@
 name = "Flynt"
 default_platform = "mobile"
 
+[deep_links]
+schemes = ["flynt-note"]
+
+[android]
+identifier = "io.styrene.flynt"
+min_sdk = 29
+target_sdk = 35
+compile_sdk = 35
+icon = ["assets/AppIcon.appiconset/icon-1024.png"]
+short_description = "Local-first knowledge workspace"
+long_description = "Flynt is a markdown-native notes and kanban task manager."
+
+[android.application]
+supports_rtl = true
+uses_cleartext_traffic = false
+large_heap = true
+
+[android.permissions]
+"android.permission.INTERNET" = { description = "Sync projects and connect to remote Git providers." }
+"android.permission.ACCESS_NETWORK_STATE" = { description = "Detect connectivity for sync and setup flows." }
+
+[[android.intent_filters]]
+actions = ["android.intent.action.SEND"]
+categories = ["android.intent.category.DEFAULT"]
+
+[[android.intent_filters.data]]
+mime_type = "text/plain"
+
+[[android.intent_filters.data]]
+mime_type = "text/markdown"
+
+[[android.intent_filters.data]]
+mime_type = "image/*"
+
 [application.ios]
 bundle_identifier = "io.styrene.codex"
 deployment_target = "17.0"

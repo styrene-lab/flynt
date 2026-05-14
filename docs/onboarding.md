@@ -8,24 +8,44 @@ Internal reference for tester onboarding. Updated 2026-04-20.
 
 | Platform | Artifact | Signing | Distribution |
 |----------|----------|---------|--------------|
-| macOS | `Flynt-{VER}.dmg` | Developer ID (UZBY9DM42N) | Direct download |
+| macOS | `Flynt-{VER}-macos.dmg`, `Flynt-{VER}-macos.pkg` | Developer ID (UZBY9DM42N) | Direct download |
 | iOS | `Flynt-{VER}.ipa` | Apple Development (Q4FM48AWU9) | Ad-hoc / TestFlight |
 
-Build both with:
+Build the direct macOS DMG with:
 ```bash
-./scripts/build-release.sh 0.1.0
+just release
+```
+
+Build the optional direct macOS PKG installer with:
+```bash
+just release-pkg
 ```
 
 ---
 
 ## macOS Install Path
 
-1. Download or build `Flynt-{VER}.dmg`
-2. Open DMG, drag `Flynt.app` to `/Applications`
-3. First launch: Gatekeeper may block — right-click > Open, or `xattr -cr /Applications/Flynt.app`
+1. Download or build `Flynt-{VER}-macos.dmg` or `Flynt-{VER}-macos.pkg`
+2. DMG path: open DMG, drag `Flynt.app` to `/Applications`
+3. PKG path: run installer; it installs `Flynt.app` to `/Applications`
 4. Welcome screen offers 5 project setup paths (see below)
 
-**Notarization is NOT yet configured.** Testers will need to bypass Gatekeeper on first launch. Notarization requires an app-specific password for `xcrun notarytool submit`.
+Direct-download builds are Developer ID signed and notarized when release signing secrets or the local `flynt` notarytool keychain profile are configured.
+
+Local notarization can also use App Store Connect API key env:
+
+```bash
+APPLE_API_KEY_P8_B64=... APPLE_API_KEY_ID=... APPLE_API_ISSUER=... just release
+```
+
+Direct-download PKG releases require a Developer ID Installer certificate. The
+Mac App Store `3rd Party Mac Developer Installer` certificate is not sufficient
+for public non-App-Store PKGs.
+
+For the first public beta target, `v0.10.0`, publish both:
+
+- `Flynt-0.10.0-macos.dmg`
+- `Flynt-0.10.0-macos.pkg`
 
 ### Prerequisites
 - macOS 13+ (Ventura or later)
@@ -38,7 +58,7 @@ Build both with:
 ### Ad-hoc (current)
 1. Tester provides their device UDID
 2. Add UDID to provisioning profile in Apple Developer portal
-3. Build: `./scripts/build-release.sh 0.1.0`
+3. Build: `just ios-ipa`
 4. Install via Xcode or `xcrun devicectl device install app`
 5. Push project data: `xcrun devicectl device copy to --device <name> --domain-type appDataContainer --domain-identifier io.styrene.flynt --source <project-dir> --destination Documents/Flynt`
 
@@ -224,8 +244,8 @@ Future flow (with StyreneIdentity):
 
 ```bash
 # 1. Install
-open Flynt-0.1.0.dmg  # drag to Applications
-xattr -cr /Applications/Flynt.app  # bypass Gatekeeper if needed
+open Flynt-0.10.0-macos.dmg  # drag to Applications
+# Or run Flynt-0.10.0-macos.pkg
 
 # 2. Launch
 open /Applications/Flynt.app

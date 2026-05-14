@@ -72,6 +72,26 @@ jobs:
       - name: Cargo check
         run: cargo check -p flynt-core -p flynt-store -p flynt-app
 
+  nix:
+    name: Nix flake
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Evaluate flake outputs
+        run: NIXPKGS_ALLOW_UNFREE=1 nix flake show --impure
+
+  mobile-readiness:
+    name: Mobile release readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Android scaffold
+        run: |
+          test -f crates/flynt-mobile/android/README.md
+          test -f crates/flynt-mobile/android/AndroidManifest.xml.template
+          test -f docs/mobile-release-readiness.md
+
   lipstyk:
     name: lipstyk
     uses: styrene-lab/lipstyk/.github/workflows/lipstyk.yml@main

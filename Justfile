@@ -63,62 +63,55 @@ bundle:
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLName string io.styrene.flynt" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string codex-note" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string flynt-note" "$PLIST"
 
     echo "✓ Bundled dist/Flynt.app (v{{version}} build $BUILD_NUM)"
 
-# ─── Code Signing (YubiKey via rcodesign) ───────────────────
+# ─── Code Signing ───────────────────────────────────────────
 
-# Sign the .app bundle with Developer ID Application cert on YubiKey.
-# Same flow as Omegon: rcodesign + smartcard slot 9c.
+# Sign the .app bundle with a Developer ID Application certificate.
 sign: bundle
     #!/usr/bin/env bash
     set -euo pipefail
     APP="dist/Flynt.app"
 
-    echo "Signing Flynt.app with Apple Developer ID (YubiKey)..."
-    if [ -n "${SMARTCARD_PIN:-}" ]; then
-        echo "Using SMARTCARD_PIN from environment"
-        echo "⚡ Touch YubiKey when it blinks"
-        rcodesign sign \
-            --smartcard-slot 9c \
-            --smartcard-pin-env SMARTCARD_PIN \
-            --code-signature-flags runtime \
+    KEYCHAIN_MATCH=$(security find-identity -v -p codesigning | grep "{{dev_id_app_identity}}" | head -1)
+    KEYCHAIN_IDENTITY=$(printf '%s\n' "$KEYCHAIN_MATCH" | awk '{print $2}')
+    KEYCHAIN_IDENTITY_NAME=$(printf '%s\n' "$KEYCHAIN_MATCH" | sed 's/.*"\(.*\)"/\1/')
+    if [ -n "$KEYCHAIN_IDENTITY" ]; then
+        echo "Signing Flynt.app with $KEYCHAIN_IDENTITY_NAME ($KEYCHAIN_IDENTITY)..."
+        while IFS= read -r bin; do
+            codesign -f -s "$KEYCHAIN_IDENTITY" --options runtime --timestamp "$bin" 2>/dev/null || true
+        done < <(find "$APP/Contents/MacOS" -type f)
+        codesign --deep --force \
+            --sign "$KEYCHAIN_IDENTITY" \
+            --options runtime \
+            --timestamp \
             "$APP"
     else
-        echo "⚡ Enter PIN when prompted, then touch YubiKey when it blinks"
-        rcodesign sign \
-            --smartcard-slot 9c \
-            --code-signature-flags runtime \
-            "$APP"
+        echo "No keychain Developer ID Application identity matching '{{dev_id_app_identity}}'; trying rcodesign smartcard flow..."
+        if [ -n "${SMARTCARD_PIN:-}" ]; then
+            echo "Using SMARTCARD_PIN from environment"
+            echo "Touch YubiKey when it blinks"
+            rcodesign sign \
+                --smartcard-slot 9c \
+                --smartcard-pin-env SMARTCARD_PIN \
+                --code-signature-flags runtime \
+                "$APP"
+        else
+            echo "Enter PIN when prompted, then touch YubiKey when it blinks"
+            rcodesign sign \
+                --smartcard-slot 9c \
+                --code-signature-flags runtime \
+                "$APP"
+        fi
     fi
 
     echo ""
     echo "Verifying signature..."
-    codesign -dvvv "$APP" 2>&1 | grep -E "Authority|Team|Signature|Identifier"
+    codesign --verify --deep --strict --verbose=2 "$APP"
+    codesign -dvvv "$APP" 2>&1 | grep -E "Authority|Team|Signature|Identifier|Timestamp"
     echo "✓ Signed"
-
-# ─── Notarization ──────────────────────────────────────────
-
-# Notarize the signed .app for direct distribution.
-# Requires a keychain profile: just setup-notarize
-notarize: sign
-    #!/usr/bin/env bash
-    set -euo pipefail
-    APP="dist/Flynt.app"
-    ZIP="dist/Flynt-{{version}}.zip"
-
-    ditto -c -k --keepParent "$APP" "$ZIP"
-    echo "Submitting for Apple notarization..."
-
-    if xcrun notarytool history --keychain-profile "flynt" >/dev/null 2>&1; then
-        xcrun notarytool submit "$ZIP" --keychain-profile "flynt" --wait
-        xcrun stapler staple "$APP"
-        echo "✓ Notarized and stapled"
-    else
-        echo "✗ No keychain profile 'codex'. Run: just setup-notarize"
-        exit 1
-    fi
 
 # One-time: store notarization credentials in the keychain.
 setup-notarize:
@@ -131,25 +124,110 @@ setup-notarize:
     xcrun notarytool store-credentials "flynt" \
         --apple-id "" \
         --team-id "UZBY9DM42N"
-    echo "✓ Credentials stored as keychain profile 'codex'"
+    echo "✓ Credentials stored as keychain profile 'flynt'"
 
 # ─── Distribution ───────────────────────────────────────────
 
-# Create a distributable .dmg from the signed .app
+# Create a direct-download .dmg from the signed .app
 dmg: sign
     #!/usr/bin/env bash
     set -euo pipefail
-    DMG="dist/Flynt-{{version}}.dmg"
+    DMG="dist/Flynt-{{version}}-macos.dmg"
     rm -f "$DMG"
-    hdiutil create -volname "Flynt" -srcfolder "dist/Flynt.app" \
-        -ov -format UDZO "$DMG"
+    STAGING=$(mktemp -d)
+    cp -R dist/Flynt.app "$STAGING/Flynt.app"
+    ln -s /Applications "$STAGING/Applications"
+    hdiutil create -volname "Flynt" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+    rm -rf "$STAGING"
     echo "✓ Created $DMG"
 
-# Full release: bundle → sign → notarize → dmg
-release: notarize dmg
+# Create a direct-download .pkg installer from the signed .app
+pkg: sign
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PKG="dist/Flynt-{{version}}-macos.pkg"
+    rm -f "$PKG"
+    if ! security find-identity -v | grep -q "{{dev_id_installer_identity}}"; then
+        echo "No Developer ID Installer identity matching '{{dev_id_installer_identity}}'; cannot build a distributable PKG."
+        echo "Set APPLE_DEVID_INSTALLER_IDENTITY or install a Developer ID Installer certificate."
+        exit 1
+    fi
+    productbuild --component "dist/Flynt.app" /Applications \
+        --sign "{{dev_id_installer_identity}}" \
+        "$PKG"
+    pkgutil --check-signature "$PKG"
+    echo "✓ Created $PKG"
+
+# Notarize and staple the direct-download DMG.
+# Requires a keychain profile (`just setup-notarize`) or App Store Connect API key env.
+notarize: dmg
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DMG="dist/Flynt-{{version}}-macos.dmg"
+
+    NOTARY_ARGS=()
+    TMP_KEY=""
+    if xcrun notarytool history --keychain-profile "flynt" >/dev/null 2>&1; then
+        NOTARY_ARGS=(--keychain-profile "flynt")
+    elif [ -n "${APPLE_API_KEY_P8_B64:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+        TMP_KEY=$(mktemp)
+        echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "$TMP_KEY"
+        NOTARY_ARGS=(--key "$TMP_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+    elif [ -n "${ASC_KEY_PATH:-}" ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER:-}" ]; then
+        NOTARY_ARGS=(--key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER")
+    else
+        echo "✗ No notarization credentials found."
+        echo "  Run: just setup-notarize"
+        echo "  Or set APPLE_API_KEY_P8_B64, APPLE_API_KEY_ID, and APPLE_API_ISSUER."
+        exit 1
+    fi
+    trap 'rm -f "$TMP_KEY"' EXIT
+
+    echo "Submitting $DMG for Apple notarization..."
+    xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait
+    xcrun stapler staple "$DMG"
+    echo "✓ Notarized direct-download DMG"
+
+# Notarize and staple the direct-download PKG.
+# Requires a Developer ID Installer cert and keychain profile or App Store Connect API key env.
+notarize-pkg: pkg
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PKG="dist/Flynt-{{version}}-macos.pkg"
+
+    NOTARY_ARGS=()
+    TMP_KEY=""
+    if xcrun notarytool history --keychain-profile "flynt" >/dev/null 2>&1; then
+        NOTARY_ARGS=(--keychain-profile "flynt")
+    elif [ -n "${APPLE_API_KEY_P8_B64:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+        TMP_KEY=$(mktemp)
+        echo "$APPLE_API_KEY_P8_B64" | base64 --decode > "$TMP_KEY"
+        NOTARY_ARGS=(--key "$TMP_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+    elif [ -n "${ASC_KEY_PATH:-}" ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER:-}" ]; then
+        NOTARY_ARGS=(--key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER")
+    else
+        echo "✗ No notarization credentials found."
+        echo "  Run: just setup-notarize"
+        echo "  Or set APPLE_API_KEY_P8_B64, APPLE_API_KEY_ID, and APPLE_API_ISSUER."
+        exit 1
+    fi
+    trap 'rm -f "$TMP_KEY"' EXIT
+
+    echo "Submitting $PKG for Apple notarization..."
+    xcrun notarytool submit "$PKG" "${NOTARY_ARGS[@]}" --wait
+    xcrun stapler staple "$PKG"
+    echo "✓ Notarized direct-download PKG"
+
+# Full direct macOS release: app → sign → dmg → notarize/staple
+release: notarize
     @echo "✓ Flynt {{version}} ready for distribution"
-    @echo "  dist/Flynt.app          (signed + notarized)"
-    @echo "  dist/Flynt-{{version}}.dmg  (distributable)"
+    @echo "  dist/Flynt.app          (signed)"
+    @echo "  dist/Flynt-{{version}}-macos.dmg  (signed app, notarized + stapled)"
+
+# Optional direct macOS installer release: app → sign → pkg → notarize/staple
+release-pkg: notarize-pkg
+    @echo "✓ Flynt {{version}} PKG ready for distribution"
+    @echo "  dist/Flynt-{{version}}-macos.pkg  (signed, notarized + stapled)"
 
 open:
     FLYNT_VAULT="{{vault}}" open dist/Flynt.app
@@ -172,6 +250,13 @@ asc_issuer := env_var_or_default("ASC_ISSUER", "")
 asc_key_path := env_var_or_default("ASC_KEY_PATH", "crates/flynt-mobile/ios/keys/AuthKey.p8")
 dist_identity := env_var_or_default("APPLE_DIST_IDENTITY", "Apple Distribution")
 installer_identity := env_var_or_default("APPLE_INSTALLER_IDENTITY", "3rd Party Mac Developer Installer")
+dev_id_app_identity := env_var_or_default("APPLE_DEVID_APP_IDENTITY", "Developer ID Application")
+dev_id_installer_identity := env_var_or_default("APPLE_DEVID_INSTALLER_IDENTITY", "Developer ID Installer")
+android_package := "io.styrene.flynt"
+android_java_home := env_var_or_default("JAVA_HOME", "/opt/homebrew/opt/openjdk")
+android_home := env_var_or_default("ANDROID_HOME", "/opt/homebrew/share/android-commandlinetools")
+android_ndk_home := env_var_or_default("ANDROID_NDK_HOME", "/opt/homebrew/share/android-ndk")
+android_target := env_var_or_default("ANDROID_TARGET", "aarch64-linux-android")
 
 # Build the iOS Share Extension .appex
 build-share-extension:
@@ -226,7 +311,7 @@ sign-ios app_path identity="Apple Development":
         "{{app_path}}/PlugIns/FlyntShare.appex"
     # Sign main app
     codesign --force \
-        --entitlements crates/flynt-mobile/ios/Codex.entitlements \
+        --entitlements crates/flynt-mobile/ios/Flynt.entitlements \
         --sign "{{identity}}" \
         "{{app_path}}"
     echo "  Signed app + share extension"
@@ -361,7 +446,7 @@ mac-testflight-build: bundle
 
     echo "Signing for TestFlight with Apple Distribution cert..."
     codesign --deep --force \
-        --entitlements crates/flynt-app/Codex.appstore.entitlements \
+        --entitlements crates/flynt-app/Flynt.appstore.entitlements \
         --sign "{{dist_identity}}" \
         --options runtime \
         "$APP"
@@ -396,6 +481,122 @@ _upload-testflight type file:
 # Upload both iOS and macOS to TestFlight
 testflight: ios-testflight mac-testflight
     @echo "  Both platforms uploaded to TestFlight"
+
+# ─── Android ───────────────────────────────────────────────
+
+# Verify the local Android toolchain needed for tablet sideload testing.
+android-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export JAVA_HOME="{{android_java_home}}"
+    export ANDROID_HOME="{{android_home}}"
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    export ANDROID_NDK_HOME="{{android_ndk_home}}"
+    export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+    command -v java >/dev/null
+    command -v adb >/dev/null
+    command -v sdkmanager >/dev/null
+    command -v dx >/dev/null
+    test -d "$ANDROID_HOME"
+    test -d "$ANDROID_NDK_HOME"
+    rustup target list --installed | grep -qx "{{android_target}}"
+    sdkmanager --list_installed | grep -q "platforms;android-35"
+    sdkmanager --list_installed | grep -q "build-tools;35.0.0"
+    echo "✓ Android toolchain ready for {{android_package}}"
+    java -version 2>&1 | head -1
+    dx --version
+
+# Verify Android release scaffolding and local toolchain are present.
+android-readiness: android-check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    test -f crates/flynt-mobile/android/README.md
+    test -f crates/flynt-mobile/android/AndroidManifest.xml.template
+    test -f docs/mobile-release-readiness.md
+    echo "✓ Android scaffold present for {{android_package}}"
+
+# Build a local debug APK for Android tablet sideload testing.
+android-apk target=android_target profile="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export JAVA_HOME="{{android_java_home}}"
+    export ANDROID_HOME="{{android_home}}"
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    export ANDROID_NDK_HOME="{{android_ndk_home}}"
+    export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+    RELEASE_FLAG=""
+    if [ "{{profile}}" = "release" ]; then
+        RELEASE_FLAG="--release"
+    elif [ "{{profile}}" != "debug" ]; then
+        echo "profile must be 'debug' or 'release'"
+        exit 1
+    fi
+
+    cd crates/flynt-mobile
+    dx build --platform android --target "{{target}}" $RELEASE_FLAG
+    cd ../..
+    APK=$(find "target/dx/flynt-mobile/{{profile}}/android/app/app/build/outputs/apk" -name "*.apk" | sort | head -1)
+    test -n "$APK"
+    echo "✓ Built $APK"
+
+# List locally connected Android devices visible to adb.
+android-devices:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export JAVA_HOME="{{android_java_home}}"
+    export ANDROID_HOME="{{android_home}}"
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    export ANDROID_NDK_HOME="{{android_ndk_home}}"
+    export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+    adb devices -l
+
+# Build and install a local APK onto a connected Android tablet.
+android-install target=android_target profile="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just android-apk "{{target}}" "{{profile}}"
+    export JAVA_HOME="{{android_java_home}}"
+    export ANDROID_HOME="{{android_home}}"
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    export ANDROID_NDK_HOME="{{android_ndk_home}}"
+    export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+    DEVICE_COUNT=$(adb devices | awk 'NR > 1 && $2 == "device" { count++ } END { print count + 0 }')
+    if [ "$DEVICE_COUNT" -eq 0 ]; then
+        echo "No authorized Android device found. Enable USB debugging, connect the tablet, and accept the RSA prompt."
+        adb devices -l
+        exit 1
+    fi
+    if [ "$DEVICE_COUNT" -gt 1 ] && [ -z "${ANDROID_SERIAL:-}" ]; then
+        echo "Multiple devices found. Set ANDROID_SERIAL to choose one."
+        adb devices -l
+        exit 1
+    fi
+
+    APK=$(find "target/dx/flynt-mobile/{{profile}}/android/app/app/build/outputs/apk" -name "*.apk" | sort | head -1)
+    adb install -r "$APK"
+    echo "✓ Installed $APK"
+
+# Stream Flynt logs from a connected Android device.
+android-logs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export JAVA_HOME="{{android_java_home}}"
+    export ANDROID_HOME="{{android_home}}"
+    export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+    export ANDROID_NDK_HOME="{{android_ndk_home}}"
+    export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+    adb logcat | grep --line-buffered -E "Flynt|flynt|dioxus|wry|rust"
+
+# Placeholder for future Google Play Android App Bundle builds.
+android-aab:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Android AAB builds are not wired yet."
+    echo "See docs/mobile-release-readiness.md and crates/flynt-mobile/android/README.md."
+    exit 1
 
 clean:
     cargo clean

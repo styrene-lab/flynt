@@ -31,7 +31,16 @@ Your project is a folder of `.md` files. Flynt indexes them, links them, and get
 
 ### macOS
 
-Download the latest DMG from [Releases](https://github.com/styrene-lab/flynt/releases/latest). Open it, drag to Applications.
+Download the latest DMG or PKG from [Releases](https://github.com/styrene-lab/flynt/releases/latest).
+
+- **DMG:** open it and drag `Flynt.app` to Applications.
+- **PKG:** run the installer to install `Flynt.app` into Applications.
+
+Homebrew cask:
+
+```sh
+brew install --cask styrene-lab/tap/flynt
+```
 
 ### iOS
 
@@ -45,6 +54,20 @@ CI builds for `x86_64` and `aarch64` are available from [Releases](https://githu
 # Ubuntu/Debian
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
+
+Homebrew on Linux:
+
+```sh
+brew install styrene-lab/tap/flynt
+```
+
+Nix:
+
+```sh
+nix run github:styrene-lab/flynt
+```
+
+Packaging policy is documented in [docs/packaging.md](docs/packaging.md).
 
 ### Build from source
 
