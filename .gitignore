@@ -4,6 +4,7 @@
 *.db-shm
 .env
 dist/
+.sandbox/
 site/node_modules/
 site/.astro/
 site/dist/
