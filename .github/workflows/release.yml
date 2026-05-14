@@ -9,6 +9,16 @@ on:
         description: 'Tag to release (e.g. v0.2.0). Must already exist on origin.'
         required: true
         type: string
+      include_linux:
+        description: 'Build Linux desktop and agent artifacts. Tag pushes always build Linux.'
+        required: false
+        default: false
+        type: boolean
+      include_ios:
+        description: 'Build iOS/TestFlight artifacts. Tag pushes always build iOS.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -22,6 +32,7 @@ env:
 jobs:
   build-linux:
     name: Build ${{ matrix.target }}
+    if: github.event_name == 'push' || inputs.include_linux
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -42,6 +53,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux-${{ matrix.target }}
 
       - name: Install Linux GUI dependencies
         run: |
@@ -86,17 +102,14 @@ jobs:
           install_with_binstall || cargo install dioxus-cli --version 0.7.9 --locked
           dx --version
 
-      # Probe cargo build first — dx swallows cargo's stderr on Linux, so
-      # if we go straight to `dx build` and there's a real compile error
-      # all we see is `cargo build finished with errors` and no detail.
-      # Running cargo directly surfaces the actual error in CI logs.
-      - name: Probe cargo build (Linux)
-        run: cargo build --release -p flynt-app
-
       - name: Build desktop release
         run: |
           cd crates/flynt-app
-          dx build --platform desktop --release
+          dx build --platform desktop --release || {
+            cd ../..
+            cargo build --release -p flynt-app
+            exit 1
+          }
 
       - name: Prepare archive
         run: |
@@ -219,6 +232,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos-universal
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@main
@@ -525,6 +543,7 @@ jobs:
 
   build-ios:
     name: Build iOS + TestFlight
+    if: github.event_name == 'push' || inputs.include_ios
     runs-on: macos-15
     continue-on-error: true
     env:
@@ -544,6 +563,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-ios
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@main
@@ -730,7 +754,7 @@ jobs:
     # The publish step needs a tag name; both paths set env.RELEASE_TAG, but
     # github.ref is `refs/heads/main` for workflow_dispatch, so we have to
     # accept either trigger explicitly.
-    if: always() && (startsWith(github.ref, 'refs/tags/') || inputs.tag_name != '') && needs.build-linux.result == 'success' && needs.build-macos.result == 'success'
+    if: always() && (startsWith(github.ref, 'refs/tags/') || inputs.tag_name != '') && needs.build-macos.result == 'success' && (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
     runs-on: ubuntu-latest
 
     steps:
