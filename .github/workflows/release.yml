@@ -408,6 +408,9 @@ jobs:
           APP="target/dx/flynt/release/macos/Flynt.app"
           VERSION="${RELEASE_TAG#v}"
           PKG="Flynt-$VERSION-macos.pkg"
+          COMPONENT_PLIST="$RUNNER_TEMP/flynt-component.plist"
+          COMPONENT_PKG="$RUNNER_TEMP/flynt-component.pkg"
+          COMPONENT_ROOT="$RUNNER_TEMP/flynt-component-root"
           INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" | head -1 | sed 's/.*"\(.*\)"/\1/')
 
           if [ -z "$INSTALLER_IDENTITY" ]; then
@@ -415,7 +418,39 @@ jobs:
             exit 1
           fi
 
-          productbuild --component "$APP" /Applications \
+          rm -rf "$COMPONENT_ROOT"
+          mkdir -p "$COMPONENT_ROOT"
+          cp -R "$APP" "$COMPONENT_ROOT/Flynt.app"
+
+          cat > "$COMPONENT_PLIST" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <array>
+            <dict>
+              <key>RootRelativeBundlePath</key>
+              <string>Flynt.app</string>
+              <key>BundleIsRelocatable</key>
+              <false/>
+              <key>BundleIsVersionChecked</key>
+              <false/>
+              <key>BundleHasStrictIdentifier</key>
+              <true/>
+              <key>BundleOverwriteAction</key>
+              <string>upgrade</string>
+            </dict>
+          </array>
+          </plist>
+          PLIST
+
+          pkgbuild --root "$COMPONENT_ROOT" \
+            --install-location /Applications \
+            --identifier io.styrene.flynt \
+            --version "$VERSION" \
+            --component-plist "$COMPONENT_PLIST" \
+            "$COMPONENT_PKG"
+
+          productbuild --package "$COMPONENT_PKG" \
             --sign "$INSTALLER_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" \
             "$PKG"

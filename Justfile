@@ -152,7 +152,38 @@ pkg: sign
         echo "Set APPLE_DEVID_INSTALLER_IDENTITY or install a Developer ID Installer certificate."
         exit 1
     fi
-    productbuild --component "dist/Flynt.app" /Applications \
+    COMPONENT_PLIST=$(mktemp)
+    COMPONENT_PKG=$(mktemp -u).pkg
+    COMPONENT_ROOT=$(mktemp -d)
+    trap 'rm -f "$COMPONENT_PLIST" "$COMPONENT_PKG"; rm -rf "$COMPONENT_ROOT"' EXIT
+    cp -R "dist/Flynt.app" "$COMPONENT_ROOT/Flynt.app"
+    cat > "$COMPONENT_PLIST" <<'PLIST'
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <array>
+      <dict>
+        <key>RootRelativeBundlePath</key>
+        <string>Flynt.app</string>
+        <key>BundleIsRelocatable</key>
+        <false/>
+        <key>BundleIsVersionChecked</key>
+        <false/>
+        <key>BundleHasStrictIdentifier</key>
+        <true/>
+        <key>BundleOverwriteAction</key>
+        <string>upgrade</string>
+      </dict>
+    </array>
+    </plist>
+    PLIST
+    pkgbuild --root "$COMPONENT_ROOT" \
+        --install-location /Applications \
+        --identifier io.styrene.flynt \
+        --version "{{version}}" \
+        --component-plist "$COMPONENT_PLIST" \
+        "$COMPONENT_PKG"
+    productbuild --package "$COMPONENT_PKG" \
         --sign "{{dev_id_installer_identity}}" \
         "$PKG"
     pkgutil --check-signature "$PKG"
