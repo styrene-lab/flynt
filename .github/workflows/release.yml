@@ -28,6 +28,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+  DIOXUS_CLI_VERSION: 0.7.9
 
 jobs:
   build-linux:
@@ -73,33 +74,28 @@ jobs:
             pkg-config \
             cmake
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
       - name: Install Dioxus CLI
-        # Pulls the prebuilt `dx` binary from the dioxus release page
-        # rather than recompiling from source on every job.
         run: |
-          install_with_binstall() {
-            set +e
-            cargo binstall --no-confirm dioxus-cli &
-            pid=$!
-            for _ in $(seq 1 24); do
-              if ! kill -0 "$pid" 2>/dev/null; then
-                wait "$pid"
-                status=$?
-                set -e
-                return "$status"
-              fi
-              sleep 5
-            done
-            kill "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
-            set -e
-            return 124
-          }
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) DX_TARGET="x86_64-unknown-linux-gnu" ;;
+            Linux-aarch64|Linux-arm64) DX_TARGET="aarch64-unknown-linux-gnu" ;;
+            Darwin-x86_64) DX_TARGET="x86_64-apple-darwin" ;;
+            Darwin-arm64) DX_TARGET="aarch64-apple-darwin" ;;
+            *) echo "Unsupported runner: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+          esac
 
-          install_with_binstall || cargo install dioxus-cli --version 0.7.9 --locked
+          BASE_URL="https://github.com/DioxusLabs/dioxus/releases/download/v${DIOXUS_CLI_VERSION}"
+          curl -fsSL "$BASE_URL/dx-$DX_TARGET.tar.gz" -o "$RUNNER_TEMP/dx.tar.gz"
+          curl -fsSL "$BASE_URL/dx-$DX_TARGET.sha256" -o "$RUNNER_TEMP/dx.sha256"
+          awk '/tar.gz/ {print $1 "  '"$RUNNER_TEMP"'/dx.tar.gz"}' "$RUNNER_TEMP/dx.sha256" > "$RUNNER_TEMP/dx.sha256.check"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 -c "$RUNNER_TEMP/dx.sha256.check"
+          else
+            sha256sum -c "$RUNNER_TEMP/dx.sha256.check"
+          fi
+          tar xzf "$RUNNER_TEMP/dx.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$HOME/.cargo/bin"
+          install "$RUNNER_TEMP/dx" "$HOME/.cargo/bin/dx"
           dx --version
 
       - name: Build desktop release
@@ -238,33 +234,28 @@ jobs:
         with:
           key: release-macos-universal
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
       - name: Install Dioxus CLI
-        # Pulls the prebuilt `dx` binary from the dioxus release page
-        # rather than recompiling from source on every job.
         run: |
-          install_with_binstall() {
-            set +e
-            cargo binstall --no-confirm dioxus-cli &
-            pid=$!
-            for _ in $(seq 1 24); do
-              if ! kill -0 "$pid" 2>/dev/null; then
-                wait "$pid"
-                status=$?
-                set -e
-                return "$status"
-              fi
-              sleep 5
-            done
-            kill "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
-            set -e
-            return 124
-          }
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) DX_TARGET="x86_64-unknown-linux-gnu" ;;
+            Linux-aarch64|Linux-arm64) DX_TARGET="aarch64-unknown-linux-gnu" ;;
+            Darwin-x86_64) DX_TARGET="x86_64-apple-darwin" ;;
+            Darwin-arm64) DX_TARGET="aarch64-apple-darwin" ;;
+            *) echo "Unsupported runner: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+          esac
 
-          install_with_binstall || cargo install dioxus-cli --version 0.7.9 --locked
+          BASE_URL="https://github.com/DioxusLabs/dioxus/releases/download/v${DIOXUS_CLI_VERSION}"
+          curl -fsSL "$BASE_URL/dx-$DX_TARGET.tar.gz" -o "$RUNNER_TEMP/dx.tar.gz"
+          curl -fsSL "$BASE_URL/dx-$DX_TARGET.sha256" -o "$RUNNER_TEMP/dx.sha256"
+          awk '/tar.gz/ {print $1 "  '"$RUNNER_TEMP"'/dx.tar.gz"}' "$RUNNER_TEMP/dx.sha256" > "$RUNNER_TEMP/dx.sha256.check"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 -c "$RUNNER_TEMP/dx.sha256.check"
+          else
+            sha256sum -c "$RUNNER_TEMP/dx.sha256.check"
+          fi
+          tar xzf "$RUNNER_TEMP/dx.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$HOME/.cargo/bin"
+          install "$RUNNER_TEMP/dx" "$HOME/.cargo/bin/dx"
           dx --version
 
       - name: Build desktop release
@@ -569,33 +560,28 @@ jobs:
         with:
           key: release-ios
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
       - name: Install Dioxus CLI
-        # Pulls the prebuilt `dx` binary from the dioxus release page
-        # rather than recompiling from source on every job.
         run: |
-          install_with_binstall() {
-            set +e
-            cargo binstall --no-confirm dioxus-cli &
-            pid=$!
-            for _ in $(seq 1 24); do
-              if ! kill -0 "$pid" 2>/dev/null; then
-                wait "$pid"
-                status=$?
-                set -e
-                return "$status"
-              fi
-              sleep 5
-            done
-            kill "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
-            set -e
-            return 124
-          }
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) DX_TARGET="x86_64-unknown-linux-gnu" ;;
+            Linux-aarch64|Linux-arm64) DX_TARGET="aarch64-unknown-linux-gnu" ;;
+            Darwin-x86_64) DX_TARGET="x86_64-apple-darwin" ;;
+            Darwin-arm64) DX_TARGET="aarch64-apple-darwin" ;;
+            *) echo "Unsupported runner: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+          esac
 
-          install_with_binstall || cargo install dioxus-cli --version 0.7.9 --locked
+          BASE_URL="https://github.com/DioxusLabs/dioxus/releases/download/v${DIOXUS_CLI_VERSION}"
+          curl -fsSL "$BASE_URL/dx-$DX_TARGET.tar.gz" -o "$RUNNER_TEMP/dx.tar.gz"
+          curl -fsSL "$BASE_URL/dx-$DX_TARGET.sha256" -o "$RUNNER_TEMP/dx.sha256"
+          awk '/tar.gz/ {print $1 "  '"$RUNNER_TEMP"'/dx.tar.gz"}' "$RUNNER_TEMP/dx.sha256" > "$RUNNER_TEMP/dx.sha256.check"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 -c "$RUNNER_TEMP/dx.sha256.check"
+          else
+            sha256sum -c "$RUNNER_TEMP/dx.sha256.check"
+          fi
+          tar xzf "$RUNNER_TEMP/dx.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$HOME/.cargo/bin"
+          install "$RUNNER_TEMP/dx" "$HOME/.cargo/bin/dx"
           dx --version
 
       - name: Import signing certs & profiles
