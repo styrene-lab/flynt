@@ -103,6 +103,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: release-linux-${{ matrix.target }}
+          cache-bin: false
 
       - name: Install Linux GUI dependencies
         run: |
@@ -144,7 +145,9 @@ jobs:
 
       - name: Build desktop release
         run: |
-          export CARGO="$(rustc --print sysroot)/bin/cargo"
+          TOOLCHAIN_BIN="$(dirname "$(find "$HOME/.rustup/toolchains" -path "*/bin/cargo" -type f | head -1)")"
+          export PATH="$TOOLCHAIN_BIN:$PATH"
+          export CARGO="$TOOLCHAIN_BIN/cargo"
           "$CARGO" --version
           cd crates/flynt-app
           dx build --platform desktop --release || {
@@ -290,6 +293,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: release-macos-universal
+          cache-bin: false
 
       - name: Install Dioxus CLI
         run: |
@@ -317,7 +321,9 @@ jobs:
 
       - name: Build desktop release
         run: |
-          export CARGO="$(rustc --print sysroot)/bin/cargo"
+          TOOLCHAIN_BIN="$(dirname "$(find "$HOME/.rustup/toolchains" -path "*/bin/cargo" -type f | head -1)")"
+          export PATH="$TOOLCHAIN_BIN:$PATH"
+          export CARGO="$TOOLCHAIN_BIN/cargo"
           "$CARGO" --version
           cd crates/flynt-app
           MACOSX_DEPLOYMENT_TARGET=12.0 dx build --platform desktop --release
