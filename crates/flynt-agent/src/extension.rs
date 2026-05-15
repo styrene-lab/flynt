@@ -128,6 +128,19 @@ impl Extension for FlyntExtension {
                     }
                 },
                 {
+                    "name": "move_document",
+                    "label": "Move Document",
+                    "description": "Move a plain markdown note to a new project-relative `.md` path and update Flynt's index. Use this when reorganizing notes into better folders. Do not use it for Excalidraw drawing wrappers, design canvas wrappers, or non-markdown files.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "from_path": { "type": "string", "description": "Existing project-relative markdown path." },
+                            "to_path": { "type": "string", "description": "Destination project-relative markdown path. Must end in .md." }
+                        },
+                        "required": ["from_path", "to_path"]
+                    }
+                },
+                {
                     "name": "get_backlinks",
                     "label": "Get Backlinks",
                     "description": "List documents that link to the specified document path.",
@@ -630,6 +643,25 @@ impl Extension for FlyntExtension {
                     .save_document_content(rel, &full)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
                 Ok(json!({ "created": path }))
+            }
+
+            "execute_move_document" => {
+                let from_path = params["from_path"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'from_path'"))?;
+                let to_path = params["to_path"]
+                    .as_str()
+                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'to_path'"))?;
+                let from = std::path::Path::new(from_path);
+                let to = std::path::Path::new(to_path);
+                self.project
+                    .move_document_file(from, to)
+                    .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+                Ok(json!({
+                    "moved": true,
+                    "from_path": from_path,
+                    "to_path": to_path,
+                }))
             }
 
             "execute_get_backlinks" => {
@@ -2031,6 +2063,7 @@ mod tests {
 
         assert!(names.contains(&"find_document_by_slug".to_string()));
         assert!(names.contains(&"flynt_surface_guide".to_string()));
+        assert!(names.contains(&"move_document".to_string()));
         assert!(names.contains(&"store_memory_fact".to_string()));
         assert!(names.contains(&"store_agent_communication".to_string()));
         assert!(names.contains(&"get_task".to_string()));
@@ -2161,6 +2194,45 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("create_drawing"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn move_document_moves_file_and_updates_index() {
+        let (tmp, ext) = test_extension();
+        ext.handle_rpc(
+            "execute_create_document",
+            json!({
+                "path": "Inbox/Thing.md",
+                "title": "Thing",
+                "content": "Body"
+            }),
+        )
+        .await
+        .unwrap();
+
+        let out = ext
+            .handle_rpc(
+                "execute_move_document",
+                json!({
+                    "from_path": "Inbox/Thing.md",
+                    "to_path": "docs/Thing.md"
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["moved"], true);
+        assert!(!tmp.path().join("Inbox/Thing.md").exists());
+        assert!(tmp.path().join("docs/Thing.md").exists());
+
+        let old = ext
+            .handle_rpc("execute_get_document", json!({"path": "Inbox/Thing.md"}))
+            .await;
+        assert!(old.is_err(), "old indexed path should be removed");
+        let new_doc = ext
+            .handle_rpc("execute_get_document", json!({"path": "docs/Thing.md"}))
+            .await
+            .unwrap();
+        assert_eq!(new_doc["path"], "docs/Thing.md");
     }
 
     // ── Canvas tools ────────────────────────────────────────────────────────

@@ -319,6 +319,48 @@ impl Project {
         self.save_document_content_inner(rel_path, content, true)
     }
 
+    /// Move a plain markdown document to another project-relative path.
+    ///
+    /// This is intentionally path-based rather than title-based: the agent can
+    /// organize a document into a better folder without fabricating a rename.
+    /// It keeps the document UUID/frontmatter intact, updates the new path in
+    /// the index, and removes the stale old row so UI tree views converge after
+    /// filesystem watcher events.
+    pub fn move_document_file(&self, from_rel: &Path, to_rel: &Path) -> Result<()> {
+        validate_document_relative_path(from_rel, "from_path")?;
+        validate_document_relative_path(to_rel, "to_path")?;
+
+        if from_rel == to_rel {
+            return Ok(());
+        }
+
+        let from_abs = self.root.join(from_rel);
+        let to_abs = self.root.join(to_rel);
+        if !from_abs.exists() {
+            anyhow::bail!("source document does not exist: {}", from_rel.display());
+        }
+        if to_abs.exists() {
+            anyhow::bail!("destination document already exists: {}", to_rel.display());
+        }
+
+        let raw = fs::read_to_string(&from_abs)?;
+        if contains_single_embed(&raw, ".excalidraw") || contains_single_embed(&raw, ".canvas") {
+            anyhow::bail!(
+                "move_document_file only moves plain markdown notes; use drawing/canvas specific tools for wrapper documents"
+            );
+        }
+
+        if let Some(parent) = to_abs.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::rename(&from_abs, &to_abs)?;
+        self.index_file(&to_abs)?;
+        if let Some(old_doc) = self.store.get_document_by_path(from_rel)? {
+            self.store.delete_document(&old_doc.id)?;
+        }
+        Ok(())
+    }
+
     /// Same as [`save_document_content`] but does NOT fire the save hook.
     /// Use this for writes that originate from a remote source (forge
     /// pull, etc.) — without it, a pulled change would immediately
@@ -1401,6 +1443,42 @@ fn extract_raw_frontmatter_block(raw: &str) -> Option<String> {
         offset += line.len();
     }
     None
+}
+
+fn validate_document_relative_path(path: &Path, label: &str) -> Result<()> {
+    if path.is_absolute()
+        || path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        anyhow::bail!("{label} must be a project-relative path without '..'");
+    }
+    if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+        anyhow::bail!("{label} must end in .md");
+    }
+    Ok(())
+}
+
+fn contains_single_embed(raw: &str, suffix: &str) -> bool {
+    let body = if let Some(rest) = raw.strip_prefix("+++\n") {
+        if let Some(end) = rest.find("\n+++") {
+            rest[end + 4..].trim()
+        } else {
+            raw.trim()
+        }
+    } else {
+        raw.trim()
+    };
+    let lines: Vec<&str> = body.lines().filter(|line| !line.trim().is_empty()).collect();
+    lines.len() == 1 && {
+        let line = lines[0].trim();
+        line.starts_with("![[") && line.ends_with(&format!("{suffix}]]"))
+    }
 }
 
 fn extract_h1(body: &str) -> Option<String> {
