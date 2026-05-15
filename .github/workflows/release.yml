@@ -144,10 +144,12 @@ jobs:
 
       - name: Build desktop release
         run: |
+          export CARGO="$(rustc --print sysroot)/bin/cargo"
+          "$CARGO" --version
           cd crates/flynt-app
           dx build --platform desktop --release || {
             cd ../..
-            cargo build --release -p flynt-app
+            "$CARGO" build --release -p flynt-app
             exit 1
           }
 
@@ -315,6 +317,8 @@ jobs:
 
       - name: Build desktop release
         run: |
+          export CARGO="$(rustc --print sysroot)/bin/cargo"
+          "$CARGO" --version
           cd crates/flynt-app
           MACOSX_DEPLOYMENT_TARGET=12.0 dx build --platform desktop --release
 
