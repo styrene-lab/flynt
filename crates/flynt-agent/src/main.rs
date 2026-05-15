@@ -50,7 +50,10 @@ async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let mode = args.get(1).map(|s| s.as_str());
 
-    let project_root = env_with_fallback("FLYNT_PROJECT", &["FLYNT_VAULT", "CODEX_VAULT"])
+    let project_root = env_with_fallback(
+        "FLYNT_PROJECT",
+        &["OMEGON_PROJECT_ROOT", "FLYNT_VAULT", "CODEX_VAULT"],
+    )
         .map(PathBuf::from)
         .unwrap_or_else(default_project_root);
 
@@ -79,6 +82,7 @@ async fn main() -> Result<()> {
             println!();
             println!("ENVIRONMENT:");
             println!("  FLYNT_PROJECT              Project directory (default: cwd if it looks like a project, otherwise ~/Documents/Flynt)");
+            println!("                             Also accepts OMEGON_PROJECT_ROOT from the native extension host.");
             println!("                             Legacy aliases (deprecated): FLYNT_VAULT, CODEX_VAULT");
         }
         Some("--rpc") | _ => {
