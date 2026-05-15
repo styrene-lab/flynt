@@ -84,6 +84,24 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                     window.FlyntExcalidraw.mount('flynt-excalidraw', {escaped}, function(data) {{
                         window._excalidrawLatest = data;
                     }});
+                    function fitScene(attempts) {{
+                        const api = window.FlyntExcalidraw && window.FlyntExcalidraw._api;
+                        if (api && api.getSceneElements) {{
+                            const elements = api.getSceneElements();
+                            if (elements && elements.length && api.scrollToContent) {{
+                                try {{ api.scrollToContent(elements, {{ fitToContent: true, animate: false }}); }} catch (_) {{}}
+                            }}
+                            if (api.refresh) {{
+                                try {{ api.refresh(); }} catch (_) {{}}
+                            }}
+                            window.dispatchEvent(new Event('resize'));
+                        }} else if (attempts > 0) {{
+                            setTimeout(function() {{ fitScene(attempts - 1); }}, 100);
+                        }}
+                    }}
+                    setTimeout(function() {{ fitScene(20); }}, 50);
+                    setTimeout(function() {{ fitScene(1); }}, 500);
+                    setTimeout(function() {{ fitScene(1); }}, 1200);
                 }}
                 tryMount();
             }})();
@@ -369,6 +387,26 @@ pub fn excalidraw_embed_path(content: &str) -> Option<String> {
     None
 }
 
+/// Recover a drawing association when the wrapper frontmatter is intact but
+/// the body has been overwritten. Combined with a sibling `<stem>.excalidraw`
+/// file, this lets Flynt keep showing the visual drawing instead of stranding
+/// the operator in a markdown wrapper.
+pub fn frontmatter_has_drawing_tag(content: &str) -> bool {
+    let Some(rest) = content.strip_prefix("+++\n") else { return false; };
+    let Some(end) = rest.find("\n+++") else { return false; };
+    let frontmatter = &rest[..end];
+    for line in frontmatter.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rhs) = trimmed.strip_prefix("tags") {
+            let after_eq = rhs.trim_start().strip_prefix('=').unwrap_or("");
+            if after_eq.contains("\"drawing\"") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,6 +461,25 @@ mod tests {
     fn handles_whitespace_around_embed() {
         let content = "+++\ntitle = \"Drawing\"\n+++\n\n  ![[spaced.excalidraw]]  \n";
         assert_eq!(excalidraw_embed_path(content), Some("spaced.excalidraw".into()));
+    }
+
+    #[test]
+    fn frontmatter_has_drawing_tag_detects_simple_tags() {
+        let c = "+++\ntitle = \"D\"\ntags = [\"drawing\"]\n+++\n\nbody\n";
+        assert!(frontmatter_has_drawing_tag(c));
+    }
+
+    #[test]
+    fn frontmatter_has_drawing_tag_detects_in_multi_tag_array() {
+        let c = "+++\ntags = [\"draft\", \"drawing\", \"architecture\"]\n+++\n\nbody\n";
+        assert!(frontmatter_has_drawing_tag(c));
+    }
+
+    #[test]
+    fn frontmatter_has_drawing_tag_rejects_missing_or_other_tags() {
+        assert!(!frontmatter_has_drawing_tag("+++\ntags = []\n+++\n\nbody\n"));
+        assert!(!frontmatter_has_drawing_tag("+++\ntags = [\"canvas\"]\n+++\n\nbody\n"));
+        assert!(!frontmatter_has_drawing_tag("plain text"));
     }
 
     // ── is_excalidraw ───────────────────────────────────────────────────

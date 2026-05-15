@@ -1733,8 +1733,23 @@ pub fn NotesView() -> Element {
         };
     };
 
-    // If this document is an excalidraw wrapper, render ExcalidrawView directly
-    if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&body) {
+    // If this document is an excalidraw wrapper, render ExcalidrawView directly.
+    // Two acceptance paths:
+    //  (1) body is exactly `![[X.excalidraw]]` (the normal wrapper shape), or
+    //  (2) frontmatter has `tags = [..., "drawing", ...]` AND a sibling
+    //      `<stem>.excalidraw` file exists. (2) recovers from wrapper body
+    //      corruption without hiding the user's actual drawing data.
+    let excalidraw_file_from_body = crate::views::excalidraw::excalidraw_embed_path(&body);
+    let excalidraw_file_from_recovery = if excalidraw_file_from_body.is_none()
+        && frontmatter.tags.iter().any(|tag| tag == "drawing")
+    {
+        rel_path
+            .file_stem()
+            .map(|s| format!("{}.excalidraw", s.to_string_lossy()))
+    } else {
+        None
+    };
+    if let Some(excalidraw_file) = excalidraw_file_from_body.or(excalidraw_file_from_recovery) {
         let project_root = ctx.project_root();
         // Resolve the .excalidraw file relative to the document's directory
         let doc_dir = rel_path.parent().unwrap_or(std::path::Path::new(""));

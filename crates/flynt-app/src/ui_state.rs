@@ -61,9 +61,8 @@ fn resolve_doc_ref(project: &Project, id: &flynt_core::models::DocumentId, title
 
 fn classify_document(project: &Project, rel_path: &Path) -> &'static str {
     // Cheap classification: read the body and look for a single-line embed
-    // (canvas or drawing wrapper). Falls back to "note" on read error or
-    // when no embed pattern matches. Same wrapper detection logic the
-    // dispatch site in notes.rs uses, just simplified for ui-state.
+    // (canvas or drawing wrapper). Also recovers drawing wrappers from
+    // frontmatter + sibling data file, matching NotesView dispatch.
     let abs = project.root.join(rel_path);
     let Ok(content) = std::fs::read_to_string(&abs) else { return "note"; };
     let body = if let Some(rest) = content.strip_prefix("+++\n") {
@@ -77,6 +76,17 @@ fn classify_document(project: &Project, rel_path: &Path) -> &'static str {
         if line.starts_with("![[") {
             if line.ends_with(".canvas]]") { return "canvas"; }
             if line.ends_with(".excalidraw]]") { return "drawing"; }
+        }
+    }
+    if crate::views::excalidraw::frontmatter_has_drawing_tag(&content) {
+        if let Some(stem) = rel_path.file_stem() {
+            let sibling = rel_path
+                .parent()
+                .unwrap_or(std::path::Path::new(""))
+                .join(format!("{}.excalidraw", stem.to_string_lossy()));
+            if project.root.join(sibling).exists() {
+                return "drawing";
+            }
         }
     }
     "note"

@@ -307,7 +307,7 @@ impl Extension for FlyntExtension {
                 {
                     "name": "create_drawing",
                     "label": "Create Drawing",
-                    "description": "Create a Flynt Excalidraw drawing. This ALWAYS writes `drawings/<name>.excalidraw` plus an indexable wrapper `drawings/<name>.md`; do not put Excalidraw drawings under `diagrams/` and do not create Excalidraw wrappers with create_document. Returns { wrapper_path, drawing_path }. Use drawing_active/drawing_get/drawing_set_scene to inspect or edit an opened drawing.",
+                    "description": "Create a Flynt Excalidraw drawing. This ALWAYS writes `drawings/<name>.excalidraw` plus an openable/indexable wrapper `drawings/<name>.md`; do not put Excalidraw drawings under `diagrams/` and do not create Excalidraw wrappers with create_document. Returns { wrapper_path, drawing_path }. The user opens the drawing by selecting the wrapper path in Flynt. Use drawing_active/drawing_get/drawing_set_scene to inspect or edit an opened drawing.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -1441,7 +1441,9 @@ fn flynt_surface_guide() -> Value {
                 "use_for": "freeform Excalidraw sketches",
                 "rules": [
                     "Excalidraw drawings live under drawings/, not diagrams/.",
+                    "The openable sidebar/tab entry is the drawings/<name>.md wrapper; Flynt renders the sibling .excalidraw file visually from that wrapper.",
                     "Do not create Excalidraw wrapper markdown with create_document.",
+                    "Do not tell the operator to switch to a separate drawing view; have them open/select the wrapper entry.",
                     "Use drawing_active before editing the drawing the operator has open."
                 ]
             },
