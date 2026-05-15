@@ -2222,7 +2222,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-agent"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2248,7 +2248,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-app"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -2258,18 +2258,22 @@ dependencies = [
  "comrak",
  "dioxus",
  "dirs 5.0.1",
+ "ed25519-dalek",
  "flynt-core",
  "flynt-flow",
  "flynt-forge",
  "flynt-models",
  "flynt-store",
  "futures",
+ "hex",
  "muda",
  "once_cell",
  "open",
+ "reqwest",
  "rfd 0.15.4",
  "serde",
  "serde_json",
+ "sha2",
  "styrene-forge",
  "syntect",
  "tempfile",
@@ -2287,7 +2291,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -2309,7 +2313,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-flow"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -2321,7 +2325,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-forge"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2343,14 +2347,14 @@ dependencies = [
 
 [[package]]
 name = "flynt-git-helper"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "flynt-mobile"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2374,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-models"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2386,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "flynt-store"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4735,7 +4739,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-design"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",

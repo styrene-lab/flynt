@@ -1201,6 +1201,117 @@
   opacity:        0.7;
 }
 
+.omegon-setup-panel {
+  margin:         8px 12px;
+  padding:        12px;
+  border:         1px solid var(--border);
+  border-radius:  8px;
+  background:     var(--surface);
+  color:          var(--foreground);
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+  flex-shrink:    0;
+}
+
+.omegon-setup-head {
+  display:         flex;
+  align-items:     flex-start;
+  justify-content: space-between;
+  gap:             10px;
+}
+
+.omegon-setup-title {
+  font-size:   var(--font-size-sm);
+  font-weight: 600;
+}
+
+.omegon-setup-subtitle {
+  margin-top:  2px;
+  font-size:   var(--font-size-xs);
+  color:       var(--muted-foreground);
+  line-height: 1.35;
+}
+
+.omegon-setup-checks {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+}
+
+.omegon-setup-check {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           8px;
+  padding:       7px 8px;
+  border:        1px solid var(--border-dim);
+  border-radius: 6px;
+  background:    rgba(255,255,255,0.02);
+}
+
+.omegon-setup-dot {
+  width:         8px;
+  height:        8px;
+  border-radius: var(--radius-full);
+  margin-top:    5px;
+  background:    var(--muted-foreground);
+  flex-shrink:   0;
+}
+
+.omegon-setup-check.ok .omegon-setup-dot {
+  background: #22c55e;
+}
+
+.omegon-setup-check.missing .omegon-setup-dot {
+  background: #ef4444;
+}
+
+.omegon-setup-check.pending .omegon-setup-dot {
+  background: #eab308;
+}
+
+.omegon-setup-check-title {
+  font-size:   var(--font-size-xs);
+  font-weight: 600;
+}
+
+.omegon-setup-check-detail {
+  margin-top:    1px;
+  font-size:     11px;
+  color:         var(--muted-foreground);
+  font-family:   var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.omegon-setup-status {
+  padding:       7px 8px;
+  border-radius: 6px;
+  font-size:     var(--font-size-xs);
+  line-height:   1.35;
+  overflow-wrap: anywhere;
+}
+
+.omegon-setup-status.running {
+  color:      #eab308;
+  background: rgba(234, 179, 8, 0.12);
+}
+
+.omegon-setup-status.ok {
+  color:      #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.omegon-setup-status.err {
+  color:      #ff6b6b;
+  background: rgba(255, 80, 80, 0.1);
+}
+
+.omegon-setup-actions {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       6px;
+}
+
 .agent-empty {
   display:        flex;
   flex-direction: column;

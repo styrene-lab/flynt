@@ -1,46 +1,67 @@
-use flynt_core::store::ProjectStore;
+use crate::{
+    bootstrap::AppContext,
+    state::{Route, TabState},
+};
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
+use flynt_core::store::ProjectStore;
 use std::time::Duration;
-use crate::{bootstrap::AppContext, state::{Route, TabState}};
 
 #[derive(Clone, PartialEq)]
-enum EditMode { Live, Source }
+enum EditMode {
+    Live,
+    Source,
+}
 
 #[derive(Clone, PartialEq)]
 #[allow(dead_code)] // Dirty is set via JS DOM manipulation, not Rust
-enum SaveState { Clean, Dirty, Saved }
+enum SaveState {
+    Clean,
+    Dirty,
+    Saved,
+}
 
 fn render_html(content: &str) -> String {
     render_html_with_store(content, None, None)
 }
 
-fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::ProjectStore>, project_root: Option<&std::path::Path>) -> String {
+fn render_html_with_store(
+    content: &str,
+    store: Option<&dyn flynt_core::store::ProjectStore>,
+    project_root: Option<&std::path::Path>,
+) -> String {
     let mut opts = Options::default();
-    opts.extension.table                      = true;
-    opts.extension.strikethrough              = true;
-    opts.extension.tasklist                   = true;
-    opts.extension.autolink                   = true;
-    opts.extension.footnotes                  = true;
+    opts.extension.table = true;
+    opts.extension.strikethrough = true;
+    opts.extension.tasklist = true;
+    opts.extension.autolink = true;
+    opts.extension.footnotes = true;
     opts.extension.wikilinks_title_after_pipe = true;
-    opts.render.unsafe_                       = true;
+    opts.render.unsafe_ = true;
     let mut html = postprocess_html(markdown_to_html(&preprocess(content), &opts));
 
     // Execute inline query blocks: <pre><code class="language-query">...</code></pre>
     if let Some(store) = store {
         while let Some(start) = html.find("<code class=\"language-query\">") {
             let code_start = start + "<code class=\"language-query\">".len();
-            let Some(code_end) = html[code_start..].find("</code>") else { break; };
+            let Some(code_end) = html[code_start..].find("</code>") else {
+                break;
+            };
             let code_end = code_start + code_end;
 
             // Find the wrapping <pre>
             let pre_start = html[..start].rfind("<pre>").unwrap_or(start);
-            let pre_end = html[code_end..].find("</pre>").map(|p| code_end + p + 6).unwrap_or(code_end + 7);
+            let pre_end = html[code_end..]
+                .find("</pre>")
+                .map(|p| code_end + p + 6)
+                .unwrap_or(code_end + 7);
 
             let query_source = html_unescape(&html[code_start..code_end]);
             let result = match flynt_core::query::execute_query(&query_source, store) {
                 Ok(rendered) => format!("<div class=\"query-result\">{rendered}</div>"),
-                Err(e) => format!("<div class=\"query-error\">This query could not run: {e}<br><small>Syntax: <code>TABLE title, tags FROM \"\" WHERE tags = \"#tag\" SORT title</code></small></div>"),
+                Err(e) => format!(
+                    "<div class=\"query-error\">This query could not run: {e}<br><small>Syntax: <code>TABLE title, tags FROM \"\" WHERE tags = \"#tag\" SORT title</code></small></div>"
+                ),
             };
 
             html = format!("{}{}{}", &html[..pre_start], result, &html[pre_end..]);
@@ -52,7 +73,9 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::P
     if let Some(root) = project_root {
         // Pattern: ![[something.excalidraw]] (may appear as text or inside <p> tags)
         while let Some(start) = html.find("![[") {
-            let Some(end) = html[start..].find("]]") else { break; };
+            let Some(end) = html[start..].find("]]") else {
+                break;
+            };
             let end = start + end;
             let ref_name = &html[start + 3..end];
 
@@ -65,16 +88,16 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::P
                 };
 
                 // Search for the .excalidraw file in common locations
-                let candidates = [
-                    root.join(file_ref),
-                    root.join("drawings").join(file_ref),
-                ];
-                let excalidraw_path = candidates.iter()
+                let candidates = [root.join(file_ref), root.join("drawings").join(file_ref)];
+                let excalidraw_path = candidates
+                    .iter()
                     .find(|p| p.exists())
                     .cloned()
                     .unwrap_or_else(|| root.join(file_ref));
                 let svg_path = excalidraw_path.with_extension("svg");
-                let style = width.map(|w| format!(" style=\"max-width:{w}px\"")).unwrap_or_default();
+                let style = width
+                    .map(|w| format!(" style=\"max-width:{w}px\""))
+                    .unwrap_or_default();
                 let escaped_ref = file_ref.replace('"', "&quot;");
 
                 let replacement = if svg_path.exists() {
@@ -82,12 +105,18 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::P
                         Ok(svg) => format!(
                             "<div class=\"excalidraw-embed\" data-drawing=\"{escaped_ref}\"{style}>{svg}</div>"
                         ),
-                        Err(_) => format!("<div class=\"excalidraw-embed-placeholder\">[Drawing: {file_ref}]</div>"),
+                        Err(_) => format!(
+                            "<div class=\"excalidraw-embed-placeholder\">[Drawing: {file_ref}]</div>"
+                        ),
                     }
                 } else if excalidraw_path.exists() {
-                    format!("<div class=\"excalidraw-embed-placeholder\" data-drawing=\"{escaped_ref}\">[Drawing: {file_ref} — open to render]</div>")
+                    format!(
+                        "<div class=\"excalidraw-embed-placeholder\" data-drawing=\"{escaped_ref}\">[Drawing: {file_ref} — open to render]</div>"
+                    )
                 } else {
-                    format!("<span class=\"broken-embed\">Embedded file not found: {file_ref}</span>")
+                    format!(
+                        "<span class=\"broken-embed\">Embedded file not found: {file_ref}</span>"
+                    )
                 };
 
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
@@ -104,28 +133,41 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::P
                     root.join("diagrams").join(file_ref),
                     root.join("drawings").join(file_ref),
                 ];
-                let d2_path = candidates.iter()
+                let d2_path = candidates
+                    .iter()
                     .find(|p| p.exists())
                     .cloned()
                     .unwrap_or_else(|| root.join(file_ref));
                 let svg_path = d2_path.with_extension("svg");
-                let style = width.map(|w| format!(" style=\"max-width:{w}px\"")).unwrap_or_default();
+                let style = width
+                    .map(|w| format!(" style=\"max-width:{w}px\""))
+                    .unwrap_or_default();
 
                 let replacement = if svg_path.exists() {
                     match std::fs::read_to_string(&svg_path) {
-                        Ok(svg) => format!(
-                            "<div class=\"d2-embed\"{style}>{svg}</div>"
+                        Ok(svg) => format!("<div class=\"d2-embed\"{style}>{svg}</div>"),
+                        Err(_) => format!(
+                            "<div class=\"d2-embed-placeholder\">[Diagram: {file_ref}]</div>"
                         ),
-                        Err(_) => format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref}]</div>"),
                     }
                 } else if d2_path.exists() {
-                    format!("<div class=\"d2-embed-placeholder\">[Diagram: {file_ref} — rendering not available]</div>")
+                    format!(
+                        "<div class=\"d2-embed-placeholder\">[Diagram: {file_ref} — rendering not available]</div>"
+                    )
                 } else {
-                    format!("<span class=\"broken-embed\">Diagram file not found: {file_ref}</span>")
+                    format!(
+                        "<span class=\"broken-embed\">Diagram file not found: {file_ref}</span>"
+                    )
                 };
 
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
-            } else if ref_name.ends_with(".png") || ref_name.ends_with(".jpg") || ref_name.ends_with(".jpeg") || ref_name.ends_with(".gif") || ref_name.ends_with(".svg") || ref_name.ends_with(".webp") {
+            } else if ref_name.ends_with(".png")
+                || ref_name.ends_with(".jpg")
+                || ref_name.ends_with(".jpeg")
+                || ref_name.ends_with(".gif")
+                || ref_name.ends_with(".svg")
+                || ref_name.ends_with(".webp")
+            {
                 // Image embed — resolve path, searching common locations
                 let image_candidates = [
                     ref_name.to_string(),
@@ -133,12 +175,15 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::P
                     format!("images/{ref_name}"),
                     format!("drawings/{ref_name}"),
                 ];
-                let resolved = image_candidates.iter()
+                let resolved = image_candidates
+                    .iter()
                     .find(|p| root.join(p).exists())
                     .cloned()
                     .unwrap_or_else(|| ref_name.to_string());
                 let encoded = resolved.replace(' ', "%20");
-                let replacement = format!("<img class=\"embedded-image\" src=\"project://localhost/{encoded}\" alt=\"{ref_name}\" />");
+                let replacement = format!(
+                    "<img class=\"embedded-image\" src=\"project://localhost/{encoded}\" alt=\"{ref_name}\" />"
+                );
                 html = format!("{}{}{}", &html[..start], replacement, &html[end + 2..]);
             } else {
                 break; // not an embed we handle — avoid infinite loop
@@ -188,20 +233,20 @@ fn render_html_with_store(content: &str, store: Option<&dyn flynt_core::store::P
 
 fn html_unescape(s: &str) -> String {
     s.replace("&amp;", "&")
-     .replace("&lt;", "<")
-     .replace("&gt;", ">")
-     .replace("&quot;", "\"")
-     .replace("&#39;", "'")
-     .replace("&apos;", "'")
-     .replace("&#x27;", "'")
-     .replace("&nbsp;", " ")
-     .replace("&#34;", "\"")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&#x27;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&#34;", "\"")
 }
 
 fn postprocess_html(html: String) -> String {
     let pattern = "href=\"flynt-note://";
     let mut result = String::with_capacity(html.len());
-    let mut rest   = html.as_str();
+    let mut rest = html.as_str();
     while let Some(idx) = rest.find(pattern) {
         result.push_str(&rest[..idx]);
         let after = &rest[idx + pattern.len()..];
@@ -229,10 +274,14 @@ fn preprocess(src: &str) -> String {
             if chars.peek() == Some(&'[') {
                 chars.next();
                 let inner: String = chars.by_ref().take_while(|&ch| ch != ']').collect();
-                if chars.peek() == Some(&']') { chars.next(); }
+                if chars.peek() == Some(&']') {
+                    chars.next();
+                }
                 let ext = std::path::Path::new(&inner)
-                    .extension().and_then(|e| e.to_str()).unwrap_or("");
-                if matches!(ext, "png"|"jpg"|"jpeg"|"gif"|"svg"|"webp") {
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
+                if matches!(ext, "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp") {
                     let encoded = inner.replace(' ', "%20");
                     out.push_str(&format!("![{inner}](project://localhost/{encoded})"));
                 } else {
@@ -241,13 +290,17 @@ fn preprocess(src: &str) -> String {
                 }
                 continue;
             } else {
-                out.push('!'); out.push('[');
+                out.push('!');
+                out.push('[');
             }
         } else if c == '[' && chars.peek() == Some(&'[') {
             chars.next();
             let inner: String = chars.by_ref().take_while(|&ch| ch != ']').collect();
-            if chars.peek() == Some(&']') { chars.next(); }
-            let (target, display) = inner.split_once('|')
+            if chars.peek() == Some(&']') {
+                chars.next();
+            }
+            let (target, display) = inner
+                .split_once('|')
                 .map(|(t, d)| (t, d))
                 .unwrap_or((&inner, &inner as &str));
             let encoded = target.replace(' ', "%20");
@@ -263,7 +316,8 @@ fn preprocess(src: &str) -> String {
 
 fn cm6_init_js(content: &str) -> String {
     let escaped = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".into());
-    format!(r#"
+    format!(
+        r#"
 (function() {{
     function _initCM() {{
     const container = document.getElementById('flynt-cm-editor');
@@ -1155,7 +1209,8 @@ fn cm6_init_js(content: &str) -> String {
         if (window._flyntNotify) window._flyntNotify('debug', 'CM6_ERROR: ' + e.message);
     }}
 }})();
-"#)
+"#
+    )
 }
 
 // ── Notification bridge JS ──────────────────────────────────────────────────
@@ -1200,15 +1255,15 @@ document.addEventListener('click', function(e) {
 
 #[component]
 pub fn NotesView() -> Element {
-    let ctx       = use_context::<AppContext>();
+    let ctx = use_context::<AppContext>();
     let tab_state = use_context::<Signal<TabState>>();
     let mut is_drawing = use_context::<Signal<bool>>();
-    let ctx_res   = ctx.clone();
+    let ctx_res = ctx.clone();
     let ctx_save2 = ctx.clone();
 
-    let mut mode       = use_signal(|| EditMode::Live);
-    let mut edit_body  = use_signal(String::new);
-    let mut save_err   = use_signal(|| Option::<String>::None);
+    let mut mode = use_signal(|| EditMode::Live);
+    let mut edit_body = use_signal(String::new);
+    let mut save_err = use_signal(|| Option::<String>::None);
     let mut save_state = use_signal(|| SaveState::Clean);
     let mut render_ver = use_signal(|| 0u32);
     let mut conflict_detected = use_signal(|| false);
@@ -1220,10 +1275,12 @@ pub fn NotesView() -> Element {
     //   Swaps in when ready. Cached for instant tab switching.
 
     // Render cache: doc_id → (path, title, body, html, has_conflicts)
-    let mut render_cache: Signal<std::collections::HashMap<
-        flynt_core::models::DocumentId,
-        (std::path::PathBuf, String, String, String, bool),
-    >> = use_signal(std::collections::HashMap::new);
+    let mut render_cache: Signal<
+        std::collections::HashMap<
+            flynt_core::models::DocumentId,
+            (std::path::PathBuf, String, String, String, bool),
+        >,
+    > = use_signal(std::collections::HashMap::new);
 
     // Invalidate cache on save
     use_effect(move || {
@@ -1243,13 +1300,15 @@ pub fn NotesView() -> Element {
     // doc_data value (from a previous tab) could be propagated to the
     // editor when the sync effect fires before doc_data has refreshed
     // for the newly active tab.
-    let mut doc_data: Signal<Option<(
-        flynt_core::models::DocumentId,
-        std::path::PathBuf,
-        String,
-        String,
-        flynt_core::models::Frontmatter,
-    )>> = use_signal(|| None);
+    let mut doc_data: Signal<
+        Option<(
+            flynt_core::models::DocumentId,
+            std::path::PathBuf,
+            String,
+            String,
+            flynt_core::models::Frontmatter,
+        )>,
+    > = use_signal(|| None);
     use_effect(move || {
         let _ver = *render_ver.read();
         let selected_id = tab_state.read().active_id().cloned();
@@ -1302,7 +1361,9 @@ pub fn NotesView() -> Element {
     // AppContext (Dioxus contexts are scope-bound; the picker is in a
     // different scope path than the apply site).
     use_effect(move || {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::components::task_metadata_strip::FieldChangeRequest>();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<
+            crate::components::task_metadata_strip::FieldChangeRequest,
+        >();
         crate::components::task_metadata_strip::install_dispatcher(tx);
 
         let project = ctx_res.project();
@@ -1315,7 +1376,8 @@ pub fn NotesView() -> Element {
                 let path = req.path;
                 let project_for_blocking = project.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let toml_value = crate::components::task_metadata_strip::translate_value(&key, &value);
+                    let toml_value =
+                        crate::components::task_metadata_strip::translate_value(&key, &value);
                     project_for_blocking.set_data_field(&path, &key, toml_value)
                 })
                 .await;
@@ -1337,36 +1399,57 @@ pub fn NotesView() -> Element {
     });
 
     // Phase 2: background HTML rendering — fires after doc_data is set
-    let rendered: Resource<Option<(std::path::PathBuf, String, String, String, bool)>> = use_resource(move || {
-        let _ver = *render_ver.read();
-        let selected_id = tab_state.read().active_id().cloned();
-        let project = ctx_res.project();
-        async move {
-            let Some(doc_id) = selected_id else { return None; };
+    let rendered: Resource<Option<(std::path::PathBuf, String, String, String, bool)>> =
+        use_resource(move || {
+            let _ver = *render_ver.read();
+            let selected_id = tab_state.read().active_id().cloned();
+            let project = ctx_res.project();
+            async move {
+                let Some(doc_id) = selected_id else {
+                    return None;
+                };
 
-            // Cache hit — instant
-            if let Some(cached) = render_cache.read().get(&doc_id) {
-                return Some(cached.clone());
-            }
+                // Cache hit — instant
+                if let Some(cached) = render_cache.read().get(&doc_id) {
+                    return Some(cached.clone());
+                }
 
-            // Background render — won't block the UI
-            let cache_id = doc_id.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                project.store.get_document(&doc_id).ok().flatten().map(|doc| {
-                    let html = render_html_with_store(&doc.content, Some(&*project.store), Some(&project.root));
-                    let has_conflicts = flynt_core::conflict::has_conflict_markers(&doc.content);
-                    (doc.path.clone(), doc.title.clone(), doc.content.clone(), html, has_conflicts)
+                // Background render — won't block the UI
+                let cache_id = doc_id.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    project
+                        .store
+                        .get_document(&doc_id)
+                        .ok()
+                        .flatten()
+                        .map(|doc| {
+                            let html = render_html_with_store(
+                                &doc.content,
+                                Some(&*project.store),
+                                Some(&project.root),
+                            );
+                            let has_conflicts =
+                                flynt_core::conflict::has_conflict_markers(&doc.content);
+                            (
+                                doc.path.clone(),
+                                doc.title.clone(),
+                                doc.content.clone(),
+                                html,
+                                has_conflicts,
+                            )
+                        })
                 })
-            })
-            .await.ok().flatten();
+                .await
+                .ok()
+                .flatten();
 
-            if let Some(ref r) = result {
-                *conflict_detected.write() = r.4;
-                render_cache.write().insert(cache_id, r.clone());
+                if let Some(ref r) = result {
+                    *conflict_detected.write() = r.4;
+                    render_cache.write().insert(cache_id, r.clone());
+                }
+                result
             }
-            result
-        }
-    });
+        });
 
     // The signal that drives CM6 loading. Its (id, body) value is the
     // "last content we asked CM6 to display." The CM6 init effect
@@ -1429,7 +1512,9 @@ pub fn NotesView() -> Element {
         let Some(reason) = action else { return };
         tracing::debug!(
             "sync_effect: propagating ({}) active_id={:?} body_len={}",
-            reason, active_id, body.len()
+            reason,
+            active_id,
+            body.len()
         );
         *edit_body.write() = body.clone();
         *save_state.write() = SaveState::Clean;
@@ -1448,11 +1533,16 @@ pub fn NotesView() -> Element {
     use_effect(move || {
         let source = cm6_load_source.read().clone();
         let Some((doc_id, body)) = source else { return };
-        if *is_drawing_mode.read() { return; }
-        if !matches!(&*mode.read(), EditMode::Live) { return; }
+        if *is_drawing_mode.read() {
+            return;
+        }
+        if !matches!(&*mode.read(), EditMode::Live) {
+            return;
+        }
         tracing::info!(
             "CM6 init effect triggered for doc_id={:?} body_len={}",
-            doc_id, body.len()
+            doc_id,
+            body.len()
         );
         document::eval(&cm6_init_js(&body));
     });
@@ -1469,14 +1559,18 @@ pub fn NotesView() -> Element {
     let autosave_ctx = ctx.clone();
     use_effect(move || {
         let body = edit_body.read().clone();
-        if !matches!(&*mode.read(), EditMode::Source) { return; }
+        if !matches!(&*mode.read(), EditMode::Source) {
+            return;
+        }
         // Resolve the path from doc_data — we need the relative path
         // to save to. If doc_data isn't loaded yet, skip.
         let (disk_body, path) = match &*doc_data.peek() {
             Some((_, p, _, b, _)) => (b.clone(), p.clone()),
             None => return,
         };
-        if body == disk_body { return; } // no diff vs. disk
+        if body == disk_body {
+            return;
+        } // no diff vs. disk
         let token = autosave_token.peek().wrapping_add(1);
         *autosave_token.write() = token;
         let mut bump = render_ver;
@@ -1486,13 +1580,17 @@ pub fn NotesView() -> Element {
         spawn(async move {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             // Newer edit superseded this one — bail.
-            if *autosave_token.peek() != token { return; }
+            if *autosave_token.peek() != token {
+                return;
+            }
             let project = c.project();
             let path_for_save = path.clone();
             let body_for_save = body.clone();
             match tokio::task::spawn_blocking(move || {
                 project.save_document_content(&path_for_save, &body_for_save)
-            }).await {
+            })
+            .await
+            {
                 Ok(Ok(())) => {
                     *bump.write() += 1;
                     *err.write() = None;
@@ -1507,15 +1605,17 @@ pub fn NotesView() -> Element {
     // Persistent message bridge — one eval that polls a global queue.
     // CM6 pushes messages to the queue; this loop drains them to Rust.
     let ctx_link = ctx.clone();
-    let mut ts_link  = tab_state;
-    let mut ar_link  = use_context::<Signal<Route>>();
+    let mut ts_link = tab_state;
+    let mut ar_link = use_context::<Signal<Route>>();
     use_effect(move || {
         let mut eval = document::eval(BRIDGE_JS);
         let c = ctx_link.clone();
 
         spawn(async move {
             loop {
-                let Ok(val) = eval.recv::<String>().await else { break; };
+                let Ok(val) = eval.recv::<String>().await else {
+                    break;
+                };
 
                 let Ok(msg) = serde_json::from_str::<serde_json::Value>(&val) else {
                     continue;
@@ -1547,13 +1647,21 @@ pub fn NotesView() -> Element {
                             let project = c.project();
                             match tokio::task::spawn_blocking(move || {
                                 project.save_document_content(&path, &content)
-                            }).await {
+                            })
+                            .await
+                            {
                                 Ok(Ok(())) => {
                                     // Update save indicator via DOM — no signal write
-                                    document::eval("document.querySelectorAll('.save-status').forEach(e => {{ e.textContent = 'saved'; e.className = 'save-status saved'; }});");
+                                    document::eval(
+                                        "document.querySelectorAll('.save-status').forEach(e => {{ e.textContent = 'saved'; e.className = 'save-status saved'; }});",
+                                    );
                                 }
-                                Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
-                                Err(e) => *save_err.write() = Some(format!("Save interrupted — {e}")),
+                                Ok(Err(e)) => {
+                                    *save_err.write() = Some(format!("Could not save — {e}"))
+                                }
+                                Err(e) => {
+                                    *save_err.write() = Some(format!("Save interrupted — {e}"))
+                                }
                             }
                         }
                     }
@@ -1573,7 +1681,10 @@ pub fn NotesView() -> Element {
                         let project = c.project();
                         if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
                             project.store.find_document_by_slug(&slug)
-                        }).await.unwrap_or(Ok(None)) {
+                        })
+                        .await
+                        .unwrap_or(Ok(None))
+                        {
                             ts_link.write().open(meta.id.clone(), meta.title.clone());
                             *ar_link.write() = Route::Notes;
                         }
@@ -1583,7 +1694,10 @@ pub fn NotesView() -> Element {
                         let project = c.project();
                         if let Ok(Some(meta)) = tokio::task::spawn_blocking(move || {
                             project.store.find_document_by_slug(&slug)
-                        }).await.unwrap_or(Ok(None)) {
+                        })
+                        .await
+                        .unwrap_or(Ok(None))
+                        {
                             ts_link.write().open(meta.id.clone(), meta.title.clone());
                             *ar_link.write() = Route::Notes;
                         }
@@ -1619,11 +1733,6 @@ pub fn NotesView() -> Element {
         };
     };
 
-    // HTML from background render (may not be ready yet)
-    let rendered_html = rendered.read().as_ref()
-        .and_then(|opt| opt.as_ref())
-        .map(|(_, _, _, html, _)| html.clone());
-
     // If this document is an excalidraw wrapper, render ExcalidrawView directly
     if let Some(excalidraw_file) = crate::views::excalidraw::excalidraw_embed_path(&body) {
         let project_root = ctx.project_root();
@@ -1654,7 +1763,8 @@ pub fn NotesView() -> Element {
     let canvas_file_from_recovery = if canvas_file_from_body.is_none()
         && crate::views::canvas::frontmatter_has_canvas_tag(&body)
     {
-        rel_path.file_stem()
+        rel_path
+            .file_stem()
             .map(|s| format!("{}.canvas", s.to_string_lossy()))
     } else {
         None
@@ -1689,8 +1799,8 @@ pub fn NotesView() -> Element {
     // and synced from CM6 on mode switch. No eager write here.
 
     let title = title.clone();
-    let _body  = body.clone();
-    let path  = rel_path.clone();
+    let _body = body.clone();
+    let path = rel_path.clone();
 
     let mut renaming = use_signal(|| false);
     let mut rename_input = use_signal(|| title.clone());
@@ -1978,7 +2088,7 @@ pub fn NotesView() -> Element {
                                             let content = edit_body.read().clone();
                                             let p       = path_save.clone();
                                             let c       = ctx_save2.clone();
-        
+
                                             spawn(async move {
                                                 let project = c.project();
                                                 match tokio::task::spawn_blocking(move || {

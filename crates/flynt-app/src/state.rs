@@ -72,6 +72,7 @@ pub enum SettingsPage {
     GeneralAppearance,
     GeneralSync,
     GeneralIdentity,
+    GeneralUpdates,
     // Project — single page (name + location + indexing + visualization + publication)
     Project,
     // Omegon — expanded into sub-pages
@@ -90,17 +91,18 @@ impl SettingsPage {
     pub fn label(self) -> &'static str {
         match self {
             Self::GeneralAppearance => "Appearance",
-            Self::GeneralSync       => "Sync",
-            Self::GeneralIdentity   => "Identity",
-            Self::Project           => "Project",
-            Self::OmegonProfile     => "Profile",
-            Self::OmegonProviders   => "Providers",
-            Self::OmegonExtensions  => "Extensions",
-            Self::OmegonArmory      => "Armory",
-            Self::OmegonSkills      => "Skills",
-            Self::OmegonDaemon      => "Daemon",
-            Self::OmegonRuntime     => "Runtime",
-            Self::Advanced          => "Advanced",
+            Self::GeneralSync => "Sync",
+            Self::GeneralIdentity => "Identity",
+            Self::GeneralUpdates => "Updates",
+            Self::Project => "Project",
+            Self::OmegonProfile => "Profile",
+            Self::OmegonProviders => "Providers",
+            Self::OmegonExtensions => "Extensions",
+            Self::OmegonArmory => "Armory",
+            Self::OmegonSkills => "Skills",
+            Self::OmegonDaemon => "Daemon",
+            Self::OmegonRuntime => "Runtime",
+            Self::Advanced => "Advanced",
         }
     }
 
@@ -108,8 +110,9 @@ impl SettingsPage {
         match self {
             Self::GeneralAppearance
             | Self::GeneralSync
-            | Self::GeneralIdentity => SettingsCategory::General,
-            Self::Project  => SettingsCategory::Project,
+            | Self::GeneralIdentity
+            | Self::GeneralUpdates => SettingsCategory::General,
+            Self::Project => SettingsCategory::Project,
             Self::OmegonProfile
             | Self::OmegonProviders
             | Self::OmegonExtensions
@@ -128,6 +131,7 @@ impl SettingsPage {
             Self::GeneralAppearance,
             Self::GeneralSync,
             Self::GeneralIdentity,
+            Self::GeneralUpdates,
             Self::Project,
             Self::OmegonProfile,
             Self::OmegonProviders,
@@ -142,7 +146,11 @@ impl SettingsPage {
 
     /// Pages within a given category, in display order.
     pub fn in_category(cat: SettingsCategory) -> Vec<Self> {
-        Self::all().iter().filter(|p| p.category() == cat).copied().collect()
+        Self::all()
+            .iter()
+            .filter(|p| p.category() == cat)
+            .copied()
+            .collect()
     }
 }
 
@@ -158,7 +166,7 @@ pub enum SyncStatus {
 /// Stores (id, title) pairs so the tab bar never hits the store.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct TabState {
-    pub tabs:   Vec<(DocumentId, String)>,
+    pub tabs: Vec<(DocumentId, String)>,
     pub active: usize,
 }
 
@@ -173,7 +181,9 @@ impl TabState {
     }
 
     pub fn close(&mut self, idx: usize) {
-        if idx >= self.tabs.len() { return; }
+        if idx >= self.tabs.len() {
+            return;
+        }
         self.tabs.remove(idx);
         if !self.tabs.is_empty() {
             self.active = self.active.min(self.tabs.len() - 1);

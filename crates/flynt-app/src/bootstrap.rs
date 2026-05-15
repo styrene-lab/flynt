@@ -1,11 +1,22 @@
+use crate::self_update::UpdateChannel;
 use dioxus::prelude::{ReadableExt, Signal};
 use flynt_core::{
-    models::{FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, PublicationTarget, SyncConfig, ProjectConfig},
+    models::{
+        FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, ProjectConfig, PublicationTarget,
+        SyncConfig,
+    },
     store::ProjectStore,
 };
-use flynt_store::{project::Project, watcher::{ProjectChangeEvent, ProjectWatcher}};
+use flynt_store::{
+    project::Project,
+    watcher::{ProjectChangeEvent, ProjectWatcher},
+};
 use serde::{Deserialize, Serialize};
-use std::{path::{Path, PathBuf}, process::Stdio, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+    sync::Arc,
+};
 use tokio::{process::Command, sync::broadcast};
 use tracing::{info, warn};
 
@@ -38,6 +49,10 @@ pub struct LauncherProfile {
     /// supplemented from the manifest's `projects.toml`.
     #[serde(default)]
     pub manifest_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped_update_version: Option<String>,
+    #[serde(default)]
+    pub flynt_update_channel: UpdateChannel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,11 +64,27 @@ pub struct KnownProject {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PendingProjectSetup {
-    OpenExisting { path: PathBuf },
-    CreateLocal { path: PathBuf, name: String },
-    LinkGithub { local_path: PathBuf, repo: String, branch: String },
-    PublishPreview { output_path: PathBuf, repo: String, branch: String },
-    SeedDemoPublication { repo_root: PathBuf, site_name: String },
+    OpenExisting {
+        path: PathBuf,
+    },
+    CreateLocal {
+        path: PathBuf,
+        name: String,
+    },
+    LinkGithub {
+        local_path: PathBuf,
+        repo: String,
+        branch: String,
+    },
+    PublishPreview {
+        output_path: PathBuf,
+        repo: String,
+        branch: String,
+    },
+    SeedDemoPublication {
+        repo_root: PathBuf,
+        site_name: String,
+    },
 }
 
 #[derive(Clone)]
@@ -79,12 +110,18 @@ impl OmegonRuntimeContext {
         env_with_fallback("FLYNT_LAUNCHER_PROFILE", "CODEX_LAUNCHER_PROFILE")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
-            .or_else(|| dirs::config_local_dir().map(|dir| {
-                // Prefer flynt/ for new installs, fall back to codex/ for backwards compat
-                let new_path = dir.join("flynt/launcher-profile.json");
-                let old_path = dir.join("codex/launcher-profile.json");
-                if new_path.exists() || !old_path.exists() { new_path } else { old_path }
-            }))
+            .or_else(|| {
+                dirs::config_local_dir().map(|dir| {
+                    // Prefer flynt/ for new installs, fall back to codex/ for backwards compat
+                    let new_path = dir.join("flynt/launcher-profile.json");
+                    let old_path = dir.join("codex/launcher-profile.json");
+                    if new_path.exists() || !old_path.exists() {
+                        new_path
+                    } else {
+                        old_path
+                    }
+                })
+            })
             .unwrap_or_else(|| {
                 dirs::home_dir()
                     .unwrap_or_else(|| PathBuf::from("."))
@@ -118,14 +155,26 @@ impl OmegonRuntimeContext {
     /// Merge projects from the manifest into known_projects.
     /// Only adds projects that have a local_path set (cloned on this device).
     pub fn sync_from_manifest(profile: &mut LauncherProfile) {
-        let Some(ref manifest_dir) = profile.manifest_dir else { return };
-        let Ok(manifest) = flynt_core::manifest::load_manifest_with_local(manifest_dir) else { return };
+        let Some(ref manifest_dir) = profile.manifest_dir else {
+            return;
+        };
+        let Ok(manifest) = flynt_core::manifest::load_manifest_with_local(manifest_dir) else {
+            return;
+        };
 
         for project in &manifest.projects {
-            let Some(ref local_path) = project.local_path else { continue };
-            if !local_path.exists() { continue; }
+            let Some(ref local_path) = project.local_path else {
+                continue;
+            };
+            if !local_path.exists() {
+                continue;
+            }
             // Add if not already known
-            if !profile.known_projects.iter().any(|kv| kv.root == *local_path) {
+            if !profile
+                .known_projects
+                .iter()
+                .any(|kv| kv.root == *local_path)
+            {
                 profile.known_projects.push(KnownProject {
                     name: project.name.clone(),
                     root: local_path.clone(),
@@ -142,14 +191,20 @@ impl OmegonRuntimeContext {
         profile.known_projects.retain(|v| v.root.exists());
         profile.recent_projects.retain(|v| v.exists());
 
-        if let Some(existing) = profile.known_projects.iter_mut().find(|project| project.root == root) {
+        if let Some(existing) = profile
+            .known_projects
+            .iter_mut()
+            .find(|project| project.root == root)
+        {
             existing.name = name.to_string();
         } else {
             profile.known_projects.push(KnownProject {
                 name: name.to_string(),
                 root: root.clone(),
             });
-            profile.known_projects.sort_by(|left, right| left.name.cmp(&right.name));
+            profile
+                .known_projects
+                .sort_by(|left, right| left.name.cmp(&right.name));
         }
         if !profile.recent_projects.contains(&root) {
             profile.recent_projects.push(root.clone());
@@ -167,7 +222,9 @@ impl OmegonRuntimeContext {
     ) -> anyhow::Result<PathBuf> {
         use flynt_core::manifest::{self, ManifestProject, ProjectRole};
 
-        let manifest_dir = profile.manifest_dir.clone()
+        let manifest_dir = profile
+            .manifest_dir
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("No manifest configured. Connect a manifest first."))?;
 
         // Add to manifest
@@ -213,13 +270,17 @@ impl OmegonRuntimeContext {
     ) -> anyhow::Result<()> {
         use flynt_core::manifest;
 
-        let manifest_dir = profile.manifest_dir.clone()
+        let manifest_dir = profile
+            .manifest_dir
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("No manifest configured."))?;
 
         let mut m = manifest::load_manifest_with_local(&manifest_dir)?;
 
         // Find the local path before removal (for cleanup)
-        let local_path = m.projects.iter()
+        let local_path = m
+            .projects
+            .iter()
             .find(|v| v.name == project_name)
             .and_then(|v| v.local_path.clone());
 
@@ -246,9 +307,8 @@ impl OmegonRuntimeContext {
 
     /// Auto-commit manifest changes so they sync to other devices.
     fn commit_manifest(manifest_dir: &Path, message: &str) -> anyhow::Result<()> {
-        let git = flynt_store::sync::git::GitSync::new(
-            manifest_dir.to_path_buf(), "origin", "main",
-        );
+        let git =
+            flynt_store::sync::git::GitSync::new(manifest_dir.to_path_buf(), "origin", "main");
         let _ = git.auto_commit(message);
         let _ = flynt_core::sync::SyncBackend::sync(&git);
         Ok(())
@@ -266,7 +326,11 @@ impl OmegonRuntimeContext {
         Ok(())
     }
 
-    pub fn initialize_project(path: &Path, name: &str, sync: SyncConfig) -> anyhow::Result<Project> {
+    pub fn initialize_project(
+        path: &Path,
+        name: &str,
+        sync: SyncConfig,
+    ) -> anyhow::Result<Project> {
         Self::initialize_project_with_indexing(path, name, sync, Default::default())
     }
 
@@ -375,17 +439,18 @@ impl OmegonRuntimeContext {
     }
 
     pub fn publication_target(project: &Project) -> Option<PublicationTarget> {
-        project
-            .store
-            .list_documents()
-            .ok()
-            .and_then(|docs: Vec<flynt_core::models::DocumentMeta>| {
+        project.store.list_documents().ok().and_then(
+            |docs: Vec<flynt_core::models::DocumentMeta>| {
                 docs.into_iter().find_map(|meta| {
-                    project.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
-                        doc.frontmatter.publication.target.clone()
-                    })
+                    project
+                        .store
+                        .get_document(&meta.id)
+                        .ok()
+                        .flatten()
+                        .and_then(|doc| doc.frontmatter.publication.target.clone())
                 })
-            })
+            },
+        )
     }
 
     pub fn seed_demo_publication_repo(repo_root: &Path) -> anyhow::Result<()> {
@@ -496,7 +561,10 @@ impl OmegonRuntimeContext {
         if let Some(parent) = self.project_profile_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&self.project_profile_path, serde_json::to_string_pretty(profile)?)?;
+        std::fs::write(
+            &self.project_profile_path,
+            serde_json::to_string_pretty(profile)?,
+        )?;
         Ok(())
     }
 
@@ -528,7 +596,10 @@ impl OmegonRuntimeContext {
         flynt_core::models::resolve_omegon_binary(&cfg)
     }
 
-    pub async fn spawn_background_host(&self, project_root: &Path) -> anyhow::Result<tokio::process::Child> {
+    pub async fn spawn_background_host(
+        &self,
+        project_root: &Path,
+    ) -> anyhow::Result<tokio::process::Child> {
         let binary = self.resolve_binary();
         let child = Command::new(&binary)
             .current_dir(project_root)
@@ -544,9 +615,16 @@ impl OmegonRuntimeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{publication_output_path, KnownProject, LauncherProfile, OmegonRuntimeContext, PendingProjectSetup};
+    use super::{
+        publication_output_path, KnownProject, LauncherProfile, OmegonRuntimeContext,
+        PendingProjectSetup,
+    };
+    use crate::self_update::UpdateChannel;
     use flynt_core::{
-        models::{FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel, PublicationTarget, SyncConfig},
+        models::{
+            FlyntOperatorSettings, LocalRuntimeConfig, OmegonProfile, OmegonProfileModel,
+            PublicationTarget, SyncConfig,
+        },
         store::ProjectStore,
     };
     use tempfile::TempDir;
@@ -561,7 +639,9 @@ mod tests {
                 local_state_root: Some(tmp.path().join("state")),
                 flynt_index_db_path: Some(tmp.path().join("state/custom-index.db")),
                 omegon_runtime_root: Some(tmp.path().join("state/omegon-runtime")),
-                omegon_mind_db_path: Some(tmp.path().join("state/omegon-runtime/minds/flynt-mind.db")),
+                omegon_mind_db_path: Some(
+                    tmp.path().join("state/omegon-runtime/minds/flynt-mind.db"),
+                ),
                 styrene_identity_profile: Some("example-org".into()),
                 omegon_serve_host: None,
                 omegon_channel: Default::default(),
@@ -570,9 +650,18 @@ mod tests {
         );
 
         assert_eq!(runtime.local_state_root, tmp.path().join("state"));
-        assert_eq!(runtime.flynt_index_db_path, tmp.path().join("state/custom-index.db"));
-        assert_eq!(runtime.omegon_runtime_root, tmp.path().join("state/omegon-runtime"));
-        assert_eq!(runtime.omegon_mind_db_path, tmp.path().join("state/omegon-runtime/minds/flynt-mind.db"));
+        assert_eq!(
+            runtime.flynt_index_db_path,
+            tmp.path().join("state/custom-index.db")
+        );
+        assert_eq!(
+            runtime.omegon_runtime_root,
+            tmp.path().join("state/omegon-runtime")
+        );
+        assert_eq!(
+            runtime.omegon_mind_db_path,
+            tmp.path().join("state/omegon-runtime/minds/flynt-mind.db")
+        );
     }
 
     #[test]
@@ -593,10 +682,13 @@ mod tests {
                 branch: "main".into(),
             }),
             manifest_dir: None,
+            skipped_update_version: Some("0.10.1".into()),
+            flynt_update_channel: UpdateChannel::Nightly,
         };
 
         std::fs::write(&path, serde_json::to_string_pretty(&profile).unwrap()).unwrap();
-        let loaded: LauncherProfile = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let loaded: LauncherProfile =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded, profile);
     }
 
@@ -635,9 +727,16 @@ mod tests {
         )
         .unwrap();
 
-        let home = project.store.get_document_by_path(std::path::Path::new("home.md")).unwrap().unwrap();
+        let home = project
+            .store
+            .get_document_by_path(std::path::Path::new("home.md"))
+            .unwrap()
+            .unwrap();
         assert!(home.frontmatter.publication.enabled);
-        assert_eq!(home.frontmatter.publication.visibility, flynt_core::models::PublicationVisibility::Public);
+        assert_eq!(
+            home.frontmatter.publication.visibility,
+            flynt_core::models::PublicationVisibility::Public
+        );
         assert_eq!(
             home.frontmatter.publication.target,
             Some(PublicationTarget {
@@ -797,9 +896,17 @@ fn publication_output_path(project: &Project) -> PathBuf {
         .ok()
         .and_then(|docs| {
             docs.into_iter().find_map(|meta| {
-                project.store.get_document(&meta.id).ok().flatten().and_then(|doc| {
-                    doc.frontmatter.publication.target.map(|target| target.site_dir)
-                })
+                project
+                    .store
+                    .get_document(&meta.id)
+                    .ok()
+                    .flatten()
+                    .and_then(|doc| {
+                        doc.frontmatter
+                            .publication
+                            .target
+                            .map(|target| target.site_dir)
+                    })
             })
         })
         .unwrap_or_else(|| "site".into());
@@ -809,7 +916,10 @@ fn publication_output_path(project: &Project) -> PathBuf {
 
 pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeState {
     if let Err(e) = std::fs::create_dir_all(&project_root) {
-        tracing::error!("Cannot create project directory at {}: {e}", project_root.display());
+        tracing::error!(
+            "Cannot create project directory at {}: {e}",
+            project_root.display()
+        );
         // Fall back to a temporary project so the app doesn't crash
         let fallback = std::env::temp_dir().join("flynt-fallback-project");
         let _ = std::fs::create_dir_all(&fallback);
@@ -821,7 +931,9 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
         Ok(v) => Arc::new(v),
         Err(e) => {
             tracing::error!("Failed to open project at {}: {e}", project_root.display());
-            tracing::error!("The project directory may be corrupted. Try removing .flynt/ and reopening.");
+            tracing::error!(
+                "The project directory may be corrupted. Try removing .flynt/ and reopening."
+            );
             // Fall back to a temporary project
             let fallback = std::env::temp_dir().join("flynt-fallback-project");
             let _ = std::fs::create_dir_all(&fallback);
@@ -848,15 +960,17 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
     tokio::spawn(async move {
         let watcher = match ProjectWatcher::new(&project_root_clone) {
             Ok(w) => w,
-            Err(e) => { warn!("ProjectWatcher failed to start: {e}"); return; }
+            Err(e) => {
+                warn!("ProjectWatcher failed to start: {e}");
+                return;
+            }
         };
         loop {
             match watcher.rx.recv() {
                 Ok(evt) => {
                     let path = match &evt {
-                        ProjectChangeEvent::FileModified(p) | ProjectChangeEvent::FileCreated(p) => {
-                            Some(p.clone())
-                        }
+                        ProjectChangeEvent::FileModified(p)
+                        | ProjectChangeEvent::FileCreated(p) => Some(p.clone()),
                         ProjectChangeEvent::FileDeleted(_) => None,
                     };
                     if let Some(ref p) = path {
@@ -890,7 +1004,11 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
 
     // Start background git sync if configured
     let (sync_handle, sync_status_rx) = match &project.config.sync {
-        flynt_core::models::SyncConfig::Git { remote, branch, auto_commit_seconds } if *auto_commit_seconds > 0 => {
+        flynt_core::models::SyncConfig::Git {
+            remote,
+            branch,
+            auto_commit_seconds,
+        } if *auto_commit_seconds > 0 => {
             let interval = std::time::Duration::from_secs(*auto_commit_seconds);
             let project_for_reindex = Arc::clone(&project);
             let reindex_cb: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
@@ -905,7 +1023,10 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
                 interval,
                 Some(reindex_cb),
             );
-            info!("Auto-sync started: every {}s to {remote}/{branch}", auto_commit_seconds);
+            info!(
+                "Auto-sync started: every {}s to {remote}/{branch}",
+                auto_commit_seconds
+            );
 
             // Clone for the toolbar, original for logging
             let ui_rx = status_rx.clone();
@@ -915,7 +1036,9 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
                     let status = rx.borrow().clone();
                     match &status {
                         flynt_store::sync::AutoSyncStatus::Error(e) => warn!("sync: {e}"),
-                        flynt_store::sync::AutoSyncStatus::Conflict(c) => warn!("sync conflicts: {c:?}"),
+                        flynt_store::sync::AutoSyncStatus::Conflict(c) => {
+                            warn!("sync conflicts: {c:?}")
+                        }
                         _ => {}
                     }
                 }

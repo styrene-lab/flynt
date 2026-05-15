@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to release (e.g. v0.2.0). Must already exist on origin.'
+        description: 'Release tag to publish. Use v0.2.0 for stable tags or nightly to create a timestamped nightly tag.'
         required: true
         type: string
       include_linux:
@@ -27,14 +27,51 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
   DIOXUS_CLI_VERSION: 0.7.9
 
 jobs:
+  prepare-release:
+    name: Prepare release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      app_version: ${{ steps.meta.outputs.app_version }}
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name == 'nightly' && github.event.repository.default_branch || inputs.tag_name || github.ref }}
+
+      - id: meta
+        name: Compute release metadata
+        run: |
+          APP_VERSION=$(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          workspace = tomllib.loads(Path("Cargo.toml").read_text())
+          print(workspace["workspace"]["package"]["version"])
+          PY
+          )
+          CHECKOUT_REF="${{ inputs.tag_name == 'nightly' && github.event.repository.default_branch || inputs.tag_name || github.ref }}"
+          if [ "${{ inputs.tag_name }}" = "nightly" ]; then
+            COMMIT=$(git rev-parse HEAD)
+            STAMP=$(date -u +%Y%m%d%H%M%S)
+            RELEASE_TAG="nightly-${STAMP}-${COMMIT:0:7}"
+          else
+            RELEASE_TAG="${{ inputs.tag_name || github.ref_name }}"
+          fi
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$CHECKOUT_REF" >> "$GITHUB_OUTPUT"
+
   build-linux:
     name: Build ${{ matrix.target }}
+    needs: prepare-release
     if: github.event_name == 'push' || inputs.include_linux
     runs-on: ${{ matrix.runner }}
+    env:
+      FLYNT_RELEASE_VERIFY_KEY_B64: ${{ secrets.FLYNT_RELEASE_VERIFY_KEY_B64 }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +86,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name || github.ref }}
+          ref: ${{ needs.prepare-release.outputs.checkout_ref }}
+
+      - name: Validate release verification key
+        run: |
+          if [ -z "${FLYNT_RELEASE_VERIFY_KEY_B64:-}" ]; then
+            echo "::error::FLYNT_RELEASE_VERIFY_KEY_B64 is required so release builds can verify signed update manifests"
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -205,8 +249,11 @@ jobs:
 
   build-macos:
     name: Build macOS (universal)
+    needs: prepare-release
     runs-on: macos-15
     env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+      APP_VERSION: ${{ needs.prepare-release.outputs.app_version }}
       APPLE_SIGNING_CERT_B64: ${{ secrets.APPLE_SIGNING_CERT_B64 }}
       APPLE_SIGNING_CERT_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
       APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
@@ -219,11 +266,19 @@ jobs:
       APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      FLYNT_RELEASE_VERIFY_KEY_B64: ${{ secrets.FLYNT_RELEASE_VERIFY_KEY_B64 }}
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name || github.ref }}
+          ref: ${{ needs.prepare-release.outputs.checkout_ref }}
+
+      - name: Validate release verification key
+        run: |
+          if [ -z "${FLYNT_RELEASE_VERIFY_KEY_B64:-}" ]; then
+            echo "::error::FLYNT_RELEASE_VERIFY_KEY_B64 is required so release builds can verify signed update manifests"
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -272,7 +327,7 @@ jobs:
           cp crates/flynt-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
           $PB -c "Set :CFBundleIconFile AppIcon" "$PLIST" 2>/dev/null || \
             $PB -c "Add :CFBundleIconFile string AppIcon" "$PLIST"
-          $PB -c "Set :CFBundleShortVersionString ${RELEASE_TAG#v}" "$PLIST" 2>/dev/null
+          $PB -c "Set :CFBundleShortVersionString ${APP_VERSION}" "$PLIST" 2>/dev/null
           $PB -c "Add :LSApplicationCategoryType string public.app-category.productivity" "$PLIST" 2>/dev/null || \
             $PB -c "Set :LSApplicationCategoryType public.app-category.productivity" "$PLIST"
           $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || true
@@ -406,15 +461,15 @@ jobs:
       - name: Create direct-download PKG
         run: |
           APP="target/dx/flynt/release/macos/Flynt.app"
-          VERSION="${RELEASE_TAG#v}"
-          PKG="Flynt-$VERSION-macos.pkg"
+          ARTIFACT_VERSION="${RELEASE_TAG#v}"
+          PKG="Flynt-$ARTIFACT_VERSION-macos.pkg"
           COMPONENT_PLIST="$RUNNER_TEMP/flynt-component.plist"
           COMPONENT_PKG="$RUNNER_TEMP/flynt-component.pkg"
           COMPONENT_ROOT="$RUNNER_TEMP/flynt-component-root"
           INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" | head -1 | sed 's/.*"\(.*\)"/\1/')
 
           if [ -z "$INSTALLER_IDENTITY" ]; then
-            echo "::error::No Developer ID Installer identity found. v0.10.0 release requires Flynt-$VERSION-macos.pkg."
+            echo "::error::No Developer ID Installer identity found. v0.10.0 release requires Flynt-$ARTIFACT_VERSION-macos.pkg."
             exit 1
           fi
 
@@ -446,7 +501,7 @@ jobs:
           pkgbuild --root "$COMPONENT_ROOT" \
             --install-location /Applications \
             --identifier io.styrene.flynt \
-            --version "$VERSION" \
+            --version "$APP_VERSION" \
             --component-plist "$COMPONENT_PLIST" \
             "$COMPONENT_PKG"
 
@@ -569,10 +624,13 @@ jobs:
 
   build-ios:
     name: Build iOS + TestFlight
+    needs: prepare-release
     if: github.event_name == 'push' || inputs.include_ios
     runs-on: macos-15
     continue-on-error: true
     env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+      APP_VERSION: ${{ needs.prepare-release.outputs.app_version }}
       APPLE_DIST_CERT_P12_B64: ${{ secrets.APPLE_DIST_CERT_P12_B64 }}
       APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
       IOS_DIST_PROFILE_B64: ${{ secrets.IOS_DIST_PROFILE_B64 }}
@@ -584,7 +642,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name || github.ref }}
+          ref: ${{ needs.prepare-release.outputs.checkout_ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -660,7 +718,7 @@ jobs:
           APP="target/dx/flynt-mobile/release/ios/FlyntMobile.app"
           PLIST="$APP/Info.plist"
           PB=/usr/libexec/PlistBuddy
-          VERSION="${RELEASE_TAG#v}"
+          ARTIFACT_VERSION="${RELEASE_TAG#v}"
 
           $PB -c "Add :CFBundlePackageType string APPL" "$PLIST" 2>/dev/null || $PB -c "Set :CFBundlePackageType APPL" "$PLIST"
           $PB -c "Add :MinimumOSVersion string 17.0" "$PLIST" 2>/dev/null || $PB -c "Set :MinimumOSVersion 17.0" "$PLIST"
@@ -675,8 +733,8 @@ jobs:
           $PB -c "Add :DTSDKBuild string $SDK_BUILD" "$PLIST" 2>/dev/null || $PB -c "Set :DTSDKBuild $SDK_BUILD" "$PLIST"
           $PB -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST" 2>/dev/null || true
           $PB -c "Set :CFBundleDisplayName Flynt" "$PLIST"
-          $PB -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
-          $PB -c "Set :CFBundleVersion $VERSION" "$PLIST"
+          $PB -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST"
+          $PB -c "Set :CFBundleVersion $APP_VERSION" "$PLIST"
           $PB -c "Delete :CFBundleSupportedPlatforms" "$PLIST" 2>/dev/null || true
           $PB -c "Add :CFBundleSupportedPlatforms array" "$PLIST"
           $PB -c "Add :CFBundleSupportedPlatforms:0 string iPhoneOS" "$PLIST"
@@ -738,7 +796,7 @@ jobs:
         if: env.KEYCHAIN_PATH != ''
         run: |
           APP="target/dx/flynt-mobile/release/ios/FlyntMobile.app"
-          VERSION="${RELEASE_TAG#v}"
+          ARTIFACT_VERSION="${RELEASE_TAG#v}"
 
           # Build IPA directly — synthetic xcarchive + xcodebuild is fragile.
           # A signed .app in a Payload/ directory is all an IPA needs.
@@ -746,10 +804,10 @@ jobs:
           mkdir -p target/ipa/Payload
           cp -R "$APP" target/ipa/Payload/Flynt.app
           cd target/ipa
-          zip -qr "Flynt-${VERSION}.ipa" Payload
+          zip -qr "Flynt-${ARTIFACT_VERSION}.ipa" Payload
           rm -rf Payload
           cd ../..
-          echo "IPA=target/ipa/Flynt-${VERSION}.ipa" >> "$GITHUB_ENV"
+          echo "IPA=target/ipa/Flynt-${ARTIFACT_VERSION}.ipa" >> "$GITHUB_ENV"
 
       - name: Upload to TestFlight (iOS)
         continue-on-error: true
@@ -770,25 +828,161 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-linux, build-macos]
+    needs: [prepare-release, build-linux, build-macos]
     # Run when triggered by tag push OR by workflow_dispatch that supplied a tag.
     # The publish step needs a tag name; both paths set env.RELEASE_TAG, but
     # github.ref is `refs/heads/main` for workflow_dispatch, so we have to
     # accept either trigger explicitly.
     if: always() && (startsWith(github.ref, 'refs/tags/') || inputs.tag_name != '') && needs.build-macos.result == 'success' && (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+      APP_VERSION: ${{ needs.prepare-release.outputs.app_version }}
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.checkout_ref }}
+
+      - name: Set release commit
+        run: echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Generate signed release manifest
+        env:
+          FLYNT_RELEASE_SIGNING_KEY_B64: ${{ secrets.FLYNT_RELEASE_SIGNING_KEY_B64 }}
+        run: |
+          if [ -z "${FLYNT_RELEASE_SIGNING_KEY_B64:-}" ]; then
+            echo "::error::FLYNT_RELEASE_SIGNING_KEY_B64 is required to publish a signed release manifest"
+            exit 1
+          fi
+
+          python3 -m venv "$RUNNER_TEMP/release-manifest-venv"
+          . "$RUNNER_TEMP/release-manifest-venv/bin/activate"
+          python -m pip install pynacl
+          mkdir -p artifacts/release-metadata
+
+          python <<'PY'
+          import base64
+          import datetime
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          from nacl.signing import SigningKey
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["RELEASE_TAG"]
+          channel = "nightly" if "nightly" in tag else "stable"
+          commit = os.environ["RELEASE_COMMIT"]
+          if channel == "nightly":
+              try:
+                  import tomllib
+                  app_toml = tomllib.loads(Path("crates/flynt-app/Cargo.toml").read_text())
+                  package_version = app_toml["package"].get("version")
+                  if isinstance(package_version, str):
+                      base_version = package_version
+                  else:
+                      workspace_toml = tomllib.loads(Path("Cargo.toml").read_text())
+                      base_version = workspace_toml["workspace"]["package"]["version"]
+              except Exception:
+                  base_version = "0.0.0"
+              tag_parts = tag.split("-")
+              stamp = tag_parts[1] if len(tag_parts) >= 3 else datetime.datetime.now(datetime.UTC).strftime("%Y%m%d%H%M%S")
+              version = f"{base_version}-nightly.{stamp}.{commit[:7]}"
+          else:
+              version = tag[1:] if tag.startswith("v") else tag
+          metadata_dir = Path("artifacts/release-metadata")
+
+          def classify(name: str):
+              if name.startswith("Flynt-") and name.endswith("-macos.pkg"):
+                  return "pkg", "macos", "universal", "UZBY9DM42N", True
+              if name.startswith("Flynt-") and name.endswith("-macos.dmg"):
+                  return "dmg", "macos", "universal", "UZBY9DM42N", True
+              if name.startswith("flynt-") and name.endswith("-linux-amd64.tar.gz"):
+                  return "tar", "linux", "amd64", None, False
+              if name.startswith("flynt-") and name.endswith("-linux-arm64.tar.gz"):
+                  return "tar", "linux", "arm64", None, False
+              if name.startswith("flynt-agent-") and name.endswith("-universal-apple-darwin.tar.gz"):
+                  return "flynt-agent", "macos", "universal", None, False
+              if name.startswith("flynt-agent-") and name.endswith("-x86_64-unknown-linux-gnu.tar.gz"):
+                  return "flynt-agent", "linux", "amd64", None, False
+              if name.startswith("flynt-agent-") and name.endswith("-aarch64-unknown-linux-gnu.tar.gz"):
+                  return "flynt-agent", "linux", "arm64", None, False
+              if name.endswith(".ipa"):
+                  return "ipa", "ios", "arm64", None, False
+              return "artifact", "unknown", "unknown", None, False
+
+          artifacts = []
+          for path in sorted(Path("artifacts").rglob("*")):
+              if not path.is_file() or metadata_dir in path.parents:
+                  continue
+              name = path.name
+              kind, platform, arch, team_id, notarized = classify(name)
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              artifact = {
+                  "name": name,
+                  "kind": kind,
+                  "platform": platform,
+                  "arch": arch,
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{name}",
+                  "sha256": digest,
+                  "size": path.stat().st_size,
+                  "apple_notarized": notarized,
+              }
+              if team_id:
+                  artifact["apple_team_id"] = team_id
+              artifacts.append(artifact)
+
+          manifest = {
+              "version": version,
+              "channel": channel,
+              "tag": tag,
+              "commit": commit,
+              "published_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+              "artifacts": artifacts,
+          }
+          manifest_bytes = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+          (metadata_dir / "flynt-release.json").write_bytes(manifest_bytes)
+
+          seed = base64.b64decode(os.environ["FLYNT_RELEASE_SIGNING_KEY_B64"].strip())
+          if len(seed) != 32:
+              raise SystemExit("FLYNT_RELEASE_SIGNING_KEY_B64 must decode to a 32-byte Ed25519 seed")
+          signature = SigningKey(seed).sign(manifest_bytes).signature
+          (metadata_dir / "flynt-release.json.sig").write_text(base64.b64encode(signature).decode("ascii") + "\n")
+
+          checksum_lines = []
+          for path in sorted(Path("artifacts").rglob("*")):
+              if path.is_file():
+                  checksum_lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
+          (metadata_dir / "SHA256SUMS").write_text("\n".join(checksum_lines) + "\n")
+          PY
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${RELEASE_TAG#v}"
+          RELEASE_FLAGS=()
+          TARGET_FLAGS=()
+          if [[ "$RELEASE_TAG" == nightly-* ]]; then
+            RELEASE_FLAGS+=(--prerelease)
+            TARGET_FLAGS+=(--target "$RELEASE_COMMIT")
+            VERSION="$RELEASE_TAG"
+            git tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ "$RELEASE_TAG" == nightly-* ]]; then
+              gh release edit "$RELEASE_TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "Flynt $RELEASE_TAG" \
+                --prerelease
+            fi
             gh release upload "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --clobber \
@@ -797,12 +991,14 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "Flynt $VERSION" \
+              "${RELEASE_FLAGS[@]}" \
+              "${TARGET_FLAGS[@]}" \
               --generate-notes \
               artifacts/**/*
           fi
 
       - name: Update Homebrew tap
-        if: ${{ !contains(env.RELEASE_TAG, '-rc.') && !contains(env.RELEASE_TAG, '-nightly.') }}
+        if: ${{ startsWith(env.RELEASE_TAG, 'v') && !contains(env.RELEASE_TAG, '-rc.') && !contains(env.RELEASE_TAG, '-nightly.') }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}
         run: |

@@ -30,13 +30,10 @@
 //! connect to the display server, which any GUI process already does).
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-
 // Wire types live in flynt-core so the omegon-design tool (separate binary)
 // can construct/parse them too. Re-exported here for ergonomic local use.
 pub use flynt_core::canvas::{
-    capture_request_dir, capture_response_dir, BoxXywh, CaptureRequest, CaptureResponse,
-    CellMetric,
+    BoxXywh, CaptureRequest, CaptureResponse, CellMetric, capture_request_dir, capture_response_dir,
 };
 
 /// Probe whether macOS Screen Recording permission is granted. Heuristic:
@@ -74,14 +71,20 @@ pub fn permission_status() -> PermissionStatus {
                             }
                         }
                         Err(e) => PermissionStatus::Denied {
-                            instructions: format!("xcap capture failed: {e}. Check System Settings → Privacy & Security → Screen Recording."),
+                            instructions: format!(
+                                "xcap capture failed: {e}. Check System Settings → Privacy & Security → Screen Recording."
+                            ),
                         },
                     }
                 } else {
-                    PermissionStatus::Unknown { detail: "no monitors enumerated".into() }
+                    PermissionStatus::Unknown {
+                        detail: "no monitors enumerated".into(),
+                    }
                 }
             }
-            Err(e) => PermissionStatus::Unknown { detail: format!("monitor enumeration failed: {e}") },
+            Err(e) => PermissionStatus::Unknown {
+                detail: format!("monitor enumeration failed: {e}"),
+            },
         }
     }
     #[cfg(target_os = "linux")]
@@ -93,7 +96,9 @@ pub fn permission_status() -> PermissionStatus {
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        PermissionStatus::Unknown { detail: "unsupported platform".into() }
+        PermissionStatus::Unknown {
+            detail: "unsupported platform".into(),
+        }
     }
 }
 
@@ -120,12 +125,12 @@ pub fn find_flynt_window() -> Option<xcap::Window> {
 /// rect. Returns (PNG bytes, image width, image height). The image is
 /// PNG-encoded so we can write it to disk and base64-inline the same bytes
 /// without re-encoding.
-pub fn capture_pane(
-    window_relative_bounds: BoxXywh,
-) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+pub fn capture_pane(window_relative_bounds: BoxXywh) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     use anyhow::Context;
     let window = find_flynt_window().context("Flynt window not found in xcap window list")?;
-    let img = window.capture_image().context("xcap capture_image failed")?;
+    let img = window
+        .capture_image()
+        .context("xcap capture_image failed")?;
 
     // Crop to the bounds. Bounds are window-logical coords; xcap returns the
     // full window image at native resolution. Scale factor lives on the
@@ -155,7 +160,10 @@ pub fn capture_pane(
     // Encode to PNG in memory.
     let mut bytes = Vec::with_capacity((w as usize) * (h as usize) * 4 / 3);
     cropped
-        .write_to(&mut std::io::Cursor::new(&mut bytes), xcap::image::ImageFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            xcap::image::ImageFormat::Png,
+        )
         .context("PNG encode failed")?;
 
     Ok((bytes, w, h))
@@ -167,7 +175,12 @@ mod tests {
 
     #[test]
     fn box_xywh_round_trips_through_json() {
-        let b = BoxXywh { x: 10.0, y: 20.0, w: 300.0, h: 200.0 };
+        let b = BoxXywh {
+            x: 10.0,
+            y: 20.0,
+            w: 300.0,
+            h: 200.0,
+        };
         let json = serde_json::to_string(&b).unwrap();
         let back: BoxXywh = serde_json::from_str(&json).unwrap();
         assert_eq!(back.x, b.x);
@@ -184,7 +197,9 @@ mod tests {
     #[test]
     fn permission_status_is_serializable_each_variant() {
         let g = PermissionStatus::Granted;
-        let d = PermissionStatus::Denied { instructions: "x".into() };
+        let d = PermissionStatus::Denied {
+            instructions: "x".into(),
+        };
         let u = PermissionStatus::Unknown { detail: "y".into() };
         for s in [g, d, u] {
             let json = serde_json::to_string(&s).unwrap();

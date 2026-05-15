@@ -162,4 +162,71 @@
   color:      var(--warning);
   background: rgba(234, 179, 8, 0.1);
 }
+
+.update-pill {
+  display:     inline-flex;
+  align-items: center;
+  gap:         2px;
+}
+
+.update-badge {
+  font-size:     var(--font-size-xs);
+  padding:       2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border:        1px solid transparent;
+  cursor:        pointer;
+}
+
+.update-badge.available {
+  color:        var(--primary);
+  background:   rgba(42, 180, 200, 0.12);
+  border-color: rgba(42, 180, 200, 0.2);
+}
+
+.update-badge.available:hover {
+  background: rgba(42, 180, 200, 0.18);
+}
+
+.update-badge.available.verified {
+  color:        rgb(34, 197, 94);
+  background:   rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+.update-badge.available.unverified {
+  color:        var(--warning);
+  background:   rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.22);
+}
+
+.update-badge.unknown {
+  color:      var(--muted-foreground);
+  background: transparent;
+}
+
+.update-status {
+  max-width:     220px;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  color:         var(--muted-foreground);
+  font-size:     var(--font-size-xs);
+}
+
+.update-dismiss {
+  width:         18px;
+  height:        18px;
+  border-radius: var(--radius-sm);
+  color:         var(--muted-foreground);
+  background:    transparent;
+  font-size:     13px;
+  line-height:   1;
+  cursor:        pointer;
+}
+
+.update-dismiss:hover {
+  background: var(--accent);
+  color:      var(--foreground);
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }

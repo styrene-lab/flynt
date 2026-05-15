@@ -1,3 +1,4 @@
+use crate::self_update::UpdateChannel;
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext, PendingProjectSetup},
     components::daemon_settings::DaemonSettingsSection,
@@ -6,11 +7,11 @@ use crate::{
     state::{SettingsCategory, SettingsPage, ThemeName},
     views::{IndexingScopesEditor, PublicationRulesEditor},
 };
-use flynt_core::models::{
-    AppearanceConfig, FlyntOperatorSettings, FontSizePreset, IndexingConfig,
-    LocalRuntimeConfig, OmegonProfile, SyncConfig, ProjectConfig, VisualizationConfig,
-};
 use dioxus::prelude::*;
+use flynt_core::models::{
+    AppearanceConfig, FlyntOperatorSettings, FontSizePreset, IndexingConfig, LocalRuntimeConfig,
+    OmegonProfile, ProjectConfig, SyncConfig, VisualizationConfig,
+};
 
 // ── Theme catalogue ───────────────────────────────────────────────────────────
 // Each entry describes a theme well enough to render a preview card without
@@ -87,7 +88,8 @@ pub fn SettingsView() -> Element {
             .map(|path: &std::path::PathBuf| path.display().to_string())
             .unwrap_or_default()
     });
-    let mut omegon_channel = use_signal(|| ctx.project().config.local_runtime.omegon_channel.clone());
+    let mut omegon_channel =
+        use_signal(|| ctx.project().config.local_runtime.omegon_channel.clone());
     let mut omegon_bin_override = use_signal(|| {
         ctx.project()
             .config
@@ -104,6 +106,8 @@ pub fn SettingsView() -> Element {
             .clone()
             .unwrap_or_default()
     });
+    let mut flynt_update_channel =
+        use_signal(|| OmegonRuntimeContext::load_launcher_profile().flynt_update_channel);
 
     let publication_default_visibility =
         use_signal(|| ctx.project().config.publication.default_visibility);
@@ -125,11 +129,19 @@ pub fn SettingsView() -> Element {
     let mut raw_config_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
 
     // Visualization
-    let mut excalidraw_auto_export = use_signal(|| ctx.project().config.visualization.excalidraw_auto_export);
+    let mut excalidraw_auto_export =
+        use_signal(|| ctx.project().config.visualization.excalidraw_auto_export);
     let mut d2_auto_render = use_signal(|| ctx.project().config.visualization.d2_auto_render);
     let mut d2_theme = use_signal(|| ctx.project().config.visualization.d2_theme.to_string());
     let mut d2_layout = use_signal(|| ctx.project().config.visualization.d2_layout.clone());
-    let mut d2_bin = use_signal(|| ctx.project().config.visualization.d2_bin.clone().unwrap_or_default());
+    let mut d2_bin = use_signal(|| {
+        ctx.project()
+            .config
+            .visualization
+            .d2_bin
+            .clone()
+            .unwrap_or_default()
+    });
 
     // Daemon config — managed by DaemonSettingsSection
     let daemon_config = use_signal(|| ctx.omegon().load_operator_settings().agent_daemon.clone());
@@ -144,27 +156,41 @@ pub fn SettingsView() -> Element {
     let omegon_for_save = omegon.clone();
     let publish_project = ctx.project();
     let mut publish_msg_signal = publish_msg;
-    let publish_preview = move |_| {
-        match OmegonRuntimeContext::export_publication_preview(&publish_project) {
+    let publish_preview =
+        move |_| match OmegonRuntimeContext::export_publication_preview(&publish_project) {
             Ok(output_path) => {
                 let mut profile = OmegonRuntimeContext::load_launcher_profile();
                 let target = OmegonRuntimeContext::publication_target(&publish_project);
                 profile.pending_setup = Some(PendingProjectSetup::PublishPreview {
                     output_path: output_path.clone(),
-                    repo: target.as_ref().map(|target| target.repo.clone()).unwrap_or_default(),
-                    branch: target.as_ref().map(|target| target.branch.clone()).unwrap_or_default(),
+                    repo: target
+                        .as_ref()
+                        .map(|target| target.repo.clone())
+                        .unwrap_or_default(),
+                    branch: target
+                        .as_ref()
+                        .map(|target| target.branch.clone())
+                        .unwrap_or_default(),
                 });
                 let _ = OmegonRuntimeContext::save_launcher_profile(&profile);
-                *publish_msg_signal.write() = Some(("ok", format!("Local preview exported to {}", output_path.display())));
+                *publish_msg_signal.write() = Some((
+                    "ok",
+                    format!("Local preview exported to {}", output_path.display()),
+                ));
             }
             Err(err) => {
-                *publish_msg_signal.write() = Some(("err", format!("Publish preview failed: {err}")));
+                *publish_msg_signal.write() =
+                    Some(("err", format!("Publish preview failed: {err}")));
             }
-        }
-    };
+        };
     let save = move |_| {
         // Validate git sync config
-        if let flynt_core::models::SyncConfig::Git { ref remote, ref branch, .. } = *sync_config.read() {
+        if let flynt_core::models::SyncConfig::Git {
+            ref remote,
+            ref branch,
+            ..
+        } = *sync_config.read()
+        {
             if remote.trim().is_empty() {
                 *save_msg.write() = Some(("err", "Git remote name cannot be empty."));
                 return;
@@ -226,7 +252,11 @@ pub fn SettingsView() -> Element {
                 d2_layout: d2_layout.read().clone(),
                 d2_bin: {
                     let bin = d2_bin.read().trim().to_string();
-                    if bin.is_empty() { None } else { Some(bin) }
+                    if bin.is_empty() {
+                        None
+                    } else {
+                        Some(bin)
+                    }
                 },
             },
         };
@@ -239,18 +269,27 @@ pub fn SettingsView() -> Element {
             let current_root = project.root.clone();
             let sync_for_migrate = new_sync.clone();
             match flynt_store::migrate::migrate_project(
-                &current_root, &project_name, &sync_for_migrate, false,
+                &current_root,
+                &project_name,
+                &sync_for_migrate,
+                false,
             ) {
                 Ok(result) => {
                     if result.new_root != current_root {
                         // Project moved — update launcher profile and switch runtime
-                        let mut profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
+                        let mut profile =
+                            crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
                         crate::bootstrap::OmegonRuntimeContext::register_known_project(
-                            &mut profile, &result.new_root, &project_name,
+                            &mut profile,
+                            &result.new_root,
+                            &project_name,
                         );
-                        let _ = crate::bootstrap::OmegonRuntimeContext::save_launcher_profile(&profile);
+                        let _ =
+                            crate::bootstrap::OmegonRuntimeContext::save_launcher_profile(&profile);
                         let mut migrate_ctx = ctx;
-                        migrate_ctx.set_runtime(crate::bootstrap::runtime_state_for_project_root(result.new_root));
+                        migrate_ctx.set_runtime(crate::bootstrap::runtime_state_for_project_root(
+                            result.new_root,
+                        ));
                         *save_msg.write() = Some(("ok", "Project migrated and sync updated."));
                         return; // config already written by migrate
                     }
@@ -279,6 +318,14 @@ pub fn SettingsView() -> Element {
         if let Err(e) = omegon_for_save.save_operator_settings(&operator) {
             tracing::error!("save_operator_settings: {e}");
             *save_msg.write() = Some(("err", "Operator settings save failed — check logs."));
+            return;
+        }
+
+        let mut profile = OmegonRuntimeContext::load_launcher_profile();
+        profile.flynt_update_channel = *flynt_update_channel.read();
+        if let Err(e) = OmegonRuntimeContext::save_launcher_profile(&profile) {
+            tracing::error!("save_launcher_profile: {e}");
+            *save_msg.write() = Some(("err", "Launcher settings save failed — check logs."));
             return;
         }
 
@@ -535,6 +582,41 @@ pub fn SettingsView() -> Element {
                 // ════════════════════════════════════════════════════════════
                 if *active_page.read() == SettingsPage::GeneralIdentity {
                     IdentitySettingsSection {}
+                }
+
+                // ════════════════════════════════════════════════════════════
+                // General → Updates: Flynt release channel
+                // ════════════════════════════════════════════════════════════
+                if *active_page.read() == SettingsPage::GeneralUpdates {
+                    SettingsSection { heading: "Updates",
+                        SettingsRow {
+                            label: "Channel",
+                            hint: "Which Flynt release stream the update checker uses. Stable follows GitHub's latest production release. Nightly scans timestamped nightly prereleases and requires a signed nightly manifest.",
+                            div { class: "radio-group",
+                                for channel in UpdateChannel::all_named() {
+                                    {
+                                        let selected = *flynt_update_channel.read() == *channel;
+                                        let channel_value = *channel;
+                                        let is_nightly = matches!(channel, UpdateChannel::Nightly);
+                                        let mut class = String::from("radio-btn");
+                                        if selected { class.push_str(" active"); }
+                                        rsx! {
+                                            button {
+                                                class: "{class}",
+                                                onclick: move |_| *flynt_update_channel.write() = channel_value,
+                                                "{channel.label()}"
+                                                if is_nightly {
+                                                    crate::components::HelpHint {
+                                                        text: "Nightly updates are built from unreleased main-branch work. The app verifies the signed nightly manifest and installer checksum before opening the installer.".to_string()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // ════════════════════════════════════════════════════════════

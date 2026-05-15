@@ -1,17 +1,22 @@
-use flynt_core::{models::SearchResult, store::ProjectStore};
+use crate::{
+    bootstrap::{AppContext, OmegonRuntimeContext},
+    state::{Route, SyncStatus, TabState},
+};
 use dioxus::prelude::*;
+use flynt_core::{models::SearchResult, store::ProjectStore};
 use rfd::FileDialog;
-use crate::{bootstrap::{AppContext, OmegonRuntimeContext}, state::{Route, SyncStatus, TabState}};
 
 #[derive(Clone)]
 struct SearchGroup {
     folder: String,
-    items:  Vec<SearchResult>,
+    items: Vec<SearchResult>,
 }
 
 fn top_level_folder(path: &std::path::Path) -> String {
     let mut comps = path.components();
-    let Some(first) = comps.next() else { return String::new(); };
+    let Some(first) = comps.next() else {
+        return String::new();
+    };
     if comps.next().is_some() {
         first.as_os_str().to_string_lossy().into_owned()
     } else {
@@ -27,7 +32,10 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
         if let Some(group) = groups.iter_mut().find(|group| group.folder == folder) {
             group.items.push(item);
         } else {
-            groups.push(SearchGroup { folder, items: vec![item] });
+            groups.push(SearchGroup {
+                folder,
+                items: vec![item],
+            });
         }
     }
 
@@ -36,16 +44,29 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
     }
 
     groups.sort_by(|a, b| {
-        let a_score = a.items.first().map(|item| item.score).unwrap_or(f32::NEG_INFINITY);
-        let b_score = b.items.first().map(|item| item.score).unwrap_or(f32::NEG_INFINITY);
-        b_score.total_cmp(&a_score).then_with(|| a.folder.cmp(&b.folder))
+        let a_score = a
+            .items
+            .first()
+            .map(|item| item.score)
+            .unwrap_or(f32::NEG_INFINITY);
+        let b_score = b
+            .items
+            .first()
+            .map(|item| item.score)
+            .unwrap_or(f32::NEG_INFINITY);
+        b_score
+            .total_cmp(&a_score)
+            .then_with(|| a.folder.cmp(&b.folder))
     });
 
     groups
 }
 
 fn flatten_grouped_results(groups: &[SearchGroup]) -> Vec<SearchResult> {
-    groups.iter().flat_map(|group| group.items.iter().cloned()).collect()
+    groups
+        .iter()
+        .flat_map(|group| group.items.iter().cloned())
+        .collect()
 }
 
 fn cycle_active_index(current: Option<usize>, len: usize, step: isize) -> Option<usize> {
@@ -63,8 +84,8 @@ fn cycle_active_index(current: Option<usize>, len: usize, step: isize) -> Option
 
 #[component]
 pub fn Toolbar(
-    sync_status:      Signal<SyncStatus>,
-    mut show_agent:   Signal<bool>,
+    sync_status: Signal<SyncStatus>,
+    mut show_agent: Signal<bool>,
     mut active_route: Signal<Route>,
     mut search_query: Signal<String>,
 ) -> Element {
@@ -76,26 +97,42 @@ pub fn Toolbar(
     let mut results: Signal<Vec<SearchResult>> = use_signal(Vec::new);
     let mut focused = use_signal(|| false);
     let mut active_index = use_signal(|| None::<usize>);
+    let mut update_action = use_signal(|| None::<String>);
+    let update_state =
+        use_resource(|| async move { crate::self_update::check_latest_release().await });
 
     let ctx_search = ctx.clone();
     let on_input = move |e: Event<FormData>| {
         let q = e.value();
         *search_query.write() = q.clone();
         *active_index.write() = None;
-        if q.trim().is_empty() { *results.write() = Vec::new(); return; }
+        if q.trim().is_empty() {
+            *results.write() = Vec::new();
+            return;
+        }
         let project = ctx_search.project();
         spawn(async move {
             let hits = tokio::task::spawn_blocking(move || {
                 project.store.search_documents(&q).unwrap_or_default()
-            }).await.unwrap_or_default();
+            })
+            .await
+            .unwrap_or_default();
             *results.write() = hits;
         });
     };
 
     let (sync_label, sync_class, sync_title) = match *sync_status.read() {
-        SyncStatus::Idle        => ("\u{2713}", "sync-badge synced", "Synced".to_string()),
-        SyncStatus::Syncing     => ("\u{27F3}", "sync-badge syncing", "Syncing\u{2026}".to_string()),
-        SyncStatus::Conflict(n) => ("\u{26A0}", "sync-badge conflict", format!("{n} conflict(s)")),
+        SyncStatus::Idle => ("\u{2713}", "sync-badge synced", "Synced".to_string()),
+        SyncStatus::Syncing => (
+            "\u{27F3}",
+            "sync-badge syncing",
+            "Syncing\u{2026}".to_string(),
+        ),
+        SyncStatus::Conflict(n) => (
+            "\u{26A0}",
+            "sync-badge conflict",
+            format!("{n} conflict(s)"),
+        ),
     };
 
     let grouped_results = group_results(&results.read());
@@ -235,6 +272,102 @@ pub fn Toolbar(
             }
 
             div { class: "toolbar-right",
+                if let Some(message) = update_action.read().as_ref() {
+                    span { class: "update-status", title: "{message}", "{message}" }
+                }
+                if let Some(state) = update_state.read().as_ref().cloned() {
+                    match state {
+                        crate::self_update::UpdateState::Available {
+                            channel,
+                            latest,
+                            release_commit,
+                            html_url,
+                            checksum_url,
+                            install_source,
+                            verified,
+                            verification,
+                            selected_artifact,
+                            ..
+                        } => {
+                            let update_key = format!("{:?}:{latest}", channel);
+                            let skipped = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile()
+                                .skipped_update_version
+                                .as_deref()
+                                .is_some_and(|skipped| skipped == update_key || skipped == latest);
+                            let verified_artifact = if cfg!(target_os = "macos") && verified && install_source.should_open_direct_artifact() {
+                                selected_artifact.clone()
+                            } else {
+                                None
+                            };
+                            let update_url = verified_artifact
+                                .as_ref()
+                                .map(|artifact| artifact.url.clone())
+                                .unwrap_or_else(|| html_url.clone());
+                            let checksum_note = if checksum_url.is_some() { " Checksum asset is available." } else { "" };
+                            let update_class = if verified { "update-badge available verified" } else { "update-badge available unverified" };
+                            let channel_note = if matches!(channel, crate::self_update::UpdateChannel::Nightly) {
+                                release_commit
+                                    .as_deref()
+                                    .map(|commit| format!(" Nightly build {commit}."))
+                                    .unwrap_or_else(|| " Nightly channel.".into())
+                            } else {
+                                String::new()
+                            };
+                            if skipped {
+                                rsx! {}
+                            } else {
+                                rsx! {
+                                    div { class: "update-pill",
+                                        button {
+                                            class: "{update_class}",
+                                            title: "{install_source.label()} Flynt {latest}. {verification}{channel_note}{checksum_note}",
+                                            onclick: move |_| {
+                                                if let Some(artifact) = verified_artifact.clone() {
+                                                    *update_action.write() = Some("Downloading verified update...".into());
+                                                    spawn(async move {
+                                                        match crate::self_update::download_verified_artifact(artifact).await {
+                                                            Ok(path) => {
+                                                                *update_action.write() = Some("Verified update downloaded.".into());
+                                                                let _ = open::that(path);
+                                                            }
+                                                            Err(err) => {
+                                                                *update_action.write() = Some(format!("Update verification failed: {err}"));
+                                                            }
+                                                        }
+                                                    });
+                                                } else {
+                                                    let _ = open::that(&update_url);
+                                                }
+                                            },
+                                            "{install_source.label()} {latest}"
+                                        }
+                                        button {
+                                            class: "update-dismiss",
+                                            title: "Skip Flynt {latest}",
+                                            onclick: move |_| {
+                                                let mut profile = crate::bootstrap::OmegonRuntimeContext::load_launcher_profile();
+                                                profile.skipped_update_version = Some(update_key.clone());
+                                                let _ = crate::bootstrap::OmegonRuntimeContext::save_launcher_profile(&profile);
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        crate::self_update::UpdateState::Unknown { channel, message } => rsx! {
+                            button {
+                                class: "update-badge unknown",
+                                title: "Could not check {channel.label()} updates: {message}",
+                                onclick: move |_| {
+                                    let _ = open::that(crate::self_update::release_page_url(channel));
+                                },
+                                "Updates"
+                            }
+                        },
+                        crate::self_update::UpdateState::Current { .. } => rsx! {},
+                    }
+                }
                 button {
                     class: "btn btn-ghost",
                     title: "Open another project in a new window",

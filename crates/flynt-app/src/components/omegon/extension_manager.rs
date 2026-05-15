@@ -7,7 +7,6 @@ use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
 use crate::components::omegon::extension_config::{ExtensionConfigPanel, parse_extensions_list};
 use dioxus::prelude::*;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 /// Parsed extension manifest (minimal fields for display).
@@ -16,7 +15,6 @@ struct ExtensionInfo {
     name: String,
     version: String,
     description: String,
-    path: PathBuf,
 }
 
 fn discover_extensions(extensions_dir: &std::path::Path) -> Vec<ExtensionInfo> {
@@ -42,7 +40,12 @@ fn discover_extensions(extensions_dir: &std::path::Path) -> Vec<ExtensionInfo> {
         let ext = parsed.get("extension").and_then(|v| v.as_table());
         let name = ext
             .and_then(|e| e.get("name").and_then(|v| v.as_str()))
-            .unwrap_or_else(|| dir.file_name().unwrap_or_default().to_str().unwrap_or("unknown"))
+            .unwrap_or_else(|| {
+                dir.file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or("unknown")
+            })
             .to_string();
         let version = ext
             .and_then(|e| e.get("version").and_then(|v| v.as_str()))
@@ -57,7 +60,6 @@ fn discover_extensions(extensions_dir: &std::path::Path) -> Vec<ExtensionInfo> {
             name,
             version,
             description,
-            path: dir,
         });
     }
     extensions.sort_by(|a, b| a.name.cmp(&b.name));
@@ -93,7 +95,9 @@ pub fn ExtensionManagerSection() -> Element {
         }
     });
 
-    let ext_data_list = acp_data.read().as_ref()
+    let ext_data_list = acp_data
+        .read()
+        .as_ref()
         .and_then(|opt| opt.as_ref())
         .map(|v| parse_extensions_list(v))
         .unwrap_or_default();

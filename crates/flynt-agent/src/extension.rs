@@ -1521,6 +1521,9 @@ impl FlyntExtension {
         }
         let md_rel = flynt_core::canvas::create_canvas(&self.project.root, name)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        self.project
+            .index_file(&self.project.root.join(&md_rel))
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         let stem = std::path::Path::new(&md_rel)
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())

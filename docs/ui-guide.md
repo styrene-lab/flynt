@@ -323,6 +323,7 @@
 |---------|----------|-----------------|
 | Project name | Display | Current project name |
 | Build hash | Display | Tiny monospace, click-to-copy version hash |
+| Update badge | Button | Appears when GitHub Releases has a newer Flynt version; labels direct/Homebrew/Nix/dev installs, opens the appropriate artifact or release page, and can skip a specific version |
 | Sync badge | ✓ (green) | Synced — Git auto-sync idle |
 | | ↻ (spinning blue) | Syncing — committing, pulling, or pushing |
 | | ⚠ (amber) | Conflict — count shown, tooltip describes resolution |
@@ -359,7 +360,7 @@
 | | connecting (yellow) | Establishing connection |
 | | thinking (blue pulsing) | Processing prompt |
 | | tool running (blue pulsing) | Executing a tool |
-| Omegon not found | Banner | "Omegon binary not found. Install Omegon or set the runtime path in Settings." |
+| Omegon not ready | Setup panel | Checks the Omegon binary, ACP session, Flynt extension, and provider auth; offers user-local upstream install, Homebrew install, binary selection, session retry, extension install/enable, provider settings, runtime settings, and recheck actions. |
 | Chat messages | User: plain text | Assistant: markdown rendered with smart URL badges |
 | Tool calls | Inline blocks | Kind badge + title + status (InProgress/Complete) |
 | Slash commands | Type `/` | Popup menu — only shows if agent advertises commands |
@@ -510,7 +511,7 @@
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `FLYNT_PROJECT` | Override project root directory (legacy aliases: `FLYNT_VAULT`, `CODEX_VAULT`) | `~/Documents/Flynt` |
-| `OMEGON_BIN` | Override Omegon binary path | Channel-resolved from `~/.omegon/versions/` |
+| `OMEGON_BIN` | Override Omegon binary path | Channel-resolved from `~/.omegon/versions/`; the agent setup panel can also persist an explicit project-level binary path. |
 | `OMEGON_HOME` | Override Omegon home directory | Derived from project config |
 | `FLYNT_LAUNCHER_PROFILE` | Override launcher profile path | `~/Library/Application Support/flynt/launcher-profile.json` |
 | `OMEGON_AUTH_JSON` | Override auth.json path | `~/.config/omegon/auth.json` |

@@ -108,7 +108,11 @@ pub fn ArmorySection() -> Element {
             let Some(s) = sess else {
                 return Err::<Vec<ArmoryEntry>, String>("no-session".into());
             };
-            let query = if q.trim().is_empty() { None } else { Some(q.as_str()) };
+            let query = if q.trim().is_empty() {
+                None
+            } else {
+                Some(q.as_str())
+            };
             match s.extensions_search(query).await {
                 Ok(v) => Ok(parse_search_response(&v)),
                 Err(e) => Err(e.to_string()),
@@ -130,11 +134,7 @@ pub fn ArmorySection() -> Element {
                         "Browsing the Armory queries the live omegon host. Flynt hasn't connected to a session yet — start one to load the registry."
                     }
                     if !binary_exists {
-                        div { class: "armory-launch-error",
-                            "Omegon binary not found at "
-                            code { "{omegon_binary.display()}" }
-                            ". Install omegon (or set a binary path in Runtime settings) before launching a session."
-                        }
+                        crate::omegon_setup::OmegonSetupPanel {}
                     }
                     if let Some(err) = launch_err.read().as_ref() {
                         div { class: "armory-launch-error", "{err}" }

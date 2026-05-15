@@ -210,8 +210,13 @@ fn execute_command(
                 let project = c.project();
                 let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let name = format!("Canvas {ts_suffix}");
-                if let Ok(_md_path) = crate::views::canvas::create_canvas(&project.root, &name) {
-                    let _ = project.reindex();
+                if let Ok(md_path) = crate::views::canvas::create_canvas(&project.root, &name) {
+                    let _ = project.index_file(&project.root.join(&md_path));
+                    let _ = c.project_events().send(
+                        flynt_store::watcher::ProjectChangeEvent::FileCreated(
+                            project.root.join(&md_path),
+                        ),
+                    );
                     let slug = name.to_lowercase();
                     if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
                         ts.write().open(doc.id, name);

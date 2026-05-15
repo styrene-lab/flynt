@@ -220,7 +220,7 @@ Future flow (with StyreneIdentity):
 ## Known Limitations for Testers
 
 1. **No notarization** — macOS Gatekeeper will warn on first launch
-2. **No auto-update** — testers must manually download new builds
+2. **Manual update install** — Flynt checks GitHub Releases and surfaces a toolbar update badge. Direct-download installs open the newest PKG/DMG when present; Homebrew/Nix/dev installs are routed to the release page. Testers still confirm installation themselves and can skip a noisy version.
 3. **No crash reporting** — testers should report issues via Slack/GitHub with console logs
 4. **No mobile onboarding** — project must be pre-configured
 5. **SSH keys (if used) must be in ssh-agent** — passphrase-protected keys need `ssh-add` first. Using HTTPS with a personal access token avoids this entirely.
@@ -228,7 +228,7 @@ Future flow (with StyreneIdentity):
 7. **No Vim mode** — CodeMirror 6 without Vim extension
 8. **Commit author is "Flynt <flynt@local>"** — not yet linked to user identity (StyreneIdentity planned)
 9. **iOS is read-heavy** — editing works but is basic (no CM6 on mobile, plain textarea)
-10. **Omegon agent requires separate install** — `omegon` binary must be available at `~/.local/share/omegon/bin/omegon`
+10. **Omegon agent requires separate install** — Flynt detects `omegon` from an explicit runtime setting, `OMEGON_BIN`, channel installs under `~/.omegon/versions/`, common Homebrew/user-local paths, or `PATH`. If none is found, the agent panel presents an Omegon setup flow with user-local install, binary selection, session retry, Flynt extension setup, provider settings, runtime settings, and recheck actions.
 
 ---
 

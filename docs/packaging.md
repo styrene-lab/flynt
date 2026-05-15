@@ -31,6 +31,42 @@ set.
 The macOS DMG is the primary direct-download artifact. It must be Developer ID
 signed, notarized, and stapled before publication.
 
+Flynt does not bundle Omegon in the desktop app. Direct-download users who open
+the agent panel without a local Omegon runtime get an in-app setup panel that
+checks the binary, ACP session, and Flynt extension state. The panel can launch
+the upstream Omegon installer into `~/.local/bin` without prompting, use
+Homebrew when available, persist an existing binary path, open runtime settings,
+query ACP for Flynt extension/provider readiness, and recheck after each action.
+
+Flynt also performs a lightweight self-update check against GitHub Releases.
+When a newer release is available, the toolbar verifies the release's signed
+`flynt-release.json` manifest before offering a direct macOS installer path.
+For direct-download installs, Flynt downloads the selected PKG/DMG, verifies its
+SHA-256 against the signed manifest, writes the verified artifact to Downloads,
+and then opens it for the operator to install. If the signed manifest is absent
+or invalid, Flynt falls back to the GitHub release page instead of presenting a
+verified direct installer flow. Homebrew, Nix, and development builds are
+labeled so operators do not accidentally cross installation channels. The badge
+can be dismissed per version. The first beta path intentionally keeps
+installation user-confirmed rather than mutating the running app bundle in place.
+
+Update discovery is channel-based:
+
+- Stable uses GitHub's latest non-prerelease release endpoint.
+- Nightly scans recent GitHub prereleases for timestamped `nightly-*` tags and
+  selects the newest signed release manifest whose channel is `nightly`.
+
+The selected Flynt update channel is stored in the launcher profile, alongside
+the existing operator-local launcher state. The app never infers the channel
+from artifact names; the signed manifest is the authority.
+
+Nightly publication uses the same release workflow with `tag_name=nightly`.
+That path checks out the repository default branch, creates a tag like
+`nightly-20260515143022-abc1234`, publishes it as a prerelease, and signs a
+manifest for that exact tag and commit. Nightly tags are immutable release
+records; rollback is handled by publishing a newer nightly from the desired
+commit, not by moving an existing tag.
+
 For the first public beta target, `v0.10.0`, the direct-download PKG is required
 rather than best-effort. CI must fail if no Developer ID Installer identity is
 available, because the release should not publish without
@@ -61,6 +97,10 @@ Required CI secrets for the `v0.10.0` direct-download PKG:
 
 - `APPLE_DEVID_INSTALLER_CERT_P12_B64`
 - `APPLE_DEVID_INSTALLER_CERT_PASSWORD`
+- `FLYNT_RELEASE_VERIFY_KEY_B64` - base64 Ed25519 public key embedded into
+  release builds for update manifest verification
+- `FLYNT_RELEASE_SIGNING_KEY_B64` - base64 Ed25519 32-byte seed used only by
+  the release workflow to sign `flynt-release.json`
 
 For backward compatibility, CI will also inspect `APPLE_INSTALLER_CERT_P12_B64`
 if the explicit Developer ID Installer secret is absent, but the release fails

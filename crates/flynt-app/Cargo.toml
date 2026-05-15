@@ -13,6 +13,7 @@ flynt-models = { workspace = true }
 styrene-forge = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
+reqwest     = { workspace = true }
 anyhow      = { workspace = true }
 toml        = { workspace = true }
 toml_edit   = { workspace = true }
@@ -35,6 +36,9 @@ dirs        = "5"
 # system Screen Recording permission prompt.
 xcap        = "0.9"
 base64      = "0.22"
+sha2        = { workspace = true }
+hex         = { workspace = true }
+ed25519-dalek = { workspace = true }
 agent-client-protocol = { workspace = true }
 async-trait = { workspace = true }
 futures     = { workspace = true }

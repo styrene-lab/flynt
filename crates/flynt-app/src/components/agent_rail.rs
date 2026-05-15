@@ -10,7 +10,9 @@ use std::rc::Rc;
 pub fn find_omegon_binary_public() -> Option<PathBuf> {
     // Caller should use ctx.omegon().resolve_binary() when context is available.
     // This fallback uses default config for contexts where AppContext isn't accessible.
-    let path = flynt_core::models::resolve_omegon_binary(&flynt_core::models::LocalRuntimeConfig::default());
+    let path = flynt_core::models::resolve_omegon_binary(
+        &flynt_core::models::LocalRuntimeConfig::default(),
+    );
     if path.exists() { Some(path) } else { None }
 }
 
@@ -73,9 +75,15 @@ fn render_md(content: &str) -> String {
 
 fn tool_kind_label(kind: &str) -> &str {
     match kind {
-        "Read" => "Read", "Edit" => "Edit", "Delete" => "Delete",
-        "Move" => "Move", "Search" => "Search", "Execute" => "Run",
-        "Think" => "Think", "Fetch" => "Fetch", "SwitchMode" => "Mode",
+        "Read" => "Read",
+        "Edit" => "Edit",
+        "Delete" => "Delete",
+        "Move" => "Move",
+        "Search" => "Search",
+        "Execute" => "Run",
+        "Think" => "Think",
+        "Fetch" => "Fetch",
+        "SwitchMode" => "Mode",
         _ => "Tool",
     }
 }
@@ -121,7 +129,9 @@ fn summarize_tool_args(args: Option<&serde_json::Value>) -> String {
 fn persist_config(ctx: &AppContext, config_id: &str, value: &str) {
     let omegon = ctx.omegon();
     let mut settings = omegon.load_operator_settings();
-    settings.acp_config.insert(config_id.to_string(), value.to_string());
+    settings
+        .acp_config
+        .insert(config_id.to_string(), value.to_string());
     if let Err(e) = omegon.save_operator_settings(&settings) {
         tracing::warn!("Failed to persist config: {e}");
     }
@@ -145,7 +155,15 @@ fn start_event_loop(
     spawn(async move {
         loop {
             while let Ok(event) = rx.try_recv() {
-                handle_acp_event(event, &ctx, &mut items, &mut agent_status, &mut available_commands, &mut config_options, &mut session_title);
+                handle_acp_event(
+                    event,
+                    &ctx,
+                    &mut items,
+                    &mut agent_status,
+                    &mut available_commands,
+                    &mut config_options,
+                    &mut session_title,
+                );
             }
             tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
@@ -153,7 +171,10 @@ fn start_event_loop(
 }
 
 #[derive(Clone, PartialEq)]
-enum ChatRole { User, Assistant }
+enum ChatRole {
+    User,
+    Assistant,
+}
 
 #[derive(Clone, PartialEq)]
 struct ToolCallBlock {
@@ -171,8 +192,13 @@ struct ToolCallBlock {
 
 #[derive(Clone, PartialEq)]
 enum ChatItem {
-    Message { role: ChatRole, content: String },
-    Thought { content: String },
+    Message {
+        role: ChatRole,
+        content: String,
+    },
+    Thought {
+        content: String,
+    },
     ToolCall(ToolCallBlock),
     /// The agent's full execution plan. Replaces any prior Plan item
     /// (omegon emits the complete entry list with each update).
@@ -180,13 +206,21 @@ enum ChatItem {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum AgentStatus { Idle, Connecting, Thinking, ToolRunning, AuthExpired }
+enum AgentStatus {
+    Idle,
+    Connecting,
+    Thinking,
+    ToolRunning,
+    AuthExpired,
+}
 
 impl AgentStatus {
     fn label(&self) -> &'static str {
         match self {
-            Self::Idle => "ready", Self::Connecting => "connecting…",
-            Self::Thinking => "thinking…", Self::ToolRunning => "running tool…",
+            Self::Idle => "ready",
+            Self::Connecting => "connecting…",
+            Self::Thinking => "thinking…",
+            Self::ToolRunning => "running tool…",
             Self::AuthExpired => "auth expired",
         }
     }
@@ -198,12 +232,15 @@ impl AgentStatus {
             _ => "agent-status-badge active",
         }
     }
-    fn is_busy(&self) -> bool { !matches!(self, Self::Idle | Self::AuthExpired) }
+    fn is_busy(&self) -> bool {
+        !matches!(self, Self::Idle | Self::AuthExpired)
+    }
 }
 
 #[component]
 pub fn AgentRail() -> Element {
     let ctx = use_context::<AppContext>();
+    let setup_refresh = use_context::<crate::omegon_setup::OmegonSetupRefresh>();
 
     let mut input = use_signal(String::new);
     let mut items: Signal<Vec<ChatItem>> = use_signal(Vec::new);
@@ -226,6 +263,7 @@ pub fn AgentRail() -> Element {
 
     // ── Eager connect on mount + apply saved config ─────────
     use_effect(move || {
+        let _ = setup_refresh.0.read();
         let binary = match find_omegon_binary_from_ctx(&ctx) {
             Some(b) => {
                 tracing::info!("Omegon binary resolved: {}", b.display());
@@ -238,7 +276,11 @@ pub fn AgentRail() -> Element {
             }
         };
         let project = ctx.project_root();
-        tracing::info!("Connecting ACP session: project={}, binary={}", project.display(), binary.display());
+        tracing::info!(
+            "Connecting ACP session: project={}, binary={}",
+            project.display(),
+            binary.display()
+        );
         let operator_settings = ctx.omegon().load_operator_settings();
         let saved_config = operator_settings.acp_config.clone();
         let agent_id = operator_settings.agent_id.clone();
@@ -258,7 +300,15 @@ pub fn AgentRail() -> Element {
 
                     *session.write() = Some(sess.clone());
                     *shared_session.write() = Some(sess.clone());
-                    start_event_loop(rx, ctx.clone(), items, agent_status, available_commands, config_options, session_title);
+                    start_event_loop(
+                        rx,
+                        ctx.clone(),
+                        items,
+                        agent_status,
+                        available_commands,
+                        config_options,
+                        session_title,
+                    );
                     *agent_status.write() = AgentStatus::Idle;
                     tracing::info!("ACP event loop started, agent ready");
 
@@ -289,7 +339,8 @@ pub fn AgentRail() -> Element {
     // expose scrollTop/scrollHeight via signals; the JS surface also
     // backs the prev/next user-message navigation buttons below.
     use_effect(move || {
-        document::eval(r#"
+        document::eval(
+            r#"
             (function install() {
                 const root = document.querySelector('.agent-rail');
                 const messages = root && root.querySelector('.agent-messages');
@@ -356,13 +407,18 @@ pub fn AgentRail() -> Element {
                 root.classList.add('agent-pinned');
                 scrollToBottom();
             })();
-        "#);
+        "#,
+        );
     });
 
     // Slash command menu
     let input_val = input.read().clone();
     let slash_prefix = input_val.starts_with('/');
-    let filter_text = if slash_prefix { input_val.trim_start_matches('/').to_lowercase() } else { String::new() };
+    let filter_text = if slash_prefix {
+        input_val.trim_start_matches('/').to_lowercase()
+    } else {
+        String::new()
+    };
 
     let launch_error = use_context::<Signal<Option<String>>>();
     let mut settings_page = use_context::<Signal<SettingsPage>>();
@@ -414,14 +470,25 @@ pub fn AgentRail() -> Element {
                         p { "Could not start the agent: {err}" }
                         p { class: "agent-error-hint", "Make sure Omegon is installed. Check Settings for the runtime path." }
                 }
+                    crate::omegon_setup::OmegonSetupPanel {}
                 }
             }
             if session.read().is_none() && !binary_found && launch_error.read().is_none() {
-                div { class: "agent-error-banner",
-                    p { "Omegon binary not found." }
-                    p { class: "agent-error-hint",
-                        "Install Omegon or set the runtime path in Settings > Local Runtime."
-                    }
+                crate::omegon_setup::OmegonSetupPanel {}
+            }
+            if session.read().is_none()
+                && binary_found
+                && launch_error.read().is_none()
+                && *agent_status.read() == AgentStatus::Idle
+            {
+                crate::omegon_setup::OmegonSetupPanel {}
+            }
+            if session.read().is_some() {
+                {
+                    let setup = crate::omegon_setup::evaluate(&ctx);
+                    (!setup.flynt_extension_installed).then(|| rsx! {
+                        crate::omegon_setup::OmegonSetupPanel {}
+                    })
                 }
             }
 
@@ -799,10 +866,17 @@ fn handle_acp_event(
         AcpEvent::TextDelta(ref text) => {
             tracing::info!("ACP TextDelta: {} bytes", text.len());
             let mut list = items.write();
-            if let Some(ChatItem::Message { role: ChatRole::Assistant, content }) = list.last_mut() {
+            if let Some(ChatItem::Message {
+                role: ChatRole::Assistant,
+                content,
+            }) = list.last_mut()
+            {
                 content.push_str(text);
             } else {
-                list.push(ChatItem::Message { role: ChatRole::Assistant, content: text.clone() });
+                list.push(ChatItem::Message {
+                    role: ChatRole::Assistant,
+                    content: text.clone(),
+                });
             }
         }
         AcpEvent::ThoughtDelta(ref text) => {
@@ -812,10 +886,17 @@ fn handle_acp_event(
             if let Some(ChatItem::Thought { content }) = list.last_mut() {
                 content.push_str(text);
             } else {
-                list.push(ChatItem::Thought { content: text.clone() });
+                list.push(ChatItem::Thought {
+                    content: text.clone(),
+                });
             }
         }
-        AcpEvent::ToolCallStarted { ref id, ref title, ref kind, ref args } => {
+        AcpEvent::ToolCallStarted {
+            ref id,
+            ref title,
+            ref kind,
+            ref args,
+        } => {
             tracing::info!("ACP ToolCallStarted: {kind} — {title} (id={id})");
             *status.write() = AgentStatus::ToolRunning;
             items.write().push(ChatItem::ToolCall(ToolCallBlock {
@@ -827,15 +908,26 @@ fn handle_acp_event(
                 output: String::new(),
             }));
         }
-        AcpEvent::ToolCallUpdated { ref id, status: ref st, ref title, ref output } => {
+        AcpEvent::ToolCallUpdated {
+            ref id,
+            status: ref st,
+            ref title,
+            ref output,
+        } => {
             tracing::debug!("ACP ToolCallUpdated: id={id} status={st}");
             let mut list = items.write();
             for item in list.iter_mut() {
                 if let ChatItem::ToolCall(tc) = item {
                     if tc.id == *id {
-                        if !st.is_empty() { tc.status = st.clone(); }
-                        if let Some(t) = title { tc.title = t.clone(); }
-                        if let Some(o) = output { tc.output = o.clone(); }
+                        if !st.is_empty() {
+                            tc.status = st.clone();
+                        }
+                        if let Some(t) = title {
+                            tc.title = t.clone();
+                        }
+                        if let Some(o) = output {
+                            tc.output = o.clone();
+                        }
                         break;
                     }
                 }
@@ -866,7 +958,9 @@ fn handle_acp_event(
                 let in_list = opt.options.iter().any(|v| v.value == opt.current_value);
                 tracing::info!(
                     "  opt id={} current={:?} in_list={}",
-                    opt.id, opt.current_value, in_list
+                    opt.id,
+                    opt.current_value,
+                    in_list
                 );
             }
             // Reconcile persisted operator-settings.json with the agent's actual current_values.
@@ -881,9 +975,13 @@ fn handle_acp_event(
                 if prev.as_deref() != Some(opt.current_value.as_str()) {
                     tracing::info!(
                         "Reconciling persisted {}: {:?} → {:?} (omegon-reported)",
-                        opt.id, prev, opt.current_value
+                        opt.id,
+                        prev,
+                        opt.current_value
                     );
-                    settings.acp_config.insert(opt.id.clone(), opt.current_value.clone());
+                    settings
+                        .acp_config
+                        .insert(opt.id.clone(), opt.current_value.clone());
                     changed = true;
                 }
             }
@@ -901,7 +999,12 @@ fn handle_acp_event(
         AcpEvent::Error(ref msg) => {
             tracing::error!("ACP Error: {msg}");
             let lower = msg.to_lowercase();
-            let display = if lower.contains("auth") || lower.contains("401") || lower.contains("unauthorized") || lower.contains("expired") || lower.contains("credential") {
+            let display = if lower.contains("auth")
+                || lower.contains("401")
+                || lower.contains("unauthorized")
+                || lower.contains("expired")
+                || lower.contains("credential")
+            {
                 format!("Authentication error: {msg}\n\nTry `/login anthropic` to re-authenticate.")
             } else {
                 format!("Error: {msg}")

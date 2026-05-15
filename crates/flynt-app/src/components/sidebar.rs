@@ -1,17 +1,17 @@
-use flynt_core::{models::DocumentMeta, store::ProjectStore};
-use dioxus::prelude::*;
-use std::{collections::BTreeMap, path::PathBuf};
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext},
     state::{Route, TabState},
 };
+use dioxus::prelude::*;
+use flynt_core::{models::DocumentMeta, store::ProjectStore};
 use rfd::FileDialog;
+use std::{collections::BTreeMap, path::PathBuf};
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 #[component]
 pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
-    let ctx     = use_context::<AppContext>();
+    let ctx = use_context::<AppContext>();
     let mut refresh = use_context_provider(|| Signal::new(0_u64));
     let mut settings_open = use_context::<Signal<crate::state::SettingsOpen>>();
 
@@ -148,6 +148,15 @@ impl TreeNode {
             Self::Folder { children, .. } => children.values().map(|c| c.file_count()).sum(),
         }
     }
+
+    fn contains_document_id(&self, id: &str) -> bool {
+        match self {
+            Self::File(meta) => meta.id.0.to_string() == id,
+            Self::Folder { children, .. } => children
+                .values()
+                .any(|child| child.contains_document_id(id)),
+        }
+    }
 }
 
 /// Build a fully nested tree from flat document list using all path components.
@@ -155,13 +164,18 @@ fn build_tree(docs: &[DocumentMeta]) -> Element {
     let mut root: BTreeMap<String, TreeNode> = BTreeMap::new();
 
     for doc in docs {
-        let components: Vec<_> = doc.path.components()
+        let components: Vec<_> = doc
+            .path
+            .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect();
 
         if components.len() <= 1 {
             // Root-level file — use filename for unique identity, prefixed to sort after folders
-            let filename = components.last().cloned().unwrap_or_else(|| doc.title.clone());
+            let filename = components
+                .last()
+                .cloned()
+                .unwrap_or_else(|| doc.title.clone());
             root.entry(format!("~{filename}"))
                 .or_insert(TreeNode::File(doc.clone()));
         } else {
@@ -170,17 +184,23 @@ fn build_tree(docs: &[DocumentMeta]) -> Element {
             let mut current = &mut root;
 
             for part in folder_parts {
-                let entry = current.entry(part.clone()).or_insert_with(|| TreeNode::Folder {
-                    name: part.clone(),
-                    children: BTreeMap::new(),
-                });
+                let entry = current
+                    .entry(part.clone())
+                    .or_insert_with(|| TreeNode::Folder {
+                        name: part.clone(),
+                        children: BTreeMap::new(),
+                    });
                 current = match entry {
                     TreeNode::Folder { children, .. } => children,
                     _ => unreachable!(),
                 };
             }
-            let filename = components.last().cloned().unwrap_or_else(|| doc.title.clone());
-            current.entry(format!("~{filename}"))
+            let filename = components
+                .last()
+                .cloned()
+                .unwrap_or_else(|| doc.title.clone());
+            current
+                .entry(format!("~{filename}"))
                 .or_insert(TreeNode::File(doc.clone()));
         }
     }
@@ -193,7 +213,7 @@ fn render_tree_level(nodes: &BTreeMap<String, TreeNode>, depth: u32, path_prefix
     let entries: Vec<_> = nodes.iter().collect();
 
     rsx! {
-        for (key, node) in entries.iter() {
+        for (_key, node) in entries.iter() {
             match *node {
                 TreeNode::Folder { name, children } => {
                     let full_path = if path_prefix.is_empty() {
@@ -221,12 +241,29 @@ fn render_tree_level(nodes: &BTreeMap<String, TreeNode>, depth: u32, path_prefix
 /// Folder wrapper — uses a keyed div so Dioxus allocates a stable hook scope
 /// per folder identity. The actual hook (`use_signal`) lives inside this
 /// keyed scope and survives folder list changes.
-fn render_folder_keyed(name: &str, path: &str, children: &BTreeMap<String, TreeNode>, depth: u32) -> Element {
+fn render_folder_keyed(
+    name: &str,
+    path: &str,
+    children: &BTreeMap<String, TreeNode>,
+    depth: u32,
+) -> Element {
     let name = name.to_string();
     let path = path.to_string();
     let children = children.clone();
     let count: usize = children.values().map(|c| c.file_count()).sum();
-    let mut open = use_signal(|| false);
+    let tab_state = use_context::<Signal<TabState>>();
+    let active_id = tab_state.read().active_id().map(|id| id.0.to_string());
+    let should_open = active_id.as_deref().is_some_and(|id| {
+        children
+            .values()
+            .any(|child| child.contains_document_id(id))
+    });
+    let mut open = use_signal(|| should_open);
+    use_effect(move || {
+        if should_open && !*open.read() {
+            *open.write() = true;
+        }
+    });
     let indent = depth as f32 * 12.0;
 
     rsx! {
@@ -246,16 +283,16 @@ fn render_folder_keyed(name: &str, path: &str, children: &BTreeMap<String, TreeN
 
 #[component]
 fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
-    let ctx              = use_context::<AppContext>();
-    let mut tab_state    = use_context::<Signal<TabState>>();
+    let ctx = use_context::<AppContext>();
+    let mut tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
-    let mut refresh      = use_context::<Signal<u64>>();
+    let mut refresh = use_context::<Signal<u64>>();
     let mut rename_trigger = use_context::<Signal<crate::state::RenameTrigger>>();
 
     let active_id = tab_state.read().active_id().cloned();
     let is_active = active_id.as_ref() == Some(&meta.id);
 
-    let id    = meta.id.clone();
+    let id = meta.id.clone();
     let title = meta.title.clone();
     let doc_path = meta.path.clone();
     let doc_title = meta.title.clone();
@@ -269,8 +306,8 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
     // notes. Detection by path prefix because the .md frontmatter
     // already carries `kind = "task"` but isn't surfaced on
     // DocumentMeta yet.
-    let is_task = meta.path.starts_with("Tasks/")
-        || meta.path.to_string_lossy().starts_with("Tasks/");
+    let is_task =
+        meta.path.starts_with("Tasks/") || meta.path.to_string_lossy().starts_with("Tasks/");
 
     rsx! {
         button {
@@ -485,12 +522,21 @@ fn ProjectSelector() -> Element {
     };
 
     let open_folder = move |_| {
-        let Some(selected_root) = FileDialog::new().pick_folder() else { return; };
-        let name = selected_root.file_name()
-            .and_then(|v| v.to_str()).unwrap_or("Flynt").to_string();
+        let Some(selected_root) = FileDialog::new().pick_folder() else {
+            return;
+        };
+        let name = selected_root
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or("Flynt")
+            .to_string();
         if OmegonRuntimeContext::initialize_project(
-            &selected_root, &name, flynt_core::models::SyncConfig::None,
-        ).is_ok() {
+            &selected_root,
+            &name,
+            flynt_core::models::SyncConfig::None,
+        )
+        .is_ok()
+        {
             let mut updated = OmegonRuntimeContext::load_launcher_profile();
             OmegonRuntimeContext::register_known_project(&mut updated, &selected_root, &name);
             let _ = OmegonRuntimeContext::save_launcher_profile(&updated);
@@ -500,7 +546,10 @@ fn ProjectSelector() -> Element {
     };
 
     let mut expanded = use_signal(|| false);
-    let other_projects: Vec<_> = profile.read().known_projects.iter()
+    let other_projects: Vec<_> = profile
+        .read()
+        .known_projects
+        .iter()
         .filter(|v| v.root != current_root)
         .cloned()
         .collect();
@@ -546,9 +595,18 @@ fn ProjectSelector() -> Element {
 pub fn initial_note_id_for_project(project_root: &PathBuf) -> Option<String> {
     let project = crate::bootstrap::OmegonRuntimeContext::initialize_project(
         project_root,
-        project_root.file_name().and_then(|name| name.to_str()).unwrap_or("Flynt"),
+        project_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Flynt"),
         flynt_core::models::SyncConfig::None,
-    ).ok()?;
-    project.store.list_documents().ok()?.into_iter().next()
+    )
+    .ok()?;
+    project
+        .store
+        .list_documents()
+        .ok()?
+        .into_iter()
+        .next()
         .map(|doc| doc.id.0.to_string())
 }

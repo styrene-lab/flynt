@@ -1,11 +1,14 @@
 use crate::{
-    bootstrap::{bootstrap_from_env, runtime_state_for_project_root, AppContext, OmegonRuntimeContext, PendingProjectSetup},
+    bootstrap::{
+        bootstrap_from_env, runtime_state_for_project_root, AppContext, OmegonRuntimeContext,
+        PendingProjectSetup,
+    },
     components::{initial_note_id_for_project, AgentRail, CommandPalette, Sidebar, Toolbar},
     state::{Route, SettingsOpen, SettingsPage, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
-use flynt_core::store::ProjectStore;
 use dioxus::prelude::*;
+use flynt_core::store::ProjectStore;
 use rfd::FileDialog;
 use std::path::PathBuf;
 
@@ -31,9 +34,12 @@ pub fn App() -> Element {
     let current_runtime = ctx.runtime.read().clone();
 
     let theme = use_context_provider(|| {
-        Signal::new(ThemeName(current_runtime.project.config.appearance.theme.clone()))
+        Signal::new(ThemeName(
+            current_runtime.project.config.appearance.theme.clone(),
+        ))
     });
-    let font_size = use_context_provider(|| Signal::new(current_runtime.project.config.appearance.font_size));
+    let font_size =
+        use_context_provider(|| Signal::new(current_runtime.project.config.appearance.font_size));
     use_context_provider(|| Signal::new(current_runtime.omegon.load_project_profile()));
     use_context_provider(|| Signal::new(current_runtime.omegon.load_operator_settings()));
     use_context_provider(|| Signal::new(None::<tokio::process::Child>));
@@ -42,6 +48,11 @@ pub fn App() -> Element {
 
     // Shared ACP session — populated by AgentRail, used by CommandPalette agent mode
     use_context_provider(|| Signal::new(None::<std::rc::Rc<crate::acp::AcpSession>>));
+
+    // Shared Omegon setup refresh trigger. Bumped after installer actions,
+    // binary override changes, or manual rechecks so setup surfaces
+    // re-evaluate runtime readiness in place.
+    use_context_provider(|| crate::omegon_setup::OmegonSetupRefresh(Signal::new(0)));
 
     // Shared ACP config options (model, thinking, posture) — populated by AgentRail,
     // consumed by OmegonSettingsSection for dropdown options
@@ -63,15 +74,15 @@ pub fn App() -> Element {
     // toggle it (menu, command palette, sidebar gear button, agent rail).
     use_context_provider(|| Signal::new(SettingsOpen(false)));
 
-
     // Route — provided via context so search view can navigate back
     let mut active_route = use_context_provider(|| {
         let launcher_profile = OmegonRuntimeContext::load_launcher_profile();
-        let route = if launcher_profile.wizard_completed || launcher_profile.last_project_root.is_some() {
-            Route::Notes
-        } else {
-            Route::Welcome
-        };
+        let route =
+            if launcher_profile.wizard_completed || launcher_profile.last_project_root.is_some() {
+                Route::Notes
+            } else {
+                Route::Welcome
+            };
         Signal::new(route)
     });
     let mut tab_state = use_context::<Signal<TabState>>();
@@ -91,7 +102,9 @@ pub fn App() -> Element {
                         flynt_store::sync::AutoSyncStatus::Committing
                         | flynt_store::sync::AutoSyncStatus::Pulling
                         | flynt_store::sync::AutoSyncStatus::Pushing => SyncStatus::Syncing,
-                        flynt_store::sync::AutoSyncStatus::Conflict(files) => SyncStatus::Conflict(files.len()),
+                        flynt_store::sync::AutoSyncStatus::Conflict(files) => {
+                            SyncStatus::Conflict(files.len())
+                        }
                         flynt_store::sync::AutoSyncStatus::Error(_) => SyncStatus::Syncing, // transient
                     };
                     *sync_status.write() = ui_status;
@@ -164,7 +177,9 @@ pub fn App() -> Element {
                     let content = format!("+++\ntitle = \"{title}\"\ntags = []\n+++\n\n");
                     if project.save_document_content(&path, &content).is_ok() {
                         let _ = project.reindex();
-                        if let Ok(Some(doc)) = project.store.find_document_by_slug(&title.to_lowercase()) {
+                        if let Ok(Some(doc)) =
+                            project.store.find_document_by_slug(&title.to_lowercase())
+                        {
                             tab_state.write().open(doc.id, title);
                             *active_route.write() = Route::Notes;
                         }
@@ -195,7 +210,10 @@ pub fn App() -> Element {
                         let _ = project.reindex();
                     }
                     let title = date.format("%A, %B %-d, %Y").to_string();
-                    if let Ok(Some(doc)) = project.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
+                    if let Ok(Some(doc)) = project
+                        .store
+                        .find_document_by_slug(&date.format("%Y-%m-%d").to_string())
+                    {
                         ts.write().open(doc.id, title);
                         *ar.write() = Route::Notes;
                     }
@@ -209,7 +227,9 @@ pub fn App() -> Element {
                     let project = c.project();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let name = format!("Drawing {ts_suffix}");
-                    if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&project.root, &name) {
+                    if let Ok(_md_path) =
+                        crate::views::excalidraw::create_drawing(&project.root, &name)
+                    {
                         let _ = project.reindex();
                         let slug = name.to_lowercase();
                         if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
@@ -227,8 +247,13 @@ pub fn App() -> Element {
                     let project = c.project();
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let name = format!("Canvas {ts_suffix}");
-                    if let Ok(_md_path) = crate::views::canvas::create_canvas(&project.root, &name) {
-                        let _ = project.reindex();
+                    if let Ok(md_path) = crate::views::canvas::create_canvas(&project.root, &name) {
+                        let _ = project.index_file(&project.root.join(&md_path));
+                        let _ = c.project_events().send(
+                            flynt_store::watcher::ProjectChangeEvent::FileCreated(
+                                project.root.join(&md_path),
+                            ),
+                        );
                         let slug = name.to_lowercase();
                         if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
                             ts.write().open(doc.id, name);
@@ -345,7 +370,8 @@ pub fn App() -> Element {
                                     .stdout(std::process::Stdio::piped())
                                     .stderr(std::process::Stdio::piped())
                                     .spawn()?;
-                                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                                let deadline =
+                                    std::time::Instant::now() + std::time::Duration::from_secs(30);
                                 loop {
                                     match child.try_wait() {
                                         Ok(Some(_)) => break,
@@ -356,12 +382,15 @@ pub fn App() -> Element {
                                                 "D2 render timed out after 30s",
                                             ));
                                         }
-                                        Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+                                        Ok(None) => std::thread::sleep(
+                                            std::time::Duration::from_millis(100),
+                                        ),
                                         Err(e) => return Err(e),
                                     }
                                 }
                                 child.wait_with_output()
-                            }).await;
+                            })
+                            .await;
                             match result {
                                 Ok(Ok(out)) if out.status.success() => {
                                     tracing::debug!("D2 rendered: {}", svg_path.display());
@@ -372,7 +401,10 @@ pub fn App() -> Element {
                                 }
                                 Ok(Err(e)) => {
                                     if e.kind() == std::io::ErrorKind::NotFound {
-                                        tracing::debug!("d2 CLI not found — skipping render for {}", path.display());
+                                        tracing::debug!(
+                                            "d2 CLI not found — skipping render for {}",
+                                            path.display()
+                                        );
                                     } else {
                                         tracing::warn!("D2 render error: {e}");
                                     }
