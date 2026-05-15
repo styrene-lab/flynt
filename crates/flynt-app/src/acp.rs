@@ -318,6 +318,7 @@ impl AcpSession {
         if let Some(ref id) = agent_id {
             cmd.arg("--agent").arg(id);
         }
+        cmd.kill_on_drop(true);
         let mut child = cmd.spawn()?;
 
         let child_stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
@@ -334,9 +335,17 @@ impl AcpSession {
             |fut| { dioxus::prelude::spawn(fut); },
         );
 
+        let io_err_tx = done_tx.clone();
         dioxus::prelude::spawn(async move {
-            if let Err(e) = io_task.await {
-                tracing::error!("ACP I/O error: {e}");
+            match io_task.await {
+                Ok(()) => {
+                    tracing::warn!("ACP I/O task ended");
+                    let _ = io_err_tx.send(AcpEvent::Error("ACP transport disconnected".into()));
+                }
+                Err(e) => {
+                    tracing::error!("ACP I/O error: {e}");
+                    let _ = io_err_tx.send(AcpEvent::Error(format!("ACP transport disconnected: {e}")));
+                }
             }
         });
 

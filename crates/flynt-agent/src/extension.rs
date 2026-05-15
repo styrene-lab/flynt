@@ -294,20 +294,49 @@ impl Extension for FlyntExtension {
                 {
                     "name": "create_drawing",
                     "label": "Create Drawing",
-                    "description": "Create an Excalidraw drawing with optional scene elements. Returns the wrapper document path. The desktop app auto-exports SVG for inline rendering.",
+                    "description": "Create a Flynt Excalidraw drawing. This ALWAYS writes `drawings/<name>.excalidraw` plus an indexable wrapper `drawings/<name>.md`; do not put Excalidraw drawings under `diagrams/` and do not create Excalidraw wrappers with create_document. Returns { wrapper_path, drawing_path }. Use drawing_active/drawing_get/drawing_set_scene to inspect or edit an opened drawing.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "name": { "type": "string", "description": "Drawing name (used for filename)" },
-                            "scene": { "type": "string", "description": "Optional Excalidraw scene JSON. If omitted, creates an empty dark-themed canvas." }
+                            "scene": { "type": "string", "description": "Optional Excalidraw scene JSON string. If omitted, creates an empty dark-themed drawing." }
                         },
                         "required": ["name"]
                     }
                 },
                 {
+                    "name": "drawing_active",
+                    "label": "Drawing: Active",
+                    "description": "Resolve the Excalidraw drawing the user is currently viewing in Flynt. Reads the UI-state mirror and returns { wrapper_path, drawing_path } when the active document is a drawing wrapper. Use this before editing 'the open drawing'. Returns null if no drawing is active.",
+                    "parameters": { "type": "object", "properties": {} }
+                },
+                {
+                    "name": "drawing_get",
+                    "label": "Drawing: Get",
+                    "description": "Read an Excalidraw scene JSON file. Pass `path` relative to project root, usually from create_drawing or drawing_active, e.g. `drawings/Architecture.excalidraw`.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": { "path": { "type": "string" } },
+                        "required": ["path"]
+                    }
+                },
+                {
+                    "name": "drawing_set_scene",
+                    "label": "Drawing: Set Scene",
+                    "description": "Replace an existing Excalidraw scene JSON file. Use drawing_active first for the currently open drawing. Accepts `scene` as either a JSON object or a JSON string. This edits `.excalidraw` scene data, not Flynt design `.canvas` cells.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string" },
+                            "scene": { "description": "Excalidraw scene JSON object or JSON string" }
+                        },
+                        "required": ["path", "scene"]
+                    }
+                },
+                {
                     "name": "create_d2_diagram",
                     "label": "Create D2 Diagram",
-                    "description": "Create a D2 diagram file with source code. The desktop app auto-renders to SVG via the d2 CLI. Use ![[name.d2]] to embed inline in documents.",
+                    "description": "Create a D2 diagram source file. This is for text-authored D2 diagrams and defaults to `diagrams/`; it is not Excalidraw. Use create_drawing for freeform Excalidraw sketches, canvas_create/canvas_set_cells for Flynt design canvases, and flow_create/flow_patch for node-flow diagrams.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -390,6 +419,12 @@ impl Extension for FlyntExtension {
                         },
                         "required": ["provider"]
                     }
+                },
+                {
+                    "name": "flynt_surface_guide",
+                    "label": "Flynt Surface Guide",
+                    "description": "Return the operational map for Flynt's document surfaces and tool families. Call this when choosing between notes, drawings, D2 diagrams, design canvases, and flow graphs, or when the user asks what is open/current in Flynt.",
+                    "parameters": { "type": "object", "properties": {} }
                 },
                 {
                     "name": "get_ui_state",
@@ -569,6 +604,8 @@ impl Extension for FlyntExtension {
                 }
             }
 
+            "execute_flynt_surface_guide" => Ok(flynt_surface_guide()),
+
             "execute_create_document" => {
                 let path = params["path"]
                     .as_str()
@@ -579,6 +616,11 @@ impl Extension for FlyntExtension {
                     .as_array()
                     .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
+                if contains_excalidraw_embed(content) || tags.iter().any(|tag| *tag == "drawing") {
+                    return Err(omegon_extension::Error::invalid_params(
+                        "Excalidraw drawings must be created with create_drawing so Flynt writes the canonical drawings/<name>.excalidraw + drawings/<name>.md pair. Do not create drawing wrappers with create_document.",
+                    ));
+                }
                 let tags_toml = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
                 let full = format!(
                     "+++\ntitle = \"{title}\"\ntags = {tags_toml}\n+++\n\n# {title}\n\n{content}"
@@ -945,7 +987,15 @@ impl Extension for FlyntExtension {
                 let name = params["name"]
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'name'"))?;
+                validate_file_stem(name)?;
                 let scene = params["scene"].as_str();
+                if let Some(scene) = scene {
+                    let _: Value = serde_json::from_str(scene).map_err(|e| {
+                        omegon_extension::Error::invalid_params(format!(
+                            "scene must be valid Excalidraw JSON: {e}"
+                        ))
+                    })?;
+                }
 
                 // Create drawings directory and files
                 let drawings_dir = self.project.root.join("drawings");
@@ -978,11 +1028,17 @@ impl Extension for FlyntExtension {
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
                 Ok(json!({
-                    "created": md_rel,
+                    "created": md_rel.clone(),
+                    "wrapper_path": md_rel,
+                    "drawing_path": format!("drawings/{excalidraw_file}"),
                     "excalidraw_file": format!("drawings/{excalidraw_file}"),
                     "has_scene": scene.is_some(),
                 }))
             }
+
+            "execute_drawing_active" => self.execute_drawing_active(),
+            "execute_drawing_get" => self.execute_drawing_get(params),
+            "execute_drawing_set_scene" => self.execute_drawing_set_scene(params),
 
             "execute_create_d2_diagram" => {
                 let name = params["name"]
@@ -1336,6 +1392,103 @@ impl Extension for FlyntExtension {
     }
 }
 
+fn flynt_surface_guide() -> Value {
+    json!({
+        "identity": "You are operating inside Flynt, a local-first project workspace. Use get_ui_state before assuming what the operator has open.",
+        "surfaces": [
+            {
+                "kind": "note",
+                "paths": ["*.md"],
+                "tools": ["get_document", "create_document"],
+                "use_for": "ordinary markdown notes, research, project docs"
+            },
+            {
+                "kind": "drawing",
+                "paths": ["drawings/<name>.md", "drawings/<name>.excalidraw"],
+                "tools": ["create_drawing", "drawing_active", "drawing_get", "drawing_set_scene"],
+                "use_for": "freeform Excalidraw sketches",
+                "rules": [
+                    "Excalidraw drawings live under drawings/, not diagrams/.",
+                    "Do not create Excalidraw wrapper markdown with create_document.",
+                    "Use drawing_active before editing the drawing the operator has open."
+                ]
+            },
+            {
+                "kind": "d2_diagram",
+                "paths": ["diagrams/<name>.d2"],
+                "tools": ["create_d2_diagram"],
+                "use_for": "text-authored D2 diagrams"
+            },
+            {
+                "kind": "design_canvas",
+                "paths": ["canvases/<name>.md", "canvases/<name>.canvas"],
+                "tools": ["canvas_create", "canvas_active", "canvas_get", "canvas_set_cells", "canvas_apply_theme", "canvas_list_primitives"],
+                "use_for": "Flynt design canvases made of grid-positioned HTML/CSS cells",
+                "rules": [
+                    "This is not Excalidraw.",
+                    "Read canvas_list_primitives before authoring polished cells.",
+                    "Use canvas_active before editing the canvas the operator has open."
+                ]
+            },
+            {
+                "kind": "flow_graph",
+                "paths": ["*.flow"],
+                "tools": ["flow_create", "flow_get", "flow_patch"],
+                "use_for": "node-flow architecture or workflow graphs"
+            }
+        ]
+    })
+}
+
+fn validate_file_stem(name: &str) -> omegon_extension::Result<()> {
+    if name.trim().is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+    {
+        return Err(omegon_extension::Error::invalid_params(
+            "name must not be empty or contain path separators",
+        ));
+    }
+    Ok(())
+}
+
+fn contains_excalidraw_embed(content: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with("![[") && trimmed.ends_with(".excalidraw]]")
+    })
+}
+
+fn excalidraw_embed_path(content: &str) -> Option<String> {
+    let body = if let Some(rest) = content.strip_prefix("+++\n") {
+        if let Some(end) = rest.find("\n+++") {
+            rest[end + 4..].trim()
+        } else {
+            content.trim()
+        }
+    } else {
+        content.trim()
+    };
+
+    let lines: Vec<&str> = body.lines().filter(|line| !line.trim().is_empty()).collect();
+    if lines.len() == 1 {
+        let line = lines[0].trim();
+        if line.starts_with("![[") && line.ends_with(".excalidraw]]") {
+            return Some(line[3..line.len() - 2].to_string());
+        }
+    }
+    None
+}
+
+fn drawing_path_arg(params: &Value) -> omegon_extension::Result<&str> {
+    params
+        .get("path")
+        .and_then(|v| v.as_str())
+        .or_else(|| params.get("drawing_path").and_then(|v| v.as_str()))
+        .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path' (or 'drawing_path')"))
+}
+
 // ── Canvas tool implementations ───────────────────────────────────────────────
 //
 // Pulled out as inherent methods (rather than inline match arms) so each tool
@@ -1344,6 +1497,103 @@ impl Extension for FlyntExtension {
 // ergonomics. None of these tools panic on malformed input — they cross the
 // ACP boundary, where a panic would kill the worker thread.
 impl FlyntExtension {
+    fn resolve_drawing_path(&self, path_arg: &str) -> Result<std::path::PathBuf, omegon_extension::Error> {
+        let rel = std::path::Path::new(path_arg);
+        if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(omegon_extension::Error::invalid_params(
+                "path must not contain '..'",
+            ));
+        }
+        if rel.extension().and_then(|ext| ext.to_str()) != Some("excalidraw") {
+            return Err(omegon_extension::Error::invalid_params(
+                "path must point to a .excalidraw file",
+            ));
+        }
+        Ok(self.project.root.join(rel))
+    }
+
+    fn execute_drawing_get(&self, params: Value) -> omegon_extension::Result<Value> {
+        let path = drawing_path_arg(&params)?;
+        let abs = self.resolve_drawing_path(path)?;
+        let body = std::fs::read_to_string(&abs)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        let scene: Value = serde_json::from_str(&body)
+            .map_err(|e| omegon_extension::Error::internal_error(format!("parse drawing json: {e}")))?;
+        Ok(json!({
+            "path": path,
+            "scene": scene,
+        }))
+    }
+
+    fn execute_drawing_set_scene(&self, params: Value) -> omegon_extension::Result<Value> {
+        let path = drawing_path_arg(&params)?;
+        let scene_value = params
+            .get("scene")
+            .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'scene'"))?;
+        let scene = coerce_to_value(scene_value.clone(), "scene")?;
+        let serialized = serde_json::to_string_pretty(&scene)
+            .map_err(|e| omegon_extension::Error::invalid_params(format!("scene: {e}")))?;
+        let abs = self.resolve_drawing_path(path)?;
+        if !abs.exists() {
+            return Err(omegon_extension::Error::internal_error(format!(
+                "drawing not found: {path}"
+            )));
+        }
+        std::fs::write(&abs, serialized)
+            .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
+        Ok(json!({
+            "path": path,
+            "updated": true,
+        }))
+    }
+
+    fn execute_drawing_active(&self) -> omegon_extension::Result<Value> {
+        let ui_path = self
+            .project
+            .root
+            .join(".flynt-local")
+            .join("flynt")
+            .join("ui-state.json");
+        let ui: Value = match std::fs::read_to_string(&ui_path) {
+            Ok(body) => serde_json::from_str(&body).unwrap_or(Value::Null),
+            Err(_) => return Ok(Value::Null),
+        };
+
+        let active = ui.get("active_document");
+        let active_path = active
+            .and_then(|d| d.get("path"))
+            .and_then(|v| v.as_str());
+        let Some(md_path) = active_path else { return Ok(Value::Null); };
+
+        let typed_drawing = active
+            .and_then(|d| d.get("document_type"))
+            .and_then(|v| v.as_str())
+            == Some("drawing");
+
+        let drawing_file = if typed_drawing {
+            std::path::Path::new(md_path)
+                .file_stem()
+                .map(|s| format!("{}.excalidraw", s.to_string_lossy()))
+        } else {
+            let md_abs = self.project.root.join(md_path);
+            let md_body = match std::fs::read_to_string(&md_abs) {
+                Ok(s) => s,
+                Err(_) => return Ok(Value::Null),
+            };
+            excalidraw_embed_path(&md_body)
+        };
+        let Some(drawing_file) = drawing_file else { return Ok(Value::Null); };
+
+        let doc_dir = std::path::Path::new(md_path)
+            .parent()
+            .unwrap_or(std::path::Path::new(""));
+        let drawing_rel = doc_dir.join(&drawing_file);
+        Ok(json!({
+            "wrapper_path": md_path,
+            "drawing_path": drawing_rel.to_string_lossy(),
+        }))
+    }
+
     fn resolve_canvas_path(&self, path_arg: &str) -> Result<std::path::PathBuf, omegon_extension::Error> {
         // Refuse paths that escape the project root (path traversal). The agent
         // shouldn't be writing outside the project, ever.
@@ -1780,12 +2030,16 @@ mod tests {
             .collect();
 
         assert!(names.contains(&"find_document_by_slug".to_string()));
+        assert!(names.contains(&"flynt_surface_guide".to_string()));
         assert!(names.contains(&"store_memory_fact".to_string()));
         assert!(names.contains(&"store_agent_communication".to_string()));
         assert!(names.contains(&"get_task".to_string()));
         assert!(names.contains(&"create_task".to_string()));
         assert!(names.contains(&"get_board".to_string()));
         assert!(names.contains(&"create_board".to_string()));
+        for n in ["create_drawing", "drawing_active", "drawing_get", "drawing_set_scene"] {
+            assert!(names.contains(&n.to_string()), "expected {n} in tools/list");
+        }
         // Phase 3 — scribe-absorbed forge / engagement tools.
         for n in [
             "engagement_create", "engagement_update", "engagement_list", "engagement_status",
@@ -1878,6 +2132,37 @@ mod tests {
         assert_eq!(tasks.as_array().unwrap().len(), 1);
     }
 
+    #[tokio::test]
+    async fn surface_guide_distinguishes_drawings_diagrams_and_canvases() {
+        let (_tmp, ext) = test_extension();
+        let guide = ext
+            .handle_rpc("execute_flynt_surface_guide", json!({}))
+            .await
+            .unwrap();
+        let body = guide.to_string();
+        assert!(body.contains("drawings/<name>.excalidraw"));
+        assert!(body.contains("diagrams/<name>.d2"));
+        assert!(body.contains("canvases/<name>.canvas"));
+    }
+
+    #[tokio::test]
+    async fn create_document_refuses_excalidraw_wrappers() {
+        let (_tmp, ext) = test_extension();
+        let err = ext
+            .handle_rpc(
+                "execute_create_document",
+                json!({
+                    "path": "diagrams/Sketch.md",
+                    "title": "Sketch",
+                    "content": "![[Sketch.excalidraw]]",
+                    "tags": ["drawing"]
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("create_drawing"), "got: {err}");
+    }
+
     // ── Canvas tools ────────────────────────────────────────────────────────
 
     fn write_canvas(tmp: &TempDir, rel: &str, body: &str) {
@@ -1904,6 +2189,53 @@ mod tests {
             }),
         };
         std::fs::write(dir.join("ui-state.json"), serde_json::to_string(&body).unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn drawing_create_get_set_and_active_round_trip() {
+        let (tmp, ext) = test_extension();
+        let created = ext
+            .handle_rpc("execute_create_drawing", json!({"name": "Sketch"}))
+            .await
+            .unwrap();
+        assert_eq!(created["wrapper_path"], "drawings/Sketch.md");
+        assert_eq!(created["drawing_path"], "drawings/Sketch.excalidraw");
+        assert!(tmp.path().join("drawings/Sketch.md").exists());
+        assert!(tmp.path().join("drawings/Sketch.excalidraw").exists());
+
+        write_ui_state(&tmp, Some("drawings/Sketch.md"));
+        let active = ext.handle_rpc("execute_drawing_active", json!({})).await.unwrap();
+        assert_eq!(active["wrapper_path"], "drawings/Sketch.md");
+        assert_eq!(active["drawing_path"], "drawings/Sketch.excalidraw");
+
+        let scene = json!({
+            "type": "excalidraw",
+            "version": 2,
+            "elements": [{"id": "box", "type": "rectangle"}],
+            "appState": {"theme": "dark"}
+        });
+        ext.handle_rpc(
+            "execute_drawing_set_scene",
+            json!({"path": "drawings/Sketch.excalidraw", "scene": scene}),
+        )
+        .await
+        .unwrap();
+
+        let got = ext
+            .handle_rpc("execute_drawing_get", json!({"path": "drawings/Sketch.excalidraw"}))
+            .await
+            .unwrap();
+        assert_eq!(got["scene"]["elements"][0]["id"], "box");
+    }
+
+    #[tokio::test]
+    async fn create_drawing_rejects_path_separators() {
+        let (_tmp, ext) = test_extension();
+        let err = ext
+            .handle_rpc("execute_create_drawing", json!({"name": "../Sketch"}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("name"));
     }
 
     #[tokio::test]

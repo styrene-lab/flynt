@@ -5,6 +5,7 @@ use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::mpsc::TryRecvError;
 
 /// Resolve the Omegon binary using the centralized channel-aware resolver.
 pub fn find_omegon_binary_public() -> Option<PathBuf> {
@@ -137,10 +138,23 @@ fn persist_config(ctx: &AppContext, config_id: &str, value: &str) {
     }
 }
 
-/// Start the event polling loop for an ACP session.
-fn start_event_loop(
-    rx: std::sync::mpsc::Receiver<AcpEvent>,
+fn is_transport_disconnect(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("broken pipe")
+        || lower.contains("os error 32")
+        || lower.contains("connection closed")
+        || lower.contains("closed connection")
+        || lower.contains("connection reset")
+        || lower.contains("transport disconnected")
+        || lower.contains("extension closed connection")
+        || lower.contains("extension process not running")
+        || lower.contains("channel closed")
+}
+
+fn reconnect_acp_session(
     ctx: AppContext,
+    mut session: Signal<Option<Rc<AcpSession>>>,
+    mut shared_session: Signal<Option<Rc<AcpSession>>>,
     items: Signal<Vec<ChatItem>>,
     agent_status: Signal<AgentStatus>,
     available_commands: Signal<Vec<SlashCommand>>,
@@ -152,18 +166,114 @@ fn start_event_loop(
     let mut available_commands = available_commands;
     let mut config_options = config_options;
     let mut session_title = session_title;
+
+    spawn(async move {
+        if *agent_status.read() == AgentStatus::Connecting {
+            return;
+        }
+
+        let Some(binary) = find_omegon_binary_from_ctx(&ctx) else {
+            items.write().push(ChatItem::Message {
+                role: ChatRole::Assistant,
+                content: "Agent transport disconnected, and the Omegon binary could not be resolved for reconnect.".into(),
+            });
+            *agent_status.write() = AgentStatus::Idle;
+            return;
+        };
+
+        tracing::warn!("Reconnecting ACP session after transport disconnect");
+        *agent_status.write() = AgentStatus::Connecting;
+        *session.write() = None;
+        *shared_session.write() = None;
+        available_commands.write().clear();
+        config_options.write().clear();
+        *session_title.write() = None;
+
+        let project = ctx.project_root();
+        let operator_settings = ctx.omegon().load_operator_settings();
+        let saved_config = operator_settings.acp_config.clone();
+        let agent_id = operator_settings.agent_id.clone();
+
+        match AcpSession::connect(binary, project, agent_id).await {
+            Ok((s, rx)) => {
+                let sess = Rc::new(s);
+                for (cfg_id, value) in &saved_config {
+                    sess.set_config(cfg_id, value).await;
+                }
+
+                *session.write() = Some(sess.clone());
+                *shared_session.write() = Some(sess);
+                start_event_loop(
+                    rx,
+                    ctx.clone(),
+                    items,
+                    agent_status,
+                    available_commands,
+                    config_options,
+                    session_title,
+                    session,
+                    shared_session,
+                );
+                items.write().push(ChatItem::Message {
+                    role: ChatRole::Assistant,
+                    content:
+                        "Agent transport reconnected. Retry the last request if it was interrupted."
+                            .into(),
+                });
+                *agent_status.write() = AgentStatus::Idle;
+            }
+            Err(e) => {
+                tracing::error!("ACP reconnect failed: {e}");
+                items.write().push(ChatItem::Message {
+                    role: ChatRole::Assistant,
+                    content: format!("Agent transport reconnect failed: {e}"),
+                });
+                *agent_status.write() = AgentStatus::Idle;
+            }
+        }
+    });
+}
+
+/// Start the event polling loop for an ACP session.
+fn start_event_loop(
+    rx: std::sync::mpsc::Receiver<AcpEvent>,
+    ctx: AppContext,
+    items: Signal<Vec<ChatItem>>,
+    agent_status: Signal<AgentStatus>,
+    available_commands: Signal<Vec<SlashCommand>>,
+    config_options: Signal<Vec<ConfigOption>>,
+    session_title: Signal<Option<String>>,
+    session: Signal<Option<Rc<AcpSession>>>,
+    shared_session: Signal<Option<Rc<AcpSession>>>,
+) {
+    let mut items = items;
+    let mut agent_status = agent_status;
+    let mut available_commands = available_commands;
+    let mut config_options = config_options;
+    let mut session_title = session_title;
     spawn(async move {
         loop {
-            while let Ok(event) = rx.try_recv() {
-                handle_acp_event(
-                    event,
-                    &ctx,
-                    &mut items,
-                    &mut agent_status,
-                    &mut available_commands,
-                    &mut config_options,
-                    &mut session_title,
-                );
+            loop {
+                match rx.try_recv() {
+                    Ok(event) => {
+                        handle_acp_event(
+                            event,
+                            ctx.clone(),
+                            &mut items,
+                            &mut agent_status,
+                            &mut available_commands,
+                            &mut config_options,
+                            &mut session_title,
+                            session,
+                            shared_session,
+                        );
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        tracing::warn!("ACP event channel disconnected");
+                        return;
+                    }
+                }
             }
             tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
@@ -308,6 +418,8 @@ pub fn AgentRail() -> Element {
                         available_commands,
                         config_options,
                         session_title,
+                        session,
+                        shared_session,
                     );
                     *agent_status.write() = AgentStatus::Idle;
                     tracing::info!("ACP event loop started, agent ready");
@@ -750,7 +862,17 @@ pub fn AgentRail() -> Element {
                                             }
                                             *session.write() = Some(new_sess.clone());
                                             *shared_session.write() = Some(new_sess);
-                                            start_event_loop(rx, use_context::<AppContext>(), items, agent_status, available_commands, config_options, session_title);
+                                            start_event_loop(
+                                                rx,
+                                                use_context::<AppContext>(),
+                                                items,
+                                                agent_status,
+                                                available_commands,
+                                                config_options,
+                                                session_title,
+                                                session,
+                                                shared_session,
+                                            );
                                             items.write().push(ChatItem::Message {
                                                 role: ChatRole::Assistant,
                                                 content: "Session reconnected with new credentials.".into(),
@@ -855,12 +977,14 @@ pub fn AgentRail() -> Element {
 
 fn handle_acp_event(
     event: AcpEvent,
-    ctx: &AppContext,
+    ctx: AppContext,
     items: &mut Signal<Vec<ChatItem>>,
     status: &mut Signal<AgentStatus>,
     commands: &mut Signal<Vec<SlashCommand>>,
     config: &mut Signal<Vec<ConfigOption>>,
     session_title: &mut Signal<Option<String>>,
+    session: Signal<Option<Rc<AcpSession>>>,
+    shared_session: Signal<Option<Rc<AcpSession>>>,
 ) {
     match event {
         AcpEvent::TextDelta(ref text) => {
@@ -915,22 +1039,54 @@ fn handle_acp_event(
             ref output,
         } => {
             tracing::debug!("ACP ToolCallUpdated: id={id} status={st}");
-            let mut list = items.write();
-            for item in list.iter_mut() {
-                if let ChatItem::ToolCall(tc) = item {
-                    if tc.id == *id {
-                        if !st.is_empty() {
-                            tc.status = st.clone();
+            {
+                let mut list = items.write();
+                for item in list.iter_mut() {
+                    if let ChatItem::ToolCall(tc) = item {
+                        if tc.id == *id {
+                            if !st.is_empty() {
+                                tc.status = st.clone();
+                            }
+                            if let Some(t) = title {
+                                tc.title = t.clone();
+                            }
+                            if let Some(o) = output {
+                                tc.output = o.clone();
+                            }
+                            break;
                         }
-                        if let Some(t) = title {
-                            tc.title = t.clone();
-                        }
-                        if let Some(o) = output {
-                            tc.output = o.clone();
-                        }
-                        break;
                     }
                 }
+            }
+
+            let disconnect_msg = output
+                .as_deref()
+                .filter(|msg| is_transport_disconnect(msg))
+                .or_else(|| {
+                    title
+                        .as_deref()
+                        .filter(|msg| is_transport_disconnect(msg))
+                })
+                .or_else(|| (!st.is_empty() && is_transport_disconnect(st)).then_some(st.as_str()));
+
+            if let Some(msg) = disconnect_msg {
+                tracing::warn!("ACP tool call reported transport disconnect: {msg}");
+                items.write().push(ChatItem::Message {
+                    role: ChatRole::Assistant,
+                    content: format!(
+                        "Agent transport disconnected ({msg}). Reconnecting the Omegon session..."
+                    ),
+                });
+                reconnect_acp_session(
+                    ctx.clone(),
+                    session,
+                    shared_session,
+                    *items,
+                    *status,
+                    *commands,
+                    *config,
+                    *session_title,
+                );
             }
         }
         AcpEvent::PlanUpdated(ref plan) => {
@@ -998,6 +1154,25 @@ fn handle_acp_event(
         }
         AcpEvent::Error(ref msg) => {
             tracing::error!("ACP Error: {msg}");
+            if is_transport_disconnect(msg) {
+                items.write().push(ChatItem::Message {
+                    role: ChatRole::Assistant,
+                    content: format!(
+                        "Agent transport disconnected ({msg}). Reconnecting the Omegon session..."
+                    ),
+                });
+                reconnect_acp_session(
+                    ctx.clone(),
+                    session,
+                    shared_session,
+                    *items,
+                    *status,
+                    *commands,
+                    *config,
+                    *session_title,
+                );
+                return;
+            }
             let lower = msg.to_lowercase();
             let display = if lower.contains("auth")
                 || lower.contains("401")
@@ -1015,5 +1190,23 @@ fn handle_acp_event(
             });
             *status.write() = AgentStatus::Idle;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_transport_disconnect;
+
+    #[test]
+    fn detects_broken_pipe_transport_errors() {
+        assert!(is_transport_disconnect("Broken pipe (os error 32)"));
+        assert!(is_transport_disconnect("ACP transport disconnected: connection closed"));
+        assert!(is_transport_disconnect("extension process not running"));
+    }
+
+    #[test]
+    fn ignores_non_transport_errors() {
+        assert!(!is_transport_disconnect("Authentication error: token expired"));
+        assert!(!is_transport_disconnect("invalid params: missing path"));
     }
 }
