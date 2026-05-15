@@ -1,6 +1,9 @@
 use anyhow::Result;
 use flynt_store::project::Project;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// Resolve project root from env, accepting the new name first then any
 /// legacy fallbacks (in order). Emits a deprecation warning when a
@@ -18,6 +21,22 @@ fn env_with_fallback(new_name: &str, legacy: &[&str]) -> Option<String> {
     None
 }
 
+fn looks_like_project_root(path: &Path) -> bool {
+    path.join(".flynt").is_dir() || path.join(".git").is_dir()
+}
+
+fn default_project_root() -> PathBuf {
+    if let Ok(cwd) = std::env::current_dir() {
+        if looks_like_project_root(&cwd) {
+            return cwd;
+        }
+    }
+
+    dirs::document_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join("Flynt")
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -33,11 +52,7 @@ async fn main() -> Result<()> {
 
     let project_root = env_with_fallback("FLYNT_PROJECT", &["FLYNT_VAULT", "CODEX_VAULT"])
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::document_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join("Flynt")
-        });
+        .unwrap_or_else(default_project_root);
 
     std::fs::create_dir_all(&project_root)?;
     let project = Arc::new(Project::open(&project_root)?);
@@ -63,7 +78,7 @@ async fn main() -> Result<()> {
             println!("  flynt-agent --help         Show this help");
             println!();
             println!("ENVIRONMENT:");
-            println!("  FLYNT_PROJECT              Project directory (default: ~/Documents/Flynt)");
+            println!("  FLYNT_PROJECT              Project directory (default: cwd if it looks like a project, otherwise ~/Documents/Flynt)");
             println!("                             Legacy aliases (deprecated): FLYNT_VAULT, CODEX_VAULT");
         }
         Some("--rpc") | _ => {
@@ -75,4 +90,29 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::looks_like_project_root;
+
+    #[test]
+    fn recognizes_flynt_project_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join(".flynt")).unwrap();
+        assert!(looks_like_project_root(tmp.path()));
+    }
+
+    #[test]
+    fn recognizes_git_project_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
+        assert!(looks_like_project_root(tmp.path()));
+    }
+
+    #[test]
+    fn rejects_plain_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!looks_like_project_root(tmp.path()));
+    }
 }
