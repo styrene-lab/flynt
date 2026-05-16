@@ -132,7 +132,9 @@ fn test_create_and_update_document() {
     project.reindex().unwrap();
     let doc2 = project.store.get_document_by_path(path).unwrap().unwrap();
     assert_eq!(doc2.title, "New Note Updated");
-    assert!(doc2.frontmatter.tags.contains(&"updated".to_string()));
+    assert!(doc2.frontmatter.tags.contains(&"test".to_string()));
+    assert!(!doc2.frontmatter.tags.contains(&"updated".to_string()));
+    assert!(doc2.content.contains("New Note Updated"));
 }
 
 #[test]
@@ -150,18 +152,18 @@ fn test_backlinks() {
 fn test_create_and_list_boards() {
     let (_tmp, project) = setup_project();
 
-    // No boards initially
+    // Project open creates the default board.
     let boards = project.store.list_boards().unwrap();
-    assert!(boards.is_empty());
+    assert_eq!(boards.len(), 1);
 
     // Create
     let board = Board::default_sprint("Test Sprint");
     project.store.save_board(&board).unwrap();
 
     let boards = project.store.list_boards().unwrap();
-    assert_eq!(boards.len(), 1);
-    assert_eq!(boards[0].name, "Test Sprint");
-    assert_eq!(boards[0].columns.len(), 5); // Backlog, Scheduled, Running, Done, Failed
+    let created = boards.iter().find(|candidate| candidate.id == board.id).unwrap();
+    assert_eq!(created.name, "Test Sprint");
+    assert_eq!(created.columns.len(), 5); // Backlog, Scheduled, Running, Done, Failed
 }
 
 #[test]
