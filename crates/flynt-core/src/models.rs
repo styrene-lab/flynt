@@ -780,6 +780,31 @@ pub struct OmegonProfileModel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportedUiTheme {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default)]
+    pub vars: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiThemeSettings {
+    pub active_theme: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_themes: Vec<ImportedUiTheme>,
+}
+
+impl Default for UiThemeSettings {
+    fn default() -> Self {
+        Self { active_theme: "alpharius".into(), imported_themes: Vec::new() }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FlyntOperatorSettings {
     pub active_persona: String,
     pub enabled_skills: Vec<String>,
@@ -797,6 +822,9 @@ pub struct FlyntOperatorSettings {
     /// Per-project agent daemon configuration — model, posture, vox channels.
     #[serde(default)]
     pub agent_daemon: crate::daemon::AgentDaemonConfig,
+    /// Operator-selected UI theme plus any imported tweak.cn themes.
+    #[serde(default)]
+    pub ui_theme: UiThemeSettings,
     /// Design canvas settings — default theme, grid, asset bootstrap state.
     /// Phase 1+2 ship the field with defaults; Phase 4 fills it in.
     #[serde(default)]
@@ -814,6 +842,7 @@ impl Default for FlyntOperatorSettings {
             vox: VoxSettings::default(),
             acp_config: std::collections::HashMap::new(),
             agent_daemon: crate::daemon::AgentDaemonConfig::default(),
+            ui_theme: UiThemeSettings::default(),
             canvas: crate::canvas::CanvasSettings::default(),
         }
     }

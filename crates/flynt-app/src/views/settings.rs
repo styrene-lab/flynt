@@ -5,6 +5,7 @@ use crate::{
     components::identity_settings::IdentitySettingsSection,
     components::provider_settings::ProviderSettingsSection,
     state::{SettingsCategory, SettingsPage, ThemeName},
+    theme::{ThemeLibrary, UiTheme, import_tweakcn_theme, import_tweakcn_theme_from_locator},
     views::{IndexingScopesEditor, PublicationRulesEditor},
 };
 use dioxus::prelude::*;
@@ -12,32 +13,6 @@ use flynt_core::models::{
     AppearanceConfig, FlyntOperatorSettings, FontSizePreset, IndexingConfig, LocalRuntimeConfig,
     OmegonProfile, ProjectConfig, SyncConfig, VisualizationConfig,
 };
-
-// ── Theme catalogue ───────────────────────────────────────────────────────────
-// Each entry describes a theme well enough to render a preview card without
-// activating it. Hex values here are display-only — component CSS still uses vars.
-
-#[derive(PartialEq, Eq)]
-struct ThemeEntry {
-    id: &'static str,
-    label: &'static str,
-    bg: &'static str,
-    surface: &'static str,
-    primary: &'static str,
-    text: &'static str,
-}
-
-const THEMES: &[ThemeEntry] = &[
-    ThemeEntry {
-        id: "alpharius",
-        label: "Alpharius",
-        bg: "#06080e",
-        surface: "#0e1622",
-        primary: "#2ab4c8",
-        text: "#c4d8e4",
-    },
-    // Future themes registered here; CSS file added to app.css @imports.
-];
 
 // ── Settings view ─────────────────────────────────────────────────────────────
 
@@ -48,6 +23,8 @@ pub fn SettingsView() -> Element {
     // Appearance — reactive, applied immediately via context signals.
     let mut theme = use_context::<Signal<ThemeName>>();
     let mut font_sz = use_context::<Signal<FontSizePreset>>();
+    let mut theme_library = use_context::<Signal<ThemeLibrary>>();
+    let mut operator_settings_state = use_context::<Signal<FlyntOperatorSettings>>();
 
     // Project + sync — local form state; persisted on explicit Save.
     let mut project_name = use_signal(|| ctx.project().config.project_name.clone());
@@ -114,8 +91,6 @@ pub fn SettingsView() -> Element {
     let publication_rules = use_signal(|| ctx.project().config.publication.rules.clone());
 
     let _project_profile_state = use_context::<Signal<OmegonProfile>>();
-    let _operator_settings_state = use_context::<Signal<FlyntOperatorSettings>>();
-
     // Indexing
     let mut write_frontmatter = use_signal(|| ctx.project().config.indexing.write_frontmatter);
     let indexing_scopes = use_signal(|| ctx.project().config.indexing.scopes.clone());
@@ -147,6 +122,8 @@ pub fn SettingsView() -> Element {
     let daemon_config = use_signal(|| ctx.omegon().load_operator_settings().agent_daemon.clone());
 
     let mut save_msg = use_signal(|| Option::<(&'static str, &'static str)>::None);
+    let mut import_theme_msg = use_signal(|| Option::<(&'static str, String)>::None);
+    let mut theme_url = use_signal(String::new);
     let publish_msg = use_signal(|| Option::<(&'static str, String)>::None);
 
     let mut active_page = use_context::<Signal<SettingsPage>>();
@@ -154,6 +131,8 @@ pub fn SettingsView() -> Element {
     let project = ctx.project();
     let omegon = ctx.omegon();
     let omegon_for_save = omegon.clone();
+    let omegon_for_file_theme_import = omegon.clone();
+    let omegon_for_remote_theme_import = omegon.clone();
     let publish_project = ctx.project();
     let mut publish_msg_signal = publish_msg;
     let publish_preview =
@@ -252,11 +231,7 @@ pub fn SettingsView() -> Element {
                 d2_layout: d2_layout.read().clone(),
                 d2_bin: {
                     let bin = d2_bin.read().trim().to_string();
-                    if bin.is_empty() {
-                        None
-                    } else {
-                        Some(bin)
-                    }
+                    if bin.is_empty() { None } else { Some(bin) }
                 },
             },
         };
@@ -315,11 +290,14 @@ pub fn SettingsView() -> Element {
         // Persist daemon config alongside project config
         let mut operator = omegon_for_save.load_operator_settings();
         operator.agent_daemon = daemon_config.read().clone();
+        operator.ui_theme.active_theme = theme.read().0.clone();
+        operator.ui_theme.imported_themes = theme_library.read().imported_for_settings();
         if let Err(e) = omegon_for_save.save_operator_settings(&operator) {
             tracing::error!("save_operator_settings: {e}");
             *save_msg.write() = Some(("err", "Operator settings save failed — check logs."));
             return;
         }
+        *operator_settings_state.write() = operator;
 
         let mut profile = OmegonRuntimeContext::load_launcher_profile();
         profile.flynt_update_channel = *flynt_update_channel.read();
@@ -387,16 +365,130 @@ pub fn SettingsView() -> Element {
                 SettingsSection { heading: "Appearance",
                     SettingsRow {
                         label: "Theme",
-                        hint: "Visual theme applied across the sidebar, editor, and rendered preview.",
-                        div { class: "theme-grid",
-                            for entry in THEMES {
+                        hint: "Visual theme applied across the sidebar, editor, canvas, and rendered preview.",
+                        div { class: "theme-stack",
+                            div { class: "theme-actions",
+                                button {
+                                    class: "btn btn-ghost",
+                                    onclick: move |_| {
+                                        let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("tweak.cn theme", &["json"])
+                                            .pick_file()
+                                        else {
+                                            return;
+                                        };
+
+                                        match std::fs::read_to_string(&path)
+                                            .map_err(anyhow::Error::from)
+                                            .and_then(|content| import_tweakcn_theme(&content))
+                                        {
+                                            Ok(imported) => {
+                                                let imported_id = theme_library.write().upsert_imported(imported);
+                                                *theme.write() = ThemeName(imported_id.clone());
+
+                                                let imported_themes = theme_library.read().imported_for_settings();
+                                                let operator_to_save = {
+                                                    let mut operator = operator_settings_state.write();
+                                                    operator.ui_theme.active_theme = imported_id;
+                                                    operator.ui_theme.imported_themes = imported_themes;
+                                                    operator.clone()
+                                                };
+                                                match omegon_for_file_theme_import.save_operator_settings(&operator_to_save) {
+                                                    Ok(()) => {
+                                                        *import_theme_msg.write() = Some(("ok", format!("Imported {}", path.display())));
+                                                    }
+                                                    Err(err) => {
+                                                        *import_theme_msg.write() = Some(("err", format!("Theme imported but save failed: {err}")));
+                                                    }
+                                                }
+                                            }
+                                            Err(err) => {
+                                                *import_theme_msg.write() = Some(("err", format!("Theme import failed: {err}")));
+                                            }
+                                        }
+                                    },
+                                    "Import tweak.cn JSON"
+                                }
+                                input {
+                                    class: "input settings-input theme-import-input",
+                                    placeholder: "theme URL, registry slug, or theme ID",
+                                    value: "{theme_url}",
+                                    oninput: move |e| *theme_url.write() = e.value(),
+                                }
+                                button {
+                                    class: "btn btn-ghost",
+                                    onclick: move |_| {
+                                        let locator = theme_url.read().trim().to_string();
+                                        if locator.is_empty() {
+                                            *import_theme_msg.write() = Some(("err", "Enter a theme URL, registry slug, or theme ID.".into()));
+                                            return;
+                                        }
+
+                                        let mut theme_library = theme_library;
+                                        let mut theme = theme;
+                                        let mut operator_settings_state = operator_settings_state;
+                                        let omegon = omegon_for_remote_theme_import.clone();
+                                        let mut import_theme_msg = import_theme_msg;
+                                        spawn(async move {
+                                            *import_theme_msg.write() = Some(("ok", "Fetching theme…".into()));
+                                            match import_tweakcn_theme_from_locator(&locator).await {
+                                                Ok(imported) => {
+                                                    let imported_id = theme_library.write().upsert_imported(imported);
+                                                    *theme.write() = ThemeName(imported_id.clone());
+
+                                                    let imported_themes = theme_library.read().imported_for_settings();
+                                                    let operator_to_save = {
+                                                        let mut operator = operator_settings_state.write();
+                                                        operator.ui_theme.active_theme = imported_id;
+                                                        operator.ui_theme.imported_themes = imported_themes;
+                                                        operator.clone()
+                                                    };
+                                                    match omegon.save_operator_settings(&operator_to_save) {
+                                                        Ok(()) => {
+                                                            *import_theme_msg.write() = Some(("ok", "Imported remote theme.".into()));
+                                                        }
+                                                        Err(err) => {
+                                                            *import_theme_msg.write() = Some(("err", format!("Theme imported but save failed: {err}")));
+                                                        }
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    *import_theme_msg.write() = Some(("err", format!("Remote theme import failed: {err}")));
+                                                }
+                                            }
+                                        });
+                                    },
+                                    "Add theme"
+                                }
+                                if let Some((kind, msg)) = import_theme_msg.read().as_ref() {
+                                    span { class: "settings-inline-msg {kind}", "{msg}" }
+                                }
+                            }
+                            div { class: "theme-grid",
+                            for entry in theme_library.read().themes.clone() {
+                                {
+                                    let active = theme.read().0 == entry.id;
+                                    let omegon_for_theme_select = omegon.clone();
+                                    rsx! {
                                 ThemeCard {
                                     entry,
-                                    active: theme.read().0 == entry.id,
+                                    active,
                                     on_select: move |id: String| {
-                                        *theme.write() = ThemeName(id);
+                                        *theme.write() = ThemeName(id.clone());
+                                        let operator_to_save = {
+                                            let mut operator = operator_settings_state.write();
+                                            operator.ui_theme.active_theme = id;
+                                            operator.ui_theme.imported_themes = theme_library.read().imported_for_settings();
+                                            operator.clone()
+                                        };
+                                        if let Err(err) = omegon_for_theme_select.save_operator_settings(&operator_to_save) {
+                                            *import_theme_msg.write() = Some(("err", format!("Theme save failed: {err}")));
+                                        }
                                     },
                                 }
+                                    }
+                                }
+                            }
                             }
                         }
                     }
@@ -1061,29 +1153,52 @@ fn SettingsRow(
 }
 
 #[component]
-fn ThemeCard(entry: &'static ThemeEntry, active: bool, on_select: EventHandler<String>) -> Element {
+fn ThemeCard(entry: UiTheme, active: bool, on_select: EventHandler<String>) -> Element {
+    let bg = entry
+        .vars
+        .get("--background")
+        .map(String::as_str)
+        .unwrap_or("#06080e");
+    let surface = entry.vars.get("--card").map(String::as_str).unwrap_or(bg);
+    let primary = entry
+        .vars
+        .get("--primary")
+        .map(String::as_str)
+        .unwrap_or("#2ab4c8");
+    let text = entry
+        .vars
+        .get("--foreground")
+        .map(String::as_str)
+        .unwrap_or("#c4d8e4");
+    let badge = if entry.builtin {
+        "Built-in"
+    } else {
+        "Imported"
+    };
+
     rsx! {
         button {
             class: if active { "theme-card active" } else { "theme-card" },
-            onclick: move |_| on_select.call(entry.id.to_string()),
+            onclick: move |_| on_select.call(entry.id.clone()),
             div {
                 class: "theme-preview",
-                style: "background:{entry.bg}; border-color:{entry.primary};",
+                style: "background:{bg}; border-color:{primary};",
                 div {
                     class: "theme-preview-bar",
-                    style: "background:{entry.surface};",
+                    style: "background:{surface};",
                 }
                 div {
                     class: "theme-preview-dot",
-                    style: "background:{entry.primary};",
+                    style: "background:{primary};",
                 }
                 span {
                     class: "theme-preview-text",
-                    style: "color:{entry.text};",
+                    style: "color:{text};",
                     "Aa"
                 }
             }
-            span { class: "theme-name", "{entry.label}" }
+            span { class: "theme-name", "{entry.name}" }
+            span { class: "theme-kind", "{badge}" }
             if active {
                 span { class: "theme-active-badge", "✓" }
             }
