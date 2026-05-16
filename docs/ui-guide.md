@@ -132,6 +132,13 @@
 
 **Headless SVG export:** When the agent creates a `.excalidraw` file via MCP tool, the desktop watcher detects the file change and triggers SVG export via the webview's Excalidraw bundle — no editor needs to be open. Concurrent exports are serialized via a JS promise queue.
 
+**Semantic agent authoring:** Agents should prefer the `drawing_*_spec`
+tools for architecture and system diagrams. These tools write a
+`drawings/<name>.drawing.json` sidecar containing semantic components and
+connections, then render that spec deterministically into Excalidraw JSON.
+This keeps future edits patchable by component id instead of forcing agents
+to generate raw Excalidraw element arrays.
+
 ---
 
 ## 4. Kanban Board
@@ -502,6 +509,11 @@
 | Tool | Input | Output | Guard |
 |------|-------|--------|-------|
 | `create_drawing` | Name + optional scene JSON | `drawings/<name>.excalidraw` + `drawings/<name>.md` | Refuses if file exists |
+| `drawing_create_spec` | Name + semantic `DrawingSpec` | `.md` wrapper + `.excalidraw` scene + `.drawing.json` sidecar | Refuses if any target exists |
+| `drawing_get_spec` | `.excalidraw` path | Semantic sidecar, when present | Returns `null` spec for hand-authored drawings |
+| `drawing_render_spec` | `.excalidraw` path + full spec | Replaces scene and sidecar from semantic spec | Requires existing drawing path |
+| `drawing_patch_spec` | `.excalidraw` path + component/connection upserts/removes | Re-renders scene from patched semantic spec | Requires existing `.drawing.json` sidecar |
+| `drawing_validate_spec` | Semantic spec | Validation warnings | No writes |
 | `create_d2_diagram` | Name + D2 source + optional directory | `<dir>/<name>.d2` + `<dir>/<name>.md` | Refuses if file exists |
 
 ---

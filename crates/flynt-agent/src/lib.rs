@@ -2,6 +2,7 @@
 // recursion limit when the canvas tool schemas landed.
 #![recursion_limit = "512"]
 
+pub mod drawing_tools;
 pub mod extension;
 pub mod flow_tools;
 pub mod forge_tools;

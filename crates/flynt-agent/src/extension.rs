@@ -9,7 +9,7 @@ use omegon_extension::Extension;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use crate::flow_tools;
+use crate::{drawing_tools, flow_tools};
 use crate::forge_tools::{self, SecretBag};
 
 pub struct FlyntExtension {
@@ -533,6 +533,7 @@ impl Extension for FlyntExtension {
                 // Append forge / engagement tools (Phase 3 — scribe absorption).
                 if let Some(arr) = tools.as_array_mut() {
                     arr.extend(forge_tools::tool_definitions());
+                    arr.extend(drawing_tools::tool_definitions());
                     // Append flow tools (Phase 4 — node-flow editor).
                     arr.extend(flow_tools::tool_definitions());
                 }
@@ -1071,6 +1072,19 @@ impl Extension for FlyntExtension {
             "execute_drawing_active" => self.execute_drawing_active(),
             "execute_drawing_get" => self.execute_drawing_get(params),
             "execute_drawing_set_scene" => self.execute_drawing_set_scene(params),
+            "execute_drawing_create_spec" => {
+                drawing_tools::drawing_create_spec(&self.project, params)
+            }
+            "execute_drawing_get_spec" => drawing_tools::drawing_get_spec(&self.project, params),
+            "execute_drawing_render_spec" => {
+                drawing_tools::drawing_render_spec(&self.project, params)
+            }
+            "execute_drawing_patch_spec" => {
+                drawing_tools::drawing_patch_spec(&self.project, params)
+            }
+            "execute_drawing_validate_spec" => {
+                drawing_tools::drawing_validate_spec(&self.project, params)
+            }
 
             "execute_create_d2_diagram" => {
                 let name = params["name"]
@@ -1437,11 +1451,12 @@ fn flynt_surface_guide() -> Value {
             {
                 "kind": "drawing",
                 "paths": ["drawings/<name>.md", "drawings/<name>.excalidraw"],
-                "tools": ["create_drawing", "drawing_active", "drawing_get", "drawing_set_scene"],
+                "tools": ["create_drawing", "drawing_active", "drawing_get", "drawing_set_scene", "drawing_create_spec", "drawing_get_spec", "drawing_render_spec", "drawing_patch_spec", "drawing_validate_spec"],
                 "use_for": "freeform Excalidraw sketches",
                 "rules": [
                     "Excalidraw drawings live under drawings/, not diagrams/.",
                     "The openable sidebar/tab entry is the drawings/<name>.md wrapper; Flynt renders the sibling .excalidraw file visually from that wrapper.",
+                    "Prefer drawing_create_spec / drawing_patch_spec for agent-authored architecture diagrams instead of generating raw Excalidraw JSON.",
                     "Do not create Excalidraw wrapper markdown with create_document.",
                     "Do not tell the operator to switch to a separate drawing view; have them open/select the wrapper entry.",
                     "Use drawing_active before editing the drawing the operator has open."
@@ -2072,7 +2087,17 @@ mod tests {
         assert!(names.contains(&"create_task".to_string()));
         assert!(names.contains(&"get_board".to_string()));
         assert!(names.contains(&"create_board".to_string()));
-        for n in ["create_drawing", "drawing_active", "drawing_get", "drawing_set_scene"] {
+        for n in [
+            "create_drawing",
+            "drawing_active",
+            "drawing_get",
+            "drawing_set_scene",
+            "drawing_create_spec",
+            "drawing_get_spec",
+            "drawing_render_spec",
+            "drawing_patch_spec",
+            "drawing_validate_spec",
+        ] {
             assert!(names.contains(&n.to_string()), "expected {n} in tools/list");
         }
         // Phase 3 — scribe-absorbed forge / engagement tools.
@@ -2300,6 +2325,62 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(got["scene"]["elements"][0]["id"], "box");
+    }
+
+    #[tokio::test]
+    async fn drawing_spec_tools_create_patch_and_get_sidecar() {
+        let (tmp, ext) = test_extension();
+        let spec = json!({
+            "title": "Architecture",
+            "components": [
+                {"id": "ui", "kind": "actor", "label": "Operator", "rank": 0, "lane": 0},
+                {"id": "api", "kind": "service", "label": "Control API", "rank": 1, "lane": 0}
+            ],
+            "connections": [
+                {"id": "ui-api", "from": "ui", "to": "api", "label": "HTTPS"}
+            ]
+        });
+        let created = ext
+            .handle_rpc(
+                "execute_drawing_create_spec",
+                json!({"name": "Spec Sketch", "spec": spec}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created["drawing_path"], "drawings/Spec Sketch.excalidraw");
+        assert!(tmp.path().join("drawings/Spec Sketch.drawing.json").exists());
+
+        let patched = ext
+            .handle_rpc(
+                "execute_drawing_patch_spec",
+                json!({
+                    "path": "drawings/Spec Sketch.excalidraw",
+                    "upsert_components": [
+                        {"id": "db", "kind": "database", "label": "SQLite", "rank": 2, "lane": 0}
+                    ],
+                    "upsert_connections": [
+                        {"id": "api-db", "from": "api", "to": "db", "label": "read/write"}
+                    ]
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(patched["component_count"], 3);
+
+        let got = ext
+            .handle_rpc(
+                "execute_drawing_get_spec",
+                json!({"path": "drawings/Spec Sketch.excalidraw"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(got["spec"]["components"].as_array().unwrap().len(), 3);
+
+        let scene: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(tmp.path().join("drawings/Spec Sketch.excalidraw")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(scene["source"], "flynt:drawing-spec");
     }
 
     #[tokio::test]

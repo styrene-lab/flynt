@@ -45,7 +45,7 @@ jobs:
       - id: meta
         name: Compute release metadata
         run: |
-          APP_VERSION=$(python3 - <<'PY'
+          CARGO_VERSION=$(python3 - <<'PY'
           import tomllib
           from pathlib import Path
           workspace = tomllib.loads(Path("Cargo.toml").read_text())
@@ -57,8 +57,14 @@ jobs:
             COMMIT=$(git rev-parse HEAD)
             STAMP=$(date -u +%Y%m%d%H%M%S)
             RELEASE_TAG="nightly-${STAMP}-${COMMIT:0:7}"
+            APP_VERSION="$CARGO_VERSION"
           else
             RELEASE_TAG="${{ inputs.tag_name || github.ref_name }}"
+            APP_VERSION="${RELEASE_TAG#v}"
+            if [ "$APP_VERSION" != "$CARGO_VERSION" ]; then
+              echo "::error::Release tag $RELEASE_TAG does not match Cargo.toml workspace version $CARGO_VERSION"
+              exit 1
+            fi
           fi
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
@@ -345,7 +351,7 @@ jobs:
             $PB -c "Set :LSMinimumSystemVersion 12.0" "$PLIST"
 
           mkdir -p "$APP/Contents/Resources/assets/vendor"
-          cp crates/flynt-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
+          cp crates/flynt-app/assets/vendor/* "$APP/Contents/Resources/assets/vendor/"
 
       - name: Validate direct macOS distribution secrets
         run: |

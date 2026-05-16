@@ -1,69 +1,94 @@
 // Headless Excalidraw SVG export — uses the public mount/export/unmount API.
-// Loaded after excalidraw.bundle.js. Does not depend on minified internals.
-// Serializes concurrent requests to prevent mount/unmount races.
+// Does not depend on minified internals. Serializes concurrent requests to
+// prevent mount/unmount races.
 (function() {
-    if (!window.FlyntExcalidraw) return;
+    var ATTACH_FLAG = '__flyntHeadlessAttached';
 
-    // Queue to serialize headless render requests
-    var queue = Promise.resolve();
+    function attach() {
+        if (!window.FlyntExcalidraw) return false;
+        if (window.FlyntExcalidraw[ATTACH_FLAG]) return true;
+        window.FlyntExcalidraw[ATTACH_FLAG] = true;
 
-    window.FlyntExcalidraw.renderSceneToSvg = function(sceneJson) {
-        // Chain onto the queue so concurrent calls execute one at a time
-        queue = queue.then(function() {
-            return renderOnce(sceneJson);
-        }).catch(function() { return ''; });
-        return queue;
-    };
+        // Queue to serialize headless render requests
+        var queue = Promise.resolve();
 
-    async function renderOnce(sceneJson) {
-        try {
-            var scene = typeof sceneJson === 'string' ? JSON.parse(sceneJson) : sceneJson;
-            var elements = scene.elements || [];
-            if (elements.length === 0) return '';
+        window.FlyntExcalidraw.renderSceneToSvg = function(sceneJson) {
+            // Chain onto the queue so concurrent calls execute one at a time
+            queue = queue.then(function() {
+                return renderOnce(sceneJson);
+            }).catch(function() { return ''; });
+            return queue;
+        };
 
-            // Create a hidden container with unique ID
-            var containerId = 'flynt-excalidraw-headless-' + Date.now();
-            var container = document.createElement('div');
-            container.id = containerId;
-            container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
-            document.body.appendChild(container);
+        async function renderOnce(sceneJson) {
+            try {
+                var scene = typeof sceneJson === 'string' ? JSON.parse(sceneJson) : sceneJson;
+                var elements = scene.elements || [];
+                if (elements.length === 0) return '';
 
-            // Save current API reference
-            var prevApi = window.FlyntExcalidraw._api;
-            var prevRoot = window.FlyntExcalidraw._root;
+                // Never use the headless path while a visible editor is mounted:
+                // FlyntExcalidraw.mount is a singleton and would unmount the
+                // operator's canvas. The Rust watcher handles the active
+                // drawing by calling exportSvg() directly.
+                if (window.FlyntExcalidraw._root) return '';
 
-            // Mount into the hidden container
-            window.FlyntExcalidraw.mount(containerId, JSON.stringify(scene), function() {});
+                // Create a hidden container with unique ID
+                var containerId = 'flynt-excalidraw-headless-' + Date.now();
+                var container = document.createElement('div');
+                container.id = containerId;
+                container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
+                document.body.appendChild(container);
 
-            // Wait for API to be ready
-            await new Promise(function(resolve) {
-                var check = setInterval(function() {
-                    if (window.FlyntExcalidraw._api) {
-                        clearInterval(check);
-                        resolve();
-                    }
-                }, 10);
-                setTimeout(function() { clearInterval(check); resolve(); }, 5000);
-            });
+                // Save current API reference
+                var prevApi = window.FlyntExcalidraw._api;
+                var prevRoot = window.FlyntExcalidraw._root;
 
-            var svg = '';
-            if (window.FlyntExcalidraw._api) {
-                svg = await window.FlyntExcalidraw.exportSvg() || '';
+                // Mount into the hidden container
+                window.FlyntExcalidraw.mount(containerId, JSON.stringify(scene), function() {});
+
+                // Wait for API to be ready
+                await new Promise(function(resolve) {
+                    var check = setInterval(function() {
+                        if (window.FlyntExcalidraw._api) {
+                            clearInterval(check);
+                            resolve();
+                        }
+                    }, 10);
+                    setTimeout(function() { clearInterval(check); resolve(); }, 5000);
+                });
+
+                var svg = '';
+                if (window.FlyntExcalidraw._api) {
+                    svg = await window.FlyntExcalidraw.exportSvg() || '';
+                }
+
+                // Cleanup
+                if (window.FlyntExcalidraw._root) {
+                    try { window.FlyntExcalidraw._root.unmount(); } catch(e) {}
+                }
+                if (container.parentNode) container.parentNode.removeChild(container);
+
+                // Restore previous state
+                window.FlyntExcalidraw._api = prevApi;
+                window.FlyntExcalidraw._root = prevRoot;
+
+                return svg;
+            } catch(e) {
+                return '';
             }
-
-            // Cleanup
-            if (window.FlyntExcalidraw._root) {
-                try { window.FlyntExcalidraw._root.unmount(); } catch(e) {}
-            }
-            if (container.parentNode) container.parentNode.removeChild(container);
-
-            // Restore previous state
-            window.FlyntExcalidraw._api = prevApi;
-            window.FlyntExcalidraw._root = prevRoot;
-
-            return svg;
-        } catch(e) {
-            return '';
         }
+
+        return true;
     }
+
+    if (attach()) return;
+
+    var attempts = 0;
+    var maxAttempts = 200;
+    var timer = setInterval(function() {
+        attempts += 1;
+        if (attach() || attempts >= maxAttempts) {
+            clearInterval(timer);
+        }
+    }, 50);
 })();

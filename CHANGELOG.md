@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.5 — 2026-05-16
+
+### Added
+- **Semantic Excalidraw authoring tools** — integrated agents can now create,
+  validate, render, inspect, and patch drawings through `DrawingSpec`
+  components/connections instead of hand-generating raw Excalidraw JSON.
+- **Drawing sidecars** — agent-authored Excalidraw diagrams persist a
+  `drawings/<name>.drawing.json` sidecar so future edits can patch semantic
+  components deterministically.
+
+### Fixed
+- **Excalidraw autosave blanking** — SVG auto-export no longer unmounts the
+  visible editor while a drawing is open.
+- **Release asset packaging** — direct macOS release bundles now retain full
+  vendored visual assets as unhashed fallbacks, and stable release tags must
+  match the workspace version.
+
 ## 0.9.0 — 2026-05-07
 
 UX and perf rewrite of the sidebar + agent rail, Dioxus 0.7.9 upgrade, and a two-pass adversarial review.

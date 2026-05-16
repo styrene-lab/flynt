@@ -1,9 +1,9 @@
 use crate::{
     bootstrap::{
-        bootstrap_from_env, runtime_state_for_project_root, AppContext, OmegonRuntimeContext,
-        PendingProjectSetup,
+        AppContext, OmegonRuntimeContext, PendingProjectSetup, bootstrap_from_env,
+        runtime_state_for_project_root,
     },
-    components::{initial_note_id_for_project, AgentRail, CommandPalette, Sidebar, Toolbar},
+    components::{AgentRail, CommandPalette, Sidebar, Toolbar, initial_note_id_for_project},
     state::{Route, SettingsOpen, SettingsPage, SyncStatus, TabState, ThemeName},
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
@@ -318,8 +318,28 @@ pub fn App() -> Element {
                                 Err(_) => continue,
                             };
                             let escaped = serde_json::to_string(&scene_json).unwrap_or_default();
+                            let mounted_key = path
+                                .strip_prefix(&project.root)
+                                .unwrap_or(&path)
+                                .to_string_lossy()
+                                .replace('\\', "/");
+                            let mounted_key =
+                                serde_json::to_string(&mounted_key).unwrap_or_default();
                             let js = format!(
                                 r#"(async function() {{
+                                    const changedDrawing = {mounted_key};
+                                    if (window._excalidrawMountedKey) {{
+                                        if (window._excalidrawMountedKey === changedDrawing &&
+                                            window.FlyntExcalidraw &&
+                                            window.FlyntExcalidraw._api &&
+                                            window.FlyntExcalidraw.exportSvg) {{
+                                            let svg = await window.FlyntExcalidraw.exportSvg();
+                                            dioxus.send(svg || '');
+                                            return;
+                                        }}
+                                        dioxus.send('');
+                                        return;
+                                    }}
                                     if (window.FlyntExcalidraw && window.FlyntExcalidraw.renderSceneToSvg) {{
                                         let svg = await window.FlyntExcalidraw.renderSceneToSvg({escaped});
                                         dioxus.send(svg || '');

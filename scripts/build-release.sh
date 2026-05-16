@@ -19,9 +19,9 @@ APP="target/dx/flynt-app/release/macos/FlyntApp.app"
 cp crates/flynt-app/assets/icon.icns "$APP/Contents/Resources/icon.icns"
 cp crates/flynt-app/assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-# Excalidraw bundle — lazy-loaded at runtime, not picked up by asset!() macro
+# Vendor assets — keep unhashed fallbacks available in signed app bundles.
 mkdir -p "$APP/Contents/Resources/assets/vendor"
-cp crates/flynt-app/assets/vendor/excalidraw.bundle.js "$APP/Contents/Resources/assets/vendor/"
+cp crates/flynt-app/assets/vendor/* "$APP/Contents/Resources/assets/vendor/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" 2>/dev/null

@@ -14,6 +14,7 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
     let ctx = use_context::<AppContext>();
     let mut save_state = use_signal(|| "");
     let path_load = path.clone();
+    let mount_key = path.to_string_lossy().to_string();
 
     // Load the file content
     let content = use_memo(move || {
@@ -27,7 +28,8 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
 
     // Force parent layout for excalidraw — reapply until stable
     use_effect(move || {
-        document::eval(r#"
+        document::eval(
+            r#"
             function fixLayout() {
                 var mc = document.querySelector('.main-content');
                 if (mc) { mc.style.overflow = 'hidden'; mc.style.display = 'flex'; mc.style.flexDirection = 'column'; }
@@ -58,6 +60,8 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 }
                 window._excalidrawLatest = null;
                 window._excSaveQueue = [];
+                window._excSaveBridgeGeneration = (window._excSaveBridgeGeneration || 0) + 1;
+                window._excalidrawMountedKey = null;
                 var tb = document.querySelector('.tab-bar');
                 if (tb) tb.style.display = '';
                 var mc = document.querySelector('.main-content');
@@ -65,7 +69,18 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 var np = document.querySelector('.notes-pane');
                 if (np) { np.style.overflow = ''; np.style.padding = ''; np.style.display = ''; np.style.flexDirection = ''; np.style.flex = ''; np.style.minHeight = ''; }
             };
-        "#);
+        "#,
+        );
+    });
+
+    use_drop(|| {
+        document::eval(
+            r#"
+            if (typeof window._excalidrawCleanup === 'function') {
+                try { window._excalidrawCleanup(); } catch (e) { console.warn('[ExcalidrawView] cleanup error', e); }
+            }
+            "#,
+        );
     });
 
     // Initialize Excalidraw when component mounts — bundle is loaded eagerly in app.rs
@@ -73,14 +88,22 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
     use_effect(move || {
         let data = content.read().clone();
         let escaped = serde_json::to_string(&data).unwrap_or("\"{}\"".into());
+        let key = serde_json::to_string(&mount_key).unwrap_or("\"\"".into());
 
-        let js = format!(r#"
+        let js = format!(
+            r#"
             (function() {{
+                const mountKey = {key};
                 function tryMount() {{
                     const container = document.getElementById('flynt-excalidraw');
                     if (!container) {{ setTimeout(tryMount, 50); return; }}
                     if (!window.FlyntExcalidraw) {{ setTimeout(tryMount, 100); return; }}
 
+                    if (window._excalidrawMountedKey === mountKey && window.FlyntExcalidraw._root) {{
+                        window.dispatchEvent(new Event('resize'));
+                        return;
+                    }}
+                    window._excalidrawMountedKey = mountKey;
                     window.FlyntExcalidraw.mount('flynt-excalidraw', {escaped}, function(data) {{
                         window._excalidrawLatest = data;
                     }});
@@ -105,7 +128,8 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                 }}
                 tryMount();
             }})();
-        "#);
+        "#
+        );
         document::eval(&js);
     });
 
@@ -113,31 +137,30 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
     let path_save = path_for_save.clone();
     use_effect(move || {
         // Set up auto-save: polls for changes every 2 seconds
-        let mut eval = document::eval(r#"
-            window._excSaveDirty = false;
+        let mut eval = document::eval(
+            r#"
+            window._excSaveBridgeGeneration = (window._excSaveBridgeGeneration || 0) + 1;
+            const bridgeGeneration = window._excSaveBridgeGeneration;
             window._excSaveQueue = window._excSaveQueue || [];
 
-            // Mark dirty on every change
-            const origOnChange = window.FlyntExcalidraw?._onChange;
-            if (window.FlyntExcalidraw) {
-                const prevMount = window.FlyntExcalidraw.mount.bind(window.FlyntExcalidraw);
-                // The onChange callback is set during mount — we intercept it
-            }
-
             // Cmd+S: immediate save
-            document.addEventListener('keydown', function(e) {
+            if (window._excSaveKeydownHandler) {
+                document.removeEventListener('keydown', window._excSaveKeydownHandler);
+            }
+            window._excSaveKeydownHandler = function(e) {
                 if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                     e.preventDefault();
                     if (window._excalidrawLatest) {
                         window._excSaveQueue.push(window._excalidrawLatest);
                     }
                 }
-            });
+            };
+            document.addEventListener('keydown', window._excSaveKeydownHandler);
 
             // Auto-save loop: check every 2 seconds if there are pending changes
             let lastSaved = '';
             async function autoSaveLoop() {
-                while (true) {
+                while (window._excSaveBridgeGeneration === bridgeGeneration) {
                     await new Promise(r => setTimeout(r, 2000));
                     if (window._excalidrawLatest && window._excalidrawLatest !== lastSaved) {
                         lastSaved = window._excalidrawLatest;
@@ -149,22 +172,27 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
 
             // Drain queue to Rust
             async function drain() {
-                while (true) {
+                while (window._excSaveBridgeGeneration === bridgeGeneration) {
                     if (window._excSaveQueue.length > 0) {
-                        dioxus.send(window._excSaveQueue.shift());
+                        const latest = window._excSaveQueue[window._excSaveQueue.length - 1];
+                        window._excSaveQueue = [];
+                        dioxus.send(latest);
                     } else {
                         await new Promise(r => setTimeout(r, 200));
                     }
                 }
             }
             drain();
-        "#);
+        "#,
+        );
 
         let p = path_save.clone();
         let c = ctx;
         spawn(async move {
             loop {
-                let Ok(data) = eval.recv::<String>().await else { break; };
+                let Ok(data) = eval.recv::<String>().await else {
+                    break;
+                };
                 let project = c.project();
                 let abs = project.root.join(&p);
                 if std::fs::write(&abs, &data).is_ok() {
@@ -173,14 +201,16 @@ pub fn ExcalidrawView(path: PathBuf) -> Element {
                     // Auto-export SVG for inline embeds in notes
                     let svg_path = abs.with_extension("svg");
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    let mut svg_eval = document::eval(r#"
+                    let mut svg_eval = document::eval(
+                        r#"
                         (async function() {
                             if (window.FlyntExcalidraw && window.FlyntExcalidraw._api) {
                                 const svg = await window.FlyntExcalidraw.exportSvg();
                                 dioxus.send(svg || '');
                             } else { dioxus.send(''); }
                         })();
-                    "#);
+                    "#,
+                    );
                     if let Ok(svg) = svg_eval.recv::<String>().await {
                         if !svg.is_empty() {
                             let _ = std::fs::write(&svg_path, &svg);
@@ -326,7 +356,9 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     let mut buf = 0u32;
     let mut bits = 0u32;
     for &b in input.as_bytes() {
-        if b == b'=' || b == b'\n' || b == b'\r' || b == b' ' || b == b'\t' { continue; }
+        if b == b'=' || b == b'\n' || b == b'\r' || b == b' ' || b == b'\t' {
+            continue;
+        }
         let val = TABLE.iter().position(|&c| c == b).ok_or("invalid base64")? as u32;
         buf = (buf << 6) | val;
         bits += 6;
@@ -355,7 +387,8 @@ pub fn create_drawing(project_root: &std::path::Path, name: &str) -> anyhow::Res
     let md_file = format!("{name}.md");
     let md_rel = PathBuf::from("drawings").join(&md_file);
     let md_abs = project_root.join(&md_rel);
-    let md_content = format!("+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_file}]]\n");
+    let md_content =
+        format!("+++\ntitle = \"{name}\"\ntags = [\"drawing\"]\n+++\n\n![[{excalidraw_file}]]\n");
     std::fs::write(&md_abs, md_content)?;
 
     Ok(md_rel)
@@ -380,7 +413,7 @@ pub fn excalidraw_embed_path(content: &str) -> Option<String> {
     if lines.len() == 1 {
         let line = lines[0].trim();
         if line.starts_with("![[") && line.ends_with(".excalidraw]]") {
-            let inner = &line[3..line.len()-2];
+            let inner = &line[3..line.len() - 2];
             return Some(inner.to_string());
         }
     }
@@ -392,8 +425,12 @@ pub fn excalidraw_embed_path(content: &str) -> Option<String> {
 /// file, this lets Flynt keep showing the visual drawing instead of stranding
 /// the operator in a markdown wrapper.
 pub fn frontmatter_has_drawing_tag(content: &str) -> bool {
-    let Some(rest) = content.strip_prefix("+++\n") else { return false; };
-    let Some(end) = rest.find("\n+++") else { return false; };
+    let Some(rest) = content.strip_prefix("+++\n") else {
+        return false;
+    };
+    let Some(end) = rest.find("\n+++") else {
+        return false;
+    };
     let frontmatter = &rest[..end];
     for line in frontmatter.lines() {
         let trimmed = line.trim_start();
@@ -416,19 +453,30 @@ mod tests {
 
     #[test]
     fn detects_excalidraw_wrapper_with_frontmatter() {
-        let content = "+++\ntitle = \"My Drawing\"\ntags = [\"drawing\"]\n+++\n\n![[diagram.excalidraw]]\n";
-        assert_eq!(excalidraw_embed_path(content), Some("diagram.excalidraw".into()));
+        let content =
+            "+++\ntitle = \"My Drawing\"\ntags = [\"drawing\"]\n+++\n\n![[diagram.excalidraw]]\n";
+        assert_eq!(
+            excalidraw_embed_path(content),
+            Some("diagram.excalidraw".into())
+        );
     }
 
     #[test]
     fn detects_excalidraw_wrapper_minimal() {
-        assert_eq!(excalidraw_embed_path("![[test.excalidraw]]\n"), Some("test.excalidraw".into()));
+        assert_eq!(
+            excalidraw_embed_path("![[test.excalidraw]]\n"),
+            Some("test.excalidraw".into())
+        );
     }
 
     #[test]
     fn rejects_regular_note_with_excalidraw_embed() {
         let content = "+++\ntitle = \"Note\"\n+++\n\nSome text before.\n\n![[drawing.excalidraw]]\n\nSome text after.\n";
-        assert_eq!(excalidraw_embed_path(content), None, "should reject notes with text + embed");
+        assert_eq!(
+            excalidraw_embed_path(content),
+            None,
+            "should reject notes with text + embed"
+        );
     }
 
     #[test]
@@ -454,13 +502,19 @@ mod tests {
     #[test]
     fn detects_excalidraw_with_expanded_frontmatter() {
         let content = "+++\nid = \"abc-123\"\ntitle = \"Drawing\"\ntags = [\"drawing\"]\naliases = []\nimported_reference = false\n\n[publication]\nenabled = false\nvisibility = \"private\"\n+++\n\n![[Drawing.excalidraw]]\n";
-        assert_eq!(excalidraw_embed_path(content), Some("Drawing.excalidraw".into()));
+        assert_eq!(
+            excalidraw_embed_path(content),
+            Some("Drawing.excalidraw".into())
+        );
     }
 
     #[test]
     fn handles_whitespace_around_embed() {
         let content = "+++\ntitle = \"Drawing\"\n+++\n\n  ![[spaced.excalidraw]]  \n";
-        assert_eq!(excalidraw_embed_path(content), Some("spaced.excalidraw".into()));
+        assert_eq!(
+            excalidraw_embed_path(content),
+            Some("spaced.excalidraw".into())
+        );
     }
 
     #[test]
@@ -477,8 +531,12 @@ mod tests {
 
     #[test]
     fn frontmatter_has_drawing_tag_rejects_missing_or_other_tags() {
-        assert!(!frontmatter_has_drawing_tag("+++\ntags = []\n+++\n\nbody\n"));
-        assert!(!frontmatter_has_drawing_tag("+++\ntags = [\"canvas\"]\n+++\n\nbody\n"));
+        assert!(!frontmatter_has_drawing_tag(
+            "+++\ntags = []\n+++\n\nbody\n"
+        ));
+        assert!(!frontmatter_has_drawing_tag(
+            "+++\ntags = [\"canvas\"]\n+++\n\nbody\n"
+        ));
         assert!(!frontmatter_has_drawing_tag("plain text"));
     }
 
@@ -486,7 +544,9 @@ mod tests {
 
     #[test]
     fn is_excalidraw_true() {
-        assert!(is_excalidraw(std::path::Path::new("drawings/test.excalidraw")));
+        assert!(is_excalidraw(std::path::Path::new(
+            "drawings/test.excalidraw"
+        )));
         assert!(is_excalidraw(std::path::Path::new("test.excalidraw")));
     }
 
