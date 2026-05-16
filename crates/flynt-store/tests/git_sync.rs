@@ -32,6 +32,7 @@ fn setup_local_remote() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
 
     // Clone it to local
     let repo = Repository::clone(remote_path.to_str().unwrap(), &local_path).unwrap();
+    repo.set_head("refs/heads/main").unwrap();
 
     // Seed with an initial commit so we have a HEAD
     let file = local_path.join("init.md");
