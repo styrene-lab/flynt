@@ -110,6 +110,22 @@ The release workflow installs the prebuilt Dioxus CLI binary for the runner
 target and verifies its checksum. It must not compile `dioxus-cli` from source
 inside release jobs.
 
+## Icon Assets
+
+The application icon artwork lives in `crates/flynt-app/assets/icon.svg` and
+`crates/flynt-app/assets/icon-source.png`. The SVG is the editable vector
+export; the 1024x1024 PNG is the raster source used for packaged app icons.
+Generated icon files must be refreshed with:
+
+```sh
+python3 scripts/generate-icons.py
+```
+
+That command updates the desktop `icon.png`, `icon-256.png`, `icon.icns`, and
+both iOS `AppIcon.appiconset` directories. Do not hand-edit individual icon
+PNGs; the release scripts, Dioxus metadata, Nix package, DMG volume icon, and
+iOS packaging paths all consume these generated files.
+
 ## Deferred Channels
 
 The project does not maintain first-party `.deb`, `.rpm`, AppImage, Flatpak, or

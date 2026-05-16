@@ -126,31 +126,31 @@ if [[ "$(uname)" == "Linux" ]]; then
   if [ -f "$LINUX_BIN" ]; then
     # Create tarball with binary + icon + .desktop file
     LINUX_STAGING=$(mktemp -d)
-    mkdir -p "$LINUX_STAGING/codex-$VERSION"
-    cp "$LINUX_BIN" "$LINUX_STAGING/codex-$VERSION/codex"
-    cp "crates/flynt-app/assets/icon.png" "$LINUX_STAGING/codex-$VERSION/codex.png"
-    cat > "$LINUX_STAGING/codex-$VERSION/codex.desktop" <<DESK
+    mkdir -p "$LINUX_STAGING/flynt-$VERSION"
+    cp "$LINUX_BIN" "$LINUX_STAGING/flynt-$VERSION/flynt"
+    cp "crates/flynt-app/assets/icon.png" "$LINUX_STAGING/flynt-$VERSION/flynt.png"
+    cat > "$LINUX_STAGING/flynt-$VERSION/flynt.desktop" <<DESK
 [Desktop Entry]
 Name=Flynt
 Comment=Markdown notes, kanban, and knowledge graph
-Exec=codex
-Icon=codex
+Exec=flynt
+Icon=flynt
 Type=Application
 Categories=Office;TextEditor;
 DESK
-    cat > "$LINUX_STAGING/codex-$VERSION/install.sh" <<'INST'
+    cat > "$LINUX_STAGING/flynt-$VERSION/install.sh" <<'INST'
 #!/bin/bash
 set -e
 PREFIX="${1:-$HOME/.local}"
-install -Dm755 codex "$PREFIX/bin/codex"
-install -Dm644 codex.png "$PREFIX/share/icons/hicolor/512x512/apps/codex.png"
-install -Dm644 codex.desktop "$PREFIX/share/applications/codex.desktop"
-sed -i "s|Exec=codex|Exec=$PREFIX/bin/codex|" "$PREFIX/share/applications/codex.desktop"
-sed -i "s|Icon=codex|Icon=$PREFIX/share/icons/hicolor/512x512/apps/codex.png|" "$PREFIX/share/applications/codex.desktop"
-echo "Installed to $PREFIX — run: $PREFIX/bin/codex"
+install -Dm755 flynt "$PREFIX/bin/flynt"
+install -Dm644 flynt.png "$PREFIX/share/icons/hicolor/512x512/apps/flynt.png"
+install -Dm644 flynt.desktop "$PREFIX/share/applications/flynt.desktop"
+sed -i "s|Exec=flynt|Exec=$PREFIX/bin/flynt|" "$PREFIX/share/applications/flynt.desktop"
+sed -i "s|Icon=flynt|Icon=$PREFIX/share/icons/hicolor/512x512/apps/flynt.png|" "$PREFIX/share/applications/flynt.desktop"
+echo "Installed to $PREFIX; run: $PREFIX/bin/flynt"
 INST
-    chmod +x "$LINUX_STAGING/codex-$VERSION/install.sh"
-    tar -czf "$DIST/Flynt-$VERSION-linux-x86_64.tar.gz" -C "$LINUX_STAGING" "codex-$VERSION"
+    chmod +x "$LINUX_STAGING/flynt-$VERSION/install.sh"
+    tar -czf "$DIST/Flynt-$VERSION-linux-x86_64.tar.gz" -C "$LINUX_STAGING" "flynt-$VERSION"
     rm -rf "$LINUX_STAGING"
     echo "✓ Linux tarball: $DIST/Flynt-$VERSION-linux-x86_64.tar.gz"
   fi
