@@ -19,6 +19,8 @@ result
 .vscode/
 *.swp
 *.swo
+__pycache__/
+*.pyc
 
 # iOS/macOS signing keys & profiles
 *.p8
