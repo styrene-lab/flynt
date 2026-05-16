@@ -734,6 +734,7 @@
   align-items:   center;
   gap:           var(--space-2);
   padding:       var(--space-1) var(--space-3);
+  border:        1px solid transparent;
   border-radius: var(--radius);
   font-size:     var(--font-size-sm);
   font-weight:   var(--font-weight-medium);
@@ -754,12 +755,12 @@
 
 .btn-ghost {
   background: transparent;
-  color:      var(--muted-foreground);
+  color:      var(--control-muted-fg, var(--muted-foreground));
 }
 
 .btn-ghost:hover {
-  background: var(--accent);
-  color:      var(--foreground);
+  background: var(--control-hover);
+  color:      var(--control-hover-fg, var(--foreground));
 }
 
 .btn-destructive {
@@ -773,20 +774,20 @@
 
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 .input {
-  background:    var(--surface);
-  border:        1px solid var(--border);
+  background:    var(--control-bg);
+  border:        1px solid var(--control-border);
   border-radius: var(--radius);
   padding:       var(--space-2) var(--space-3);
   font-size:     var(--font-size-base);
-  color:         var(--foreground);
+  color:         var(--control-fg);
   transition:    border-color var(--duration-fast) var(--ease),
                  box-shadow   var(--duration-fast) var(--ease);
   width:         100%;
 }
 
 .input:focus {
-  border-color: var(--ring);
-  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  border-color: var(--focus);
+  box-shadow:   0 0 0 2px color-mix(in srgb, var(--focus) 24%, transparent);
   outline:      none;
 }
 

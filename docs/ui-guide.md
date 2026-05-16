@@ -248,7 +248,7 @@ to generate raw Excalidraw element arrays.
 
 | Section | Field | Type | Notes |
 |---------|-------|------|-------|
-| **Appearance** | Theme | Card grid | Currently: Alpharius only |
+| **Appearance** | Theme | Card grid + import | Alpharius, Light, curated upstream tweak.cn presets, and operator-imported tweak.cn themes |
 | | Font size | Button group | Small / Medium / Large / XLarge |
 | **Project** | Name | Text input | |
 | | Location | Read-only path | |
@@ -256,6 +256,8 @@ to generate raw Excalidraw element arrays.
 | | Remote (Git) | Text input | Only shown for Git backend |
 | | Branch (Git) | Text input | |
 | | Auto-commit (Git) | Number input | Seconds, minimum 30, 0 = manual only |
+
+**Theme import:** Operators can import a tweak.cn JSON file, a public tweak.cn theme URL, a registry slug, or a theme ID from Appearance. Flynt normalizes the tweak.cn variables into the broader UI token set, applies the theme immediately, and persists theme selection plus imported themes in `.flynt/operator-settings.json`.
 
 **Sync backend change on Save:** Triggers project migration.
 - **None → iCloud:** Copies all project files to iCloud Drive folder, updates config, switches runtime. **Synchronous — UI blocks during copy, no progress indicator.** Large projects may appear to freeze.
