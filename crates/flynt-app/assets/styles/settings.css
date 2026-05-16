@@ -9,7 +9,8 @@
      doesn't reflow content by ~15px. Without this, text rewrap
      flickers as the operator moves the mouse near the right edge. */
   scrollbar-gutter: stable;
-  background: var(--background);
+  background: var(--panel-bg);
+  color:      var(--panel-fg);
 }
 
 /* Split layout: sidebar (left) + scrollable content (right).
@@ -47,8 +48,9 @@
 
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 .settings-sidebar {
-  border-right:  1px solid var(--border);
-  background:    var(--background);
+  border-right:  1px solid var(--chrome-border);
+  background:    var(--chrome-bg);
+  color:         var(--chrome-fg);
   padding:       var(--space-6) var(--space-3);
   overflow-y:    auto;
   scrollbar-gutter: stable;
@@ -63,7 +65,7 @@
   text-align:    left;
   padding:       6px 10px;
   font-size:     var(--font-size-sm);
-  color:         var(--foreground);
+  color:         var(--chrome-fg);
   background:    transparent;
   border:        none;
   border-radius: 4px;
@@ -71,12 +73,16 @@
   transition:    background var(--duration-fast) var(--ease);
 }
 
-.settings-nav-item:hover { background: var(--surface, rgba(255,255,255,0.04)); }
+.settings-nav-item:hover {
+  background: var(--control-hover);
+  color:      var(--control-hover-fg, var(--foreground));
+}
 
 .settings-nav-item.active {
-  color:      var(--primary);
-  background: var(--surface-active, rgba(42, 180, 200, 0.10));
+  color:      var(--selection-foreground);
+  background: var(--selection);
   font-weight: var(--font-weight-medium);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .settings-nav-item.nested {
@@ -148,7 +154,7 @@
   color:         var(--muted-foreground);
   margin-bottom: var(--space-4);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-dim);
+  border-bottom: 1px solid var(--divider);
 }
 
 /* ── Row ──────────────────────────────────────────────────────────────────── */
@@ -186,6 +192,12 @@
   max-width: 120px;
 }
 
+.theme-import-input {
+  flex:      1 1 360px;
+  min-width: 260px;
+  max-width: 520px;
+}
+
 .settings-path {
   font-family:    var(--font-mono);
   font-size:      var(--font-size-sm);
@@ -202,6 +214,38 @@
 }
 
 /* ── Theme grid ───────────────────────────────────────────────────────────── */
+.theme-stack {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.theme-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+  flex-wrap:   wrap;
+}
+
+.theme-actions .btn-ghost {
+  background:   var(--control-bg);
+  border-color: var(--control-border);
+  color:        var(--control-fg);
+}
+
+.theme-actions .btn-ghost:hover {
+  background:   var(--control-hover);
+  border-color: var(--focus);
+  color:        var(--control-hover-fg, var(--foreground));
+}
+
+.settings-inline-msg {
+  font-size: var(--font-size-sm);
+}
+
+.settings-inline-msg.ok { color: var(--success); }
+.settings-inline-msg.err { color: var(--error); }
+
 .theme-grid {
   display: flex;
   gap:     var(--space-3);
@@ -215,8 +259,9 @@
   gap:            var(--space-2);
   padding:        var(--space-2);
   border-radius:  var(--radius-md);
-  border:         2px solid var(--border);
-  background:     var(--card);
+  border:         2px solid var(--panel-border);
+  background:     var(--elevated-bg);
+  color:          var(--elevated-fg);
   cursor:         pointer;
   transition:     border-color var(--duration-fast) var(--ease),
                   box-shadow   var(--duration-fast) var(--ease);
@@ -273,7 +318,13 @@
 .theme-name {
   font-size:   var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-  color:       var(--foreground);
+  color:       var(--elevated-fg);
+}
+
+.theme-kind {
+  margin-top:  calc(var(--space-1) * -1);
+  font-size:   var(--font-size-xs);
+  color:       var(--muted-foreground);
 }
 
 .theme-active-badge {
@@ -295,9 +346,9 @@
   width:         40px;
   height:        32px;
   border-radius: var(--radius);
-  border:        1px solid var(--border);
-  background:    var(--card);
-  color:         var(--muted-foreground);
+  border:        1px solid var(--control-border);
+  background:    var(--control-bg);
+  color:         var(--control-muted-fg, var(--muted-foreground));
   font-size:     var(--font-size-sm);
   font-weight:   var(--font-weight-medium);
   transition:    border-color var(--duration-fast) var(--ease),
@@ -312,8 +363,8 @@
 
 .font-size-btn.active {
   border-color: var(--primary);
-  background:   var(--accent);
-  color:        var(--primary);
+  background:   var(--selection);
+  color:        var(--selection-foreground);
 }
 
 /* ── Sync radio ───────────────────────────────────────────────────────────── */
@@ -1214,6 +1265,10 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  background: var(--panel-bg);
+  color:      var(--panel-fg);
+  border:     1px solid var(--panel-border);
+  box-shadow: 0 24px 80px color-mix(in srgb, var(--background) 70%, transparent);
 }
 
 /* Close button sits in the top-right of the modal, outside the split. */
@@ -1227,7 +1282,7 @@
   border-radius: 4px;
   border: none;
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--control-muted-fg, var(--muted-foreground));
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -1236,15 +1291,15 @@
 }
 
 .settings-modal-close:hover {
-  background: var(--surface, rgba(255,255,255,0.06));
-  color: var(--foreground);
+  background: var(--control-hover);
+  color: var(--control-hover-fg, var(--foreground));
 }
 
 /* Settings root inside the modal: drop the outer height: 100% chain
    and let the modal dimensions drive sizing. */
 .settings-modal-dialog .settings-root {
   height: 100%;
-  background: var(--background);
+  background: var(--panel-bg);
 }
 
 .settings-modal-dialog .settings-root-split {

@@ -37,6 +37,7 @@
 .tab.active {
   background: var(--background);
   color:      var(--foreground);
+  box-shadow: inset 0 1px 0 var(--border);
 }
 /* Active indicator — bottom accent line like Obsidian */
 .tab.active::after {

@@ -33,15 +33,22 @@ pub fn App() -> Element {
 
     let current_runtime = ctx.runtime.read().clone();
 
-    let theme = use_context_provider(|| {
-        Signal::new(ThemeName(
-            current_runtime.project.config.appearance.theme.clone(),
-        ))
-    });
+    let operator_settings = current_runtime.omegon.load_operator_settings();
+    let initial_theme = if operator_settings.ui_theme.active_theme.trim().is_empty() {
+        current_runtime.project.config.appearance.theme.clone()
+    } else {
+        operator_settings.ui_theme.active_theme.clone()
+    };
+    let theme = use_context_provider(|| Signal::new(ThemeName(initial_theme)));
     let font_size =
         use_context_provider(|| Signal::new(current_runtime.project.config.appearance.font_size));
     use_context_provider(|| Signal::new(current_runtime.omegon.load_project_profile()));
-    use_context_provider(|| Signal::new(current_runtime.omegon.load_operator_settings()));
+    use_context_provider(|| Signal::new(operator_settings.clone()));
+    use_context_provider(|| {
+        Signal::new(crate::theme::ThemeLibrary::from_operator(
+            &operator_settings,
+        ))
+    });
     use_context_provider(|| Signal::new(None::<tokio::process::Child>));
     use_context_provider(|| Signal::new(None::<u32>));
     use_context_provider(|| Signal::new(None::<String>));
@@ -464,6 +471,11 @@ pub fn App() -> Element {
         ctx.set_runtime(runtime_state_for_project_root(selected_root));
     };
 
+    let shell_theme_style = {
+        let library = use_context::<Signal<crate::theme::ThemeLibrary>>();
+        library.read().active_vars(&theme.read().0)
+    };
+
     rsx! {
         // Prevent flash of unstyled content — hide body until theme loads
         document::Style { "body {{ opacity: 0; transition: opacity 0.1s; }} body.ready {{ opacity: 1; }}" }
@@ -542,6 +554,7 @@ pub fn App() -> Element {
         div {
             class: "flynt-shell {font_size.read().css_class()}",
             "data-theme": "{theme.read().0}",
+            style: "{shell_theme_style}",
             tabindex: "0",
             onkeydown: move |e| {
                 // ⌘P — command palette (command mode)

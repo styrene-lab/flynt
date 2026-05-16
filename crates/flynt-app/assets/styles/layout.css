@@ -91,7 +91,7 @@
 
 .toolbar-search {
   width:         100%;
-  background:    var(--surface);
+  background:    var(--card);
   border:        1px solid var(--border);
   border-radius: var(--radius);
   padding:       4px var(--space-3);

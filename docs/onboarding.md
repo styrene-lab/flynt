@@ -224,7 +224,7 @@ Future flow (with StyreneIdentity):
 3. **No crash reporting** — testers should report issues via Slack/GitHub with console logs
 4. **No mobile onboarding** — project must be pre-configured
 5. **SSH keys (if used) must be in ssh-agent** — passphrase-protected keys need `ssh-add` first. Using HTTPS with a personal access token avoids this entirely.
-6. **Single theme** — "alpharius" is the only theme
+6. **Theme import is desktop-only** — Flynt ships Alpharius, Light, and bundled upstream tweak.cn presets. Operators can import tweak.cn JSON themes, public theme URLs, registry slugs, or theme IDs from Settings → Appearance. Mobile still uses its own basic stylesheet.
 7. **No Vim mode** — CodeMirror 6 without Vim extension
 8. **Commit author is "Flynt <flynt@local>"** — not yet linked to user identity (StyreneIdentity planned)
 9. **iOS is read-heavy** — editing works but is basic (no CM6 on mobile, plain textarea)
