@@ -96,8 +96,7 @@ jobs:
 
   lipstyk:
     name: lipstyk
-    continue-on-error: true
     uses: styrene-lab/lipstyk/.github/workflows/lipstyk.yml@main
     with:
       paths: "crates/"
-      threshold: 50
+      threshold: 1000
