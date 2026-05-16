@@ -28,7 +28,8 @@ fn setup_local_remote() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
     let local_path = tmp.path().join("local");
 
     // Create bare remote
-    Repository::init_bare(&remote_path).unwrap();
+    let remote_repo = Repository::init_bare(&remote_path).unwrap();
+    remote_repo.set_head("refs/heads/main").unwrap();
 
     // Clone it to local
     let repo = Repository::clone(remote_path.to_str().unwrap(), &local_path).unwrap();
