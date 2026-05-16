@@ -468,11 +468,22 @@ jobs:
           APP="target/dx/flynt/release/macos/Flynt.app"
           VERSION="${RELEASE_TAG#v}"
           STAGING=$(mktemp -d)
+          DMG="Flynt-$VERSION-macos.dmg"
+          trap 'rm -rf "$STAGING"' EXIT
           cp -r "$APP" "$STAGING/Flynt.app"
           ln -s /Applications "$STAGING/Applications"
-          hdiutil create -volname "Flynt" -srcfolder "$STAGING" -ov -format UDZO "Flynt-$VERSION-macos.dmg"
-          rm -rf "$STAGING"
-          echo "DMG=Flynt-$VERSION-macos.dmg" >> "$GITHUB_ENV"
+          sync
+          for attempt in 1 2 3; do
+            rm -f "$DMG"
+            if hdiutil create -volname "Flynt" -srcfolder "$STAGING" -ov -format UDZO "$DMG"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
 
       - name: Create direct-download PKG
         run: |
