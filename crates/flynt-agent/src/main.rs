@@ -37,6 +37,21 @@ fn default_project_root() -> PathBuf {
         .join("Flynt")
 }
 
+fn is_transport_disconnect_message(msg: &str) -> bool {
+    let msg = msg.to_lowercase();
+    msg.contains("broken pipe")
+        || msg.contains("os error 32")
+        || msg.contains("connection closed")
+        || msg.contains("closed connection")
+        || msg.contains("connection reset")
+        || msg.contains("transport disconnected")
+        || msg.contains("channel closed")
+}
+
+fn is_transport_disconnect_error(err: &omegon_extension::Error) -> bool {
+    is_transport_disconnect_message(&err.to_string())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -54,8 +69,8 @@ async fn main() -> Result<()> {
         "FLYNT_PROJECT",
         &["OMEGON_PROJECT_ROOT", "FLYNT_VAULT", "CODEX_VAULT"],
     )
-        .map(PathBuf::from)
-        .unwrap_or_else(default_project_root);
+    .map(PathBuf::from)
+    .unwrap_or_else(default_project_root);
 
     std::fs::create_dir_all(&project_root)?;
     let project = Arc::new(Project::open(&project_root)?);
@@ -67,9 +82,13 @@ async fn main() -> Result<()> {
     match mode {
         Some("--mcp") => {
             // MCP server mode — compatible with Claude Code, Cursor, etc.
-            omegon_extension::mcp_shim::serve_mcp(ext)
-                .await
-                .expect("flynt MCP server failed");
+            if let Err(e) = omegon_extension::mcp_shim::serve_mcp(ext).await {
+                if is_transport_disconnect_error(&e) {
+                    tracing::warn!("flynt MCP client disconnected: {e}");
+                    return Ok(());
+                }
+                return Err(anyhow::anyhow!("flynt MCP server failed: {e}"));
+            }
         }
         Some("--help") | Some("help") | Some("-h") => {
             println!("flynt-agent — project document and task tools for omegon");
@@ -81,9 +100,15 @@ async fn main() -> Result<()> {
             println!("  flynt-agent --help         Show this help");
             println!();
             println!("ENVIRONMENT:");
-            println!("  FLYNT_PROJECT              Project directory (default: cwd if it looks like a project, otherwise ~/Documents/Flynt)");
-            println!("                             Also accepts OMEGON_PROJECT_ROOT from the native extension host.");
-            println!("                             Legacy aliases (deprecated): FLYNT_VAULT, CODEX_VAULT");
+            println!(
+                "  FLYNT_PROJECT              Project directory (default: cwd if it looks like a project, otherwise ~/Documents/Flynt)"
+            );
+            println!(
+                "                             Also accepts OMEGON_PROJECT_ROOT from the native extension host."
+            );
+            println!(
+                "                             Legacy aliases (deprecated): FLYNT_VAULT, CODEX_VAULT"
+            );
         }
         Some("--rpc") | _ => {
             // Default: run as omegon extension (v2 bidirectional protocol)
@@ -98,7 +123,7 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::looks_like_project_root;
+    use super::{is_transport_disconnect_message, looks_like_project_root};
 
     #[test]
     fn recognizes_flynt_project_root() {
@@ -118,5 +143,16 @@ mod tests {
     fn rejects_plain_directory() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(!looks_like_project_root(tmp.path()));
+    }
+
+    #[test]
+    fn classifies_transport_disconnects() {
+        assert!(is_transport_disconnect_message("Broken pipe (os error 32)"));
+        assert!(is_transport_disconnect_message("connection closed"));
+        assert!(is_transport_disconnect_message(
+            "transport disconnected while writing response"
+        ));
+        assert!(!is_transport_disconnect_message("method not found"));
+        assert!(!is_transport_disconnect_message("invalid params"));
     }
 }

@@ -314,6 +314,23 @@ fn preprocess(src: &str) -> String {
 
 // ── CM6 init JS ─────────────────────────────────────────────────────────────
 
+pub(crate) fn cm6_fast_swap_js(content: &str) -> String {
+    let escaped = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".into());
+    format!(
+        r#"
+(function() {{
+    const container = document.getElementById('flynt-cm-editor');
+    const cm = window._flyntCM;
+    if (!container || !cm || !cm.dom || !container.contains(cm.dom)) return false;
+    const next = {escaped};
+    cm.dispatch({{ changes: {{ from: 0, to: cm.state.doc.length, insert: next }} }});
+    cm.scrollDOM.scrollTop = 0;
+    return true;
+}})();
+"#
+    )
+}
+
 fn cm6_init_js(content: &str) -> String {
     let escaped = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".into());
     format!(
