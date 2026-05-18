@@ -39,7 +39,7 @@
 use flynt_flow::{Flow, FlowEdge, FlowEndpoint, FlowMeta, FlowNode, NodeKind, Socket, SocketDir};
 use flynt_store::project::Project;
 use omegon_extension::{Error as ExtError, Result as ExtResult};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -190,8 +190,14 @@ pub fn flow_create(project: &Project, params: Value) -> ExtResult<Value> {
 
     let mut flow = Flow::default();
     flow.meta = FlowMeta {
-        title: params.get("title").and_then(|v| v.as_str()).map(String::from),
-        description: params.get("description").and_then(|v| v.as_str()).map(String::from),
+        title: params
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        description: params
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     };
     if let Some(arr) = params.get("nodes").and_then(|v| v.as_array()) {
         for n in arr {
@@ -226,11 +232,11 @@ pub fn flow_get(project: &Project, params: Value) -> ExtResult<Value> {
 
     if !abs.exists() {
         return Err(ExtError::invalid_params(format!(
-            "no such file: {}", rel_path.display()
+            "no such file: {}",
+            rel_path.display()
         )));
     }
-    let doc = flynt_flow::load_flow(&abs)
-        .map_err(|e| ExtError::internal_error(e.to_string()))?;
+    let doc = flynt_flow::load_flow(&abs).map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     Ok(json!({
         "id": doc.id.to_string(),
@@ -251,8 +257,8 @@ pub fn flow_patch(project: &Project, params: Value) -> ExtResult<Value> {
             rel_path.display()
         )));
     }
-    let mut doc = flynt_flow::load_flow(&abs)
-        .map_err(|e| ExtError::internal_error(e.to_string()))?;
+    let mut doc =
+        flynt_flow::load_flow(&abs).map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     // Apply operations in a deterministic order. Removes first so an
     // add for the same id isn't accidentally undone; cascade-remove
@@ -266,7 +272,9 @@ pub fn flow_patch(project: &Project, params: Value) -> ExtResult<Value> {
             .collect();
         doc.flow.nodes.retain(|n| !ids.contains(&n.id));
         // Cascade: edges touching a removed node also go.
-        doc.flow.edges.retain(|e| !ids.contains(&e.source.node) && !ids.contains(&e.target.node));
+        doc.flow
+            .edges
+            .retain(|e| !ids.contains(&e.source.node) && !ids.contains(&e.target.node));
     }
 
     if let Some(arr) = params.get("remove_edges").and_then(|v| v.as_array()) {
@@ -292,10 +300,13 @@ pub fn flow_patch(project: &Project, params: Value) -> ExtResult<Value> {
 
     if let Some(arr) = params.get("move_nodes").and_then(|v| v.as_array()) {
         for m in arr {
-            let id_str = m.get("id").and_then(|v| v.as_str())
+            let id_str = m
+                .get("id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| ExtError::invalid_params("move_nodes[].id is required"))?;
-            let id = Uuid::parse_str(id_str)
-                .map_err(|_| ExtError::invalid_params(format!("move_nodes[].id: {id_str} is not a UUID")))?;
+            let id = Uuid::parse_str(id_str).map_err(|_| {
+                ExtError::invalid_params(format!("move_nodes[].id: {id_str} is not a UUID"))
+            })?;
             let pos = parse_position(m.get("position"))?;
             if let Some(n) = doc.flow.nodes.iter_mut().find(|n| n.id == id) {
                 n.position = pos;
@@ -346,14 +357,18 @@ fn validation_report_json(v: &flynt_flow::ValidationReport) -> Value {
 /// - No `..` traversal components
 /// - Ends in `.flow`
 fn parse_flow_path(params: &Value) -> ExtResult<PathBuf> {
-    let raw = params.get("path").and_then(|v| v.as_str())
+    let raw = params
+        .get("path")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("path is required"))?;
     let p = PathBuf::from(raw);
 
     if p.is_absolute() {
         return Err(ExtError::invalid_params("path must be project-relative"));
     }
-    if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err(ExtError::invalid_params("path must not contain `..`"));
     }
     if p.extension().map(|e| e != "flow").unwrap_or(true) {
@@ -363,58 +378,91 @@ fn parse_flow_path(params: &Value) -> ExtResult<PathBuf> {
 }
 
 fn parse_position(v: Option<&Value>) -> ExtResult<(f32, f32)> {
-    let arr = v.and_then(|v| v.as_array())
+    let arr = v
+        .and_then(|v| v.as_array())
         .ok_or_else(|| ExtError::invalid_params("position must be a [x, y] array"))?;
     if arr.len() != 2 {
-        return Err(ExtError::invalid_params("position must have exactly 2 elements"));
+        return Err(ExtError::invalid_params(
+            "position must have exactly 2 elements",
+        ));
     }
-    let x = arr[0].as_f64()
-        .ok_or_else(|| ExtError::invalid_params("position[0] must be a number"))? as f32;
-    let y = arr[1].as_f64()
-        .ok_or_else(|| ExtError::invalid_params("position[1] must be a number"))? as f32;
+    let x = arr[0]
+        .as_f64()
+        .ok_or_else(|| ExtError::invalid_params("position[0] must be a number"))?
+        as f32;
+    let y = arr[1]
+        .as_f64()
+        .ok_or_else(|| ExtError::invalid_params("position[1] must be a number"))?
+        as f32;
     if !x.is_finite() || !y.is_finite() {
-        return Err(ExtError::invalid_params("position coordinates must be finite"));
+        return Err(ExtError::invalid_params(
+            "position coordinates must be finite",
+        ));
     }
     Ok((x, y))
 }
 
 fn parse_node(v: &Value) -> ExtResult<FlowNode> {
-    let id_str = v.get("id").and_then(|v| v.as_str())
+    let id_str = v
+        .get("id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("node.id is required"))?;
     let id = Uuid::parse_str(id_str)
         .map_err(|_| ExtError::invalid_params(format!("node.id: {id_str} is not a UUID")))?;
-    let kind_str = v.get("kind").and_then(|v| v.as_str())
+    let kind_str = v
+        .get("kind")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("node.kind is required"))?;
     let kind = NodeKind::from_wire_str(kind_str);
     let position = parse_position(v.get("position"))?;
     let data = v.get("data").cloned().unwrap_or(json!({}));
-    let sockets = v.get("sockets").and_then(|s| s.as_array())
+    let sockets = v
+        .get("sockets")
+        .and_then(|s| s.as_array())
         .map(|arr| arr.iter().map(parse_socket).collect::<Result<Vec<_>, _>>())
         .transpose()?
         .unwrap_or_default();
 
-    Ok(FlowNode { id, kind, position, data, sockets })
+    Ok(FlowNode {
+        id,
+        kind,
+        position,
+        data,
+        sockets,
+    })
 }
 
 fn parse_socket(v: &Value) -> ExtResult<Socket> {
-    let name = v.get("name").and_then(|v| v.as_str())
+    let name = v
+        .get("name")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("socket.name is required"))?
         .to_string();
-    let dir_str = v.get("direction").and_then(|v| v.as_str())
+    let dir_str = v
+        .get("direction")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("socket.direction is required"))?;
     let direction = match dir_str {
         "input" => SocketDir::Input,
         "output" => SocketDir::Output,
-        other => return Err(ExtError::invalid_params(format!(
-            "socket.direction must be 'input' or 'output', got '{other}'"
-        ))),
+        other => {
+            return Err(ExtError::invalid_params(format!(
+                "socket.direction must be 'input' or 'output', got '{other}'"
+            )));
+        }
     };
     let ty = v.get("ty").and_then(|v| v.as_str()).map(String::from);
-    Ok(Socket { name, direction, ty })
+    Ok(Socket {
+        name,
+        direction,
+        ty,
+    })
 }
 
 fn parse_edge(v: &Value) -> ExtResult<FlowEdge> {
-    let id_str = v.get("id").and_then(|v| v.as_str())
+    let id_str = v
+        .get("id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("edge.id is required"))?;
     let id = Uuid::parse_str(id_str)
         .map_err(|_| ExtError::invalid_params(format!("edge.id: {id_str} is not a UUID")))?;
@@ -425,11 +473,18 @@ fn parse_edge(v: &Value) -> ExtResult<FlowEdge> {
 
 fn parse_endpoint(v: Option<&Value>, label: &str) -> ExtResult<FlowEndpoint> {
     let obj = v.ok_or_else(|| ExtError::invalid_params(format!("edge.{label} is required")))?;
-    let node_str = obj.get("node").and_then(|v| v.as_str())
+    let node_str = obj
+        .get("node")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params(format!("edge.{label}.node is required")))?;
-    let node = Uuid::parse_str(node_str)
-        .map_err(|_| ExtError::invalid_params(format!("edge.{label}.node: {node_str} is not a UUID")))?;
-    let socket = obj.get("socket").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let node = Uuid::parse_str(node_str).map_err(|_| {
+        ExtError::invalid_params(format!("edge.{label}.node: {node_str} is not a UUID"))
+    })?;
+    let socket = obj
+        .get("socket")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     Ok(FlowEndpoint { node, socket })
 }
 
@@ -448,17 +503,21 @@ mod tests {
     #[test]
     fn create_writes_a_parseable_flow() {
         let (_tmp, project) = make_project();
-        let out = flow_create(&project, json!({
-            "path": "diagrams/auth.flow",
-            "title": "Auth",
-            "nodes": [
-                {
-                    "id": "11111111-1111-1111-1111-111111111111",
-                    "kind": "input",
-                    "position": [0.0, 0.0]
-                }
-            ]
-        })).unwrap();
+        let out = flow_create(
+            &project,
+            json!({
+                "path": "diagrams/auth.flow",
+                "title": "Auth",
+                "nodes": [
+                    {
+                        "id": "11111111-1111-1111-1111-111111111111",
+                        "kind": "input",
+                        "position": [0.0, 0.0]
+                    }
+                ]
+            }),
+        )
+        .unwrap();
         assert_eq!(out["path"], "diagrams/auth.flow");
         assert_eq!(out["node_count"], 1);
 
@@ -502,21 +561,29 @@ mod tests {
         let n1 = "11111111-1111-1111-1111-111111111111";
         let n2 = "22222222-2222-2222-2222-222222222222";
         let e1 = "aaaa1111-1111-1111-1111-111111111111";
-        flow_create(&project, json!({
-            "path": "x.flow",
-            "nodes": [
-                { "id": n1, "kind": "input",  "position": [0.0, 0.0] },
-                { "id": n2, "kind": "output", "position": [200.0, 0.0] }
-            ],
-            "edges": [
-                { "id": e1, "source": { "node": n1 }, "target": { "node": n2 } }
-            ]
-        })).unwrap();
+        flow_create(
+            &project,
+            json!({
+                "path": "x.flow",
+                "nodes": [
+                    { "id": n1, "kind": "input",  "position": [0.0, 0.0] },
+                    { "id": n2, "kind": "output", "position": [200.0, 0.0] }
+                ],
+                "edges": [
+                    { "id": e1, "source": { "node": n1 }, "target": { "node": n2 } }
+                ]
+            }),
+        )
+        .unwrap();
 
-        let out = flow_patch(&project, json!({
-            "path": "x.flow",
-            "remove_nodes": [n1]
-        })).unwrap();
+        let out = flow_patch(
+            &project,
+            json!({
+                "path": "x.flow",
+                "remove_nodes": [n1]
+            }),
+        )
+        .unwrap();
         assert_eq!(out["node_count"], 1, "n1 removed");
         assert_eq!(out["edge_count"], 0, "edge cascaded");
     }
@@ -525,14 +592,22 @@ mod tests {
     fn patch_move_nodes_updates_position() {
         let (_tmp, project) = make_project();
         let n1 = "11111111-1111-1111-1111-111111111111";
-        flow_create(&project, json!({
-            "path": "x.flow",
-            "nodes": [{ "id": n1, "kind": "step", "position": [0.0, 0.0] }]
-        })).unwrap();
-        flow_patch(&project, json!({
-            "path": "x.flow",
-            "move_nodes": [{ "id": n1, "position": [100.5, 200.0] }]
-        })).unwrap();
+        flow_create(
+            &project,
+            json!({
+                "path": "x.flow",
+                "nodes": [{ "id": n1, "kind": "step", "position": [0.0, 0.0] }]
+            }),
+        )
+        .unwrap();
+        flow_patch(
+            &project,
+            json!({
+                "path": "x.flow",
+                "move_nodes": [{ "id": n1, "position": [100.5, 200.0] }]
+            }),
+        )
+        .unwrap();
         let got = flow_get(&project, json!({ "path": "x.flow" })).unwrap();
         let pos = got["nodes"][0]["position"].as_array().unwrap();
         assert_eq!(pos[0].as_f64().unwrap(), 100.5);
@@ -543,13 +618,17 @@ mod tests {
     fn patch_move_nonexistent_node_errors() {
         let (_tmp, project) = make_project();
         flow_create(&project, json!({ "path": "x.flow" })).unwrap();
-        let err = flow_patch(&project, json!({
-            "path": "x.flow",
-            "move_nodes": [{
-                "id": "99999999-9999-9999-9999-999999999999",
-                "position": [0.0, 0.0]
-            }]
-        })).unwrap_err();
+        let err = flow_patch(
+            &project,
+            json!({
+                "path": "x.flow",
+                "move_nodes": [{
+                    "id": "99999999-9999-9999-9999-999999999999",
+                    "position": [0.0, 0.0]
+                }]
+            }),
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("no node"), "{err}");
     }
 
@@ -563,14 +642,22 @@ mod tests {
         // this test exercises the JSON-callable surface.
         let (_tmp, project) = make_project();
         let n1 = "11111111-1111-1111-1111-111111111111";
-        flow_create(&project, json!({
-            "path": "x.flow",
-            "nodes": [{ "id": n1, "kind": "step", "position": [0.0, 0.0] }]
-        })).unwrap();
-        let err = flow_patch(&project, json!({
-            "path": "x.flow",
-            "move_nodes": [{ "id": n1, "position": ["not-a-number", 0.0] }]
-        })).unwrap_err();
+        flow_create(
+            &project,
+            json!({
+                "path": "x.flow",
+                "nodes": [{ "id": n1, "kind": "step", "position": [0.0, 0.0] }]
+            }),
+        )
+        .unwrap();
+        let err = flow_patch(
+            &project,
+            json!({
+                "path": "x.flow",
+                "move_nodes": [{ "id": n1, "position": ["not-a-number", 0.0] }]
+            }),
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("number"), "{err}");
     }
 
@@ -579,37 +666,55 @@ mod tests {
         let (_tmp, project) = make_project();
         let n1 = "11111111-1111-1111-1111-111111111111";
         let n2 = "22222222-2222-2222-2222-222222222222";
-        flow_create(&project, json!({
-            "path": "x.flow",
-            "nodes": [
-                { "id": n1, "kind": "input", "position": [0.0, 0.0] },
-                { "id": n2, "kind": "output", "position": [0.0, 0.0] }
-            ]
-        })).unwrap();
+        flow_create(
+            &project,
+            json!({
+                "path": "x.flow",
+                "nodes": [
+                    { "id": n1, "kind": "input", "position": [0.0, 0.0] },
+                    { "id": n2, "kind": "output", "position": [0.0, 0.0] }
+                ]
+            }),
+        )
+        .unwrap();
         // Add an edge whose source is a ghost node — Flow::validate flags it.
-        let out = flow_patch(&project, json!({
-            "path": "x.flow",
-            "add_edges": [{
-                "id": "aaaa1111-1111-1111-1111-111111111111",
-                "source": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" },
-                "target": { "node": n2 }
-            }]
-        })).unwrap();
+        let out = flow_patch(
+            &project,
+            json!({
+                "path": "x.flow",
+                "add_edges": [{
+                    "id": "aaaa1111-1111-1111-1111-111111111111",
+                    "source": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" },
+                    "target": { "node": n2 }
+                }]
+            }),
+        )
+        .unwrap();
         assert_eq!(out["validation"]["is_clean"], false);
-        assert_eq!(out["validation"]["dangling_edges"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            out["validation"]["dangling_edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
     fn custom_kind_round_trips() {
         let (_tmp, project) = make_project();
-        flow_create(&project, json!({
-            "path": "x.flow",
-            "nodes": [{
-                "id": "11111111-1111-1111-1111-111111111111",
-                "kind": "queue_consumer",
-                "position": [0.0, 0.0]
-            }]
-        })).unwrap();
+        flow_create(
+            &project,
+            json!({
+                "path": "x.flow",
+                "nodes": [{
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "kind": "queue_consumer",
+                    "position": [0.0, 0.0]
+                }]
+            }),
+        )
+        .unwrap();
         let got = flow_get(&project, json!({ "path": "x.flow" })).unwrap();
         assert_eq!(got["nodes"][0]["kind"], "queue_consumer");
     }
@@ -624,34 +729,38 @@ mod tests {
         let n_agent = "22222222-2222-2222-2222-222222222222";
         let n_output = "33333333-3333-3333-3333-333333333333";
 
-        flow_create(&project, json!({
-            "path": "loop.flow",
-            "title": "Auth verification",
-            "description": "credentials → mint token",
-            "nodes": [
-                {
-                    "id": n_input,
-                    "kind": "input",
-                    "position": [0.0, 0.0],
-                    "data": { "schema": "Credentials" },
-                    "sockets": [{ "name": "out", "direction": "output", "ty": "Credentials" }]
-                },
-                {
-                    "id": n_agent,
-                    "kind": "agent_call",
-                    "position": [240.0, 0.0],
-                    "data": {
-                        "skill": "auth.verify_password",
-                        "model": "anthropic:claude-sonnet-4-6",
-                        "max_turns": 1
+        flow_create(
+            &project,
+            json!({
+                "path": "loop.flow",
+                "title": "Auth verification",
+                "description": "credentials → mint token",
+                "nodes": [
+                    {
+                        "id": n_input,
+                        "kind": "input",
+                        "position": [0.0, 0.0],
+                        "data": { "schema": "Credentials" },
+                        "sockets": [{ "name": "out", "direction": "output", "ty": "Credentials" }]
                     },
-                    "sockets": [
-                        { "name": "in", "direction": "input", "ty": "Credentials" },
-                        { "name": "ok", "direction": "output", "ty": "Token" }
-                    ]
-                }
-            ]
-        })).unwrap();
+                    {
+                        "id": n_agent,
+                        "kind": "agent_call",
+                        "position": [240.0, 0.0],
+                        "data": {
+                            "skill": "auth.verify_password",
+                            "model": "anthropic:claude-sonnet-4-6",
+                            "max_turns": 1
+                        },
+                        "sockets": [
+                            { "name": "in", "direction": "input", "ty": "Credentials" },
+                            { "name": "ok", "direction": "output", "ty": "Token" }
+                        ]
+                    }
+                ]
+            }),
+        )
+        .unwrap();
 
         // Add an output node + connect agent → output via patch.
         let e1 = "aaaa1111-1111-1111-1111-111111111111";
@@ -679,8 +788,12 @@ mod tests {
         assert_eq!(got["edges"].as_array().unwrap().len(), 2);
 
         // Spot-check the rich agent_call payload survived round-trip.
-        let agent = got["nodes"].as_array().unwrap().iter()
-            .find(|n| n["kind"] == "agent_call").unwrap();
+        let agent = got["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["kind"] == "agent_call")
+            .unwrap();
         assert_eq!(agent["data"]["skill"], "auth.verify_password");
         assert_eq!(agent["data"]["max_turns"], 1);
         assert_eq!(agent["sockets"].as_array().unwrap().len(), 2);
@@ -696,10 +809,14 @@ mod tests {
     #[test]
     fn patch_on_missing_file_suggests_create() {
         let (_tmp, project) = make_project();
-        let err = flow_patch(&project, json!({
-            "path": "missing.flow",
-            "add_nodes": []
-        })).unwrap_err();
+        let err = flow_patch(
+            &project,
+            json!({
+                "path": "missing.flow",
+                "add_nodes": []
+            }),
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("flow_create"), "{err}");
     }
 
@@ -708,26 +825,40 @@ mod tests {
         // Symmetric with patch — agent that creates a malformed graph
         // learns immediately, doesn't have to re-call get to find out.
         let (_tmp, project) = make_project();
-        let out = flow_create(&project, json!({
-            "path": "bad.flow",
-            "edges": [{
-                "id": "aaaa1111-1111-1111-1111-111111111111",
-                "source": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" },
-                "target": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" }
-            }]
-        })).unwrap();
+        let out = flow_create(
+            &project,
+            json!({
+                "path": "bad.flow",
+                "edges": [{
+                    "id": "aaaa1111-1111-1111-1111-111111111111",
+                    "source": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" },
+                    "target": { "node": "deadbeef-dead-dead-dead-deaddeafbeef" }
+                }]
+            }),
+        )
+        .unwrap();
         assert_eq!(out["validation"]["is_clean"], false);
-        assert_eq!(out["validation"]["dangling_edges"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            out["validation"]["dangling_edges"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
     fn patch_set_meta_updates_title() {
         let (_tmp, project) = make_project();
         flow_create(&project, json!({ "path": "x.flow", "title": "old" })).unwrap();
-        flow_patch(&project, json!({
-            "path": "x.flow",
-            "set_meta": { "title": "new", "description": "added" }
-        })).unwrap();
+        flow_patch(
+            &project,
+            json!({
+                "path": "x.flow",
+                "set_meta": { "title": "new", "description": "added" }
+            }),
+        )
+        .unwrap();
         let got = flow_get(&project, json!({ "path": "x.flow" })).unwrap();
         assert_eq!(got["meta"]["title"], "new");
         assert_eq!(got["meta"]["description"], "added");

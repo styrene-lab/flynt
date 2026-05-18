@@ -24,7 +24,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::header::{ACCEPT, HeaderMap};
 use serde::Deserialize;
 use tracing::{debug, warn};
@@ -53,7 +53,11 @@ impl GitlabForgeClient {
             .user_agent(USER_AGENT)
             .build()
             .expect("failed to build reqwest client");
-        Self { http, endpoint, token }
+        Self {
+            http,
+            endpoint,
+            token,
+        }
     }
 
     fn base(&self) -> &str {
@@ -113,7 +117,11 @@ impl GitlabForgeClient {
 
         loop {
             if pages_fetched >= MAX_PAGES {
-                warn!(max_pages = MAX_PAGES, total = all.len(), "pagination capped");
+                warn!(
+                    max_pages = MAX_PAGES,
+                    total = all.len(),
+                    "pagination capped"
+                );
                 break;
             }
             let page_str = page.to_string();
@@ -125,7 +133,9 @@ impl GitlabForgeClient {
                 .query(&[("per_page", per_page.as_str())])
                 .query(&[("page", page_str.as_str())]);
 
-            let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+            let resp = self
+                .check_response(req.send().await.map_err(reqwest_err)?)
+                .await?;
             let next = Self::next_page_number(resp.headers());
             let items: Vec<T> = resp.json().await.map_err(reqwest_err)?;
             if items.is_empty() {
@@ -190,7 +200,9 @@ impl ForgeClient for GitlabForgeClient {
             if !opts.labels.is_empty() {
                 req = req.query(&[("labels", opts.labels.join(","))]);
             }
-            let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+            let resp = self
+                .check_response(req.send().await.map_err(reqwest_err)?)
+                .await?;
             let issues: Vec<GlIssue> = resp.json().await.map_err(reqwest_err)?;
             return Ok(issues.into_iter().map(GlIssue::into_forge_issue).collect());
         }
@@ -283,10 +295,7 @@ impl ForgeClient for GitlabForgeClient {
         }
         if let Some(labels) = &update.labels {
             // Same comma-encoded string format on update.
-            body.insert(
-                "labels".into(),
-                serde_json::Value::String(labels.join(",")),
-            );
+            body.insert("labels".into(), serde_json::Value::String(labels.join(",")));
         }
         let resp = self
             .check_response(
@@ -425,14 +434,11 @@ impl ForgeClient for GitlabForgeClient {
         }
         let resp = self
             .check_response(
-                self.request(
-                    reqwest::Method::POST,
-                    &format!("/projects/{project}/hooks"),
-                )
-                .json(&body)
-                .send()
-                .await
-                .map_err(reqwest_err)?,
+                self.request(reqwest::Method::POST, &format!("/projects/{project}/hooks"))
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(reqwest_err)?,
             )
             .await?;
         let created: GlWebhook = resp.json().await.map_err(reqwest_err)?;

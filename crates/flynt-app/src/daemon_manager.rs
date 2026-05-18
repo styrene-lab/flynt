@@ -18,7 +18,11 @@ pub struct DaemonManager {
 }
 
 impl DaemonManager {
-    pub fn new(config: &AgentDaemonConfig, project_root: PathBuf, omegon_ctx: OmegonRuntimeContext) -> Self {
+    pub fn new(
+        config: &AgentDaemonConfig,
+        project_root: PathBuf,
+        omegon_ctx: OmegonRuntimeContext,
+    ) -> Self {
         let initial_state = if config.enabled {
             DaemonState::Stopped
         } else {
@@ -61,9 +65,16 @@ impl DaemonManager {
         }
 
         let port = *self.port.lock().unwrap();
-        info!("Starting daemon on port {port} for project {:?}", self.project_root);
+        info!(
+            "Starting daemon on port {port} for project {:?}",
+            self.project_root
+        );
 
-        match self.omegon_ctx.spawn_background_host(&self.project_root).await {
+        match self
+            .omegon_ctx
+            .spawn_background_host(&self.project_root)
+            .await
+        {
             Ok(child) => {
                 let pid = child.id().unwrap_or(0);
                 {

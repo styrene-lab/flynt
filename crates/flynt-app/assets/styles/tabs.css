@@ -63,10 +63,10 @@
   padding:       1px 4px;
   font-size:     12px;
   font-family:   inherit;
-  background:    var(--surface, #0c1018);
+  background:    var(--surface);
   color:         var(--foreground);
-  border:        1px solid var(--primary, #2ab4c8);
-  border-radius: 3px;
+  border:        1px solid var(--primary);
+  border-radius: var(--radius-sm);
   outline:       none;
 }
 
@@ -89,4 +89,7 @@
 }
 .tab:hover .tab-close,
 .tab.active .tab-close { opacity: 1; }
-.tab-close:hover { color: var(--error); background: rgba(200,48,48,0.15); }
+.tab-close:hover {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+}

@@ -70,18 +70,16 @@ pub fn discover_custom_postures(project_root: &Path) -> Vec<PostureEntry> {
             let Ok(content) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            let name = extract_pkl_field(&content, "name")
-                .unwrap_or_else(|| {
-                    path.file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                });
+            let name = extract_pkl_field(&content, "name").unwrap_or_else(|| {
+                path.file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            });
             if seen.contains(&name) {
                 continue; // project-level shadows user-level
             }
-            let description =
-                extract_pkl_field(&content, "description").unwrap_or_default();
+            let description = extract_pkl_field(&content, "description").unwrap_or_default();
             let id = name.clone();
             seen.insert(name.clone());
             entries.push(PostureEntry {

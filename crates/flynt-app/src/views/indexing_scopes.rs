@@ -1,5 +1,5 @@
-use flynt_core::models::IndexScope;
 use dioxus::prelude::*;
+use flynt_core::models::IndexScope;
 use std::path::PathBuf;
 
 const KNOWN_KINDS: &[(&str, &str)] = &[
@@ -12,9 +12,7 @@ const KNOWN_KINDS: &[(&str, &str)] = &[
 ];
 
 #[component]
-pub fn IndexingScopesEditor(
-    scopes: Signal<Vec<IndexScope>>,
-) -> Element {
+pub fn IndexingScopesEditor(scopes: Signal<Vec<IndexScope>>) -> Element {
     rsx! {
         div { class: "indexing-scopes-editor",
             if scopes.read().is_empty() {

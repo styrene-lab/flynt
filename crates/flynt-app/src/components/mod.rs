@@ -19,7 +19,7 @@ pub use command_palette::CommandPalette;
 pub use context_menu::{ContextMenu, ContextMenuItem};
 pub use help_hint::HelpHint;
 pub use panel_divider::{PanelDivider, SidebarDivider};
-pub use sidebar::{initial_note_id_for_project, Sidebar};
+pub use sidebar::{Sidebar, initial_note_id_for_project};
 pub use sync_status_pill::SyncStatusPill;
 pub use tab_bar::TabBar;
 pub use task_metadata_strip::TaskMetadataStrip;

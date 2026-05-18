@@ -138,9 +138,15 @@ impl SealedBody {
         let mut key_id = [0u8; 4];
         let mut nonce = [0u8; 12];
         let mut tag = [0u8; 16];
-        if key_id_bytes.len() != 4 { anyhow::bail!("key_id must be 4 bytes"); }
-        if nonce_bytes.len() != 12 { anyhow::bail!("nonce must be 12 bytes"); }
-        if tag_bytes.len() != 16 { anyhow::bail!("tag must be 16 bytes"); }
+        if key_id_bytes.len() != 4 {
+            anyhow::bail!("key_id must be 4 bytes");
+        }
+        if nonce_bytes.len() != 12 {
+            anyhow::bail!("nonce must be 12 bytes");
+        }
+        if tag_bytes.len() != 16 {
+            anyhow::bail!("tag must be 16 bytes");
+        }
         key_id.copy_from_slice(&key_id_bytes);
         nonce.copy_from_slice(&nonce_bytes);
         tag.copy_from_slice(&tag_bytes);

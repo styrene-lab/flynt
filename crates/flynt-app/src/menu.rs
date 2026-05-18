@@ -4,8 +4,8 @@
 //! Menu events are dispatched to the Dioxus app via `use_menu_event_handler`.
 
 use muda::{
-    accelerator::{Accelerator, Code, Modifiers},
     Menu, MenuItem, PredefinedMenuItem, Submenu,
+    accelerator::{Accelerator, Code, Modifiers},
 };
 
 // ── Menu item IDs ────────────────────────────────────────────────────────────
@@ -119,7 +119,10 @@ pub fn build_menu_bar() -> Menu {
                 RENAME_NOTE,
                 "Rename…",
                 true,
-                Some(Accelerator::new(Some(Modifiers::META | Modifiers::SHIFT), Code::KeyR)),
+                Some(Accelerator::new(
+                    Some(Modifiers::META | Modifiers::SHIFT),
+                    Code::KeyR,
+                )),
             ),
             &MenuItem::with_id(DELETE_NOTE, "Move to Trash", true, None),
             &PredefinedMenuItem::separator(),

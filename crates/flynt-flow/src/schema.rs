@@ -158,7 +158,9 @@ pub struct FlowEndpoint {
 // ── Convenience ─────────────────────────────────────────────────────────────
 
 impl Flow {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Find a node by id. O(n); flows are expected to be small (<200 nodes).
     pub fn node(&self, id: &Uuid) -> Option<&FlowNode> {
@@ -176,8 +178,7 @@ impl Flow {
     /// terminating at them, including the empty string.
     pub fn validate(&self) -> ValidationReport {
         // Index nodes by id for O(1) lookups during edge validation.
-        let nodes_by_id: BTreeMap<Uuid, &FlowNode> =
-            self.nodes.iter().map(|n| (n.id, n)).collect();
+        let nodes_by_id: BTreeMap<Uuid, &FlowNode> = self.nodes.iter().map(|n| (n.id, n)).collect();
 
         // Duplicate node ids — detected via the index size mismatch.
         let mut duplicate_node_ids = Vec::new();
@@ -186,7 +187,8 @@ impl Flow {
             for n in &self.nodes {
                 *counts.entry(n.id).or_default() += 1;
             }
-            duplicate_node_ids = counts.into_iter()
+            duplicate_node_ids = counts
+                .into_iter()
                 .filter(|(_, c)| *c > 1)
                 .map(|(id, _)| id)
                 .collect();
@@ -228,12 +230,14 @@ impl Flow {
             // declares sockets at all. Nodes with no declared sockets
             // (typical for Note) match any socket name including "".
             let unknown_source = source_node
-                .map(|n| !n.sockets.is_empty()
-                    && !n.sockets.iter().any(|s| s.name == edge.source.socket))
+                .map(|n| {
+                    !n.sockets.is_empty() && !n.sockets.iter().any(|s| s.name == edge.source.socket)
+                })
                 .unwrap_or(false);
             let unknown_target = target_node
-                .map(|n| !n.sockets.is_empty()
-                    && !n.sockets.iter().any(|s| s.name == edge.target.socket))
+                .map(|n| {
+                    !n.sockets.is_empty() && !n.sockets.iter().any(|s| s.name == edge.target.socket)
+                })
                 .unwrap_or(false);
             if unknown_source || unknown_target {
                 edges_with_unknown_sockets.push(edge.id);
@@ -241,7 +245,9 @@ impl Flow {
         }
 
         for (id, count) in edge_id_seen {
-            if count > 1 { duplicate_edge_ids.push(id); }
+            if count > 1 {
+                duplicate_edge_ids.push(id);
+            }
         }
 
         ValidationReport {

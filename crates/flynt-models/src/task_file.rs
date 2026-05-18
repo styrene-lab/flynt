@@ -89,7 +89,9 @@ pub fn serialize_task_to_markdown(task: &Task) -> String {
                 fm.push_str(&format!("cwd = {}\n", toml_quote(&v.to_string_lossy())));
             }
             if !exec.env.is_empty() {
-                let pairs: Vec<String> = exec.env.iter()
+                let pairs: Vec<String> = exec
+                    .env
+                    .iter()
                     .map(|(k, v)| format!("{k} = {}", toml_quote(v)))
                     .collect();
                 fm.push_str(&format!("env = {{ {} }}\n", pairs.join(", ")));
@@ -111,8 +113,7 @@ pub fn serialize_task_to_markdown(task: &Task) -> String {
 pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
     let body = extract_body(raw);
 
-    let fm_toml =
-        extract_raw_frontmatter(raw).context("task file missing TOML frontmatter")?;
+    let fm_toml = extract_raw_frontmatter(raw).context("task file missing TOML frontmatter")?;
     let val: toml::Value =
         toml::from_str(&fm_toml).context("invalid TOML frontmatter in task file")?;
     let table = val.as_table().context("frontmatter is not a TOML table")?;
@@ -136,10 +137,8 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
             .and_then(|v| v.as_str())
             .map(String::from)
     };
-    let get_int = |key: &str| -> Option<i64> {
-        data.and_then(|d| d.get(key))
-            .and_then(|v| v.as_integer())
-    };
+    let get_int =
+        |key: &str| -> Option<i64> { data.and_then(|d| d.get(key)).and_then(|v| v.as_integer()) };
 
     let board_id = get_str("board")
         .and_then(|s| Uuid::parse_str(&s).ok())
@@ -153,9 +152,7 @@ pub fn parse_task_from_markdown(raw: &str) -> Result<Task> {
         column: get_str("column").unwrap_or_else(|| "Backlog".into()),
         title: get_str("title").unwrap_or_else(|| "Untitled".into()),
         description: body,
-        priority: get_int("priority")
-            .map(int_to_priority)
-            .unwrap_or_default(),
+        priority: get_int("priority").map(int_to_priority).unwrap_or_default(),
         status: get_str("status")
             .as_deref()
             .map(str_to_task_status)
@@ -250,19 +247,40 @@ pub fn extract_body(raw: &str) -> String {
 }
 
 pub fn priority_to_int(p: &Priority) -> i64 {
-    match p { Priority::Low => 1, Priority::Medium => 2, Priority::High => 3, Priority::Critical => 4 }
+    match p {
+        Priority::Low => 1,
+        Priority::Medium => 2,
+        Priority::High => 3,
+        Priority::Critical => 4,
+    }
 }
 
 pub fn int_to_priority(n: i64) -> Priority {
-    match n { 1 => Priority::Low, 3 => Priority::High, 4 => Priority::Critical, _ => Priority::Medium }
+    match n {
+        1 => Priority::Low,
+        3 => Priority::High,
+        4 => Priority::Critical,
+        _ => Priority::Medium,
+    }
 }
 
 pub fn task_status_str(s: &TaskStatus) -> &'static str {
-    match s { TaskStatus::Todo => "todo", TaskStatus::InProgress => "in_progress", TaskStatus::Done => "done", TaskStatus::Archived => "archived" }
+    match s {
+        TaskStatus::Todo => "todo",
+        TaskStatus::InProgress => "in_progress",
+        TaskStatus::Done => "done",
+        TaskStatus::Archived => "archived",
+    }
 }
 
 pub fn str_to_task_status(s: &str) -> TaskStatus {
-    match s { "todo" => TaskStatus::Todo, "in_progress" => TaskStatus::InProgress, "done" => TaskStatus::Done, "archived" => TaskStatus::Archived, _ => TaskStatus::Todo }
+    match s {
+        "todo" => TaskStatus::Todo,
+        "in_progress" => TaskStatus::InProgress,
+        "done" => TaskStatus::Done,
+        "archived" => TaskStatus::Archived,
+        _ => TaskStatus::Todo,
+    }
 }
 
 pub fn str_to_decay_rate(s: &str) -> DecayRate {
@@ -271,7 +289,10 @@ pub fn str_to_decay_rate(s: &str) -> DecayRate {
         "slow" => DecayRate::Slow,
         "natural" => DecayRate::Natural,
         "fast" => DecayRate::Fast,
-        other => other.parse::<f64>().map(DecayRate::Custom).unwrap_or_default(),
+        other => other
+            .parse::<f64>()
+            .map(DecayRate::Custom)
+            .unwrap_or_default(),
     }
 }
 
@@ -323,7 +344,10 @@ mod tests {
 
         let md = serialize_task_to_markdown(&task);
         let parsed = parse_task_from_markdown(&md).unwrap();
-        assert_eq!(parsed.external_refs, vec!["https://github.com/org/repo/issues/42"]);
+        assert_eq!(
+            parsed.external_refs,
+            vec!["https://github.com/org/repo/issues/42"]
+        );
     }
 
     #[test]
@@ -399,7 +423,10 @@ mod tests {
         task.engagement_id = Some(eid.clone());
 
         let md = serialize_task_to_markdown(&task);
-        assert!(md.contains("engagement = "), "expected engagement field in:\n{md}");
+        assert!(
+            md.contains("engagement = "),
+            "expected engagement field in:\n{md}"
+        );
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert_eq!(parsed.engagement_id, Some(eid));
     }
@@ -408,7 +435,10 @@ mod tests {
     fn missing_engagement_round_trips_as_none() {
         let task = sample_task();
         let md = serialize_task_to_markdown(&task);
-        assert!(!md.contains("engagement"), "expected no engagement field in:\n{md}");
+        assert!(
+            !md.contains("engagement"),
+            "expected no engagement field in:\n{md}"
+        );
         let parsed = parse_task_from_markdown(&md).unwrap();
         assert!(parsed.engagement_id.is_none());
     }

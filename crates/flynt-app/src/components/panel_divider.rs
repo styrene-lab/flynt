@@ -11,19 +11,22 @@ pub fn PanelDivider() -> Element {
     // Restore saved width on mount
     use_effect(move || {
         spawn(async {
-            dioxus::prelude::document::eval(r#"
+            dioxus::prelude::document::eval(
+                r#"
                 (function() {
                     var w = localStorage.getItem('flynt-rail-width');
                     if (w) { var el = document.querySelector('.agent-rail'); if (el) el.style.width = w + 'px'; }
                 })()
-            "#);
+            "#,
+            );
         });
     });
 
     // Set up drag entirely in JS — no Dioxus event → JS race
     use_effect(move || {
         spawn(async {
-            dioxus::prelude::document::eval(r#"
+            dioxus::prelude::document::eval(
+                r#"
                 (function() {
                     var d = document.querySelector('.panel-divider:not(.sidebar-divider-handle)');
                     if (!d || d._dragBound) return;
@@ -51,7 +54,8 @@ pub fn PanelDivider() -> Element {
                         document.addEventListener('pointerup', onUp);
                     });
                 })()
-            "#);
+            "#,
+            );
         });
     });
 
@@ -63,18 +67,21 @@ pub fn PanelDivider() -> Element {
 pub fn SidebarDivider() -> Element {
     use_effect(move || {
         spawn(async {
-            dioxus::prelude::document::eval(r#"
+            dioxus::prelude::document::eval(
+                r#"
                 (function() {
                     var w = localStorage.getItem('flynt-sidebar-width');
                     if (w) { var el = document.querySelector('.sidebar'); if (el) el.style.width = w + 'px'; }
                 })()
-            "#);
+            "#,
+            );
         });
     });
 
     use_effect(move || {
         spawn(async {
-            dioxus::prelude::document::eval(r#"
+            dioxus::prelude::document::eval(
+                r#"
                 (function() {
                     var d = document.querySelector('.sidebar-divider-handle');
                     if (!d || d._dragBound) return;
@@ -102,7 +109,8 @@ pub fn SidebarDivider() -> Element {
                         document.addEventListener('pointerup', onUp);
                     });
                 })()
-            "#);
+            "#,
+            );
         });
     });
 

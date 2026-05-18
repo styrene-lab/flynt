@@ -24,7 +24,10 @@ const SHADCN_PRIMITIVES: &[u8] = include_bytes!("../assets/vendor/shadcn-primiti
 /// the canvas still renders without the project-side copy; the only
 /// surface that requires it is the `canvas_*` agent tool family.
 pub fn bootstrap(project_root: &Path) {
-    let dir = project_root.join(".flynt-local").join("flynt").join("assets");
+    let dir = project_root
+        .join(".flynt-local")
+        .join("flynt")
+        .join("assets");
     if let Err(e) = std::fs::create_dir_all(&dir) {
         tracing::warn!("canvas asset dir create failed: {e}");
         return;
@@ -54,8 +57,12 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         bootstrap(tmp.path());
 
-        let presets = tmp.path().join(".flynt-local/flynt/assets/tweakcn-presets.json");
-        let primitives = tmp.path().join(".flynt-local/flynt/assets/shadcn-primitives.json");
+        let presets = tmp
+            .path()
+            .join(".flynt-local/flynt/assets/tweakcn-presets.json");
+        let primitives = tmp
+            .path()
+            .join(".flynt-local/flynt/assets/shadcn-primitives.json");
         assert!(presets.exists(), "presets file should be written");
         assert!(primitives.exists(), "primitives file should be written");
     }
@@ -65,12 +72,19 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         bootstrap(tmp.path());
 
-        let presets = tmp.path().join(".flynt-local/flynt/assets/tweakcn-presets.json");
+        let presets = tmp
+            .path()
+            .join(".flynt-local/flynt/assets/tweakcn-presets.json");
         let parsed: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&presets).unwrap()).unwrap();
-        assert!(parsed.get("default").is_some(), "default theme should be present");
+        assert!(
+            parsed.get("default").is_some(),
+            "default theme should be present"
+        );
 
-        let primitives = tmp.path().join(".flynt-local/flynt/assets/shadcn-primitives.json");
+        let primitives = tmp
+            .path()
+            .join(".flynt-local/flynt/assets/shadcn-primitives.json");
         let parsed: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&primitives).unwrap()).unwrap();
         assert_eq!(parsed["version"], 1);
@@ -81,7 +95,9 @@ mod tests {
     fn bootstrap_is_idempotent() {
         let tmp = TempDir::new().unwrap();
         bootstrap(tmp.path());
-        let path = tmp.path().join(".flynt-local/flynt/assets/tweakcn-presets.json");
+        let path = tmp
+            .path()
+            .join(".flynt-local/flynt/assets/tweakcn-presets.json");
         let mtime1 = std::fs::metadata(&path).unwrap().modified().unwrap();
 
         // Second call shouldn't rewrite an unchanged file.

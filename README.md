@@ -175,6 +175,10 @@ cargo test -p flynt-core -p flynt-store
 | [demo.flynt.styrene.io](https://demo.flynt.styrene.io) | Demo project (clone this to get started) |
 | [demo.flynt.styrene.io/graph](https://demo.flynt.styrene.io/graph/) | Interactive knowledge graph |
 
+## Product Direction
+
+- [Obsidian feature parity pass](design/obsidian-feature-parity.md) tracks the practical migration gaps Flynt needs to close while preserving its own project, task, drawing, sync, and agent model.
+
 ---
 
 ## Ecosystem

@@ -12,10 +12,20 @@ pub struct ContextMenuItem {
 
 impl ContextMenuItem {
     pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
-        Self { id: id.into(), label: label.into(), danger: false, separator_before: false }
+        Self {
+            id: id.into(),
+            label: label.into(),
+            danger: false,
+            separator_before: false,
+        }
     }
     pub fn danger(id: impl Into<String>, label: impl Into<String>) -> Self {
-        Self { id: id.into(), label: label.into(), danger: true, separator_before: false }
+        Self {
+            id: id.into(),
+            label: label.into(),
+            danger: true,
+            separator_before: false,
+        }
     }
     pub fn sep(mut self) -> Self {
         self.separator_before = true;

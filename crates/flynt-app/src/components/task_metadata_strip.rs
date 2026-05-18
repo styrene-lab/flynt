@@ -24,8 +24,8 @@
 //! lost interest.
 
 use crate::components::field_schema::{
-    priority_int_for_label, priority_label_for_int, task_field_schemas, FieldDescriptor, FieldKind,
-    LookupSource,
+    FieldDescriptor, FieldKind, LookupSource, priority_int_for_label, priority_label_for_int,
+    task_field_schemas,
 };
 use dioxus::prelude::*;
 use flynt_core::models::{Board, Engagement, Frontmatter};
@@ -56,9 +56,8 @@ pub fn TaskMetadataStrip(
             .and_then(|v| v.as_str())
             .map(String::from)
     };
-    let get_int = |key: &str| -> Option<i64> {
-        data.and_then(|t| t.get(key)).and_then(|v| v.as_integer())
-    };
+    let get_int =
+        |key: &str| -> Option<i64> { data.and_then(|t| t.get(key)).and_then(|v| v.as_integer()) };
     let get_str_list = |key: &str| -> Vec<String> {
         data.and_then(|t| t.get(key))
             .and_then(|v| v.as_array())
@@ -74,8 +73,7 @@ pub fn TaskMetadataStrip(
     let priority_int = get_int("priority").unwrap_or(2);
     let priority = priority_label_for_int(priority_int).to_string();
     let column = get_str("column").unwrap_or_else(|| "Active".into());
-    let board_id = get_str("board")
-        .and_then(|s| uuid::Uuid::parse_str(&s).ok());
+    let board_id = get_str("board").and_then(|s| uuid::Uuid::parse_str(&s).ok());
     let due_date = get_str("due_date");
     let tags = get_str_list("tags");
     let engagement_id = get_str("engagement");
@@ -86,7 +84,11 @@ pub fn TaskMetadataStrip(
     // yet loaded?) so we never render an empty-looking pill.
     let board_name = board_id
         .and_then(|id| {
-            boards.read().iter().find(|b| b.id.0 == id).map(|b| b.name.clone())
+            boards
+                .read()
+                .iter()
+                .find(|b| b.id.0 == id)
+                .map(|b| b.name.clone())
         })
         .unwrap_or_else(|| {
             board_id

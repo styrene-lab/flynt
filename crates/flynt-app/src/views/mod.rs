@@ -12,7 +12,7 @@ pub mod welcome;
 
 pub use canvas::CanvasView;
 pub use excalidraw::ExcalidrawView;
-pub use flow::{is_flow, FlowView};
+pub use flow::{FlowView, is_flow};
 pub use graph::GraphView;
 pub use indexing_scopes::IndexingScopesEditor;
 pub use kanban::KanbanView;

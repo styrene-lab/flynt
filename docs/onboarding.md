@@ -147,6 +147,26 @@ For users who chose "Create local project" or "Open existing project" and want t
 - Exponential backoff on failures (up to 10 minutes)
 - Mobile enforces minimum 30-second interval
 
+### Sync Activity
+- Desktop toolbar sync status is clickable for Git projects.
+- The Sync Activity panel reports backend, remote, branch, local dirty files, HEAD, and ahead/behind counts when the remote tracking ref is available.
+- The panel keeps session-level run state: current phase, last start/finish timestamps, last outcome, and success/failure counts for the running app instance.
+- `Sync now` runs a manual auto-commit, pull, and push using the configured Git remote/branch.
+- Conflict files from the background sync loop are listed in the panel and can be opened from there when they are indexed markdown documents.
+- Non-Git providers do not expose Git diagnostics. iCloud and desktop cloud providers remain filesystem-sync backends from Flynt's point of view.
+
+### Config boundary
+- `.flynt/config.toml` is project-synced and contains project sync settings such as Git remote, branch, and auto-commit interval.
+- `.flynt-local/` is device-local and gitignored; it contains derived indexes and runtime UI state.
+- Operator/theme/provider credentials are device/operator scoped and are not treated as project content.
+
+### Note recovery
+- Desktop Notes has a `History` action for the active note.
+- `Cmd+P -> Show Note History` opens the same recovery surface.
+- History is Git-backed: it lists commits that touched the active note and previews the selected snapshot as a diff against the current note body.
+- Recovery is non-destructive. `Restore as copy` writes `Recovered/<note> <commit>.md` and opens that copy in a tab instead of overwriting the active note.
+- `Cmd+P -> Create Snapshot` auto-commits, creates a `snapshot-YYYYMMDD-HHMMSS` tag, pushes tags when possible, then opens Note History so the snapshot is part of the same recovery workflow.
+
 ### Credential flow
 Git operations use `git2` with credential callbacks. For **HTTPS URLs** (recommended):
 1. Stored personal access token or OAuth token from `~/.config/omegon/auth.json`

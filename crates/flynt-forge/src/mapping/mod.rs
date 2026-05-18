@@ -183,7 +183,9 @@ impl Default for SyncFields {
     }
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// Mapping from flynt's 5-state status to provider's binary state.
 ///
@@ -193,11 +195,16 @@ fn default_true() -> bool { true }
 /// "closed" upstream. The richer detail rides along in `status_labels`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StatusStateMap {
-    #[serde(default = "open_state")] pub todo: ProviderState,
-    #[serde(default = "open_state")] pub in_progress: ProviderState,
-    #[serde(default = "open_state")] pub review: ProviderState,
-    #[serde(default = "closed_state")] pub done: ProviderState,
-    #[serde(default = "closed_state")] pub archived: ProviderState,
+    #[serde(default = "open_state")]
+    pub todo: ProviderState,
+    #[serde(default = "open_state")]
+    pub in_progress: ProviderState,
+    #[serde(default = "open_state")]
+    pub review: ProviderState,
+    #[serde(default = "closed_state")]
+    pub done: ProviderState,
+    #[serde(default = "closed_state")]
+    pub archived: ProviderState,
 }
 
 impl Default for StatusStateMap {
@@ -225,8 +232,12 @@ impl StatusStateMap {
     }
 }
 
-fn open_state() -> ProviderState { ProviderState::Open }
-fn closed_state() -> ProviderState { ProviderState::Closed }
+fn open_state() -> ProviderState {
+    ProviderState::Open
+}
+fn closed_state() -> ProviderState {
+    ProviderState::Closed
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -277,9 +288,15 @@ impl Default for StatusLabelMap {
 impl StatusLabelMap {
     /// Iterate the configured (status, label) pairs.
     pub fn values(&self) -> impl Iterator<Item = &String> {
-        [&self.in_progress, &self.review, &self.todo, &self.done, &self.archived]
-            .into_iter()
-            .filter_map(|o| o.as_ref())
+        [
+            &self.in_progress,
+            &self.review,
+            &self.todo,
+            &self.done,
+            &self.archived,
+        ]
+        .into_iter()
+        .filter_map(|o| o.as_ref())
     }
 
     pub fn for_status(&self, status: &str) -> Option<&String> {
@@ -295,17 +312,31 @@ impl StatusLabelMap {
 
     /// Reverse-lookup: given a label, return the status it represents.
     pub fn status_for_label(&self, label: &str) -> Option<&'static str> {
-        if self.todo.as_deref() == Some(label) { return Some("todo"); }
-        if self.in_progress.as_deref() == Some(label) { return Some("in_progress"); }
-        if self.review.as_deref() == Some(label) { return Some("review"); }
-        if self.done.as_deref() == Some(label) { return Some("done"); }
-        if self.archived.as_deref() == Some(label) { return Some("archived"); }
+        if self.todo.as_deref() == Some(label) {
+            return Some("todo");
+        }
+        if self.in_progress.as_deref() == Some(label) {
+            return Some("in_progress");
+        }
+        if self.review.as_deref() == Some(label) {
+            return Some("review");
+        }
+        if self.done.as_deref() == Some(label) {
+            return Some("done");
+        }
+        if self.archived.as_deref() == Some(label) {
+            return Some("archived");
+        }
         None
     }
 }
 
-fn default_in_progress_label() -> Option<String> { Some("status:in-progress".into()) }
-fn default_review_label() -> Option<String> { Some("status:review".into()) }
+fn default_in_progress_label() -> Option<String> {
+    Some("status:in-progress".into())
+}
+fn default_review_label() -> Option<String> {
+    Some("status:review".into())
+}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PriorityMapping {
@@ -318,11 +349,15 @@ pub struct PriorityMapping {
 
 impl Default for PriorityMapping {
     fn default() -> Self {
-        Self { label_prefix: "priority:".into() }
+        Self {
+            label_prefix: "priority:".into(),
+        }
     }
 }
 
-fn default_priority_prefix() -> String { "priority:".into() }
+fn default_priority_prefix() -> String {
+    "priority:".into()
+}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DueDateMapping {
@@ -335,7 +370,9 @@ pub struct DueDateMapping {
 
 impl Default for DueDateMapping {
     fn default() -> Self {
-        Self { strategy: DueDateStrategy::Milestone }
+        Self {
+            strategy: DueDateStrategy::Milestone,
+        }
     }
 }
 
@@ -347,7 +384,9 @@ pub enum DueDateStrategy {
     Skip,
 }
 
-fn default_due_strategy() -> DueDateStrategy { DueDateStrategy::Milestone }
+fn default_due_strategy() -> DueDateStrategy {
+    DueDateStrategy::Milestone
+}
 
 // ── Loading ─────────────────────────────────────────────────────────────────
 
@@ -394,19 +433,32 @@ mod tests {
     fn default_status_state_maps_done_to_closed() {
         let cfg = MappingConfig::default();
         assert_eq!(cfg.status_to_state.for_status("todo"), ProviderState::Open);
-        assert_eq!(cfg.status_to_state.for_status("in_progress"), ProviderState::Open);
-        assert_eq!(cfg.status_to_state.for_status("done"), ProviderState::Closed);
-        assert_eq!(cfg.status_to_state.for_status("archived"), ProviderState::Closed);
+        assert_eq!(
+            cfg.status_to_state.for_status("in_progress"),
+            ProviderState::Open
+        );
+        assert_eq!(
+            cfg.status_to_state.for_status("done"),
+            ProviderState::Closed
+        );
+        assert_eq!(
+            cfg.status_to_state.for_status("archived"),
+            ProviderState::Closed
+        );
     }
 
     #[test]
     fn owned_label_prefixes_include_priority_and_status() {
         let cfg = MappingConfig::default();
         let prefixes = cfg.owned_label_prefixes();
-        assert!(prefixes.iter().any(|p| p == "priority:"),
-                "priority prefix present: {prefixes:?}");
-        assert!(prefixes.iter().any(|p| p == "status:"),
-                "status prefix present: {prefixes:?}");
+        assert!(
+            prefixes.iter().any(|p| p == "priority:"),
+            "priority prefix present: {prefixes:?}"
+        );
+        assert!(
+            prefixes.iter().any(|p| p == "status:"),
+            "status prefix present: {prefixes:?}"
+        );
     }
 
     #[test]
@@ -455,8 +507,14 @@ mod tests {
     #[test]
     fn status_label_reverse_lookup() {
         let cfg = MappingConfig::default();
-        assert_eq!(cfg.status_labels.status_for_label("status:in-progress"), Some("in_progress"));
-        assert_eq!(cfg.status_labels.status_for_label("status:review"), Some("review"));
+        assert_eq!(
+            cfg.status_labels.status_for_label("status:in-progress"),
+            Some("in_progress")
+        );
+        assert_eq!(
+            cfg.status_labels.status_for_label("status:review"),
+            Some("review")
+        );
         assert_eq!(cfg.status_labels.status_for_label("priority:high"), None);
         assert_eq!(cfg.status_labels.status_for_label("unrelated"), None);
     }
@@ -484,7 +542,8 @@ strategy = "skip"
 [sync_fields]
 priority = false
 "#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let cfg = load(tmp.path()).unwrap();
         assert_eq!(cfg.priority.label_prefix, "prio:");
@@ -501,7 +560,8 @@ priority = false
         std::fs::write(
             tmp.path().join(".flynt/forge-mapping.toml"),
             "this isn't valid TOML at all =====",
-        ).unwrap();
+        )
+        .unwrap();
         assert!(load(tmp.path()).is_err());
     }
 }

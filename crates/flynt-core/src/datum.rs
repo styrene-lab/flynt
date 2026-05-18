@@ -54,7 +54,9 @@ pub struct DatumRef {
 }
 
 impl Datum {
-    pub fn is_null(&self) -> bool { matches!(self, Self::Null) }
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
 
     pub fn as_text(&self) -> Option<&str> {
         match self {
@@ -109,7 +111,9 @@ impl Datum {
     /// Returns the original Datum unchanged if it's not a UUID-shaped string.
     pub fn try_as_ref(&self) -> Option<DatumRef> {
         match self {
-            Self::Text(s) => Uuid::parse_str(s).ok().map(|id| DatumRef { id, kind: None }),
+            Self::Text(s) => Uuid::parse_str(s)
+                .ok()
+                .map(|id| DatumRef { id, kind: None }),
             Self::Ref(r) => Some(r.clone()),
             _ => None,
         }
@@ -117,7 +121,9 @@ impl Datum {
 }
 
 impl Default for Datum {
-    fn default() -> Self { Self::Null }
+    fn default() -> Self {
+        Self::Null
+    }
 }
 
 // ── Conversion from TOML values ──────────────────────────────────────────────
@@ -148,9 +154,7 @@ impl From<toml::Value> for Datum {
                     Self::Text(s)
                 }
             }
-            toml::Value::Array(arr) => {
-                Self::List(arr.into_iter().map(Datum::from).collect())
-            }
+            toml::Value::Array(arr) => Self::List(arr.into_iter().map(Datum::from).collect()),
             toml::Value::Table(tbl) => {
                 Self::Map(tbl.into_iter().map(|(k, v)| (k, Datum::from(v))).collect())
             }
@@ -169,12 +173,12 @@ impl From<Datum> for toml::Value {
             Datum::Date(d) => toml::Value::String(d.to_string()),
             Datum::Timestamp(ts) => toml::Value::String(ts.to_rfc3339()),
             Datum::Ref(r) => toml::Value::String(r.id.to_string()),
-            Datum::List(v) => {
-                toml::Value::Array(v.into_iter().map(toml::Value::from).collect())
-            }
+            Datum::List(v) => toml::Value::Array(v.into_iter().map(toml::Value::from).collect()),
             Datum::Map(m) => {
-                let tbl: toml::map::Map<String, toml::Value> =
-                    m.into_iter().map(|(k, v)| (k, toml::Value::from(v))).collect();
+                let tbl: toml::map::Map<String, toml::Value> = m
+                    .into_iter()
+                    .map(|(k, v)| (k, toml::Value::from(v)))
+                    .collect();
                 toml::Value::Table(tbl)
             }
         }
@@ -195,9 +199,7 @@ impl From<serde_json::Value> for Datum {
                 }
             }
             serde_json::Value::String(s) => Self::Text(s),
-            serde_json::Value::Array(arr) => {
-                Self::List(arr.into_iter().map(Datum::from).collect())
-            }
+            serde_json::Value::Array(arr) => Self::List(arr.into_iter().map(Datum::from).collect()),
             serde_json::Value::Object(obj) => {
                 Self::Map(obj.into_iter().map(|(k, v)| (k, Datum::from(v))).collect())
             }
@@ -211,11 +213,9 @@ impl From<Datum> for serde_json::Value {
             Datum::Null => serde_json::Value::Null,
             Datum::Bool(b) => serde_json::Value::Bool(b),
             Datum::Int(n) => serde_json::Value::Number(n.into()),
-            Datum::Float(f) => {
-                serde_json::Number::from_f64(f)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null)
-            }
+            Datum::Float(f) => serde_json::Number::from_f64(f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
             Datum::Text(s) => serde_json::Value::String(s),
             Datum::Date(d) => serde_json::Value::String(d.to_string()),
             Datum::Timestamp(ts) => serde_json::Value::String(ts.to_rfc3339()),
@@ -224,8 +224,10 @@ impl From<Datum> for serde_json::Value {
                 serde_json::Value::Array(v.into_iter().map(serde_json::Value::from).collect())
             }
             Datum::Map(m) => {
-                let obj: serde_json::Map<String, serde_json::Value> =
-                    m.into_iter().map(|(k, v)| (k, serde_json::Value::from(v))).collect();
+                let obj: serde_json::Map<String, serde_json::Value> = m
+                    .into_iter()
+                    .map(|(k, v)| (k, serde_json::Value::from(v)))
+                    .collect();
                 serde_json::Value::Object(obj)
             }
         }
@@ -306,7 +308,9 @@ impl EntityKind {
 }
 
 impl Default for EntityKind {
-    fn default() -> Self { Self::Document }
+    fn default() -> Self {
+        Self::Document
+    }
 }
 
 impl Entity {
@@ -420,7 +424,10 @@ impl Entity {
     pub fn to_frontmatter_table(&self) -> toml::Value {
         let mut table = toml::map::Map::new();
         table.insert("id".into(), toml::Value::String(self.id.to_string()));
-        table.insert("kind".into(), toml::Value::String(self.kind.as_str().to_string()));
+        table.insert(
+            "kind".into(),
+            toml::Value::String(self.kind.as_str().to_string()),
+        );
 
         if !self.fields.is_empty() {
             let data: toml::map::Map<String, toml::Value> = self
@@ -863,10 +870,10 @@ mod tests {
         let original = Datum::Map(BTreeMap::from([
             ("name".into(), Datum::Text("test".into())),
             ("count".into(), Datum::Int(7)),
-            ("tags".into(), Datum::List(vec![
-                Datum::Text("a".into()),
-                Datum::Text("b".into()),
-            ])),
+            (
+                "tags".into(),
+                Datum::List(vec![Datum::Text("a".into()), Datum::Text("b".into())]),
+            ),
         ]));
         let json = serde_json::Value::from(original.clone());
         let back = Datum::from(json);
@@ -900,10 +907,13 @@ mod tests {
         let entity = Entity::new(EntityKind::Task)
             .with_field("title", Datum::Text("Fix bug".into()))
             .with_field("priority", Datum::Int(2))
-            .with_field("tags", Datum::List(vec![
-                Datum::Text("bug".into()),
-                Datum::Text("urgent".into()),
-            ]));
+            .with_field(
+                "tags",
+                Datum::List(vec![
+                    Datum::Text("bug".into()),
+                    Datum::Text("urgent".into()),
+                ]),
+            );
 
         let toml_val = entity.to_frontmatter_table();
         let table = toml_val.as_table().unwrap();
@@ -921,10 +931,13 @@ mod tests {
         let entity = Entity::new(EntityKind::DesignNode)
             .with_field("title", Datum::Text("Alpha".into()))
             .with_field("owner", Datum::Text("testuser".into()))
-            .with_field("tags", Datum::List(vec![
-                Datum::Text("backlog".into()),
-                Datum::Text("done".into()),
-            ]));
+            .with_field(
+                "tags",
+                Datum::List(vec![
+                    Datum::Text("backlog".into()),
+                    Datum::Text("done".into()),
+                ]),
+            );
 
         assert_eq!(entity.kind, EntityKind::DesignNode);
         assert_eq!(entity.get_text("title"), Some("Alpha"));
@@ -952,12 +965,18 @@ mod tests {
         // The "project" string is no longer a first-class kind — operators
         // who used it now get an opaque Custom("project") entity (which
         // documents that the rename happened without breaking older files).
-        assert_eq!(EntityKind::from_str("project"), EntityKind::Custom("project".into()));
+        assert_eq!(
+            EntityKind::from_str("project"),
+            EntityKind::Custom("project".into())
+        );
         assert_eq!(EntityKind::from_str("task"), EntityKind::Task);
         assert_eq!(EntityKind::from_str("document"), EntityKind::Document);
         assert_eq!(EntityKind::from_str("repo"), EntityKind::Repo);
         assert_eq!(EntityKind::from_str("link"), EntityKind::Link);
-        assert_eq!(EntityKind::from_str("contact"), EntityKind::Custom("contact".into()));
+        assert_eq!(
+            EntityKind::from_str("contact"),
+            EntityKind::Custom("contact".into())
+        );
         assert!(EntityKind::Repo.is_known());
         assert!(!EntityKind::Custom("sprint".into()).is_known());
     }
@@ -966,7 +985,10 @@ mod tests {
     fn repo_view_from_entity() {
         let repo = Entity::new(EntityKind::Repo)
             .with_field("name", Datum::Text("flynt".into()))
-            .with_field("url", Datum::Text("https://github.com/example-org/codex".into()))
+            .with_field(
+                "url",
+                Datum::Text("https://github.com/example-org/codex".into()),
+            )
             .with_field("provider", Datum::Text("github".into()))
             .with_field("org", Datum::Text("example-org".into()))
             .with_field("default_branch", Datum::Text("main".into()))
@@ -989,12 +1011,18 @@ mod tests {
     fn link_view_from_entity() {
         let link = Entity::new(EntityKind::Link)
             .with_field("title", Datum::Text("Grafana Dashboard".into()))
-            .with_field("url", Datum::Text("https://grafana.internal/d/latency".into()))
+            .with_field(
+                "url",
+                Datum::Text("https://grafana.internal/d/latency".into()),
+            )
             .with_field("link_type", Datum::Text("dashboard".into()))
-            .with_field("tags", Datum::List(vec![
-                Datum::Text("monitoring".into()),
-                Datum::Text("oncall".into()),
-            ]));
+            .with_field(
+                "tags",
+                Datum::List(vec![
+                    Datum::Text("monitoring".into()),
+                    Datum::Text("oncall".into()),
+                ]),
+            );
 
         let view = LinkView::from_entity(&link).unwrap();
         assert_eq!(view.title(), "Grafana Dashboard");
@@ -1025,5 +1053,4 @@ mod tests {
         assert_eq!(view.provider(), Some("github"));
         assert_eq!(view.org(), Some("example-org"));
     }
-
 }

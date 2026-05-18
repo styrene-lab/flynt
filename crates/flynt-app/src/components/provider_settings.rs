@@ -1,8 +1,6 @@
 use crate::bootstrap::AppContext;
-use flynt_core::providers::{
-    self, AuthMethod, CredentialStatus, ProviderInfo,
-};
 use dioxus::prelude::*;
+use flynt_core::providers::{self, AuthMethod, CredentialStatus, ProviderInfo};
 
 #[component]
 pub fn ProviderSettingsSection() -> Element {
@@ -46,9 +44,10 @@ fn ProviderRow(
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
 
     let (status_class, status_text) = match &status {
-        CredentialStatus::Authenticated { source } => {
-            ("provider-status authenticated", format!("Authenticated ({source})"))
-        }
+        CredentialStatus::Authenticated { source } => (
+            "provider-status authenticated",
+            format!("Authenticated ({source})"),
+        ),
         CredentialStatus::Expired => ("provider-status expired", "Expired".to_string()),
         CredentialStatus::Missing => ("provider-status missing", "Not configured".to_string()),
     };

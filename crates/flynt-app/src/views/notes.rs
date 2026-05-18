@@ -1,10 +1,13 @@
 use crate::{
     bootstrap::AppContext,
-    state::{Route, TabState},
+    state::{NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget, Route, TabState},
 };
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
+use flynt_core::models::{DocumentMeta, Frontmatter};
+use flynt_core::parser::parse_document_source;
 use flynt_core::store::ProjectStore;
+use flynt_store::sync::git::{FileHistoryEntry, FileSnapshot, GitSync};
 use std::time::Duration;
 
 #[derive(Clone, PartialEq)]
@@ -19,6 +22,337 @@ enum SaveState {
     Clean,
     Dirty,
     Saved,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum InspectorTab {
+    Links,
+    Outline,
+    Properties,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+struct NoteHeading {
+    level: usize,
+    title: String,
+    anchor: String,
+    line: usize,
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
+struct LinkContext {
+    backlinks: Vec<DocumentMeta>,
+    outgoing: Vec<OutgoingLinkContext>,
+    aliases: Vec<String>,
+    resolved_count: usize,
+    missing_count: usize,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+struct OutgoingLinkContext {
+    target: String,
+    display: Option<String>,
+    anchor: Option<String>,
+    resolved: Option<DocumentMeta>,
+    count: usize,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+struct HistoryPanelState {
+    entries: Vec<FileHistoryEntry>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HistoryDiffKind {
+    Context,
+    Added,
+    Removed,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct HistoryDiffLine {
+    kind: HistoryDiffKind,
+    old_line: Option<usize>,
+    new_line: Option<usize>,
+    text: String,
+}
+
+fn build_line_diff(old: &str, new: &str) -> Vec<HistoryDiffLine> {
+    let old_lines = old.lines().collect::<Vec<_>>();
+    let new_lines = new.lines().collect::<Vec<_>>();
+    let mut lcs = vec![vec![0usize; new_lines.len() + 1]; old_lines.len() + 1];
+
+    for i in (0..old_lines.len()).rev() {
+        for j in (0..new_lines.len()).rev() {
+            lcs[i][j] = if old_lines[i] == new_lines[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    let mut j = 0usize;
+    while i < old_lines.len() || j < new_lines.len() {
+        if i < old_lines.len() && j < new_lines.len() && old_lines[i] == new_lines[j] {
+            out.push(HistoryDiffLine {
+                kind: HistoryDiffKind::Context,
+                old_line: Some(i + 1),
+                new_line: Some(j + 1),
+                text: old_lines[i].to_string(),
+            });
+            i += 1;
+            j += 1;
+        } else if j < new_lines.len() && (i == old_lines.len() || lcs[i][j + 1] >= lcs[i + 1][j]) {
+            out.push(HistoryDiffLine {
+                kind: HistoryDiffKind::Added,
+                old_line: None,
+                new_line: Some(j + 1),
+                text: new_lines[j].to_string(),
+            });
+            j += 1;
+        } else if i < old_lines.len() {
+            out.push(HistoryDiffLine {
+                kind: HistoryDiffKind::Removed,
+                old_line: Some(i + 1),
+                new_line: None,
+                text: old_lines[i].to_string(),
+            });
+            i += 1;
+        }
+    }
+
+    out
+}
+
+fn build_link_context(
+    backlinks: Vec<DocumentMeta>,
+    body: &str,
+    frontmatter: &Frontmatter,
+    mut resolve: impl FnMut(&str) -> Option<DocumentMeta>,
+) -> LinkContext {
+    let (_, _, links) = parse_document_source(body);
+    let mut outgoing = Vec::<OutgoingLinkContext>::new();
+
+    for link in links {
+        if let Some(existing) = outgoing.iter_mut().find(|existing| {
+            existing.target.eq_ignore_ascii_case(&link.target)
+                && existing.anchor == link.anchor
+                && existing.display == link.display
+        }) {
+            existing.count += 1;
+            continue;
+        }
+
+        let resolved = resolve(&link.target);
+        outgoing.push(OutgoingLinkContext {
+            target: link.target,
+            display: link.display,
+            anchor: link.anchor,
+            resolved,
+            count: 1,
+        });
+    }
+
+    let resolved_count = outgoing
+        .iter()
+        .filter(|link| link.resolved.is_some())
+        .count();
+    let missing_count = outgoing.len().saturating_sub(resolved_count);
+
+    LinkContext {
+        backlinks,
+        outgoing,
+        aliases: frontmatter.aliases.clone(),
+        resolved_count,
+        missing_count,
+    }
+}
+
+fn extract_headings(markdown: &str) -> Vec<NoteHeading> {
+    let mut headings = Vec::new();
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut in_fence = false;
+
+    for (idx, line) in markdown.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence || !trimmed.starts_with('#') {
+            continue;
+        }
+
+        let marker_len = trimmed.chars().take_while(|c| *c == '#').count();
+        if marker_len == 0 || marker_len > 6 {
+            continue;
+        }
+        let after = &trimmed[marker_len..];
+        if !after.starts_with(' ') {
+            continue;
+        }
+        let title = after.trim().trim_end_matches('#').trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+
+        let base = heading_anchor(&title);
+        let count = seen.entry(base.clone()).or_insert(0);
+        let anchor = if *count == 0 {
+            base
+        } else {
+            format!("{base}-{}", *count + 1)
+        };
+        *count += 1;
+        headings.push(NoteHeading {
+            level: marker_len,
+            title,
+            anchor,
+            line: idx + 1,
+        });
+    }
+
+    headings
+}
+
+fn heading_anchor(title: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in title.chars().flat_map(|c| c.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if ch.is_whitespace() || ch == '-' {
+            if !last_dash && !out.is_empty() {
+                out.push('-');
+                last_dash = true;
+            }
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "section".into()
+    } else {
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_headings_skipping_fenced_code() {
+        let headings = extract_headings(
+            r#"# Alpha
+
+```md
+## Ignored
+```
+
+## Beta!
+### Beta!
+"#,
+        );
+
+        assert_eq!(
+            headings,
+            vec![
+                NoteHeading {
+                    level: 1,
+                    title: "Alpha".into(),
+                    anchor: "alpha".into(),
+                    line: 1,
+                },
+                NoteHeading {
+                    level: 2,
+                    title: "Beta!".into(),
+                    anchor: "beta".into(),
+                    line: 7,
+                },
+                NoteHeading {
+                    level: 3,
+                    title: "Beta!".into(),
+                    anchor: "beta-2".into(),
+                    line: 8,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn heading_anchor_normalizes_punctuation_and_whitespace() {
+        assert_eq!(
+            heading_anchor(" v1.1 Failover & Redundancy "),
+            "v11-failover-redundancy"
+        );
+        assert_eq!(heading_anchor("!!!"), "section");
+    }
+
+    #[test]
+    fn link_context_preserves_aliases_and_marks_missing_links() {
+        let mut frontmatter = Frontmatter::default();
+        frontmatter.aliases = vec!["Alpha Prime".into()];
+        let resolved = DocumentMeta {
+            id: flynt_core::models::DocumentId(uuid::Uuid::new_v4()),
+            path: "beta.md".into(),
+            title: "Beta".into(),
+            tags: vec![],
+            metadata: Default::default(),
+            entity_kind: None,
+            updated_at: chrono::Utc::now(),
+        };
+
+        let context = build_link_context(
+            vec![],
+            "See [[beta|Beta Display]], [[missing]], and [[beta|Beta Display]].",
+            &frontmatter,
+            |target| {
+                target
+                    .eq_ignore_ascii_case("beta")
+                    .then(|| resolved.clone())
+            },
+        );
+
+        assert_eq!(context.aliases, vec!["Alpha Prime"]);
+        assert_eq!(context.resolved_count, 1);
+        assert_eq!(context.missing_count, 1);
+        assert_eq!(context.outgoing.len(), 2);
+        assert_eq!(context.outgoing[0].count, 2);
+        assert!(context.outgoing[0].resolved.is_some());
+        assert!(context.outgoing[1].resolved.is_none());
+    }
+
+    #[test]
+    fn line_diff_marks_added_removed_and_context_lines() {
+        let diff = build_line_diff(
+            "alpha\nbeta\ngamma\n",
+            "alpha\nbeta changed\ngamma\ndelta\n",
+        );
+
+        assert_eq!(
+            diff.iter().map(|line| line.kind).collect::<Vec<_>>(),
+            vec![
+                HistoryDiffKind::Context,
+                HistoryDiffKind::Added,
+                HistoryDiffKind::Removed,
+                HistoryDiffKind::Context,
+                HistoryDiffKind::Added,
+            ]
+        );
+        assert_eq!(diff[0].old_line, Some(1));
+        assert_eq!(diff[0].new_line, Some(1));
+        assert_eq!(diff[1].old_line, None);
+        assert_eq!(diff[1].new_line, Some(2));
+        assert_eq!(diff[2].old_line, Some(2));
+        assert_eq!(diff[2].new_line, None);
+    }
 }
 
 fn render_html(content: &str) -> String {
@@ -1268,12 +1602,443 @@ document.addEventListener('click', function(e) {
 });
 "#;
 
+#[component]
+fn NoteInspector(
+    tab: Signal<InspectorTab>,
+    body: String,
+    frontmatter: Frontmatter,
+    link_context: Option<LinkContext>,
+    on_open_doc: EventHandler<DocumentMeta>,
+    on_jump_line: EventHandler<usize>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let headings = extract_headings(&body);
+    rsx! {
+        aside { class: "note-inspector",
+            div { class: "note-inspector-header",
+                div { class: "note-inspector-title", "Context" }
+                button {
+                    class: "note-inspector-close",
+                    title: "Close inspector",
+                    onclick: move |_| on_close.call(()),
+                    "\u{00D7}"
+                }
+            }
+            div { class: "note-inspector-tabs",
+                InspectorTabButton { tab, value: InspectorTab::Links, label: "Links" }
+                InspectorTabButton { tab, value: InspectorTab::Outline, label: "Outline" }
+                InspectorTabButton { tab, value: InspectorTab::Properties, label: "Properties" }
+            }
+            div { class: "note-inspector-body",
+                match *tab.read() {
+                    InspectorTab::Links => rsx! {
+                        NoteLinksPanel {
+                            link_context,
+                            on_open_doc,
+                        }
+                    },
+                    InspectorTab::Outline => rsx! {
+                        NoteOutlinePanel {
+                            headings,
+                            on_jump_line,
+                        }
+                    },
+                    InspectorTab::Properties => rsx! {
+                        NotePropertiesPanel {
+                            frontmatter,
+                        }
+                    },
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn InspectorTabButton(
+    tab: Signal<InspectorTab>,
+    value: InspectorTab,
+    label: &'static str,
+) -> Element {
+    let active = *tab.read() == value;
+    rsx! {
+        button {
+            class: if active { "note-inspector-tab active" } else { "note-inspector-tab" },
+            onclick: move |_| *tab.write() = value,
+            "{label}"
+        }
+    }
+}
+
+#[component]
+fn NoteLinksPanel(
+    link_context: Option<LinkContext>,
+    on_open_doc: EventHandler<DocumentMeta>,
+) -> Element {
+    match link_context {
+        None => rsx! { div { class: "note-inspector-empty", "Loading links..." } },
+        Some(ctx) => rsx! {
+            div { class: "note-link-summary",
+                div { class: "note-link-stat",
+                    span { class: "note-link-stat-value", "{ctx.backlinks.len()}" }
+                    span { class: "note-link-stat-label", "backlinks" }
+                }
+                div { class: "note-link-stat",
+                    span { class: "note-link-stat-value", "{ctx.resolved_count}" }
+                    span { class: "note-link-stat-label", "resolved" }
+                }
+                div { class: "note-link-stat missing",
+                    span { class: "note-link-stat-value", "{ctx.missing_count}" }
+                    span { class: "note-link-stat-label", "missing" }
+                }
+            }
+            if !ctx.aliases.is_empty() {
+                div { class: "note-inspector-section compact",
+                    div { class: "note-inspector-section-title", "Accepted aliases" }
+                    div { class: "note-property-chips",
+                        for alias in ctx.aliases {
+                            span { class: "note-property-chip", "{alias}" }
+                        }
+                    }
+                }
+            }
+            div { class: "note-inspector-section",
+                div { class: "note-inspector-section-title",
+                    "Backlinks"
+                    span { class: "note-inspector-count", "{ctx.backlinks.len()}" }
+                }
+                if ctx.backlinks.is_empty() {
+                    div { class: "note-inspector-empty", "No backlinks" }
+                } else {
+                    div { class: "note-inspector-list",
+                        for doc in ctx.backlinks {
+                            {
+                                let meta = doc.clone();
+                                rsx! {
+                                    button {
+                                        class: "note-inspector-item",
+                                        onclick: move |_| on_open_doc.call(meta.clone()),
+                                        span { class: "note-inspector-item-title", "{doc.title}" }
+                                        span { class: "note-inspector-item-meta", "{doc.path.display()}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            div { class: "note-inspector-section",
+                div { class: "note-inspector-section-title",
+                    "Outgoing"
+                    span { class: "note-inspector-count", "{ctx.outgoing.len()}" }
+                }
+                if ctx.outgoing.is_empty() {
+                    div { class: "note-inspector-empty", "No outgoing links" }
+                } else {
+                    div { class: "note-inspector-list",
+                        for link in ctx.outgoing {
+                            {
+                                let label = link.display.clone().unwrap_or_else(|| link.target.clone());
+                                let anchor = link.anchor.clone();
+                                let meta = link.resolved.clone();
+                                let disabled = meta.is_none();
+                                let meta_for_open = meta.clone();
+                                let status = if link.resolved.is_some() { "resolved" } else { "missing" };
+                                let mut classes = "note-inspector-item link-target".to_string();
+                                if disabled {
+                                    classes.push_str(" missing");
+                                }
+                                rsx! {
+                                    button {
+                                        class: "{classes}",
+                                        disabled,
+                                        onclick: move |_| {
+                                            if let Some(doc) = meta_for_open.clone() {
+                                                on_open_doc.call(doc);
+                                            }
+                                        },
+                                        span { class: "note-inspector-item-title", "{label}" }
+                                        span { class: "note-inspector-item-meta",
+                                            "{link.target}"
+                                            if let Some(anchor) = anchor {
+                                                " #{anchor}"
+                                            }
+                                            if link.count > 1 {
+                                                " x{link.count}"
+                                            }
+                                        }
+                                        span { class: "note-link-status {status}", "{status}" }
+                                        if disabled {
+                                            span { class: "note-inspector-item-meta", "No matching note yet" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    }
+}
+
+#[component]
+fn NoteOutlinePanel(headings: Vec<NoteHeading>, on_jump_line: EventHandler<usize>) -> Element {
+    if headings.is_empty() {
+        return rsx! { div { class: "note-inspector-empty", "No headings" } };
+    }
+    rsx! {
+        div { class: "note-inspector-list",
+            for heading in headings {
+                {
+                    let line = heading.line;
+                    let indent = ((heading.level.saturating_sub(1)) * 12).min(60);
+                    rsx! {
+                        button {
+                            class: "note-inspector-item outline-item",
+                            style: "padding-left: calc(var(--space-2) + {indent}px);",
+                            onclick: move |_| on_jump_line.call(line),
+                            span { class: "note-inspector-item-title", "{heading.title}" }
+                            span { class: "note-inspector-item-meta", "line {heading.line} · #{heading.anchor}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NotePropertiesPanel(frontmatter: Frontmatter) -> Element {
+    let kind = frontmatter
+        .kind
+        .clone()
+        .unwrap_or_else(|| "document".into());
+    let status = frontmatter.status.clone().unwrap_or_else(|| "none".into());
+    let id = frontmatter
+        .id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "unmanaged".into());
+    let publication = if frontmatter.publication.enabled {
+        format!("{:?}", frontmatter.publication.visibility).to_lowercase()
+    } else {
+        "disabled".into()
+    };
+    let data_rows = frontmatter_data_rows(&frontmatter);
+
+    rsx! {
+        div { class: "note-properties",
+            PropertyRow { label: "Kind", value: kind }
+            PropertyRow { label: "Status", value: status }
+            PropertyRow { label: "ID", value: id }
+            PropertyRow { label: "Publication", value: publication }
+            div { class: "note-property-block",
+                div { class: "note-property-label", "Tags" }
+                if frontmatter.tags.is_empty() {
+                    div { class: "note-property-empty", "none" }
+                } else {
+                    div { class: "note-property-chips",
+                        for tag in frontmatter.tags {
+                            span { class: "note-property-chip", "#{tag}" }
+                        }
+                    }
+                }
+            }
+            div { class: "note-property-block",
+                div { class: "note-property-label", "Aliases" }
+                if frontmatter.aliases.is_empty() {
+                    div { class: "note-property-empty", "none" }
+                } else {
+                    div { class: "note-property-chips",
+                        for alias in frontmatter.aliases {
+                            span { class: "note-property-chip", "{alias}" }
+                        }
+                    }
+                }
+            }
+            if !data_rows.is_empty() {
+                div { class: "note-property-block",
+                    div { class: "note-property-label", "[data]" }
+                    div { class: "note-property-data",
+                        for (key, value) in data_rows {
+                            div { class: "note-property-data-row",
+                                span { class: "note-property-data-key", "{key}" }
+                                span { class: "note-property-data-value", "{value}" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn PropertyRow(label: &'static str, value: String) -> Element {
+    rsx! {
+        div { class: "note-property-row",
+            span { class: "note-property-label", "{label}" }
+            span { class: "note-property-value", "{value}" }
+        }
+    }
+}
+
+fn frontmatter_data_rows(frontmatter: &Frontmatter) -> Vec<(String, String)> {
+    let Some(data) = frontmatter.data.as_ref().and_then(|v| v.as_table()) else {
+        return vec![];
+    };
+    data.iter()
+        .map(|(key, value)| (key.clone(), compact_toml_value(value)))
+        .collect()
+}
+
+fn compact_toml_value(value: &toml::Value) -> String {
+    match value {
+        toml::Value::String(s) => s.clone(),
+        toml::Value::Integer(v) => v.to_string(),
+        toml::Value::Float(v) => v.to_string(),
+        toml::Value::Boolean(v) => v.to_string(),
+        toml::Value::Datetime(v) => v.to_string(),
+        toml::Value::Array(values) => {
+            let items = values.iter().map(compact_toml_value).collect::<Vec<_>>();
+            format!("[{}]", items.join(", "))
+        }
+        toml::Value::Table(_) => "{...}".into(),
+    }
+}
+
+#[component]
+fn NoteHistoryModal(
+    path: std::path::PathBuf,
+    state: Option<HistoryPanelState>,
+    snapshot: Option<FileSnapshot>,
+    current_body: String,
+    snapshot_error: Option<String>,
+    restore_message: Option<String>,
+    on_close: EventHandler<()>,
+    on_select_commit: EventHandler<String>,
+    on_restore_snapshot: EventHandler<FileSnapshot>,
+) -> Element {
+    let diff_lines = snapshot
+        .as_ref()
+        .map(|snapshot| build_line_diff(&snapshot.content, &current_body))
+        .unwrap_or_default();
+
+    rsx! {
+        div { class: "history-overlay", onclick: move |_| on_close.call(()) }
+        div { class: "history-modal", onclick: move |e| e.stop_propagation(),
+            div { class: "history-header",
+                div {
+                    div { class: "history-title", "Note History" }
+                    div { class: "history-path", "{path.display()}" }
+                }
+                button {
+                    class: "note-inspector-close",
+                    title: "Close history",
+                    onclick: move |_| on_close.call(()),
+                    "\u{00D7}"
+                }
+            }
+            div { class: "history-body",
+                div { class: "history-list",
+                    match state {
+                        None => rsx! { div { class: "note-inspector-empty", "Loading history..." } },
+                        Some(HistoryPanelState { error: Some(error), .. }) => rsx! {
+                            div { class: "history-error", "{error}" }
+                        },
+                        Some(HistoryPanelState { entries, error: None }) => rsx! {
+                            if entries.is_empty() {
+                                div { class: "note-inspector-empty", "No commits found for this note" }
+                            } else {
+                                for entry in entries {
+                                    {
+                                        let commit = entry.commit.clone();
+                                        let timestamp = entry.timestamp.format("%Y-%m-%d %H:%M").to_string();
+                                        rsx! {
+                                            button {
+                                                class: "history-entry",
+                                                onclick: move |_| on_select_commit.call(commit.clone()),
+                                                span { class: "history-entry-summary", "{entry.summary}" }
+                                                span { class: "history-entry-meta",
+                                                    "{entry.short_commit} · {entry.author} · {timestamp}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+                div { class: "history-preview",
+                    if let Some(message) = restore_message {
+                        div { class: "history-restore-message", "{message}" }
+                    }
+                    if let Some(error) = snapshot_error {
+                        div { class: "history-error", "{error}" }
+                    }
+                    if let Some(snapshot) = snapshot {
+                        div { class: "history-preview-toolbar",
+                            div {
+                                div { class: "history-entry-meta", "{snapshot.commit.chars().take(7).collect::<String>()}" }
+                                div { class: "history-diff-caption", "Selected commit compared to current note" }
+                            }
+                            {
+                                let restore_snapshot = snapshot.clone();
+                                rsx! {
+                                    button {
+                                        class: "btn btn-primary btn-sm",
+                                        onclick: move |_| on_restore_snapshot.call(restore_snapshot.clone()),
+                                        "Restore as copy"
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "history-diff-content",
+                            if diff_lines.is_empty() {
+                                div { class: "history-preview-empty", "Snapshot and current note are identical." }
+                            } else {
+                                for line in diff_lines {
+                                    {
+                                        let class = match line.kind {
+                                            HistoryDiffKind::Context => "context",
+                                            HistoryDiffKind::Added => "added",
+                                            HistoryDiffKind::Removed => "removed",
+                                        };
+                                        let marker = match line.kind {
+                                            HistoryDiffKind::Context => " ",
+                                            HistoryDiffKind::Added => "+",
+                                            HistoryDiffKind::Removed => "-",
+                                        };
+                                        let old_line = line.old_line.map(|n| n.to_string()).unwrap_or_default();
+                                        let new_line = line.new_line.map(|n| n.to_string()).unwrap_or_default();
+                                        rsx! {
+                                            div { class: "history-diff-line {class}",
+                                                span { class: "history-diff-gutter old", "{old_line}" }
+                                                span { class: "history-diff-gutter new", "{new_line}" }
+                                                span { class: "history-diff-marker", "{marker}" }
+                                                code { class: "history-diff-text", "{line.text}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        div { class: "history-preview-empty", "Select a commit to preview the note body at that point." }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ── Notes view ──────────────────────────────────────────────────────────────
 
 #[component]
 pub fn NotesView() -> Element {
     let ctx = use_context::<AppContext>();
-    let tab_state = use_context::<Signal<TabState>>();
+    let mut tab_state = use_context::<Signal<TabState>>();
     let mut is_drawing = use_context::<Signal<bool>>();
     let ctx_res = ctx.clone();
     let ctx_save2 = ctx.clone();
@@ -1284,6 +2049,54 @@ pub fn NotesView() -> Element {
     let mut save_state = use_signal(|| SaveState::Clean);
     let mut render_ver = use_signal(|| 0u32);
     let mut conflict_detected = use_signal(|| false);
+    let mut inspector_open = use_signal(|| true);
+    let mut inspector_tab = use_signal(|| InspectorTab::Links);
+    let mut history_open = use_signal(|| false);
+    let mut history_snapshot: Signal<Option<FileSnapshot>> = use_signal(|| None);
+    let mut history_snapshot_error: Signal<Option<String>> = use_signal(|| None);
+    let mut history_restore_message: Signal<Option<String>> = use_signal(|| None);
+    let inspector_command = use_context::<Signal<NoteInspectorCommand>>();
+    let mut last_inspector_command = use_signal(|| 0u64);
+    let history_command = use_context::<Signal<NoteHistoryCommand>>();
+    let mut last_history_command = use_signal(|| 0u64);
+
+    use_effect(move || {
+        let command = *inspector_command.read();
+        if command.version == *last_inspector_command.peek() {
+            return;
+        }
+        *last_inspector_command.write() = command.version;
+        match command.target {
+            NoteInspectorTarget::Toggle => {
+                let open = *inspector_open.peek();
+                *inspector_open.write() = !open;
+            }
+            NoteInspectorTarget::Links => {
+                *inspector_open.write() = true;
+                *inspector_tab.write() = InspectorTab::Links;
+            }
+            NoteInspectorTarget::Outline => {
+                *inspector_open.write() = true;
+                *inspector_tab.write() = InspectorTab::Outline;
+            }
+            NoteInspectorTarget::Properties => {
+                *inspector_open.write() = true;
+                *inspector_tab.write() = InspectorTab::Properties;
+            }
+        }
+    });
+
+    use_effect(move || {
+        let command = *history_command.read();
+        if command.version == *last_history_command.peek() {
+            return;
+        }
+        *last_history_command.write() = command.version;
+        *history_snapshot.write() = None;
+        *history_snapshot_error.write() = None;
+        *history_restore_message.write() = None;
+        *history_open.write() = true;
+    });
 
     // ── Two-phase rendering ───────────────────────────────────────────
     // Phase 1 (instant): read document from SQLite synchronously — <1ms.
@@ -1467,6 +2280,79 @@ pub fn NotesView() -> Element {
                 result
             }
         });
+
+    let link_ctx = ctx.clone();
+    let link_context: Resource<Option<LinkContext>> = use_resource(move || {
+        let _ver = *render_ver.read();
+        let selected_id = tab_state.read().active_id().cloned();
+        let project = link_ctx.project();
+        async move {
+            let Some(doc_id) = selected_id else {
+                return None;
+            };
+            tokio::task::spawn_blocking(move || {
+                let Some(doc) = project.store.get_document(&doc_id)? else {
+                    return Ok(None);
+                };
+                let backlinks = project.store.get_backlinks(&doc_id).unwrap_or_default();
+                let context =
+                    build_link_context(backlinks, &doc.content, &doc.frontmatter, |target| {
+                        project
+                            .store
+                            .find_document_by_slug(&target.to_lowercase())
+                            .ok()
+                            .flatten()
+                    });
+                Ok::<_, anyhow::Error>(Some(context))
+            })
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .flatten()
+        }
+    });
+
+    let history_ctx = ctx.clone();
+    let history_state: Resource<Option<HistoryPanelState>> = use_resource(move || {
+        let is_open = *history_open.read();
+        let selected = doc_data
+            .read()
+            .as_ref()
+            .map(|(_, path, _, _, _)| path.clone());
+        let project = history_ctx.project();
+        async move {
+            if !is_open {
+                return None;
+            }
+            let Some(path) = selected else {
+                return Some(HistoryPanelState {
+                    entries: vec![],
+                    error: Some("No active note selected".into()),
+                });
+            };
+            tokio::task::spawn_blocking(move || {
+                let (remote, branch) = match &project.config.sync {
+                    flynt_core::models::SyncConfig::Git { remote, branch, .. } => {
+                        (remote.clone(), branch.clone())
+                    }
+                    _ => ("origin".into(), "main".into()),
+                };
+                let git = GitSync::new(project.root.clone(), remote, branch);
+                match git.list_file_history(&path, 40) {
+                    Ok(entries) => HistoryPanelState {
+                        entries,
+                        error: None,
+                    },
+                    Err(e) => HistoryPanelState {
+                        entries: vec![],
+                        error: Some(format!("Could not read git history: {e}")),
+                    },
+                }
+            })
+            .await
+            .ok()
+        }
+    });
 
     // The signal that drives CM6 loading. Its (id, body) value is the
     // "last content we asked CM6 to display." The CM6 init effect
@@ -1848,9 +2734,13 @@ pub fn NotesView() -> Element {
     let mut rename_msg: Signal<Option<String>> = use_signal(|| None);
     let path_for_rename = path.clone();
     let ctx_rename = ctx.clone();
+    let history_modal_path = path.clone();
+    let history_select_path = path.clone();
+    let history_restore_path = path.clone();
 
     rsx! {
         crate::components::TabBar {}
+        div { class: "notes-workspace",
         div { class: "notes-pane",
             // Conflict resolution banner
             if *conflict_detected.read() {
@@ -1986,6 +2876,26 @@ pub fn NotesView() -> Element {
                 div { class: "notes-actions",
                     // Save status updated via JS to avoid Dioxus re-render
                     span { class: "save-status" }
+                    button {
+                        class: if *inspector_open.read() { "btn btn-ghost active" } else { "btn btn-ghost" },
+                        title: "Toggle note context",
+                        onclick: move |_| {
+                            let open = *inspector_open.read();
+                            *inspector_open.write() = !open;
+                        },
+                        "Context"
+                    }
+                    button {
+                        class: "btn btn-ghost",
+                        title: "Open note history",
+                        onclick: move |_| {
+                            *history_snapshot.write() = None;
+                            *history_snapshot_error.write() = None;
+                            *history_restore_message.write() = None;
+                            *history_open.write() = true;
+                        },
+                        "History"
+                    }
                     match *mode.read() {
                         EditMode::Live => rsx! {
                             span { class: "mode-hint", "⌘E source" }
@@ -2163,6 +3073,117 @@ pub fn NotesView() -> Element {
             } // rsx block
             } // check_path scope
             } // notes-scroll
+        }
+        if *inspector_open.read() {
+            NoteInspector {
+                tab: inspector_tab,
+                body: edit_body.read().clone(),
+                frontmatter: frontmatter.clone(),
+                link_context: link_context.read().clone().flatten(),
+                on_close: move |_| *inspector_open.write() = false,
+                on_open_doc: move |doc: DocumentMeta| {
+                    tab_state.write().open(doc.id.clone(), doc.title.clone());
+                },
+                on_jump_line: move |line: usize| {
+                    let js = format!(
+                        r#"(function(){{
+                            if(window._flyntCM){{
+                                const line = window._flyntCM.state.doc.line(Math.max(1, {line}));
+                                window._flyntCM.dispatch({{selection: {{anchor: line.from}}, effects: window.CM.EditorView.scrollIntoView(line.from, {{y: "start", yMargin: 24}})}});
+                                window._flyntCM.focus();
+                                return;
+                            }}
+                            const ed = document.getElementById('flynt-editor');
+                            if(ed){{
+                                const lines = ed.value.split('\n');
+                                let pos = 0;
+                                for(let i = 0; i < Math.max(0, {line} - 1) && i < lines.length; i++) pos += lines[i].length + 1;
+                                ed.focus();
+                                ed.setSelectionRange(pos, pos);
+                                ed.scrollTop = Math.max(0, ({line} - 1) * 24);
+                            }}
+                        }})();"#
+                    );
+                    document::eval(&js);
+                },
+            }
+        }
+        if *history_open.read() {
+            NoteHistoryModal {
+                path: history_modal_path.clone(),
+                state: history_state.read().clone().flatten(),
+                snapshot: history_snapshot.read().clone(),
+                current_body: edit_body.read().clone(),
+                snapshot_error: history_snapshot_error.read().clone(),
+                restore_message: history_restore_message.read().clone(),
+                on_close: move |_| *history_open.write() = false,
+                on_select_commit: move |commit: String| {
+                    *history_snapshot.write() = None;
+                    *history_snapshot_error.write() = None;
+                    *history_restore_message.write() = None;
+                    let c = ctx.clone();
+                    let p = history_select_path.clone();
+                    spawn(async move {
+                        let project = c.project();
+                        let (remote, branch) = match &project.config.sync {
+                            flynt_core::models::SyncConfig::Git { remote, branch, .. } => {
+                                (remote.clone(), branch.clone())
+                            }
+                            _ => ("origin".into(), "main".into()),
+                        };
+                        let result = tokio::task::spawn_blocking(move || {
+                            let git = GitSync::new(project.root.clone(), remote, branch);
+                            git.read_file_at_commit(&p, &commit)
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok(snapshot)) => *history_snapshot.write() = Some(snapshot),
+                            Ok(Err(e)) => *history_snapshot_error.write() = Some(format!("Could not load snapshot: {e}")),
+                            Err(e) => *history_snapshot_error.write() = Some(format!("Snapshot load interrupted: {e}")),
+                        }
+                    });
+                },
+                on_restore_snapshot: move |snapshot: FileSnapshot| {
+                    *history_restore_message.write() = None;
+                    let c = ctx.clone();
+                    let original_path = history_restore_path.clone();
+                    spawn(async move {
+                        let project = c.project();
+                        let short = snapshot.commit.chars().take(7).collect::<String>();
+                        let stem = original_path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("note");
+                        let recovered = std::path::PathBuf::from("Recovered")
+                            .join(format!("{stem} {short}.md"));
+                        let save_result = project.save_document_content(&recovered, &snapshot.content);
+                        match save_result {
+                            Ok(()) => {
+                                let _ = project.reindex();
+                                *render_ver.write() += 1;
+                                if let Ok(Some(meta)) = project
+                                    .store
+                                    .get_document_by_path(&recovered)
+                                    .map(|doc| doc.map(|doc| DocumentMeta {
+                                        id: doc.id,
+                                        path: doc.path,
+                                        title: doc.title,
+                                        tags: doc.frontmatter.tags,
+                                        metadata: Default::default(),
+                                        entity_kind: doc.entity.map(|entity| entity.kind),
+                                        updated_at: doc.updated_at,
+                                    }))
+                                {
+                                    tab_state.write().open(meta.id.clone(), meta.title.clone());
+                                }
+                                *history_restore_message.write() = Some(format!("Restored copy to {}", recovered.display()));
+                            }
+                            Err(e) => *history_snapshot_error.write() = Some(format!("Restore failed: {e}")),
+                        }
+                    });
+                },
+            }
+        }
         }
     }
 }

@@ -5,7 +5,7 @@
 //! writes a new config at the destination, and returns the new root path.
 
 use anyhow::{Context, Result};
-use flynt_core::models::{SyncConfig, ProjectConfig};
+use flynt_core::models::{ProjectConfig, SyncConfig};
 use std::path::{Path, PathBuf};
 
 /// Result of a successful migration.
@@ -118,14 +118,11 @@ fn copy_project(src: &Path, dst: &Path) -> Result<usize> {
     std::fs::create_dir_all(dst)?;
     let mut count = 0;
 
-    for entry in walkdir::WalkDir::new(src)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            // Skip local state and git internals
-            name != ".flynt-local" && name != ".git" && name != ".DS_Store"
-        })
-    {
+    for entry in walkdir::WalkDir::new(src).into_iter().filter_entry(|e| {
+        let name = e.file_name().to_string_lossy();
+        // Skip local state and git internals
+        name != ".flynt-local" && name != ".git" && name != ".DS_Store"
+    }) {
         let entry = entry?;
         let relative = entry.path().strip_prefix(src)?;
         if relative.as_os_str().is_empty() {
@@ -155,8 +152,8 @@ fn update_config_sync(project_root: &Path, sync: &SyncConfig) -> Result<()> {
     if config_path.exists() {
         // Preserve existing config — only replace [sync] section
         let existing = std::fs::read_to_string(&config_path)?;
-        let mut doc: toml_edit::DocumentMut = existing.parse()
-            .context("Failed to parse config.toml")?;
+        let mut doc: toml_edit::DocumentMut =
+            existing.parse().context("Failed to parse config.toml")?;
 
         // Serialize just the sync value and merge it in
         let sync_toml = toml::to_string(sync)?;
@@ -194,10 +191,7 @@ fn init_git_if_needed(project_root: &Path, remote: &str, _branch: &str) -> Resul
     // Create .gitignore if it doesn't exist
     let gitignore = project_root.join(".gitignore");
     if !gitignore.exists() {
-        std::fs::write(
-            &gitignore,
-            ".flynt-local/\n.DS_Store\n*.swp\n*~\n",
-        )?;
+        std::fs::write(&gitignore, ".flynt-local/\n.DS_Store\n*.swp\n*~\n")?;
     }
 
     Ok(())
@@ -216,7 +210,8 @@ mod tests {
         std::fs::write(
             root.join(".flynt/config.toml"),
             "project_name = \"test\"\n\n[sync]\nbackend = \"none\"\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(root.join("note.md"), "# Hello").unwrap();
 
         let sync = SyncConfig::Git {
@@ -261,7 +256,8 @@ mod tests {
         std::fs::write(
             root.join(".flynt/config.toml"),
             "project_name = \"test\"\n\n[sync]\nbackend = \"none\"\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let sync = SyncConfig::Git {
             remote: "git@github.com:user/project.git".into(),

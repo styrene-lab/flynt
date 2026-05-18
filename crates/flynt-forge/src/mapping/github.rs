@@ -29,8 +29,16 @@ pub struct GitHubMapper;
 
 impl TaskFieldMapper for GitHubMapper {
     fn task_to_issue_create(&self, task: &Task, cfg: &MappingConfig) -> CreateIssue {
-        let title = if cfg.sync_fields.title { task.title.clone() } else { String::new() };
-        let body = if cfg.sync_fields.description { task.description.clone() } else { String::new() };
+        let title = if cfg.sync_fields.title {
+            task.title.clone()
+        } else {
+            String::new()
+        };
+        let body = if cfg.sync_fields.description {
+            task.description.clone()
+        } else {
+            String::new()
+        };
 
         let mut labels = collect_flynt_labels(task, cfg);
         if cfg.sync_fields.tags {
@@ -242,7 +250,11 @@ fn collect_flynt_labels(task: &Task, cfg: &MappingConfig) -> Vec<String> {
     let mut labels = Vec::new();
 
     if cfg.sync_fields.priority && !cfg.priority.label_prefix.is_empty() {
-        labels.push(format!("{}{}", cfg.priority.label_prefix, priority_to_str(task.priority)));
+        labels.push(format!(
+            "{}{}",
+            cfg.priority.label_prefix,
+            priority_to_str(task.priority)
+        ));
     }
 
     if cfg.sync_fields.status {
@@ -366,10 +378,16 @@ mod tests {
 
         assert_eq!(create.title, "Fix the indexer");
         assert_eq!(create.body, "It eats the task title");
-        assert!(create.labels.contains(&"priority:high".to_string()),
-                "priority label present: {:?}", create.labels);
-        assert!(create.labels.contains(&"status:in-progress".to_string()),
-                "status label present: {:?}", create.labels);
+        assert!(
+            create.labels.contains(&"priority:high".to_string()),
+            "priority label present: {:?}",
+            create.labels
+        );
+        assert!(
+            create.labels.contains(&"status:in-progress".to_string()),
+            "status label present: {:?}",
+            create.labels
+        );
         assert!(create.labels.contains(&"infra".to_string()));
         assert!(create.labels.contains(&"bug".to_string()));
     }
@@ -417,10 +435,10 @@ mod tests {
         // Upstream issue has both operator labels and stale flynt labels.
         let issue = make_issue(
             vec![
-                "good-first-issue".into(),     // operator
-                "infra".into(),                 // operator (will round-trip)
-                "priority:low".into(),         // flynt (stale)
-                "status:review".into(),         // flynt (stale)
+                "good-first-issue".into(), // operator
+                "infra".into(),            // operator (will round-trip)
+                "priority:low".into(),     // flynt (stale)
+                "status:review".into(),    // flynt (stale)
             ],
             IssueState::Open,
         );
@@ -429,14 +447,29 @@ mod tests {
         let new_labels = update.labels.expect("labels updated");
 
         // Operator labels survive.
-        assert!(new_labels.contains(&"good-first-issue".into()), "{new_labels:?}");
+        assert!(
+            new_labels.contains(&"good-first-issue".into()),
+            "{new_labels:?}"
+        );
         assert!(new_labels.contains(&"infra".into()), "{new_labels:?}");
         // Stale flynt labels gone.
-        assert!(!new_labels.contains(&"priority:low".into()), "{new_labels:?}");
-        assert!(!new_labels.contains(&"status:review".into()), "{new_labels:?}");
+        assert!(
+            !new_labels.contains(&"priority:low".into()),
+            "{new_labels:?}"
+        );
+        assert!(
+            !new_labels.contains(&"status:review".into()),
+            "{new_labels:?}"
+        );
         // Fresh flynt labels present.
-        assert!(new_labels.contains(&"priority:high".into()), "{new_labels:?}");
-        assert!(new_labels.contains(&"status:in-progress".into()), "{new_labels:?}");
+        assert!(
+            new_labels.contains(&"priority:high".into()),
+            "{new_labels:?}"
+        );
+        assert!(
+            new_labels.contains(&"status:in-progress".into()),
+            "{new_labels:?}"
+        );
     }
 
     #[test]
@@ -451,7 +484,12 @@ mod tests {
             title: task.title.clone(),
             body: task.description.clone(),
             state: IssueState::Open,
-            labels: vec!["priority:high".into(), "status:in-progress".into(), "infra".into(), "bug".into()],
+            labels: vec![
+                "priority:high".into(),
+                "status:in-progress".into(),
+                "infra".into(),
+                "bug".into(),
+            ],
             milestone: None,
             assignees: vec![],
             created_at: Utc::now(),
@@ -465,7 +503,11 @@ mod tests {
         assert!(update.title.is_none());
         assert!(update.body.is_none());
         assert!(update.state.is_none());
-        assert!(update.labels.is_none(), "labels match — no diff emitted: {:?}", update.labels);
+        assert!(
+            update.labels.is_none(),
+            "labels match — no diff emitted: {:?}",
+            update.labels
+        );
     }
 
     #[test]
@@ -500,7 +542,10 @@ mod tests {
         assert_eq!(patch.status, Some(TaskStatus::InProgress));
         // tags = unprefixed labels only
         let tags = patch.tags.expect("tags set");
-        assert_eq!(tags, vec!["good-first-issue".to_string(), "infra".to_string()]);
+        assert_eq!(
+            tags,
+            vec!["good-first-issue".to_string(), "infra".to_string()]
+        );
     }
 
     #[test]
@@ -509,8 +554,11 @@ mod tests {
         let cfg = MappingConfig::default();
         let issue = make_issue(vec!["priority:high".into()], IssueState::Closed);
         let patch = mapper.issue_to_task_patch(&issue, &cfg);
-        assert_eq!(patch.status, Some(TaskStatus::Done),
-                   "closed state without status: label → Done");
+        assert_eq!(
+            patch.status,
+            Some(TaskStatus::Done),
+            "closed state without status: label → Done"
+        );
     }
 
     #[test]
@@ -520,7 +568,10 @@ mod tests {
         // contain "priority:..." junk).
         let mapper = GitHubMapper;
         let cfg = MappingConfig::default();
-        let issue = make_issue(vec!["priority:weird".into(), "infra".into()], IssueState::Open);
+        let issue = make_issue(
+            vec!["priority:weird".into(), "infra".into()],
+            IssueState::Open,
+        );
         let patch = mapper.issue_to_task_patch(&issue, &cfg);
         assert!(!patch.tags.unwrap().contains(&"priority:weird".to_string()));
         // priority stays default (None — caller decides whether to apply).
@@ -534,7 +585,10 @@ mod tests {
         let mut issue = make_issue(vec![], IssueState::Open);
         issue.milestone = Some("2026-06-01".into());
         let patch = mapper.issue_to_task_patch(&issue, &cfg);
-        assert_eq!(patch.due_date, Some(Some(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap())));
+        assert_eq!(
+            patch.due_date,
+            Some(Some(NaiveDate::from_ymd_opt(2026, 6, 1).unwrap()))
+        );
     }
 
     #[test]

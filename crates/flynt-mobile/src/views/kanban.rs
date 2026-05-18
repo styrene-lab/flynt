@@ -1,9 +1,9 @@
+use crate::bootstrap::MobileRuntime;
+use dioxus::prelude::*;
 use flynt_core::{
     models::{BoardId, Priority, Task, TaskStatus},
-    store::{TaskFilter, ProjectStore},
+    store::{ProjectStore, TaskFilter},
 };
-use dioxus::prelude::*;
-use crate::bootstrap::MobileRuntime;
 
 #[component]
 pub fn KanbanView() -> Element {

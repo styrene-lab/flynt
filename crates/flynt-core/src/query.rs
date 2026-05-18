@@ -18,7 +18,11 @@ use anyhow::Result;
 
 /// Parse and execute a query block, returning rendered HTML.
 pub fn execute_query(source: &str, store: &dyn ProjectStore) -> Result<String> {
-    let lines: Vec<&str> = source.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let lines: Vec<&str> = source
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
     if lines.is_empty() {
         return Ok("<em>Empty query</em>".into());
     }
@@ -48,8 +52,11 @@ fn execute_document_query(lines: &[&str], store: &dyn ProjectStore) -> Result<St
         }
     } else {
         let after = lines[0].get(4..).unwrap_or("").trim();
-        if after.is_empty() { vec!["title".into()] }
-        else { vec![after.trim().to_lowercase()] }
+        if after.is_empty() {
+            vec!["title".into()]
+        } else {
+            vec![after.trim().to_lowercase()]
+        }
     };
 
     // Parse WHERE, SORT, LIMIT
@@ -74,7 +81,12 @@ fn execute_document_query(lines: &[&str], store: &dyn ProjectStore) -> Result<St
                 }
             }
         } else if upper.starts_with("SORT") {
-            let parts: Vec<&str> = line.get(4..).unwrap_or("").trim().split_whitespace().collect();
+            let parts: Vec<&str> = line
+                .get(4..)
+                .unwrap_or("")
+                .trim()
+                .split_whitespace()
+                .collect();
             if let Some(f) = parts.first() {
                 sort_field = f.to_lowercase();
             }
@@ -93,7 +105,11 @@ fn execute_document_query(lines: &[&str], store: &dyn ProjectStore) -> Result<St
 
     // Filter
     if let Some(ref tag) = tag_filter {
-        docs.retain(|d| d.tags.iter().any(|t| t.to_lowercase() == tag.to_lowercase()));
+        docs.retain(|d| {
+            d.tags
+                .iter()
+                .any(|t| t.to_lowercase() == tag.to_lowercase())
+        });
     }
     if let Some(ref search) = title_filter {
         docs.retain(|d| d.title.to_lowercase().contains(search));
@@ -103,11 +119,15 @@ fn execute_document_query(lines: &[&str], store: &dyn ProjectStore) -> Result<St
     match sort_field.as_str() {
         "updated_at" | "updated" | "date" => {
             docs.sort_by(|a, b| a.updated_at.cmp(&b.updated_at));
-            if sort_desc { docs.reverse(); }
+            if sort_desc {
+                docs.reverse();
+            }
         }
         "title" | "name" => {
             docs.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-            if sort_desc { docs.reverse(); }
+            if sort_desc {
+                docs.reverse();
+            }
         }
         _ => {}
     }
@@ -156,7 +176,11 @@ fn execute_task_query(lines: &[&str], store: &dyn ProjectStore) -> Result<String
     // Render as checklist
     let mut html = String::from("<ul class=\"query-tasks\">\n");
     for task in &tasks {
-        let checked = if task.status == TaskStatus::Done { " checked" } else { "" };
+        let checked = if task.status == TaskStatus::Done {
+            " checked"
+        } else {
+            ""
+        };
         let priority_class = match task.priority {
             Priority::Critical => " critical",
             Priority::High => " high",
@@ -183,8 +207,17 @@ fn render_table(docs: &[DocumentMeta], fields: &[String]) -> Result<String> {
         html.push_str("<tr>");
         for f in fields {
             let val = match f.as_str() {
-                "title" | "name" => format!("<a href=\"flynt-note://{}\">[[{}]]</a>", doc.id.0, html_escape(&doc.title)),
-                "tags" => doc.tags.iter().map(|t| format!("<code>{}</code>", html_escape(t))).collect::<Vec<_>>().join(" "),
+                "title" | "name" => format!(
+                    "<a href=\"flynt-note://{}\">[[{}]]</a>",
+                    doc.id.0,
+                    html_escape(&doc.title)
+                ),
+                "tags" => doc
+                    .tags
+                    .iter()
+                    .map(|t| format!("<code>{}</code>", html_escape(t)))
+                    .collect::<Vec<_>>()
+                    .join(" "),
                 "path" => html_escape(&doc.path.display().to_string()),
                 "updated_at" | "updated" | "date" => doc.updated_at.format("%Y-%m-%d").to_string(),
                 _ => String::new(),
@@ -220,12 +253,16 @@ fn extract_quoted(s: &str) -> Option<String> {
     let end = rest.find('"')?;
     let val = &rest[..end];
     // Reject values containing control characters or additional quotes
-    if val.contains('"') || val.contains('\\') { return None; }
+    if val.contains('"') || val.contains('\\') {
+        return None;
+    }
     Some(val.to_string())
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 #[cfg(test)]
@@ -233,9 +270,9 @@ mod tests {
     use super::*;
     use crate::datum::EntityKind;
     use crate::store::{DocumentMetadataFilter, TaskFilter};
-    use std::path::PathBuf;
-    use std::collections::BTreeMap;
     use chrono::{DateTime, Utc};
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
     struct MockStore {
         docs: Vec<DocumentMeta>,
@@ -243,35 +280,81 @@ mod tests {
     }
 
     impl ProjectStore for MockStore {
-        fn get_document(&self, _id: &DocumentId) -> Result<Option<Document>> { Ok(None) }
-        fn get_document_by_path(&self, _path: &std::path::Path) -> Result<Option<Document>> { Ok(None) }
-        fn find_document_by_slug(&self, _slug: &str) -> Result<Option<DocumentMeta>> { Ok(None) }
-        fn list_documents(&self) -> Result<Vec<DocumentMeta>> { Ok(self.docs.clone()) }
-        fn list_documents_by_metadata(&self, _filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
-        fn save_document(&self, _doc: &Document) -> Result<()> { Ok(()) }
-        fn delete_document(&self, _id: &DocumentId) -> Result<()> { Ok(()) }
-        fn search_documents(&self, _query: &str) -> Result<Vec<crate::models::SearchResult>> { Ok(vec![]) }
-        fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
-        fn list_entities_by_kind(&self, _kind: &EntityKind) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
-        fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
-        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
-        fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }
-        fn update_task(&self, _id: &TaskId, _patch: &flynt_models::TaskPatch) -> Result<bool> { Ok(true) }
-        fn delete_task(&self, _id: &TaskId) -> Result<()> { Ok(()) }
-        fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
-        fn list_boards(&self) -> Result<Vec<Board>> { Ok(vec![]) }
-        fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
-        fn delete_board(&self, _id: &BoardId) -> Result<()> { Ok(()) }
+        fn get_document(&self, _id: &DocumentId) -> Result<Option<Document>> {
+            Ok(None)
+        }
+        fn get_document_by_path(&self, _path: &std::path::Path) -> Result<Option<Document>> {
+            Ok(None)
+        }
+        fn find_document_by_slug(&self, _slug: &str) -> Result<Option<DocumentMeta>> {
+            Ok(None)
+        }
+        fn list_documents(&self) -> Result<Vec<DocumentMeta>> {
+            Ok(self.docs.clone())
+        }
+        fn list_documents_by_metadata(
+            &self,
+            _filter: &DocumentMetadataFilter,
+        ) -> Result<Vec<DocumentMeta>> {
+            Ok(vec![])
+        }
+        fn save_document(&self, _doc: &Document) -> Result<()> {
+            Ok(())
+        }
+        fn delete_document(&self, _id: &DocumentId) -> Result<()> {
+            Ok(())
+        }
+        fn search_documents(&self, _query: &str) -> Result<Vec<crate::models::SearchResult>> {
+            Ok(vec![])
+        }
+        fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> {
+            Ok(vec![])
+        }
+        fn list_entities_by_kind(&self, _kind: &EntityKind) -> Result<Vec<DocumentMeta>> {
+            Ok(vec![])
+        }
+        fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> {
+            Ok(None)
+        }
+        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> {
+            Ok(self.tasks.clone())
+        }
+        fn save_task(&self, _task: &Task) -> Result<()> {
+            Ok(())
+        }
+        fn update_task(&self, _id: &TaskId, _patch: &flynt_models::TaskPatch) -> Result<bool> {
+            Ok(true)
+        }
+        fn delete_task(&self, _id: &TaskId) -> Result<()> {
+            Ok(())
+        }
+        fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> {
+            Ok(None)
+        }
+        fn list_boards(&self) -> Result<Vec<Board>> {
+            Ok(vec![])
+        }
+        fn save_board(&self, _board: &Board) -> Result<()> {
+            Ok(())
+        }
+        fn delete_board(&self, _id: &BoardId) -> Result<()> {
+            Ok(())
+        }
         fn get_engagement(
             &self,
             _id: &flynt_models::engagement::EngagementId,
-        ) -> Result<Option<flynt_models::engagement::Engagement>> { Ok(None) }
-        fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> { Ok(vec![]) }
-        fn save_engagement(&self, _e: &flynt_models::engagement::Engagement) -> Result<()> { Ok(()) }
-        fn delete_engagement(
-            &self,
-            _id: &flynt_models::engagement::EngagementId,
-        ) -> Result<bool> { Ok(true) }
+        ) -> Result<Option<flynt_models::engagement::Engagement>> {
+            Ok(None)
+        }
+        fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> {
+            Ok(vec![])
+        }
+        fn save_engagement(&self, _e: &flynt_models::engagement::Engagement) -> Result<()> {
+            Ok(())
+        }
+        fn delete_engagement(&self, _id: &flynt_models::engagement::EngagementId) -> Result<bool> {
+            Ok(true)
+        }
     }
 
     fn doc(title: &str, tags: &[&str]) -> DocumentMeta {
@@ -296,21 +379,30 @@ mod tests {
 
     #[test]
     fn empty_query_returns_message() {
-        let store = MockStore { docs: vec![], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![],
+        };
         let result = execute_query("", &store).unwrap();
         assert!(result.contains("Empty query"));
     }
 
     #[test]
     fn unknown_query_type() {
-        let store = MockStore { docs: vec![], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![],
+        };
         let result = execute_query("FOOBAR stuff", &store).unwrap();
         assert!(result.contains("Unknown query type"));
     }
 
     #[test]
     fn table_default_fields() {
-        let store = MockStore { docs: vec![doc("Alpha", &["tag1"]), doc("Beta", &[])], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![doc("Alpha", &["tag1"]), doc("Beta", &[])],
+            tasks: vec![],
+        };
         let html = execute_query("TABLE", &store).unwrap();
         assert!(html.contains("<table"));
         assert!(html.contains("Alpha"));
@@ -319,7 +411,10 @@ mod tests {
 
     #[test]
     fn table_with_custom_fields() {
-        let store = MockStore { docs: vec![doc("Alpha", &["x"])], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![doc("Alpha", &["x"])],
+            tasks: vec![],
+        };
         let html = execute_query("TABLE title, path", &store).unwrap();
         assert!(html.contains("Alpha"));
         assert!(html.contains("Alpha.md"));
@@ -331,14 +426,18 @@ mod tests {
             docs: vec![doc("Match", &["engineering"]), doc("Skip", &["other"])],
             tasks: vec![],
         };
-        let html = execute_query("TABLE title\nWHERE tags CONTAINS \"engineering\"", &store).unwrap();
+        let html =
+            execute_query("TABLE title\nWHERE tags CONTAINS \"engineering\"", &store).unwrap();
         assert!(html.contains("Match"));
         assert!(!html.contains("Skip"));
     }
 
     #[test]
     fn table_where_title_filter() {
-        let store = MockStore { docs: vec![doc("Hello World", &[]), doc("Goodbye", &[])], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![doc("Hello World", &[]), doc("Goodbye", &[])],
+            tasks: vec![],
+        };
         let html = execute_query("TABLE title\nWHERE title CONTAINS \"hello\"", &store).unwrap();
         assert!(html.contains("Hello World"));
         assert!(!html.contains("Goodbye"));
@@ -346,16 +445,25 @@ mod tests {
 
     #[test]
     fn table_sort_title_desc() {
-        let store = MockStore { docs: vec![doc("Alpha", &[]), doc("Zeta", &[])], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![doc("Alpha", &[]), doc("Zeta", &[])],
+            tasks: vec![],
+        };
         let html = execute_query("TABLE title\nSORT title DESC", &store).unwrap();
         let zeta_pos = html.find("Zeta").unwrap();
         let alpha_pos = html.find("Alpha").unwrap();
-        assert!(zeta_pos < alpha_pos, "Zeta should come before Alpha in DESC");
+        assert!(
+            zeta_pos < alpha_pos,
+            "Zeta should come before Alpha in DESC"
+        );
     }
 
     #[test]
     fn table_limit() {
-        let store = MockStore { docs: vec![doc("A", &[]), doc("B", &[]), doc("C", &[])], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![doc("A", &[]), doc("B", &[]), doc("C", &[])],
+            tasks: vec![],
+        };
         let html = execute_query("TABLE title\nLIMIT 2", &store).unwrap();
         let row_count = html.matches("<tr>").count() - 1;
         assert_eq!(row_count, 2);
@@ -363,7 +471,10 @@ mod tests {
 
     #[test]
     fn list_query() {
-        let store = MockStore { docs: vec![doc("Note One", &[])], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![doc("Note One", &[])],
+            tasks: vec![],
+        };
         let html = execute_query("LIST", &store).unwrap();
         assert!(html.contains("<ul"));
         assert!(html.contains("Note One"));
@@ -373,7 +484,12 @@ mod tests {
     fn task_query_renders_checklist() {
         let store = MockStore {
             docs: vec![],
-            tasks: vec![task("Buy milk", "Backlog", TaskStatus::Todo, Priority::Medium)],
+            tasks: vec![task(
+                "Buy milk",
+                "Backlog",
+                TaskStatus::Todo,
+                Priority::Medium,
+            )],
         };
         let html = execute_query("TASK", &store).unwrap();
         assert!(html.contains("<input type=\"checkbox\""));
@@ -384,7 +500,12 @@ mod tests {
     fn task_query_done_is_checked() {
         let store = MockStore {
             docs: vec![],
-            tasks: vec![task("Done task", "Done", TaskStatus::Done, Priority::Medium)],
+            tasks: vec![task(
+                "Done task",
+                "Done",
+                TaskStatus::Done,
+                Priority::Medium,
+            )],
         };
         let html = execute_query("TASK", &store).unwrap();
         assert!(html.contains("checked"));
@@ -425,7 +546,10 @@ mod tests {
 
     #[test]
     fn extract_quoted_basic() {
-        assert_eq!(extract_quoted("tags CONTAINS \"hello\""), Some("hello".into()));
+        assert_eq!(
+            extract_quoted("tags CONTAINS \"hello\""),
+            Some("hello".into())
+        );
     }
 
     #[test]
@@ -440,7 +564,10 @@ mod tests {
 
     #[test]
     fn table_empty_store() {
-        let store = MockStore { docs: vec![], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![],
+        };
         let html = execute_query("TABLE title", &store).unwrap();
         assert!(html.contains("<table"));
         assert!(html.contains("</table>"));
@@ -450,7 +577,10 @@ mod tests {
 
     #[test]
     fn task_query_empty_store() {
-        let store = MockStore { docs: vec![], tasks: vec![] };
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![],
+        };
         let html = execute_query("TASK", &store).unwrap();
         assert!(html.contains("<ul"));
         assert!(!html.contains("<li"));

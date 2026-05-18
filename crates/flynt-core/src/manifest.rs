@@ -30,7 +30,10 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// The project manifest — serialized as `projects.toml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -82,8 +85,12 @@ pub struct ManifestProject {
     pub auto_commit_seconds: u64,
 }
 
-fn default_branch() -> String { "main".into() }
-fn default_auto_commit() -> u64 { 60 }
+fn default_branch() -> String {
+    "main".into()
+}
+fn default_auto_commit() -> u64 {
+    60
+}
 
 /// Role in a project — determines default mutability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -124,7 +131,11 @@ const LEGACY_MANIFEST_FILENAME: &str = "vaults.toml";
 /// pre-rename installs keep working.
 pub fn load_manifest(manifest_dir: &Path) -> anyhow::Result<ProjectManifest> {
     let path = manifest_dir.join(MANIFEST_FILENAME);
-    let path = if path.exists() { path } else { manifest_dir.join(LEGACY_MANIFEST_FILENAME) };
+    let path = if path.exists() {
+        path
+    } else {
+        manifest_dir.join(LEGACY_MANIFEST_FILENAME)
+    };
     let content = fs::read_to_string(&path)?;
     let manifest: ProjectManifest = toml::from_str(&content)?;
     Ok(manifest)
@@ -145,7 +156,11 @@ pub fn load_manifest_with_local(manifest_dir: &Path) -> anyhow::Result<ProjectMa
     let mut manifest = load_manifest(manifest_dir)?;
 
     let local_path = manifest_dir.join("projects.local.toml");
-    let local_path = if local_path.exists() { local_path } else { manifest_dir.join("vaults.local.toml") };
+    let local_path = if local_path.exists() {
+        local_path
+    } else {
+        manifest_dir.join("vaults.local.toml")
+    };
     if local_path.exists() {
         let content = fs::read_to_string(&local_path)?;
         let local: LocalManifest = toml::from_str(&content)?;
@@ -161,7 +176,9 @@ pub fn load_manifest_with_local(manifest_dir: &Path) -> anyhow::Result<ProjectMa
 
 /// Save the device-local sidecar (not committed to git).
 pub fn save_local_manifest(manifest_dir: &Path, manifest: &ProjectManifest) -> anyhow::Result<()> {
-    let entries: Vec<LocalProjectEntry> = manifest.projects.iter()
+    let entries: Vec<LocalProjectEntry> = manifest
+        .projects
+        .iter()
         .filter_map(|v| {
             v.local_path.as_ref().map(|p| LocalProjectEntry {
                 name: v.name.clone(),
@@ -290,7 +307,10 @@ mod tests {
 
         // Verify main manifest doesn't contain local_path
         let raw = fs::read_to_string(dir.join(MANIFEST_FILENAME)).unwrap();
-        assert!(!raw.contains("local_path"), "local_path should not be in the synced manifest");
+        assert!(
+            !raw.contains("local_path"),
+            "local_path should not be in the synced manifest"
+        );
 
         // Verify sidecar has it
         let raw_local = fs::read_to_string(dir.join("projects.local.toml")).unwrap();
@@ -302,7 +322,10 @@ mod tests {
 
         // Round-trip with local paths
         let loaded = load_manifest_with_local(dir).unwrap();
-        assert_eq!(loaded.projects[0].local_path, Some(PathBuf::from("/Users/me/projects/test")));
+        assert_eq!(
+            loaded.projects[0].local_path,
+            Some(PathBuf::from("/Users/me/projects/test"))
+        );
     }
 
     #[test]
@@ -312,27 +335,37 @@ mod tests {
             projects: vec![],
         };
 
-        add_project(&mut manifest, ManifestProject {
-            name: "First".into(),
-            repo: "git@example.com:first.git".into(),
-            branch: "main".into(),
-            role: ProjectRole::Owner,
-            hub: None,
-            local_path: None,
-            auto_commit_seconds: 60,
-        }).unwrap();
+        add_project(
+            &mut manifest,
+            ManifestProject {
+                name: "First".into(),
+                repo: "git@example.com:first.git".into(),
+                branch: "main".into(),
+                role: ProjectRole::Owner,
+                hub: None,
+                local_path: None,
+                auto_commit_seconds: 60,
+            },
+        )
+        .unwrap();
         assert_eq!(manifest.projects.len(), 1);
 
         // Duplicate name should fail
-        assert!(add_project(&mut manifest, ManifestProject {
-            name: "First".into(),
-            repo: "git@example.com:other.git".into(),
-            branch: "main".into(),
-            role: ProjectRole::Owner,
-            hub: None,
-            local_path: None,
-            auto_commit_seconds: 60,
-        }).is_err());
+        assert!(
+            add_project(
+                &mut manifest,
+                ManifestProject {
+                    name: "First".into(),
+                    repo: "git@example.com:other.git".into(),
+                    branch: "main".into(),
+                    role: ProjectRole::Owner,
+                    hub: None,
+                    local_path: None,
+                    auto_commit_seconds: 60,
+                }
+            )
+            .is_err()
+        );
 
         remove_project(&mut manifest, "First").unwrap();
         assert!(manifest.projects.is_empty());
@@ -384,7 +417,11 @@ mod tests {
                 auto_commit_seconds: 60,
             }],
         };
-        fs::write(tmp.path().join("vaults.toml"), toml::to_string_pretty(&with_entry).unwrap()).unwrap();
+        fs::write(
+            tmp.path().join("vaults.toml"),
+            toml::to_string_pretty(&with_entry).unwrap(),
+        )
+        .unwrap();
         fs::write(tmp.path().join(MANIFEST_FILENAME), empty_manifest_toml()).unwrap();
         // The new file (empty) wins, proving we don't silently read the legacy
         // copy when both are present.
@@ -398,18 +435,23 @@ mod tests {
         // Both the new and legacy main file are absent of a local_path entry,
         // but a legacy `vaults.local.toml` carries one. The loader should
         // pick it up.
-        fs::write(tmp.path().join(MANIFEST_FILENAME), toml::to_string_pretty(&ProjectManifest {
-            identity: ManifestIdentity::default(),
-            projects: vec![ManifestProject {
-                name: "Test".into(),
-                repo: "git@example.com:test.git".into(),
-                branch: "main".into(),
-                role: ProjectRole::Owner,
-                hub: None,
-                local_path: None,
-                auto_commit_seconds: 60,
-            }],
-        }).unwrap()).unwrap();
+        fs::write(
+            tmp.path().join(MANIFEST_FILENAME),
+            toml::to_string_pretty(&ProjectManifest {
+                identity: ManifestIdentity::default(),
+                projects: vec![ManifestProject {
+                    name: "Test".into(),
+                    repo: "git@example.com:test.git".into(),
+                    branch: "main".into(),
+                    role: ProjectRole::Owner,
+                    hub: None,
+                    local_path: None,
+                    auto_commit_seconds: 60,
+                }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
 
         let local = LocalManifest {
             projects: vec![LocalProjectEntry {
@@ -417,9 +459,16 @@ mod tests {
                 local_path: PathBuf::from("/legacy/path"),
             }],
         };
-        fs::write(tmp.path().join("vaults.local.toml"), toml::to_string_pretty(&local).unwrap()).unwrap();
+        fs::write(
+            tmp.path().join("vaults.local.toml"),
+            toml::to_string_pretty(&local).unwrap(),
+        )
+        .unwrap();
 
         let loaded = load_manifest_with_local(tmp.path()).unwrap();
-        assert_eq!(loaded.projects[0].local_path, Some(PathBuf::from("/legacy/path")));
+        assert_eq!(
+            loaded.projects[0].local_path,
+            Some(PathBuf::from("/legacy/path"))
+        );
     }
 }

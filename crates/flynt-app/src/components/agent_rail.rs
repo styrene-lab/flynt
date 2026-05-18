@@ -1062,11 +1062,7 @@ fn handle_acp_event(
             let disconnect_msg = output
                 .as_deref()
                 .filter(|msg| is_transport_disconnect(msg))
-                .or_else(|| {
-                    title
-                        .as_deref()
-                        .filter(|msg| is_transport_disconnect(msg))
-                })
+                .or_else(|| title.as_deref().filter(|msg| is_transport_disconnect(msg)))
                 .or_else(|| (!st.is_empty() && is_transport_disconnect(st)).then_some(st.as_str()));
 
             if let Some(msg) = disconnect_msg {
@@ -1200,13 +1196,17 @@ mod tests {
     #[test]
     fn detects_broken_pipe_transport_errors() {
         assert!(is_transport_disconnect("Broken pipe (os error 32)"));
-        assert!(is_transport_disconnect("ACP transport disconnected: connection closed"));
+        assert!(is_transport_disconnect(
+            "ACP transport disconnected: connection closed"
+        ));
         assert!(is_transport_disconnect("extension process not running"));
     }
 
     #[test]
     fn ignores_non_transport_errors() {
-        assert!(!is_transport_disconnect("Authentication error: token expired"));
+        assert!(!is_transport_disconnect(
+            "Authentication error: token expired"
+        ));
         assert!(!is_transport_disconnect("invalid params: missing path"));
     }
 }

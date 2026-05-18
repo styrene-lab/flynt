@@ -2,15 +2,15 @@ use async_trait::async_trait;
 use flynt_core::{
     graph::{build_graph_payload, format_kind},
     models::{Board, Task},
-    store::{TaskFilter, ProjectStore},
+    store::{ProjectStore, TaskFilter},
 };
 use flynt_store::project::Project;
 use omegon_extension::Extension;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use crate::{drawing_tools, flow_tools};
 use crate::forge_tools::{self, SecretBag};
+use crate::{drawing_tools, flow_tools};
 
 pub struct FlyntExtension {
     project: Arc<Project>,
@@ -32,8 +32,12 @@ impl FlyntExtension {
 
 #[async_trait]
 impl Extension for FlyntExtension {
-    fn name(&self) -> &str { "flynt" }
-    fn version(&self) -> &str { env!("CARGO_PKG_VERSION") }
+    fn name(&self) -> &str {
+        "flynt"
+    }
+    fn version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
 
     async fn handle_rpc(&self, method: &str, params: Value) -> omegon_extension::Result<Value> {
         match method {
@@ -647,9 +651,9 @@ impl Extension for FlyntExtension {
             }
 
             "execute_move_document" => {
-                let from_path = params["from_path"]
-                    .as_str()
-                    .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'from_path'"))?;
+                let from_path = params["from_path"].as_str().ok_or_else(|| {
+                    omegon_extension::Error::invalid_params("missing 'from_path'")
+                })?;
                 let to_path = params["to_path"]
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'to_path'"))?;
@@ -674,7 +678,9 @@ impl Extension for FlyntExtension {
                     .store
                     .get_document_by_path(std::path::Path::new(path))
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
-                    .ok_or_else(|| omegon_extension::Error::internal_error(format!("not found: {path}")))?;
+                    .ok_or_else(|| {
+                        omegon_extension::Error::internal_error(format!("not found: {path}"))
+                    })?;
                 let links = self
                     .project
                     .store
@@ -723,19 +729,28 @@ impl Extension for FlyntExtension {
                     .map(|raw| {
                         uuid::Uuid::parse_str(raw)
                             .map(flynt_core::models::BoardId)
-                            .map_err(|_| omegon_extension::Error::invalid_params("invalid 'board_id'"))
+                            .map_err(|_| {
+                                omegon_extension::Error::invalid_params("invalid 'board_id'")
+                            })
                     })
                     .transpose()?;
                 let column = params["column"].as_str().map(str::to_string);
-                let tags: Vec<String> = params.get("tags")
+                let tags: Vec<String> = params
+                    .get("tags")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
-                let status = params.get("status")
+                let status = params
+                    .get("status")
                     .and_then(|v| v.as_str())
                     .map(|s| {
-                        serde_json::from_value::<flynt_core::models::TaskStatus>(json!(s))
-                            .map_err(|e| omegon_extension::Error::invalid_params(format!("status: {e}")))
+                        serde_json::from_value::<flynt_core::models::TaskStatus>(json!(s)).map_err(
+                            |e| omegon_extension::Error::invalid_params(format!("status: {e}")),
+                        )
                     })
                     .transpose()?;
                 let tasks = self
@@ -772,10 +787,10 @@ impl Extension for FlyntExtension {
                 let board_id = params["board_id"]
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'board_id'"))?;
-                let board_id = flynt_core::models::BoardId(
-                    uuid::Uuid::parse_str(board_id)
-                        .map_err(|_| omegon_extension::Error::invalid_params("invalid 'board_id'"))?,
-                );
+                let board_id =
+                    flynt_core::models::BoardId(uuid::Uuid::parse_str(board_id).map_err(|_| {
+                        omegon_extension::Error::invalid_params("invalid 'board_id'")
+                    })?);
                 let column = params["column"]
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'column'"))?;
@@ -795,11 +810,10 @@ impl Extension for FlyntExtension {
                 let id_str = params["id"]
                     .as_str()
                     .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'id'"))?;
-                let task_id = flynt_core::models::TaskId(
-                    uuid::Uuid::parse_str(id_str).map_err(|_| {
+                let task_id =
+                    flynt_core::models::TaskId(uuid::Uuid::parse_str(id_str).map_err(|_| {
                         omegon_extension::Error::invalid_params("invalid 'id' (not a UUID)")
-                    })?,
-                );
+                    })?);
 
                 let mut patch = flynt_core::models::TaskPatch::default();
                 if let Some(v) = params.get("column").and_then(|v| v.as_str()) {
@@ -813,19 +827,31 @@ impl Extension for FlyntExtension {
                 }
                 if let Some(v) = params.get("priority").and_then(|v| v.as_str()) {
                     let pr: flynt_core::models::Priority = serde_json::from_value(json!(v))
-                        .map_err(|e| omegon_extension::Error::invalid_params(format!("priority: {e}")))?;
+                        .map_err(|e| {
+                            omegon_extension::Error::invalid_params(format!("priority: {e}"))
+                        })?;
                     patch.priority = Some(pr);
                 }
                 if let Some(v) = params.get("status").and_then(|v| v.as_str()) {
                     let st: flynt_core::models::TaskStatus = serde_json::from_value(json!(v))
-                        .map_err(|e| omegon_extension::Error::invalid_params(format!("status: {e}")))?;
+                        .map_err(|e| {
+                            omegon_extension::Error::invalid_params(format!("status: {e}"))
+                        })?;
                     patch.status = Some(st);
                 }
                 if let Some(arr) = params.get("tags").and_then(|v| v.as_array()) {
-                    patch.tags = Some(arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+                    patch.tags = Some(
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect(),
+                    );
                 }
                 if let Some(arr) = params.get("external_refs").and_then(|v| v.as_array()) {
-                    patch.external_refs = Some(arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+                    patch.external_refs = Some(
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect(),
+                    );
                 }
                 if let Some(v) = params.get("position").and_then(|v| v.as_u64()) {
                     patch.position = Some(v as u32);
@@ -843,7 +869,11 @@ impl Extension for FlyntExtension {
                 }
                 if let Some(v) = params.get("openspec_change").and_then(|v| v.as_str()) {
                     // Empty string clears; non-empty sets.
-                    patch.openspec_change = if v.is_empty() { Some(None) } else { Some(Some(v.to_string())) };
+                    patch.openspec_change = if v.is_empty() {
+                        Some(None)
+                    } else {
+                        Some(Some(v.to_string()))
+                    };
                 }
                 if let Some(v) = params.get("execution") {
                     // Explicit null clears; object sets; missing field
@@ -851,8 +881,10 @@ impl Extension for FlyntExtension {
                     if v.is_null() {
                         patch.execution = Some(None);
                     } else {
-                        let parsed: flynt_core::models::ExecutionSpec = serde_json::from_value(v.clone())
-                            .map_err(|e| omegon_extension::Error::invalid_params(format!("execution: {e}")))?;
+                        let parsed: flynt_core::models::ExecutionSpec =
+                            serde_json::from_value(v.clone()).map_err(|e| {
+                                omegon_extension::Error::invalid_params(format!("execution: {e}"))
+                            })?;
                         patch.execution = Some(Some(parsed));
                     }
                 }
@@ -916,7 +948,9 @@ impl Extension for FlyntExtension {
                     .store
                     .get_document_by_path(std::path::Path::new(path))
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?
-                    .ok_or_else(|| omegon_extension::Error::internal_error(format!("not found: {path}")))?;
+                    .ok_or_else(|| {
+                        omegon_extension::Error::internal_error(format!("not found: {path}"))
+                    })?;
 
                 // Guard: refuse to overwrite an existing design node
                 if let Some(ref entity) = doc.entity {
@@ -978,22 +1012,28 @@ impl Extension for FlyntExtension {
                         .get_document(&meta.id)
                         .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
-                    let (node_status, node_parent, node_priority, node_issue_type, open_questions_count, deps_count) =
-                        if let Some(ref d) = doc {
-                            if let Some(ref entity) = d.entity {
-                                let s = entity.get_text("status").unwrap_or("seed").to_string();
-                                let p = entity.get_text("parent").map(String::from);
-                                let pr = entity.get_int("priority");
-                                let it = entity.get_text("issue_type").map(String::from);
-                                let oq = entity.get_text_list("open_questions").len();
-                                let dc = entity.get_text_list("dependencies").len();
-                                (s, p, pr, it, oq, dc)
-                            } else {
-                                ("seed".into(), None, None, None, 0, 0)
-                            }
+                    let (
+                        node_status,
+                        node_parent,
+                        node_priority,
+                        node_issue_type,
+                        open_questions_count,
+                        deps_count,
+                    ) = if let Some(ref d) = doc {
+                        if let Some(ref entity) = d.entity {
+                            let s = entity.get_text("status").unwrap_or("seed").to_string();
+                            let p = entity.get_text("parent").map(String::from);
+                            let pr = entity.get_int("priority");
+                            let it = entity.get_text("issue_type").map(String::from);
+                            let oq = entity.get_text_list("open_questions").len();
+                            let dc = entity.get_text_list("dependencies").len();
+                            (s, p, pr, it, oq, dc)
                         } else {
                             ("seed".into(), None, None, None, 0, 0)
-                        };
+                        }
+                    } else {
+                        ("seed".into(), None, None, None, 0, 0)
+                    };
 
                     // Apply status filter if provided
                     if let Some(sf) = status_filter {
@@ -1039,9 +1079,9 @@ impl Extension for FlyntExtension {
                 let excalidraw_file = format!("{name}.excalidraw");
                 let excalidraw_abs = drawings_dir.join(&excalidraw_file);
                 if excalidraw_abs.exists() {
-                    return Err(omegon_extension::Error::internal_error(
-                        format!("Drawing already exists: drawings/{excalidraw_file}. Use a different name."),
-                    ));
+                    return Err(omegon_extension::Error::internal_error(format!(
+                        "Drawing already exists: drawings/{excalidraw_file}. Use a different name."
+                    )));
                 }
                 let scene_content = scene.unwrap_or(
                     r#"{"type":"excalidraw","version":2,"elements":[],"appState":{"viewBackgroundColor":"transparent","theme":"dark"}}"#
@@ -1103,9 +1143,9 @@ impl Extension for FlyntExtension {
                 let d2_file = format!("{name}.d2");
                 let d2_abs = dir.join(&d2_file);
                 if d2_abs.exists() {
-                    return Err(omegon_extension::Error::internal_error(
-                        format!("Diagram already exists: {directory}/{d2_file}. Use a different name."),
-                    ));
+                    return Err(omegon_extension::Error::internal_error(format!(
+                        "Diagram already exists: {directory}/{d2_file}. Use a different name."
+                    )));
                 }
                 std::fs::write(&d2_abs, source)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
@@ -1161,7 +1201,8 @@ impl Extension for FlyntExtension {
                         .get_document(&meta.id)
                         .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
-                    let view = doc.as_ref()
+                    let view = doc
+                        .as_ref()
                         .and_then(|d| d.entity.as_ref())
                         .and_then(flynt_core::datum::WorkspaceLeaseView::from_entity);
 
@@ -1211,38 +1252,56 @@ impl Extension for FlyntExtension {
                 let search = params["search"].as_str().unwrap_or("");
                 let min_degree = params["min_degree"].as_u64().unwrap_or(0) as u32;
 
-                let mut degree: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+                let mut degree: std::collections::HashMap<&str, u32> =
+                    std::collections::HashMap::new();
                 for edge in &payload.edges {
                     *degree.entry(&edge.source).or_default() += 1;
                     *degree.entry(&edge.target).or_default() += 1;
                 }
 
                 let search_lower = search.to_lowercase();
-                let nodes: Vec<_> = payload.nodes.iter().filter(|n| {
-                    if let Some(k) = kind_filter {
-                        if format_kind(&n.kind) != k { return false; }
-                    }
-                    if let Some(g) = group_filter {
-                        if n.group != g { return false; }
-                    }
-                    if let Some(t) = tag_filter {
-                        if !n.tags.contains(&t.to_string()) { return false; }
-                    }
-                    if !search_lower.is_empty() && !n.title.to_lowercase().contains(&search_lower) {
-                        return false;
-                    }
-                    if min_degree > 0 {
-                        if degree.get(n.id.as_str()).copied().unwrap_or(0) < min_degree { return false; }
-                    }
-                    true
-                }).collect();
+                let nodes: Vec<_> = payload
+                    .nodes
+                    .iter()
+                    .filter(|n| {
+                        if let Some(k) = kind_filter {
+                            if format_kind(&n.kind) != k {
+                                return false;
+                            }
+                        }
+                        if let Some(g) = group_filter {
+                            if n.group != g {
+                                return false;
+                            }
+                        }
+                        if let Some(t) = tag_filter {
+                            if !n.tags.contains(&t.to_string()) {
+                                return false;
+                            }
+                        }
+                        if !search_lower.is_empty()
+                            && !n.title.to_lowercase().contains(&search_lower)
+                        {
+                            return false;
+                        }
+                        if min_degree > 0 {
+                            if degree.get(n.id.as_str()).copied().unwrap_or(0) < min_degree {
+                                return false;
+                            }
+                        }
+                        true
+                    })
+                    .collect();
 
-                let mut ids: std::collections::HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+                let mut ids: std::collections::HashSet<&str> =
+                    nodes.iter().map(|n| n.id.as_str()).collect();
 
                 // Design node filter: also include direct dependency targets
                 // so the graph shows what design nodes depend on.
                 if kind_filter == Some("design_node") {
-                    let dep_targets: Vec<&str> = payload.edges.iter()
+                    let dep_targets: Vec<&str> = payload
+                        .edges
+                        .iter()
                         .filter(|e| {
                             ids.contains(e.source.as_str())
                                 && (e.kind == flynt_core::graph::GraphEdgeKind::Dependency
@@ -1251,7 +1310,9 @@ impl Extension for FlyntExtension {
                         .map(|e| e.target.as_str())
                         .collect();
                     // Also include parent sources for ParentChild edges
-                    let parent_sources: Vec<&str> = payload.edges.iter()
+                    let parent_sources: Vec<&str> = payload
+                        .edges
+                        .iter()
                         .filter(|e| {
                             ids.contains(e.target.as_str())
                                 && e.kind == flynt_core::graph::GraphEdgeKind::ParentChild
@@ -1267,11 +1328,15 @@ impl Extension for FlyntExtension {
                 }
 
                 // Re-collect nodes including any added dependency/parent targets
-                let nodes: Vec<_> = payload.nodes.iter()
+                let nodes: Vec<_> = payload
+                    .nodes
+                    .iter()
                     .filter(|n| ids.contains(n.id.as_str()))
                     .collect();
 
-                let edges: Vec<_> = payload.edges.iter()
+                let edges: Vec<_> = payload
+                    .edges
+                    .iter()
                     .filter(|e| ids.contains(e.source.as_str()) && ids.contains(e.target.as_str()))
                     .collect();
 
@@ -1293,18 +1358,23 @@ impl Extension for FlyntExtension {
                 let payload = build_graph_payload(&*self.project.store)
                     .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
-                let connected_edges: Vec<_> = payload.edges.iter()
+                let connected_edges: Vec<_> = payload
+                    .edges
+                    .iter()
                     .filter(|e| e.source == node_id || e.target == node_id)
                     .collect();
 
-                let mut neighbor_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                let mut neighbor_ids: std::collections::HashSet<&str> =
+                    std::collections::HashSet::new();
                 neighbor_ids.insert(node_id);
                 for edge in &connected_edges {
                     neighbor_ids.insert(&edge.source);
                     neighbor_ids.insert(&edge.target);
                 }
 
-                let neighbor_nodes: Vec<_> = payload.nodes.iter()
+                let neighbor_nodes: Vec<_> = payload
+                    .nodes
+                    .iter()
                     .filter(|n| neighbor_ids.contains(n.id.as_str()))
                     .collect();
 
@@ -1413,9 +1483,11 @@ impl Extension for FlyntExtension {
 
             "execute_engagement_create" => forge_tools::engagement_create(&self.project, params),
             "execute_engagement_update" => forge_tools::engagement_update(&self.project, params),
-            "execute_engagement_list"   => forge_tools::engagement_list(&self.project, params),
+            "execute_engagement_list" => forge_tools::engagement_list(&self.project, params),
             "execute_engagement_status" => forge_tools::engagement_status(&self.project, params),
-            "execute_forge_status"      => forge_tools::forge_status(&self.project, &self.secrets, params),
+            "execute_forge_status" => {
+                forge_tools::forge_status(&self.project, &self.secrets, params)
+            }
             "execute_forge_list_issues" => {
                 forge_tools::forge_list_issues(&self.project, &self.secrets, params).await
             }
@@ -1425,13 +1497,13 @@ impl Extension for FlyntExtension {
             "execute_forge_create_issue" => {
                 forge_tools::forge_create_issue(&self.project, &self.secrets, params).await
             }
-            "execute_log_work"          => forge_tools::log_work(&self.project, params),
-            "execute_timeline"          => forge_tools::timeline(&self.project, params),
+            "execute_log_work" => forge_tools::log_work(&self.project, params),
+            "execute_timeline" => forge_tools::timeline(&self.project, params),
 
             // ── Flow tools (Phase 4 — node-flow editor) ───────────────────
             "execute_flow_create" => flow_tools::flow_create(&self.project, params),
-            "execute_flow_get"    => flow_tools::flow_get(&self.project, params),
-            "execute_flow_patch"  => flow_tools::flow_patch(&self.project, params),
+            "execute_flow_get" => flow_tools::flow_get(&self.project, params),
+            "execute_flow_patch" => flow_tools::flow_patch(&self.project, params),
 
             _ => Err(omegon_extension::Error::method_not_found(method)),
         }
@@ -1490,11 +1562,7 @@ fn flynt_surface_guide() -> Value {
 }
 
 fn validate_file_stem(name: &str) -> omegon_extension::Result<()> {
-    if name.trim().is_empty()
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains("..")
-    {
+    if name.trim().is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err(omegon_extension::Error::invalid_params(
             "name must not be empty or contain path separators",
         ));
@@ -1520,7 +1588,10 @@ fn excalidraw_embed_path(content: &str) -> Option<String> {
         content.trim()
     };
 
-    let lines: Vec<&str> = body.lines().filter(|line| !line.trim().is_empty()).collect();
+    let lines: Vec<&str> = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
     if lines.len() == 1 {
         let line = lines[0].trim();
         if line.starts_with("![[") && line.ends_with(".excalidraw]]") {
@@ -1535,7 +1606,9 @@ fn drawing_path_arg(params: &Value) -> omegon_extension::Result<&str> {
         .get("path")
         .and_then(|v| v.as_str())
         .or_else(|| params.get("drawing_path").and_then(|v| v.as_str()))
-        .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path' (or 'drawing_path')"))
+        .ok_or_else(|| {
+            omegon_extension::Error::invalid_params("missing 'path' (or 'drawing_path')")
+        })
 }
 
 // ── Canvas tool implementations ───────────────────────────────────────────────
@@ -1546,9 +1619,15 @@ fn drawing_path_arg(params: &Value) -> omegon_extension::Result<&str> {
 // ergonomics. None of these tools panic on malformed input — they cross the
 // ACP boundary, where a panic would kill the worker thread.
 impl FlyntExtension {
-    fn resolve_drawing_path(&self, path_arg: &str) -> Result<std::path::PathBuf, omegon_extension::Error> {
+    fn resolve_drawing_path(
+        &self,
+        path_arg: &str,
+    ) -> Result<std::path::PathBuf, omegon_extension::Error> {
         let rel = std::path::Path::new(path_arg);
-        if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err(omegon_extension::Error::invalid_params(
                 "path must not contain '..'",
             ));
@@ -1566,8 +1645,9 @@ impl FlyntExtension {
         let abs = self.resolve_drawing_path(path)?;
         let body = std::fs::read_to_string(&abs)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
-        let scene: Value = serde_json::from_str(&body)
-            .map_err(|e| omegon_extension::Error::internal_error(format!("parse drawing json: {e}")))?;
+        let scene: Value = serde_json::from_str(&body).map_err(|e| {
+            omegon_extension::Error::internal_error(format!("parse drawing json: {e}"))
+        })?;
         Ok(json!({
             "path": path,
             "scene": scene,
@@ -1609,10 +1689,10 @@ impl FlyntExtension {
         };
 
         let active = ui.get("active_document");
-        let active_path = active
-            .and_then(|d| d.get("path"))
-            .and_then(|v| v.as_str());
-        let Some(md_path) = active_path else { return Ok(Value::Null); };
+        let active_path = active.and_then(|d| d.get("path")).and_then(|v| v.as_str());
+        let Some(md_path) = active_path else {
+            return Ok(Value::Null);
+        };
 
         let typed_drawing = active
             .and_then(|d| d.get("document_type"))
@@ -1631,7 +1711,9 @@ impl FlyntExtension {
             };
             excalidraw_embed_path(&md_body)
         };
-        let Some(drawing_file) = drawing_file else { return Ok(Value::Null); };
+        let Some(drawing_file) = drawing_file else {
+            return Ok(Value::Null);
+        };
 
         let doc_dir = std::path::Path::new(md_path)
             .parent()
@@ -1643,11 +1725,17 @@ impl FlyntExtension {
         }))
     }
 
-    fn resolve_canvas_path(&self, path_arg: &str) -> Result<std::path::PathBuf, omegon_extension::Error> {
+    fn resolve_canvas_path(
+        &self,
+        path_arg: &str,
+    ) -> Result<std::path::PathBuf, omegon_extension::Error> {
         // Refuse paths that escape the project root (path traversal). The agent
         // shouldn't be writing outside the project, ever.
         let rel = std::path::Path::new(path_arg);
-        if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err(omegon_extension::Error::invalid_params(
                 "path must not contain '..'",
             ));
@@ -1713,9 +1801,9 @@ impl FlyntExtension {
         let mut lint_warnings: Vec<String> = Vec::new();
         if let Some(cells_val) = params.get("cells") {
             let cells_val = coerce_to_value(cells_val.clone(), "cells")?;
-            let cells = cells_val.as_array().ok_or_else(|| {
-                omegon_extension::Error::invalid_params("cells: expected array")
-            })?;
+            let cells = cells_val
+                .as_array()
+                .ok_or_else(|| omegon_extension::Error::invalid_params("cells: expected array"))?;
             for c in cells {
                 let cell: flynt_core::canvas::Cell = serde_json::from_value(c.clone())
                     .map_err(|e| omegon_extension::Error::invalid_params(format!("cell: {e}")))?;
@@ -1730,7 +1818,8 @@ impl FlyntExtension {
             std::fs::create_dir_all(parent)
                 .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         }
-        canvas.save(&abs)
+        canvas
+            .save(&abs)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
 
         Ok(json!({
@@ -1755,7 +1844,8 @@ impl FlyntExtension {
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         let previous = canvas.theme.clone();
         canvas.theme = theme.to_string();
-        canvas.save(&abs)
+        canvas
+            .save(&abs)
             .map_err(|e| omegon_extension::Error::internal_error(e.to_string()))?;
         Ok(json!({ "path": path, "theme": theme, "previous_theme": previous }))
     }
@@ -1764,7 +1854,12 @@ impl FlyntExtension {
         // Read from the project-side copy that flynt-app's canvas_assets bootstrap
         // writes on launch. If the bootstrap hasn't run yet (agent started before
         // app), return an empty primitives list rather than erroring.
-        let dir = self.project.root.join(".flynt-local").join("flynt").join("assets");
+        let dir = self
+            .project
+            .root
+            .join(".flynt-local")
+            .join("flynt")
+            .join("assets");
         let primitives_doc = read_json_or_default(
             &dir.join("shadcn-primitives.json"),
             json!({ "version": 1, "primitives": [] }),
@@ -1779,12 +1874,14 @@ impl FlyntExtension {
             .as_object()
             .map(|m| {
                 m.iter()
-                    .map(|(id, v)| json!({
-                        "id": id,
-                        "name": v.get("name").cloned().unwrap_or(json!(id)),
-                        "description": v.get("description").cloned().unwrap_or(Value::Null),
-                        "vars": v.get("vars").cloned().unwrap_or(Value::Null),
-                    }))
+                    .map(|(id, v)| {
+                        json!({
+                            "id": id,
+                            "name": v.get("name").cloned().unwrap_or(json!(id)),
+                            "description": v.get("description").cloned().unwrap_or(Value::Null),
+                            "vars": v.get("vars").cloned().unwrap_or(Value::Null),
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -1809,11 +1906,7 @@ impl FlyntExtension {
         // Refuse names that would escape the canvases/ directory or contain
         // path separators — same posture as resolve_canvas_path's traversal
         // guard but applied to the name component before it's joined.
-        if name.is_empty()
-            || name.contains('/')
-            || name.contains('\\')
-            || name.contains("..")
-        {
+        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
             return Err(omegon_extension::Error::invalid_params(
                 "name must not be empty or contain path separators",
             ));
@@ -1846,10 +1939,10 @@ impl FlyntExtension {
         };
 
         let active = ui.get("active_document");
-        let active_path = active
-            .and_then(|d| d.get("path"))
-            .and_then(|v| v.as_str());
-        let Some(md_path) = active_path else { return Ok(Value::Null); };
+        let active_path = active.and_then(|d| d.get("path")).and_then(|v| v.as_str());
+        let Some(md_path) = active_path else {
+            return Ok(Value::Null);
+        };
 
         // Fast path: if flynt-app classified this doc as "canvas" in the
         // mirror, trust it and skip the body parse. Falls back to parsing
@@ -1874,7 +1967,9 @@ impl FlyntExtension {
             };
             canvas_embed_path(&md_body)
         };
-        let Some(canvas_file) = canvas_file else { return Ok(Value::Null); };
+        let Some(canvas_file) = canvas_file else {
+            return Ok(Value::Null);
+        };
 
         let doc_dir = std::path::Path::new(md_path)
             .parent()
@@ -1931,11 +2026,33 @@ fn lint_cell(cell: &flynt_core::canvas::Cell) -> Vec<String> {
     //     positives possible if the same pattern appears in attribute
     //     text content, but it's a warning, not a blocker.
     let arbitrary_prefixes = [
-        "bg-[", "text-[", "border-[", "ring-[", "shadow-[",
-        "p-[", "px-[", "py-[", "pt-[", "pb-[", "pl-[", "pr-[",
-        "m-[", "mx-[", "my-[", "mt-[", "mb-[", "ml-[", "mr-[",
-        "w-[", "h-[", "min-w-[", "min-h-[", "max-w-[", "max-h-[",
-        "gap-[", "rounded-[",
+        "bg-[",
+        "text-[",
+        "border-[",
+        "ring-[",
+        "shadow-[",
+        "p-[",
+        "px-[",
+        "py-[",
+        "pt-[",
+        "pb-[",
+        "pl-[",
+        "pr-[",
+        "m-[",
+        "mx-[",
+        "my-[",
+        "mt-[",
+        "mb-[",
+        "ml-[",
+        "mr-[",
+        "w-[",
+        "h-[",
+        "min-w-[",
+        "min-h-[",
+        "max-w-[",
+        "max-h-[",
+        "gap-[",
+        "rounded-[",
     ];
     for prefix in &arbitrary_prefixes {
         if html.contains(prefix) {
@@ -2001,9 +2118,7 @@ fn canvas_path_arg(params: &Value) -> omegon_extension::Result<&str> {
         .get("path")
         .and_then(|v| v.as_str())
         .or_else(|| params.get("canvas_path").and_then(|v| v.as_str()))
-        .ok_or_else(|| {
-            omegon_extension::Error::invalid_params("missing 'path' (or 'canvas_path')")
-        })
+        .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'path' (or 'canvas_path')"))
 }
 
 /// Accept either a structured JSON value or a stringified JSON value and
@@ -2102,9 +2217,16 @@ mod tests {
         }
         // Phase 3 — scribe-absorbed forge / engagement tools.
         for n in [
-            "engagement_create", "engagement_update", "engagement_list", "engagement_status",
-            "forge_status", "forge_list_issues", "forge_sync_issues",
-            "forge_create_issue", "log_work", "timeline",
+            "engagement_create",
+            "engagement_update",
+            "engagement_list",
+            "engagement_status",
+            "forge_status",
+            "forge_list_issues",
+            "forge_sync_issues",
+            "forge_create_issue",
+            "log_work",
+            "timeline",
         ] {
             assert!(names.contains(&n.to_string()), "expected {n} in tools/list");
         }
@@ -2150,7 +2272,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(memory["path"].as_str().unwrap().contains("ai/memory/storage"));
+        assert!(
+            memory["path"]
+                .as_str()
+                .unwrap()
+                .contains("ai/memory/storage")
+        );
 
         let comm = ext
             .handle_rpc(
@@ -2163,7 +2290,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(comm["path"].as_str().unwrap().contains("references/comms/scribe"));
+        assert!(
+            comm["path"]
+                .as_str()
+                .unwrap()
+                .contains("references/comms/scribe")
+        );
 
         let board = ext
             .handle_rpc("execute_create_board", json!({ "name": "Sprint 1" }))
@@ -2186,7 +2318,10 @@ mod tests {
         assert_eq!(task["title"], "Wire extension surface");
 
         let tasks = ext
-            .handle_rpc("execute_list_tasks", json!({ "column": "Backlog", "board_id": board_id }))
+            .handle_rpc(
+                "execute_list_tasks",
+                json!({ "column": "Backlog", "board_id": board_id }),
+            )
             .await
             .unwrap();
         assert_eq!(tasks.as_array().unwrap().len(), 1);
@@ -2287,7 +2422,11 @@ mod tests {
                 "updated_at": "now"
             }),
         };
-        std::fs::write(dir.join("ui-state.json"), serde_json::to_string(&body).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("ui-state.json"),
+            serde_json::to_string(&body).unwrap(),
+        )
+        .unwrap();
     }
 
     #[tokio::test]
@@ -2303,7 +2442,10 @@ mod tests {
         assert!(tmp.path().join("drawings/Sketch.excalidraw").exists());
 
         write_ui_state(&tmp, Some("drawings/Sketch.md"));
-        let active = ext.handle_rpc("execute_drawing_active", json!({})).await.unwrap();
+        let active = ext
+            .handle_rpc("execute_drawing_active", json!({}))
+            .await
+            .unwrap();
         assert_eq!(active["wrapper_path"], "drawings/Sketch.md");
         assert_eq!(active["drawing_path"], "drawings/Sketch.excalidraw");
 
@@ -2321,7 +2463,10 @@ mod tests {
         .unwrap();
 
         let got = ext
-            .handle_rpc("execute_drawing_get", json!({"path": "drawings/Sketch.excalidraw"}))
+            .handle_rpc(
+                "execute_drawing_get",
+                json!({"path": "drawings/Sketch.excalidraw"}),
+            )
             .await
             .unwrap();
         assert_eq!(got["scene"]["elements"][0]["id"], "box");
@@ -2348,7 +2493,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(created["drawing_path"], "drawings/Spec Sketch.excalidraw");
-        assert!(tmp.path().join("drawings/Spec Sketch.drawing.json").exists());
+        assert!(
+            tmp.path()
+                .join("drawings/Spec Sketch.drawing.json")
+                .exists()
+        );
 
         let patched = ext
             .handle_rpc(
@@ -2401,7 +2550,10 @@ mod tests {
         write_canvas(&tmp, "canvases/Hero.canvas", &body);
 
         let out = ext
-            .handle_rpc("execute_canvas_get", json!({"path": "canvases/Hero.canvas"}))
+            .handle_rpc(
+                "execute_canvas_get",
+                json!({"path": "canvases/Hero.canvas"}),
+            )
             .await
             .unwrap();
         assert_eq!(out["version"], 1);
@@ -2428,21 +2580,33 @@ mod tests {
         let canvas = flynt_core::canvas::Canvas::default();
         write_canvas(&tmp, "x.canvas", &serde_json::to_string(&canvas).unwrap());
 
-        let by_path = ext.handle_rpc("execute_canvas_get", json!({"path": "x.canvas"})).await.unwrap();
-        let by_canvas_path = ext.handle_rpc("execute_canvas_get", json!({"canvas_path": "x.canvas"})).await.unwrap();
+        let by_path = ext
+            .handle_rpc("execute_canvas_get", json!({"path": "x.canvas"}))
+            .await
+            .unwrap();
+        let by_canvas_path = ext
+            .handle_rpc("execute_canvas_get", json!({"canvas_path": "x.canvas"}))
+            .await
+            .unwrap();
         assert_eq!(by_path, by_canvas_path);
     }
 
     #[tokio::test]
     async fn canvas_apply_theme_accepts_canvas_path_alias() {
         let (tmp, ext) = test_extension();
-        write_canvas(&tmp, "x.canvas",
-            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap());
+        write_canvas(
+            &tmp,
+            "x.canvas",
+            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap(),
+        );
 
-        let out = ext.handle_rpc(
-            "execute_canvas_apply_theme",
-            json!({"canvas_path": "x.canvas", "theme": "amber"}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_apply_theme",
+                json!({"canvas_path": "x.canvas", "theme": "amber"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(out["theme"], "amber");
     }
 
@@ -2494,18 +2658,25 @@ mod tests {
         let (tmp, ext) = test_extension();
         let cells_json = serde_json::to_string(&serde_json::json!([
             {"id": "a", "x": 0, "y": 0, "w": 1, "h": 1, "html": "<b>x</b>", "css": ""}
-        ])).unwrap();
+        ]))
+        .unwrap();
 
-        let out = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({ "path": "x.canvas", "cells": cells_json }),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({ "path": "x.canvas", "cells": cells_json }),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(out["cell_count"], 1);
         assert!(tmp.path().join("x.canvas").exists());
 
         // Round-trip via canvas_get to confirm the cell actually wrote.
-        let got = ext.handle_rpc("execute_canvas_get", json!({"path": "x.canvas"})).await.unwrap();
+        let got = ext
+            .handle_rpc("execute_canvas_get", json!({"path": "x.canvas"}))
+            .await
+            .unwrap();
         assert_eq!(got["cells"][0]["id"], "a");
         assert_eq!(got["cells"][0]["html"], "<b>x</b>");
     }
@@ -2513,36 +2684,45 @@ mod tests {
     #[tokio::test]
     async fn canvas_set_cells_rejects_invalid_stringified_cells() {
         let (_tmp, ext) = test_extension();
-        let err = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({ "path": "x.canvas", "cells": "not-json" }),
-        ).await.unwrap_err();
+        let err = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({ "path": "x.canvas", "cells": "not-json" }),
+            )
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("cells"));
     }
 
     #[tokio::test]
     async fn canvas_set_cells_rejects_non_array_non_string_cells() {
         let (_tmp, ext) = test_extension();
-        let err = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({ "path": "x.canvas", "cells": 42 }),
-        ).await.unwrap_err();
+        let err = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({ "path": "x.canvas", "cells": 42 }),
+            )
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("cells"));
     }
 
     #[tokio::test]
     async fn canvas_set_cells_lint_flags_missing_h_full() {
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({
-                "path": "x.canvas",
-                "cells": [{
-                    "id": "needs-fill", "x": 0, "y": 0, "w": 4, "h": 3,
-                    "html": "<div class=\"bg-card p-4\">stat</div>", "css": ""
-                }]
-            }),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "x.canvas",
+                    "cells": [{
+                        "id": "needs-fill", "x": 0, "y": 0, "w": 4, "h": 3,
+                        "html": "<div class=\"bg-card p-4\">stat</div>", "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
         let warnings = out["lint_warnings"].as_array().unwrap();
         assert_eq!(warnings.len(), 1);
         let w = warnings[0].as_str().unwrap();
@@ -2553,35 +2733,45 @@ mod tests {
     #[tokio::test]
     async fn canvas_set_cells_lint_passes_h_full() {
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({
-                "path": "x.canvas",
-                "cells": [{
-                    "id": "fills", "x": 0, "y": 0, "w": 4, "h": 3,
-                    "html": "<div class=\"h-full bg-card p-4\">stat</div>", "css": ""
-                }]
-            }),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "x.canvas",
+                    "cells": [{
+                        "id": "fills", "x": 0, "y": 0, "w": 4, "h": 3,
+                        "html": "<div class=\"h-full bg-card p-4\">stat</div>", "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
         assert!(out["lint_warnings"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn canvas_set_cells_lint_flags_arbitrary_tailwind() {
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({
-                "path": "x.canvas",
-                "cells": [{
-                    "id": "hot-pink", "x": 0, "y": 0, "w": 4, "h": 3,
-                    "html": "<div class=\"h-full bg-[#FF1493] p-4\">x</div>", "css": ""
-                }]
-            }),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "x.canvas",
+                    "cells": [{
+                        "id": "hot-pink", "x": 0, "y": 0, "w": 4, "h": 3,
+                        "html": "<div class=\"h-full bg-[#FF1493] p-4\">x</div>", "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
         let warnings = out["lint_warnings"].as_array().unwrap();
         assert!(!warnings.is_empty());
-        let combined = warnings.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(" ");
+        let combined = warnings
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(combined.contains("arbitrary"), "{combined}");
         assert!(combined.contains("hot-pink"), "{combined}");
     }
@@ -2590,17 +2780,20 @@ mod tests {
     async fn canvas_set_cells_lint_height_100_alternate_passes() {
         // Inline `style="height:100%"` should also satisfy the fill check.
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({
-                "path": "x.canvas",
-                "cells": [{
-                    "id": "inline", "x": 0, "y": 0, "w": 4, "h": 3,
-                    "html": "<div style=\"height: 100%; background: var(--card)\">x</div>",
-                    "css": ""
-                }]
-            }),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "x.canvas",
+                    "cells": [{
+                        "id": "inline", "x": 0, "y": 0, "w": 4, "h": 3,
+                        "html": "<div style=\"height: 100%; background: var(--card)\">x</div>",
+                        "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
         assert!(out["lint_warnings"].as_array().unwrap().is_empty());
     }
 
@@ -2608,16 +2801,19 @@ mod tests {
     async fn canvas_set_cells_lint_empty_html_does_not_warn() {
         // Bare or empty cells aren't flagged — there's nothing to fill.
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc(
-            "execute_canvas_set_cells",
-            json!({
-                "path": "x.canvas",
-                "cells": [{
-                    "id": "blank", "x": 0, "y": 0, "w": 1, "h": 1,
-                    "html": "", "css": ""
-                }]
-            }),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_set_cells",
+                json!({
+                    "path": "x.canvas",
+                    "cells": [{
+                        "id": "blank", "x": 0, "y": 0, "w": 1, "h": 1,
+                        "html": "", "css": ""
+                    }]
+                }),
+            )
+            .await
+            .unwrap();
         assert!(out["lint_warnings"].as_array().unwrap().is_empty());
     }
 
@@ -2626,8 +2822,14 @@ mod tests {
         let (tmp, ext) = test_extension();
         let mut canvas = flynt_core::canvas::Canvas::default();
         canvas.upsert_cell(flynt_core::canvas::Cell {
-            id: "a".into(), x: 0, y: 0, w: 1, h: 1,
-            html: "old".into(), css: "".into(), js: None,
+            id: "a".into(),
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+            html: "old".into(),
+            css: "".into(),
+            js: None,
         });
         write_canvas(&tmp, "x.canvas", &serde_json::to_string(&canvas).unwrap());
 
@@ -2654,8 +2856,14 @@ mod tests {
         let mut canvas = flynt_core::canvas::Canvas::default();
         for id in ["a", "b", "c"] {
             canvas.upsert_cell(flynt_core::canvas::Cell {
-                id: id.into(), x: 0, y: 0, w: 1, h: 1,
-                html: "".into(), css: "".into(), js: None,
+                id: id.into(),
+                x: 0,
+                y: 0,
+                w: 1,
+                h: 1,
+                html: "".into(),
+                css: "".into(),
+                js: None,
             });
         }
         write_canvas(&tmp, "x.canvas", &serde_json::to_string(&canvas).unwrap());
@@ -2668,16 +2876,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out["cell_count"], 2);
-        let deleted: Vec<&str> = out["deleted"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
-        assert_eq!(deleted, vec!["b"], "deleted only reports actually-removed ids");
+        let deleted: Vec<&str> = out["deleted"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert_eq!(
+            deleted,
+            vec!["b"],
+            "deleted only reports actually-removed ids"
+        );
     }
 
     #[tokio::test]
     async fn canvas_set_cells_updates_grid_and_theme() {
         let (tmp, ext) = test_extension();
-        write_canvas(&tmp, "x.canvas",
-            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap());
+        write_canvas(
+            &tmp,
+            "x.canvas",
+            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap(),
+        );
 
         ext.handle_rpc(
             "execute_canvas_set_cells",
@@ -2686,9 +2905,14 @@ mod tests {
                 "grid": {"cols": 6, "rows": 4, "gap": 16},
                 "theme": "ocean"
             }),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
-        let got = ext.handle_rpc("execute_canvas_get", json!({"path": "x.canvas"})).await.unwrap();
+        let got = ext
+            .handle_rpc("execute_canvas_get", json!({"path": "x.canvas"}))
+            .await
+            .unwrap();
         assert_eq!(got["grid"]["cols"], 6);
         assert_eq!(got["grid"]["gap"], 16);
         assert_eq!(got["theme"], "ocean");
@@ -2697,13 +2921,19 @@ mod tests {
     #[tokio::test]
     async fn canvas_apply_theme_returns_previous() {
         let (tmp, ext) = test_extension();
-        write_canvas(&tmp, "x.canvas",
-            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap());
+        write_canvas(
+            &tmp,
+            "x.canvas",
+            &serde_json::to_string(&flynt_core::canvas::Canvas::default()).unwrap(),
+        );
 
-        let out = ext.handle_rpc(
-            "execute_canvas_apply_theme",
-            json!({"path": "x.canvas", "theme": "amber"}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_canvas_apply_theme",
+                json!({"path": "x.canvas", "theme": "amber"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(out["theme"], "amber");
         assert_eq!(out["previous_theme"], "default");
     }
@@ -2715,7 +2945,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // Raw-string delimiters need to be longer than any `"#` substring
         // inside — colour values like "#000" force us to use r##"..."## here.
-        std::fs::write(dir.join("shadcn-primitives.json"), r##"{
+        std::fs::write(
+            dir.join("shadcn-primitives.json"),
+            r##"{
             "version": 1,
             "cell_authoring_guidance": ["wrap with h-full"],
             "primitives": [{
@@ -2723,15 +2955,24 @@ mod tests {
                 "description":"","usage_notes":"inline",
                 "html":"<button/>"
             }]
-        }"##).unwrap();
-        std::fs::write(dir.join("tweakcn-presets.json"), r##"{
+        }"##,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("tweakcn-presets.json"),
+            r##"{
             "default": {
                 "name": "Default", "description": "stub",
                 "vars": {"--background": "#000", "--primary": "#fff"}
             }
-        }"##).unwrap();
+        }"##,
+        )
+        .unwrap();
 
-        let out = ext.handle_rpc("execute_canvas_list_primitives", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_canvas_list_primitives", json!({}))
+            .await
+            .unwrap();
         assert_eq!(out["primitives"][0]["id"], "button");
         // Primitives carry their usage_notes through unchanged.
         assert_eq!(out["primitives"][0]["usage_notes"], "inline");
@@ -2747,7 +2988,10 @@ mod tests {
     #[tokio::test]
     async fn canvas_list_primitives_returns_empty_when_no_assets() {
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc("execute_canvas_list_primitives", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_canvas_list_primitives", json!({}))
+            .await
+            .unwrap();
         // No bootstrap done — fallback shape, no error.
         assert!(out["primitives"].as_array().unwrap().is_empty());
     }
@@ -2755,7 +2999,10 @@ mod tests {
     #[tokio::test]
     async fn canvas_active_returns_null_when_no_ui_state() {
         let (_tmp, ext) = test_extension();
-        let out = ext.handle_rpc("execute_canvas_active", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_canvas_active", json!({}))
+            .await
+            .unwrap();
         assert!(out.is_null());
     }
 
@@ -2766,7 +3013,10 @@ mod tests {
         std::fs::write(tmp.path().join("notes/plain.md"), "Just text.\n").unwrap();
         write_ui_state(&tmp, Some("notes/plain.md"));
 
-        let out = ext.handle_rpc("execute_canvas_active", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_canvas_active", json!({}))
+            .await
+            .unwrap();
         assert!(out.is_null());
     }
 
@@ -2777,10 +3027,14 @@ mod tests {
         std::fs::write(
             tmp.path().join("canvases/Hero.md"),
             "+++\ntitle = \"Hero\"\ntags = [\"canvas\"]\n+++\n\n![[Hero.canvas]]\n",
-        ).unwrap();
+        )
+        .unwrap();
         write_ui_state(&tmp, Some("canvases/Hero.md"));
 
-        let out = ext.handle_rpc("execute_canvas_active", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_canvas_active", json!({}))
+            .await
+            .unwrap();
         assert_eq!(out["wrapper_path"], "canvases/Hero.md");
         assert_eq!(out["canvas_path"], "canvases/Hero.canvas");
     }
@@ -2789,11 +3043,20 @@ mod tests {
     async fn canvas_tools_appear_in_get_tools() {
         let (_tmp, ext) = test_extension();
         let tools = ext.handle_rpc("get_tools", json!({})).await.unwrap();
-        let names: Vec<String> = tools.as_array().unwrap().iter()
+        let names: Vec<String> = tools
+            .as_array()
+            .unwrap()
+            .iter()
             .filter_map(|t| t["name"].as_str().map(str::to_string))
             .collect();
-        for expected in ["canvas_get", "canvas_set_cells", "canvas_apply_theme",
-                         "canvas_list_primitives", "canvas_active", "canvas_create"] {
+        for expected in [
+            "canvas_get",
+            "canvas_set_cells",
+            "canvas_apply_theme",
+            "canvas_list_primitives",
+            "canvas_active",
+            "canvas_create",
+        ] {
             assert!(names.contains(&expected.to_string()), "missing: {expected}");
         }
     }
@@ -2825,7 +3088,9 @@ mod tests {
     #[tokio::test]
     async fn canvas_create_refuses_duplicate() {
         let (_tmp, ext) = test_extension();
-        ext.handle_rpc("execute_canvas_create", json!({"name": "Hero"})).await.unwrap();
+        ext.handle_rpc("execute_canvas_create", json!({"name": "Hero"}))
+            .await
+            .unwrap();
         let err = ext
             .handle_rpc("execute_canvas_create", json!({"name": "Hero"}))
             .await
@@ -2838,7 +3103,10 @@ mod tests {
         // After creating a canvas, the agent should be able to immediately
         // populate it via canvas_set_cells using the returned canvas_path.
         let (_tmp, ext) = test_extension();
-        let created = ext.handle_rpc("execute_canvas_create", json!({"name": "Demo"})).await.unwrap();
+        let created = ext
+            .handle_rpc("execute_canvas_create", json!({"name": "Demo"}))
+            .await
+            .unwrap();
         let canvas_path = created["canvas_path"].as_str().unwrap();
 
         ext.handle_rpc(
@@ -2847,32 +3115,48 @@ mod tests {
                 "path": canvas_path,
                 "cells": [{"id": "a", "x": 0, "y": 0, "w": 1, "h": 1, "html": "x", "css": ""}]
             }),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
-        let got = ext.handle_rpc("execute_canvas_get", json!({"path": canvas_path})).await.unwrap();
+        let got = ext
+            .handle_rpc("execute_canvas_get", json!({"path": canvas_path}))
+            .await
+            .unwrap();
         assert_eq!(got["cells"][0]["id"], "a");
     }
 
     // ── list_tasks filters ──────────────────────────────────────────────────
 
     async fn seed_three_tagged_tasks(ext: &FlyntExtension) -> (String, [String; 3]) {
-        let board = ext.handle_rpc("execute_create_board", json!({"name": "F"})).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "F"}))
+            .await
+            .unwrap();
         let board_id = board["id"].as_str().unwrap().to_string();
         let mut ids = [String::new(), String::new(), String::new()];
         for (i, (col, tags, status)) in [
             ("Scheduled", vec!["sentry", "recurring"], "todo"),
-            ("Scheduled", vec!["sentry"],              "todo"),
-            ("Backlog",   vec!["urgent"],              "in_progress"),
-        ].iter().enumerate() {
-            let t = ext.handle_rpc(
-                "execute_create_task",
-                json!({"board_id": board_id, "column": col, "title": format!("T{i}")}),
-            ).await.unwrap();
+            ("Scheduled", vec!["sentry"], "todo"),
+            ("Backlog", vec!["urgent"], "in_progress"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let t = ext
+                .handle_rpc(
+                    "execute_create_task",
+                    json!({"board_id": board_id, "column": col, "title": format!("T{i}")}),
+                )
+                .await
+                .unwrap();
             let id = t["id"].as_str().unwrap().to_string();
             ext.handle_rpc(
                 "execute_update_task",
                 json!({"id": id, "tags": tags, "status": status, "column": col}),
-            ).await.unwrap();
+            )
+            .await
+            .unwrap();
             ids[i] = id;
         }
         (board_id, ids)
@@ -2883,14 +3167,14 @@ mod tests {
         let (_tmp, ext) = test_extension();
         let (_board, _ids) = seed_three_tagged_tasks(&ext).await;
 
-        let todos = ext.handle_rpc(
-            "execute_list_tasks",
-            json!({"status": "todo"}),
-        ).await.unwrap();
-        let in_progress = ext.handle_rpc(
-            "execute_list_tasks",
-            json!({"status": "in_progress"}),
-        ).await.unwrap();
+        let todos = ext
+            .handle_rpc("execute_list_tasks", json!({"status": "todo"}))
+            .await
+            .unwrap();
+        let in_progress = ext
+            .handle_rpc("execute_list_tasks", json!({"status": "in_progress"}))
+            .await
+            .unwrap();
 
         assert_eq!(todos.as_array().unwrap().len(), 2);
         assert_eq!(in_progress.as_array().unwrap().len(), 1);
@@ -2901,10 +3185,10 @@ mod tests {
         let (_tmp, ext) = test_extension();
         let (_board, _ids) = seed_three_tagged_tasks(&ext).await;
 
-        let sentry_tasks = ext.handle_rpc(
-            "execute_list_tasks",
-            json!({"tags": ["sentry"]}),
-        ).await.unwrap();
+        let sentry_tasks = ext
+            .handle_rpc("execute_list_tasks", json!({"tags": ["sentry"]}))
+            .await
+            .unwrap();
         assert_eq!(sentry_tasks.as_array().unwrap().len(), 2);
     }
 
@@ -2914,10 +3198,13 @@ mod tests {
         let (_tmp, ext) = test_extension();
         let (_board, _ids) = seed_three_tagged_tasks(&ext).await;
 
-        let intersect = ext.handle_rpc(
-            "execute_list_tasks",
-            json!({"tags": ["sentry", "recurring"]}),
-        ).await.unwrap();
+        let intersect = ext
+            .handle_rpc(
+                "execute_list_tasks",
+                json!({"tags": ["sentry", "recurring"]}),
+            )
+            .await
+            .unwrap();
         assert_eq!(intersect.as_array().unwrap().len(), 1);
     }
 
@@ -2928,20 +3215,23 @@ mod tests {
         let (_tmp, ext) = test_extension();
         let (_board, _ids) = seed_three_tagged_tasks(&ext).await;
 
-        let scheduled_sentry_todos = ext.handle_rpc(
-            "execute_list_tasks",
-            json!({"column": "Scheduled", "status": "todo", "tags": ["sentry"]}),
-        ).await.unwrap();
+        let scheduled_sentry_todos = ext
+            .handle_rpc(
+                "execute_list_tasks",
+                json!({"column": "Scheduled", "status": "todo", "tags": ["sentry"]}),
+            )
+            .await
+            .unwrap();
         assert_eq!(scheduled_sentry_todos.as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]
     async fn list_tasks_rejects_unknown_status() {
         let (_tmp, ext) = test_extension();
-        let err = ext.handle_rpc(
-            "execute_list_tasks",
-            json!({"status": "frozen"}),
-        ).await.unwrap_err();
+        let err = ext
+            .handle_rpc("execute_list_tasks", json!({"status": "frozen"}))
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("status"));
     }
 
@@ -2953,28 +3243,34 @@ mod tests {
         // touching anything else. Verifies the partial-update contract.
         let (_tmp, ext) = test_extension();
 
-        let board = ext.handle_rpc(
-            "execute_create_board",
-            json!({"name": "Sentry"}),
-        ).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "Sentry"}))
+            .await
+            .unwrap();
         let board_id = board["id"].as_str().unwrap();
 
-        let task = ext.handle_rpc(
-            "execute_create_task",
-            json!({"board_id": board_id, "column": "Scheduled", "title": "Run scan"}),
-        ).await.unwrap();
+        let task = ext
+            .handle_rpc(
+                "execute_create_task",
+                json!({"board_id": board_id, "column": "Scheduled", "title": "Run scan"}),
+            )
+            .await
+            .unwrap();
         let task_id = task["id"].as_str().unwrap().to_string();
 
-        let resp = ext.handle_rpc(
-            "execute_update_task",
-            json!({"id": task_id, "status": "in_progress", "column": "Running"}),
-        ).await.unwrap();
+        let resp = ext
+            .handle_rpc(
+                "execute_update_task",
+                json!({"id": task_id, "status": "in_progress", "column": "Running"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(resp["updated"], true);
 
-        let after = ext.handle_rpc(
-            "execute_get_task",
-            json!({"id": task_id}),
-        ).await.unwrap();
+        let after = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert_eq!(after["column"], "Running");
         assert_eq!(after["status"], "in_progress");
         // Title preserved — that's the partial-update contract.
@@ -2988,11 +3284,17 @@ mod tests {
         // hardcoded to Vec::new() in the row deserializer.
         let (_tmp, ext) = test_extension();
 
-        let board = ext.handle_rpc("execute_create_board", json!({"name": "B"})).await.unwrap();
-        let task = ext.handle_rpc(
-            "execute_create_task",
-            json!({"board_id": board["id"], "column": "Backlog", "title": "T"}),
-        ).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "B"}))
+            .await
+            .unwrap();
+        let task = ext
+            .handle_rpc(
+                "execute_create_task",
+                json!({"board_id": board["id"], "column": "Backlog", "title": "T"}),
+            )
+            .await
+            .unwrap();
         let task_id = task["id"].as_str().unwrap().to_string();
 
         ext.handle_rpc(
@@ -3001,31 +3303,46 @@ mod tests {
                 "id": task_id,
                 "external_refs": ["cron:0 */4 * * *", "webhook:gh-pr"]
             }),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
-        let after = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        let after = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         let refs: Vec<String> = after["external_refs"]
-            .as_array().unwrap().iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
         assert_eq!(refs, vec!["cron:0 */4 * * *", "webhook:gh-pr"]);
     }
 
     #[tokio::test]
     async fn update_task_returns_false_for_missing_id() {
         let (_tmp, ext) = test_extension();
-        let resp = ext.handle_rpc(
-            "execute_update_task",
-            json!({"id": "00000000-0000-0000-0000-000000000000", "status": "done"}),
-        ).await.unwrap();
+        let resp = ext
+            .handle_rpc(
+                "execute_update_task",
+                json!({"id": "00000000-0000-0000-0000-000000000000", "status": "done"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(resp["updated"], false);
     }
 
     #[tokio::test]
     async fn update_task_rejects_invalid_uuid() {
         let (_tmp, ext) = test_extension();
-        let err = ext.handle_rpc(
-            "execute_update_task",
-            json!({"id": "not-a-uuid", "status": "done"}),
-        ).await.unwrap_err();
+        let err = ext
+            .handle_rpc(
+                "execute_update_task",
+                json!({"id": "not-a-uuid", "status": "done"}),
+            )
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("UUID"));
     }
 
@@ -3036,11 +3353,17 @@ mod tests {
         // FlyntTaskBoard adapter is a thin pass-through.
         let (_tmp, ext) = test_extension();
 
-        let board = ext.handle_rpc("execute_create_board", json!({"name": "B"})).await.unwrap();
-        let task = ext.handle_rpc(
-            "execute_create_task",
-            json!({"board_id": board["id"], "column": "Scheduled", "title": "Run scan"}),
-        ).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "B"}))
+            .await
+            .unwrap();
+        let task = ext
+            .handle_rpc(
+                "execute_create_task",
+                json!({"board_id": board["id"], "column": "Scheduled", "title": "Run scan"}),
+            )
+            .await
+            .unwrap();
         let task_id = task["id"].as_str().unwrap().to_string();
 
         ext.handle_rpc(
@@ -3056,9 +3379,14 @@ mod tests {
                 },
                 "openspec_change": "auth-rewrite"
             }),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
-        let after = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        let after = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert_eq!(after["execution"]["model"], "anthropic:claude-sonnet-4-6");
         assert_eq!(after["execution"]["max_turns"], 20);
         assert_eq!(after["execution"]["skill"], "security");
@@ -3069,50 +3397,82 @@ mod tests {
     #[tokio::test]
     async fn update_task_clears_execution_on_null() {
         let (_tmp, ext) = test_extension();
-        let board = ext.handle_rpc("execute_create_board", json!({"name": "B"})).await.unwrap();
-        let task = ext.handle_rpc(
-            "execute_create_task",
-            json!({"board_id": board["id"], "column": "Scheduled", "title": "T"}),
-        ).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "B"}))
+            .await
+            .unwrap();
+        let task = ext
+            .handle_rpc(
+                "execute_create_task",
+                json!({"board_id": board["id"], "column": "Scheduled", "title": "T"}),
+            )
+            .await
+            .unwrap();
         let task_id = task["id"].as_str().unwrap().to_string();
 
         ext.handle_rpc(
             "execute_update_task",
             json!({"id": task_id, "execution": {"model": "x"}}),
-        ).await.unwrap();
-        let with_exec = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        )
+        .await
+        .unwrap();
+        let with_exec = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert_eq!(with_exec["execution"]["model"], "x");
 
         ext.handle_rpc(
             "execute_update_task",
             json!({"id": task_id, "execution": null}),
-        ).await.unwrap();
-        let cleared = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        )
+        .await
+        .unwrap();
+        let cleared = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert!(cleared["execution"].is_null());
     }
 
     #[tokio::test]
     async fn update_task_clears_openspec_change_on_empty_string() {
         let (_tmp, ext) = test_extension();
-        let board = ext.handle_rpc("execute_create_board", json!({"name": "B"})).await.unwrap();
-        let task = ext.handle_rpc(
-            "execute_create_task",
-            json!({"board_id": board["id"], "column": "C", "title": "T"}),
-        ).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "B"}))
+            .await
+            .unwrap();
+        let task = ext
+            .handle_rpc(
+                "execute_create_task",
+                json!({"board_id": board["id"], "column": "C", "title": "T"}),
+            )
+            .await
+            .unwrap();
         let task_id = task["id"].as_str().unwrap().to_string();
 
         ext.handle_rpc(
             "execute_update_task",
             json!({"id": task_id, "openspec_change": "auth-rewrite"}),
-        ).await.unwrap();
-        let with = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        )
+        .await
+        .unwrap();
+        let with = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert_eq!(with["openspec_change"], "auth-rewrite");
 
         ext.handle_rpc(
             "execute_update_task",
             json!({"id": task_id, "openspec_change": ""}),
-        ).await.unwrap();
-        let cleared = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        )
+        .await
+        .unwrap();
+        let cleared = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert!(cleared["openspec_change"].is_null());
     }
 
@@ -3120,26 +3480,42 @@ mod tests {
     async fn update_task_clears_design_node_id_on_empty_string() {
         // Empty string is the documented "clear" sentinel.
         let (_tmp, ext) = test_extension();
-        let board = ext.handle_rpc("execute_create_board", json!({"name": "B"})).await.unwrap();
-        let task = ext.handle_rpc(
-            "execute_create_task",
-            json!({"board_id": board["id"], "column": "C", "title": "T"}),
-        ).await.unwrap();
+        let board = ext
+            .handle_rpc("execute_create_board", json!({"name": "B"}))
+            .await
+            .unwrap();
+        let task = ext
+            .handle_rpc(
+                "execute_create_task",
+                json!({"board_id": board["id"], "column": "C", "title": "T"}),
+            )
+            .await
+            .unwrap();
         let task_id = task["id"].as_str().unwrap().to_string();
         let node_id = uuid::Uuid::new_v4().to_string();
 
         ext.handle_rpc(
             "execute_update_task",
             json!({"id": task_id, "design_node_id": node_id}),
-        ).await.unwrap();
-        let after = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        )
+        .await
+        .unwrap();
+        let after = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert_eq!(after["design_node_id"], serde_json::Value::String(node_id));
 
         ext.handle_rpc(
             "execute_update_task",
             json!({"id": task_id, "design_node_id": ""}),
-        ).await.unwrap();
-        let after = ext.handle_rpc("execute_get_task", json!({"id": task_id})).await.unwrap();
+        )
+        .await
+        .unwrap();
+        let after = ext
+            .handle_rpc("execute_get_task", json!({"id": task_id}))
+            .await
+            .unwrap();
         assert!(after["design_node_id"].is_null());
     }
 }

@@ -110,7 +110,7 @@ fn read_and_parse_flow(project_root: &Path, rel_path: &Path) -> LoadedFlow {
             return LoadedFlow {
                 body_json: EMPTY_FLOW_JSON.to_string(),
                 id: None,
-            }
+            };
         }
     };
     match flynt_flow::parse_flow(&raw) {
@@ -346,21 +346,22 @@ pub fn FlowView(path: PathBuf) -> Element {
             // will create), and FSEvents would emit a canonicalized
             // path that wouldn't match. Project root is always present.
             let project = c.project();
-            let canonical_root = std::fs::canonicalize(&project.root)
-                .unwrap_or_else(|_| project.root.clone());
+            let canonical_root =
+                std::fs::canonicalize(&project.root).unwrap_or_else(|_| project.root.clone());
             let our_canonical = canonical_root.join(&p);
 
             // Helper: canonicalize an event path against the same root,
             // falling back to the path as-emitted. Centralized so the
             // recv + drain branches use identical comparison logic.
             let matches_ours = |evt_path: &Path, ours: &Path| -> bool {
-                let pc = std::fs::canonicalize(evt_path)
-                    .unwrap_or_else(|_| evt_path.to_path_buf());
+                let pc = std::fs::canonicalize(evt_path).unwrap_or_else(|_| evt_path.to_path_buf());
                 pc == *ours
             };
 
             loop {
-                let Ok(first_evt) = rx.recv().await else { break };
+                let Ok(first_evt) = rx.recv().await else {
+                    break;
+                };
                 if !matches_ours(event_path(&first_evt), &our_canonical) {
                     continue;
                 }
@@ -415,13 +416,12 @@ pub fn FlowView(path: PathBuf) -> Element {
     rsx! {
         div {
             class: "flow-pane",
-            style: "display:flex;flex-direction:column;flex:1;min-height:0;width:100%;position:relative;background:#020617;",
             div {
                 class: "flow-overlay-actions",
-                style: "position:absolute;top:8px;right:12px;z-index:5;pointer-events:none;",
                 span {
+                    class: "flow-save-state",
                     style: format!(
-                        "font-size:11px;color:#94a3b8;background:rgba(15,23,42,0.85);padding:3px 8px;border-radius:4px;border:1px solid #1e293b;opacity:{};transition:opacity .15s;",
+                        "opacity:{};",
                         if save_state.read().is_empty() { 0.0 } else { 1.0 }
                     ),
                     "{save_state}"
@@ -429,7 +429,7 @@ pub fn FlowView(path: PathBuf) -> Element {
             }
             div {
                 id: "flynt-flow",
-                style: "flex:1;min-height:0;width:100%;",
+                class: "flow-mount",
             }
         }
     }

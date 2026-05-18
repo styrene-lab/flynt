@@ -6,44 +6,44 @@
   flex: 1;
   min-height: 0;
   width: 100%;
-  background: var(--bg-canvas, var(--bg, #0c0c0c));
+  background: var(--document-bg);
   overflow: auto;
 }
 
 .canvas-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border, #222);
-  font-size: 12px;
-  color: var(--text-muted, #888);
-  background: var(--bg-elevated, var(--bg, #0c0c0c));
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-xs);
+  color: var(--muted-foreground);
+  background: var(--toolbar-bg);
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
 .canvas-toolbar .canvas-meta {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   opacity: 0.7;
 }
 
 .canvas-toolbar .canvas-error {
-  color: var(--text-error, #f88);
+  color: var(--error);
 }
 
 .canvas-grid {
   display: grid;
-  padding: 16px;
+  padding: var(--space-4);
   flex: 1;
   align-content: start;
 }
 
 .canvas-cell {
-  background: var(--bg-cell, #111);
-  border: 1px solid var(--border, #222);
-  border-radius: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   overflow: hidden;
   position: relative;
 }
@@ -57,9 +57,9 @@
 }
 
 .canvas-empty {
-  padding: 40px 24px;
+  padding: var(--space-10) var(--space-6);
   text-align: center;
-  color: var(--text-muted, #888);
-  font-size: 13px;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-sm);
   opacity: 0.7;
 }

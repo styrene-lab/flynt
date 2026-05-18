@@ -32,11 +32,15 @@ fn theme_vars(theme_id: &str) -> String {
             .iter()
             .filter_map(|(k, v)| v.as_str().map(|s| format!("{k}: {s}")))
             .collect();
-        if parts.is_empty() { None } else { Some(parts.join("; ")) }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("; "))
+        }
     }
 
-    let presets: serde_json::Value = serde_json::from_str(TWEAKCN_PRESETS)
-        .unwrap_or(serde_json::Value::Null);
+    let presets: serde_json::Value =
+        serde_json::from_str(TWEAKCN_PRESETS).unwrap_or(serde_json::Value::Null);
 
     render(&presets, theme_id)
         .or_else(|| render(&presets, "default"))
@@ -138,10 +142,19 @@ async fn process_capture_request(
         Ok(s) => s,
         Err(e) => {
             return CaptureResponse {
-                request_id, image_path: String::new(), image_base64: String::new(),
-                image_width: 0, image_height: 0,
-                viewport_box: BoxXywh { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
-                cells: vec![], scale_factor: 1.0,
+                request_id,
+                image_path: String::new(),
+                image_base64: String::new(),
+                image_width: 0,
+                image_height: 0,
+                viewport_box: BoxXywh {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 0.0,
+                },
+                cells: vec![],
+                scale_factor: 1.0,
                 captured: false,
                 error: Some(format!("dioxus.send recv failed: {e}")),
             };
@@ -182,21 +195,36 @@ async fn process_capture_request(
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
 
     // ── Step 4: shape per-cell metrics with fill_ratio ──
-    let cells: Vec<CellMetric> = measurement.get("cells")
+    let cells: Vec<CellMetric> = measurement
+        .get("cells")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default()
         .into_iter()
         .map(|c| {
-            let id = c.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let cb = c.get("cell_box").map(|b| BoxXywh {
-                x: b["x"].as_f64().unwrap_or(0.0) as f32,
-                y: b["y"].as_f64().unwrap_or(0.0) as f32,
-                w: b["w"].as_f64().unwrap_or(0.0) as f32,
-                h: b["h"].as_f64().unwrap_or(0.0) as f32,
-            }).unwrap_or(BoxXywh { x: 0.0, y: 0.0, w: 0.0, h: 0.0 });
+            let id = c
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cb = c
+                .get("cell_box")
+                .map(|b| BoxXywh {
+                    x: b["x"].as_f64().unwrap_or(0.0) as f32,
+                    y: b["y"].as_f64().unwrap_or(0.0) as f32,
+                    w: b["w"].as_f64().unwrap_or(0.0) as f32,
+                    h: b["h"].as_f64().unwrap_or(0.0) as f32,
+                })
+                .unwrap_or(BoxXywh {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 0.0,
+                });
             let content = c.get("content_box").and_then(|b| {
-                if b.is_null() { return None; }
+                if b.is_null() {
+                    return None;
+                }
                 Some(BoxXywh {
                     x: b["x"].as_f64().unwrap_or(0.0) as f32,
                     y: b["y"].as_f64().unwrap_or(0.0) as f32,
@@ -205,9 +233,18 @@ async fn process_capture_request(
                 })
             });
             let fill_ratio = content.as_ref().and_then(|cb_inner| {
-                if cb.h > 0.0 { Some(cb_inner.h / cb.h) } else { None }
+                if cb.h > 0.0 {
+                    Some(cb_inner.h / cb.h)
+                } else {
+                    None
+                }
             });
-            CellMetric { id, cell_box: cb, content_box: content, fill_ratio }
+            CellMetric {
+                id,
+                cell_box: cb,
+                content_box: content,
+                fill_ratio,
+            }
         })
         .collect();
 
@@ -238,7 +275,12 @@ fn error_response(request_id: &str, error: String) -> crate::canvas_capture::Cap
         image_base64: String::new(),
         image_width: 0,
         image_height: 0,
-        viewport_box: BoxXywh { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+        viewport_box: BoxXywh {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        },
         cells: vec![],
         scale_factor: 1.0,
         captured: false,
@@ -341,8 +383,12 @@ pub fn canvas_embed_path(content: &str) -> Option<String> {
 /// existing, this is enough to keep dispatching to CanvasView so a
 /// transient body corruption doesn't strand the user's design work.
 pub fn frontmatter_has_canvas_tag(content: &str) -> bool {
-    let Some(rest) = content.strip_prefix("+++\n") else { return false; };
-    let Some(end) = rest.find("\n+++") else { return false; };
+    let Some(rest) = content.strip_prefix("+++\n") else {
+        return false;
+    };
+    let Some(end) = rest.find("\n+++") else {
+        return false;
+    };
     let frontmatter = &rest[..end];
     for line in frontmatter.lines() {
         let trimmed = line.trim_start();
@@ -385,7 +431,9 @@ pub fn CanvasView(path: PathBuf) -> Element {
                         | flynt_store::watcher::ProjectChangeEvent::FileModified(p) => Some(p),
                         flynt_store::watcher::ProjectChangeEvent::FileDeleted(_) => None,
                     };
-                    let Some(changed) = changed else { continue; };
+                    let Some(changed) = changed else {
+                        continue;
+                    };
                     // Match by suffix — events carry absolute paths; our path
                     // is project-relative. Keeps the comparison robust to
                     // canonicalization differences.
@@ -461,7 +509,11 @@ pub fn CanvasView(path: PathBuf) -> Element {
     let parsed_ref = parsed.read();
     let canvas = match &*parsed_ref {
         Ok(c) => {
-            tracing::info!("CanvasView parsed: {} cells, theme={}", c.cells.len(), c.theme);
+            tracing::info!(
+                "CanvasView parsed: {} cells, theme={}",
+                c.cells.len(),
+                c.theme
+            );
             c
         }
         Err(e) => {
@@ -547,12 +599,16 @@ mod tests {
 
     #[test]
     fn detects_canvas_wrapper_minimal() {
-        assert_eq!(canvas_embed_path("![[test.canvas]]\n"), Some("test.canvas".into()));
+        assert_eq!(
+            canvas_embed_path("![[test.canvas]]\n"),
+            Some("test.canvas".into())
+        );
     }
 
     #[test]
     fn rejects_regular_note_with_canvas_embed() {
-        let content = "+++\ntitle = \"Note\"\n+++\n\nText before.\n\n![[hero.canvas]]\n\nText after.\n";
+        let content =
+            "+++\ntitle = \"Note\"\n+++\n\nText before.\n\n![[hero.canvas]]\n\nText after.\n";
         assert_eq!(canvas_embed_path(content), None);
     }
 
@@ -576,7 +632,9 @@ mod tests {
     #[test]
     fn frontmatter_has_canvas_tag_rejects_missing_or_other_tags() {
         assert!(!frontmatter_has_canvas_tag("+++\ntags = []\n+++\n\nbody\n"));
-        assert!(!frontmatter_has_canvas_tag("+++\ntags = [\"draft\"]\n+++\n\nbody\n"));
+        assert!(!frontmatter_has_canvas_tag(
+            "+++\ntags = [\"draft\"]\n+++\n\nbody\n"
+        ));
         assert!(!frontmatter_has_canvas_tag("plain text"));
     }
 
@@ -593,20 +651,35 @@ mod tests {
 
     fn cell_with(html: &str, css: &str, js: Option<&str>) -> Cell {
         Cell {
-            id: "t".into(), x: 0, y: 0, w: 1, h: 1,
-            html: html.into(), css: css.into(),
+            id: "t".into(),
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+            html: html.into(),
+            css: css.into(),
             js: js.map(|s| s.into()),
         }
     }
 
     #[test]
     fn build_srcdoc_inlines_tailwind_and_theme_and_cell_css() {
-        let cell = cell_with("<button class=\"btn\">Hi</button>", ".btn { color: red; }", None);
+        let cell = cell_with(
+            "<button class=\"btn\">Hi</button>",
+            ".btn { color: red; }",
+            None,
+        );
         let out = build_srcdoc(&cell, "default", "/* tw-marker */");
         assert!(out.contains("/* tw-marker */"), "tailwind must be inlined");
         assert!(out.contains("--background:"), "theme vars must be inlined");
-        assert!(out.contains(".btn { color: red; }"), "cell css must be inlined");
-        assert!(out.contains("<button class=\"btn\">Hi</button>"), "cell html must be in body");
+        assert!(
+            out.contains(".btn { color: red; }"),
+            "cell css must be inlined"
+        );
+        assert!(
+            out.contains("<button class=\"btn\">Hi</button>"),
+            "cell html must be in body"
+        );
     }
 
     #[test]
@@ -617,7 +690,10 @@ mod tests {
         let cell = cell_with("<div>x</div>", "", None);
         let out = build_srcdoc(&cell, "default", "");
         assert!(out.contains("<script>"));
-        assert!(out.contains("flyntMeasure"), "measurement hook must be injected");
+        assert!(
+            out.contains("flyntMeasure"),
+            "measurement hook must be injected"
+        );
     }
 
     #[test]
@@ -637,7 +713,10 @@ mod tests {
         let cell = cell_with("<div class=\"h-full\">x</div>", "", None);
         let out = build_srcdoc(&cell, "default", "");
         assert!(out.contains("html,body"), "html/body selector present");
-        assert!(out.contains("height:100%"), "html/body must set height:100%");
+        assert!(
+            out.contains("height:100%"),
+            "html/body must set height:100%"
+        );
     }
 
     #[test]

@@ -46,10 +46,10 @@ impl<'a> ConflictStore<'a> {
     }
 
     pub fn resolve(&self, id: &str) -> Result<()> {
-        self.0.lock().unwrap().execute(
-            "DELETE FROM conflicts WHERE id = ?1",
-            params![id],
-        )?;
+        self.0
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM conflicts WHERE id = ?1", params![id])?;
         Ok(())
     }
 }

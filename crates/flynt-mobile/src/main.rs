@@ -8,6 +8,5 @@ fn main() {
         )
         .init();
 
-    dioxus::LaunchBuilder::mobile()
-        .launch(flynt_mobile::app::App);
+    dioxus::LaunchBuilder::mobile().launch(flynt_mobile::app::App);
 }

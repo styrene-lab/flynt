@@ -1,15 +1,11 @@
-use flynt_core::daemon::{
-    AgentDaemonConfig, DaemonState, InboundCapability,
-};
 use dioxus::prelude::*;
+use flynt_core::daemon::{AgentDaemonConfig, DaemonState, InboundCapability};
 
 use crate::bootstrap::AppContext;
 use crate::components::HelpHint;
 
 #[component]
-pub fn DaemonSettingsSection(
-    config: Signal<AgentDaemonConfig>,
-) -> Element {
+pub fn DaemonSettingsSection(config: Signal<AgentDaemonConfig>) -> Element {
     let ctx = use_context::<AppContext>();
     let daemon = ctx.daemon();
 

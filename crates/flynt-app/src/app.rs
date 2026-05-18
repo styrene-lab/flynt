@@ -4,7 +4,10 @@ use crate::{
         runtime_state_for_project_root,
     },
     components::{AgentRail, CommandPalette, Sidebar, Toolbar, initial_note_id_for_project},
-    state::{Route, SettingsOpen, SettingsPage, SyncStatus, TabState, ThemeName},
+    state::{
+        Route, SettingsOpen, SettingsPage, SyncActivityState, SyncRunOutcome, SyncStatus, TabState,
+        ThemeName,
+    },
     views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use dioxus::prelude::*;
@@ -74,6 +77,14 @@ pub fn App() -> Element {
     // Rename trigger — sidebar bumps this, NotesView watches and opens inline rename
     use_context_provider(|| Signal::new(crate::state::RenameTrigger(0)));
 
+    // Note context inspector command bus — command palette bumps this,
+    // NotesView applies the requested tab/toggle behavior if mounted.
+    use_context_provider(|| Signal::new(crate::state::NoteInspectorCommand::default()));
+
+    // Note history/recovery command bus — command palette and snapshot actions
+    // use this to open the active note recovery modal.
+    use_context_provider(|| Signal::new(crate::state::NoteHistoryCommand::default()));
+
     // Settings tab — which panel is shown in SettingsView
     use_context_provider(|| Signal::new(SettingsPage::default()));
 
@@ -95,16 +106,18 @@ pub fn App() -> Element {
     let mut tab_state = use_context::<Signal<TabState>>();
     let show_agent = use_signal(|| false);
     let mut sync_status = use_signal(|| SyncStatus::Idle);
+    let mut sync_activity = use_context_provider(|| Signal::new(SyncActivityState::default()));
 
     // Poll sync status from the auto-sync watcher
     {
         let runtime_for_sync = ctx.runtime.clone();
         use_future(move || async move {
+            let mut run_active = false;
             loop {
                 let rx_opt = runtime_for_sync.read().sync_status_rx.clone();
                 if let Some(rx) = rx_opt {
                     let status = rx.borrow().clone();
-                    let ui_status = match status {
+                    let ui_status = match &status {
                         flynt_store::sync::AutoSyncStatus::Idle => SyncStatus::Idle,
                         flynt_store::sync::AutoSyncStatus::Committing
                         | flynt_store::sync::AutoSyncStatus::Pulling
@@ -114,6 +127,56 @@ pub fn App() -> Element {
                         }
                         flynt_store::sync::AutoSyncStatus::Error(_) => SyncStatus::Syncing, // transient
                     };
+                    let now = chrono::Utc::now();
+                    match status {
+                        flynt_store::sync::AutoSyncStatus::Idle => {
+                            if run_active {
+                                run_active = false;
+                                let mut activity = sync_activity.write();
+                                activity.current_phase = None;
+                                activity.last_finished_at = Some(now);
+                                activity.last_outcome = Some(SyncRunOutcome::Success);
+                                activity.successful_runs =
+                                    activity.successful_runs.saturating_add(1);
+                            }
+                        }
+                        flynt_store::sync::AutoSyncStatus::Committing
+                        | flynt_store::sync::AutoSyncStatus::Pulling
+                        | flynt_store::sync::AutoSyncStatus::Pushing => {
+                            if !run_active {
+                                run_active = true;
+                                let mut activity = sync_activity.write();
+                                activity.last_started_at = Some(now);
+                                activity.last_finished_at = None;
+                                activity.last_outcome = None;
+                            }
+                            sync_activity.write().current_phase = Some(
+                                match status {
+                                    flynt_store::sync::AutoSyncStatus::Committing => "Committing",
+                                    flynt_store::sync::AutoSyncStatus::Pulling => "Pulling",
+                                    flynt_store::sync::AutoSyncStatus::Pushing => "Pushing",
+                                    _ => unreachable!(),
+                                }
+                                .into(),
+                            );
+                        }
+                        flynt_store::sync::AutoSyncStatus::Conflict(files) => {
+                            run_active = false;
+                            let mut activity = sync_activity.write();
+                            activity.current_phase = None;
+                            activity.last_finished_at = Some(now);
+                            activity.last_outcome = Some(SyncRunOutcome::Conflict(files));
+                            activity.failed_runs = activity.failed_runs.saturating_add(1);
+                        }
+                        flynt_store::sync::AutoSyncStatus::Error(error) => {
+                            run_active = false;
+                            let mut activity = sync_activity.write();
+                            activity.current_phase = None;
+                            activity.last_finished_at = Some(now);
+                            activity.last_outcome = Some(SyncRunOutcome::Error(error));
+                            activity.failed_runs = activity.failed_runs.saturating_add(1);
+                        }
+                    }
                     *sync_status.write() = ui_status;
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;

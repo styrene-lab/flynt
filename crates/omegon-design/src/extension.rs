@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use omegon_extension::Extension;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
@@ -24,8 +24,12 @@ impl DesignExtension {
 
 #[async_trait]
 impl Extension for DesignExtension {
-    fn name(&self) -> &str { "omegon-design" }
-    fn version(&self) -> &str { env!("CARGO_PKG_VERSION") }
+    fn name(&self) -> &str {
+        "omegon-design"
+    }
+    fn version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
 
     async fn handle_rpc(&self, method: &str, params: Value) -> omegon_extension::Result<Value> {
         match method {
@@ -171,7 +175,10 @@ impl DesignExtension {
     fn read_active_theme(&self, canvas_path: &str) -> Option<String> {
         // Refuse path traversal; resolve relative to project.
         let rel = std::path::Path::new(canvas_path);
-        if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return None;
         }
         let abs = self.project_root.join(rel);
@@ -180,7 +187,10 @@ impl DesignExtension {
     }
 
     fn execute_describe_influences(&self, params: Value) -> omegon_extension::Result<Value> {
-        let full = params.get("full_content").and_then(|v| v.as_bool()).unwrap_or(false);
+        let full = params
+            .get("full_content")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let canvas_path = params.get("canvas_path").and_then(|v| v.as_str());
 
         // Skill block — read installed copy, hash for drift detection.
@@ -231,7 +241,8 @@ impl DesignExtension {
 
         // Theme block.
         let presets = read_json(&self.presets_path()).unwrap_or(json!({}));
-        let available: Vec<String> = presets.as_object()
+        let available: Vec<String> = presets
+            .as_object()
             .map(|m| m.keys().cloned().collect())
             .unwrap_or_default();
         let active_theme = canvas_path.and_then(|p| self.read_active_theme(p));
@@ -246,11 +257,13 @@ impl DesignExtension {
 
         // Primitives count + guidance lines.
         let primitives_doc = read_json(&self.primitives_path()).unwrap_or(json!({}));
-        let prim_count = primitives_doc.get("primitives")
+        let prim_count = primitives_doc
+            .get("primitives")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
-        let guidance_count = primitives_doc.get("cell_authoring_guidance")
+        let guidance_count = primitives_doc
+            .get("cell_authoring_guidance")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
@@ -275,15 +288,15 @@ impl DesignExtension {
     }
 
     fn execute_suggest_theme(&self, params: Value) -> omegon_extension::Result<Value> {
-        let brief = params.get("brief")
+        let brief = params
+            .get("brief")
             .and_then(|v| v.as_str())
             .map(str::trim)
             .unwrap_or("");
         if brief.is_empty() {
             return Ok(Value::Null);
         }
-        let presets = read_json(&self.presets_path())
-            .unwrap_or(json!({}));
+        let presets = read_json(&self.presets_path()).unwrap_or(json!({}));
         let scored = score_themes_against_brief(brief, &presets);
         // Pick the highest-scoring preset above a threshold; null otherwise.
         let best = scored.iter().max_by_key(|(_, s)| *s);
@@ -350,7 +363,9 @@ impl DesignExtension {
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
-            Ok(json!({"platform": "other", "status": "unknown", "instructions": "Platform not supported by Flynt's capture pipeline."}))
+            Ok(
+                json!({"platform": "other", "status": "unknown", "instructions": "Platform not supported by Flynt's capture pipeline."}),
+            )
         }
     }
 
@@ -358,12 +373,16 @@ impl DesignExtension {
     /// the response. Flynt-app's CanvasView watcher does the work — see
     /// `canvas_capture::process_capture_request` in flynt-app.
     async fn execute_capture_viewport(&self, params: Value) -> omegon_extension::Result<Value> {
-        use flynt_core::canvas::{capture_request_dir, capture_response_dir, CaptureRequest, CaptureResponse};
+        use flynt_core::canvas::{
+            CaptureRequest, CaptureResponse, capture_request_dir, capture_response_dir,
+        };
 
-        let canvas_path = params.get("canvas_path")
+        let canvas_path = params
+            .get("canvas_path")
             .and_then(|v| v.as_str())
             .map(String::from);
-        let include_metrics = params.get("include_metrics")
+        let include_metrics = params
+            .get("include_metrics")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
@@ -411,19 +430,26 @@ impl DesignExtension {
                 return Err(omegon_extension::Error::internal_error(
                     "capture timed out after 5s — is Flynt running with a canvas open? \
                      If permission has never been granted on macOS, call canvas_capture_status \
-                     and surface the instructions to the operator.".to_string(),
+                     and surface the instructions to the operator."
+                        .to_string(),
                 ));
             }
         }
     }
 
     fn execute_critique(&self, params: Value) -> omegon_extension::Result<Value> {
-        let path = params.get("canvas_path")
+        let path = params
+            .get("canvas_path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| omegon_extension::Error::invalid_params("missing 'canvas_path'"))?;
         let rel = std::path::Path::new(path);
-        if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-            return Err(omegon_extension::Error::invalid_params("path must not contain '..'"));
+        if rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(omegon_extension::Error::invalid_params(
+                "path must not contain '..'",
+            ));
         }
         let abs = self.project_root.join(rel);
         let canvas = flynt_core::canvas::Canvas::load(&abs)
@@ -451,8 +477,15 @@ impl DesignExtension {
 
         // Theme-coherence check: if cells override bg with hardcoded hex but
         // theme has its own --background, flag.
-        let hardcoded_bg_count = canvas.cells.iter()
-            .filter(|c| c.html.contains("background:#") || c.html.contains("background: #") || c.html.contains("bg-black") || c.html.contains("bg-white"))
+        let hardcoded_bg_count = canvas
+            .cells
+            .iter()
+            .filter(|c| {
+                c.html.contains("background:#")
+                    || c.html.contains("background: #")
+                    || c.html.contains("bg-black")
+                    || c.html.contains("bg-white")
+            })
             .count();
         if hardcoded_bg_count > 0 {
             suggestions.push(format!(
@@ -499,7 +532,9 @@ impl DesignExtension {
 }
 
 fn read_json(path: &std::path::Path) -> Option<Value> {
-    std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok())
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
 }
 
 /// Same heuristic as canvas_set_cells lint — kept here as a sibling
@@ -514,8 +549,13 @@ fn outermost_fills_cell(html: &str) -> bool {
         }
         i += 1;
     }
-    if i >= bytes.len() { return true; }
-    let tag_end = match html[i..].find('>') { Some(e) => i + e, None => return true };
+    if i >= bytes.len() {
+        return true;
+    }
+    let tag_end = match html[i..].find('>') {
+        Some(e) => i + e,
+        None => return true,
+    };
     let tag = &html[i..=tag_end];
     tag.contains("h-full")
         || tag.contains("h-screen")
@@ -525,8 +565,18 @@ fn outermost_fills_cell(html: &str) -> bool {
 
 fn html_has_arbitrary_tailwind(html: &str) -> bool {
     const PREFIXES: &[&str] = &[
-        "bg-[", "text-[", "border-[", "ring-[", "shadow-[",
-        "p-[", "px-[", "py-[", "m-[", "w-[", "h-[", "rounded-[",
+        "bg-[",
+        "text-[",
+        "border-[",
+        "ring-[",
+        "shadow-[",
+        "p-[",
+        "px-[",
+        "py-[",
+        "m-[",
+        "w-[",
+        "h-[",
+        "rounded-[",
     ];
     PREFIXES.iter().any(|p| html.contains(p))
 }
@@ -560,19 +610,25 @@ fn score_themes_against_brief(brief: &str, presets: &Value) -> Vec<(String, u32)
             }
             // Heuristic boosts for common visual-language pairings the bundled
             // presets handle well.
-            if (lower_brief.contains("dark") || lower_brief.contains("black"))
-                && id != "light" {
+            if (lower_brief.contains("dark") || lower_brief.contains("black")) && id != "light" {
                 score += 1;
             }
             if lower_brief.contains("light") && id == "light" {
                 score += 2;
             }
-            if (lower_brief.contains("warm") || lower_brief.contains("orange") || lower_brief.contains("amber"))
-                && id == "amber" {
+            if (lower_brief.contains("warm")
+                || lower_brief.contains("orange")
+                || lower_brief.contains("amber"))
+                && id == "amber"
+            {
                 score += 2;
             }
-            if (lower_brief.contains("cool") || lower_brief.contains("blue") || lower_brief.contains("teal") || lower_brief.contains("ocean"))
-                && id == "ocean" {
+            if (lower_brief.contains("cool")
+                || lower_brief.contains("blue")
+                || lower_brief.contains("teal")
+                || lower_brief.contains("ocean"))
+                && id == "ocean"
+            {
                 score += 2;
             }
             out.push((id.clone(), score));
@@ -621,12 +677,17 @@ mod tests {
     async fn get_tools_lists_all_design_tools() {
         let (_tmp, ext) = test_ext();
         let tools = ext.handle_rpc("get_tools", json!({})).await.unwrap();
-        let names: Vec<String> = tools.as_array().unwrap().iter()
+        let names: Vec<String> = tools
+            .as_array()
+            .unwrap()
+            .iter()
             .filter_map(|t| t["name"].as_str().map(str::to_string))
             .collect();
         for expected in [
-            "design_describe_influences", "design_load_style_guide",
-            "design_suggest_theme", "design_critique"
+            "design_describe_influences",
+            "design_load_style_guide",
+            "design_suggest_theme",
+            "design_critique",
         ] {
             assert!(names.contains(&expected.to_string()), "missing: {expected}");
         }
@@ -636,7 +697,10 @@ mod tests {
     async fn describe_influences_summarizes_presets_and_primitives() {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
-        let out = ext.handle_rpc("execute_design_describe_influences", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_design_describe_influences", json!({}))
+            .await
+            .unwrap();
         assert_eq!(out["primitives"]["count"], 1);
         assert_eq!(out["primitives"]["guidance_lines"], 1);
         let available = out["theme"]["available"].as_array().unwrap();
@@ -648,10 +712,13 @@ mod tests {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
         // Skill not installed in this test env — full_content should reflect that.
-        let out = ext.handle_rpc(
-            "execute_design_describe_influences",
-            json!({"full_content": true}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_design_describe_influences",
+                json!({"full_content": true}),
+            )
+            .await
+            .unwrap();
         assert!(out["skill"]["active"] == false || out["skill"]["full_content"].is_string());
     }
 
@@ -659,10 +726,13 @@ mod tests {
     async fn suggest_theme_picks_amber_for_warm_brief() {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
-        let out = ext.handle_rpc(
-            "execute_design_suggest_theme",
-            json!({"brief": "warm orange industrial vibe"}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_design_suggest_theme",
+                json!({"brief": "warm orange industrial vibe"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(out["theme_id"], "amber");
     }
 
@@ -670,10 +740,13 @@ mod tests {
     async fn suggest_theme_picks_ocean_for_cool_brief() {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
-        let out = ext.handle_rpc(
-            "execute_design_suggest_theme",
-            json!({"brief": "cool teal blue ocean dashboard"}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_design_suggest_theme",
+                json!({"brief": "cool teal blue ocean dashboard"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(out["theme_id"], "ocean");
     }
 
@@ -681,10 +754,10 @@ mod tests {
     async fn suggest_theme_returns_null_for_empty_brief() {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
-        let out = ext.handle_rpc(
-            "execute_design_suggest_theme",
-            json!({"brief": ""}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_design_suggest_theme", json!({"brief": ""}))
+            .await
+            .unwrap();
         assert!(out.is_null());
     }
 
@@ -692,7 +765,10 @@ mod tests {
     async fn load_style_guide_emits_setup_hint_when_neither_level_present() {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
-        let out = ext.handle_rpc("execute_design_load_style_guide", json!({})).await.unwrap();
+        let out = ext
+            .handle_rpc("execute_design_load_style_guide", json!({}))
+            .await
+            .unwrap();
         assert!(!out["project"]["loaded"].as_bool().unwrap());
         // user-level may or may not exist on the test system; setup_hint
         // appears only when neither side resolves
@@ -708,19 +784,33 @@ mod tests {
         // Seed a canvas with a cell that lacks h-full.
         let mut canvas = flynt_core::canvas::Canvas::default();
         canvas.upsert_cell(flynt_core::canvas::Cell {
-            id: "x".into(), x: 0, y: 0, w: 4, h: 3,
+            id: "x".into(),
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 3,
             html: "<div class=\"bg-card p-4\">x</div>".into(),
-            css: "".into(), js: None,
+            css: "".into(),
+            js: None,
         });
         std::fs::create_dir_all(tmp.path().join("canvases")).unwrap();
-        canvas.save(&tmp.path().join("canvases/Demo.canvas")).unwrap();
+        canvas
+            .save(&tmp.path().join("canvases/Demo.canvas"))
+            .unwrap();
 
-        let out = ext.handle_rpc(
-            "execute_design_critique",
-            json!({"canvas_path": "canvases/Demo.canvas"}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_design_critique",
+                json!({"canvas_path": "canvases/Demo.canvas"}),
+            )
+            .await
+            .unwrap();
         let warnings = out["report"]["warnings"].as_array().unwrap();
-        assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("h-full")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap().contains("h-full"))
+        );
     }
 
     #[tokio::test]
@@ -729,29 +819,46 @@ mod tests {
         let ext = test_ext_inplace(&tmp);
         let mut canvas = flynt_core::canvas::Canvas::default();
         canvas.upsert_cell(flynt_core::canvas::Cell {
-            id: "x".into(), x: 0, y: 0, w: 4, h: 3,
+            id: "x".into(),
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 3,
             html: "<div class=\"h-full bg-[#FF0000]\">x</div>".into(),
-            css: "".into(), js: None,
+            css: "".into(),
+            js: None,
         });
         std::fs::create_dir_all(tmp.path().join("canvases")).unwrap();
-        canvas.save(&tmp.path().join("canvases/Demo.canvas")).unwrap();
+        canvas
+            .save(&tmp.path().join("canvases/Demo.canvas"))
+            .unwrap();
 
-        let out = ext.handle_rpc(
-            "execute_design_critique",
-            json!({"canvas_path": "canvases/Demo.canvas"}),
-        ).await.unwrap();
+        let out = ext
+            .handle_rpc(
+                "execute_design_critique",
+                json!({"canvas_path": "canvases/Demo.canvas"}),
+            )
+            .await
+            .unwrap();
         let warnings = out["report"]["warnings"].as_array().unwrap();
-        assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("arbitrary")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap().contains("arbitrary"))
+        );
     }
 
     #[tokio::test]
     async fn critique_rejects_path_traversal() {
         let (tmp, _) = test_ext();
         let ext = test_ext_inplace(&tmp);
-        let err = ext.handle_rpc(
-            "execute_design_critique",
-            json!({"canvas_path": "../etc/passwd"}),
-        ).await.unwrap_err();
+        let err = ext
+            .handle_rpc(
+                "execute_design_critique",
+                json!({"canvas_path": "../etc/passwd"}),
+            )
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains(".."));
     }
 }

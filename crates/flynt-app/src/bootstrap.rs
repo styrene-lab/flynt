@@ -616,8 +616,8 @@ impl OmegonRuntimeContext {
 #[cfg(test)]
 mod tests {
     use super::{
-        publication_output_path, KnownProject, LauncherProfile, OmegonRuntimeContext,
-        PendingProjectSetup,
+        KnownProject, LauncherProfile, OmegonRuntimeContext, PendingProjectSetup,
+        publication_output_path,
     };
     use crate::self_update::UpdateChannel;
     use flynt_core::{
@@ -975,16 +975,29 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
                             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
                             if ext == "md" {
                                 match p.strip_prefix(&project_clone.root) {
-                                    Ok(rel) => match project_clone.store.get_document_by_path(rel) {
-                                        Ok(Some(doc)) => {
-                                            if let Err(e) = project_clone.store.delete_document(&doc.id) {
-                                                warn!("Remove deleted document from index failed for {}: {e}", rel.display());
+                                    Ok(rel) => {
+                                        match project_clone.store.get_document_by_path(rel) {
+                                            Ok(Some(doc)) => {
+                                                if let Err(e) =
+                                                    project_clone.store.delete_document(&doc.id)
+                                                {
+                                                    warn!(
+                                                        "Remove deleted document from index failed for {}: {e}",
+                                                        rel.display()
+                                                    );
+                                                }
                                             }
+                                            Ok(None) => {}
+                                            Err(e) => warn!(
+                                                "Lookup deleted document failed for {}: {e}",
+                                                rel.display()
+                                            ),
                                         }
-                                        Ok(None) => {}
-                                        Err(e) => warn!("Lookup deleted document failed for {}: {e}", rel.display()),
-                                    },
-                                    Err(e) => warn!("Deleted path outside project root {}: {e}", p.display()),
+                                    }
+                                    Err(e) => warn!(
+                                        "Deleted path outside project root {}: {e}",
+                                        p.display()
+                                    ),
                                 }
                             }
                             None

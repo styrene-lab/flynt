@@ -72,9 +72,15 @@ fn load_level(path: PathBuf, level: &'static str) -> StyleGuideLevel {
             // looking for a body headline. The first non-empty, non-heading
             // line after the frontmatter is treated as the summary.
             let body_start = if content.starts_with("+++\n") {
-                content[4..].find("\n+++").map(|i| i + 4 + "\n+++".len()).unwrap_or(0)
+                content[4..]
+                    .find("\n+++")
+                    .map(|i| i + 4 + "\n+++".len())
+                    .unwrap_or(0)
             } else if content.starts_with("---\n") {
-                content[4..].find("\n---").map(|i| i + 4 + "\n---".len()).unwrap_or(0)
+                content[4..]
+                    .find("\n---")
+                    .map(|i| i + 4 + "\n---".len())
+                    .unwrap_or(0)
             } else {
                 0
             };
@@ -125,8 +131,8 @@ pub fn load_report(project_root: &Path) -> Result<StyleGuideReport> {
     let user = load_level(user_path(), "user");
 
     let merged = match (project.content.as_ref(), user.content.as_ref()) {
-        (Some(p), _) => Some(p.clone()),       // project wins
-        (None, Some(u)) => Some(u.clone()),    // fall through to user
+        (Some(p), _) => Some(p.clone()),    // project wins
+        (None, Some(u)) => Some(u.clone()), // fall through to user
         (None, None) => None,
     };
 
@@ -141,7 +147,12 @@ pub fn load_report(project_root: &Path) -> Result<StyleGuideReport> {
         None
     };
 
-    Ok(StyleGuideReport { project, user, merged, setup_hint })
+    Ok(StyleGuideReport {
+        project,
+        user,
+        merged,
+        setup_hint,
+    })
 }
 
 #[cfg(test)]
@@ -166,11 +177,22 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join(".flynt");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("style-guide.md"), b"# Project Guide\nProject content here.").unwrap();
+        std::fs::write(
+            dir.join("style-guide.md"),
+            b"# Project Guide\nProject content here.",
+        )
+        .unwrap();
 
         let report = load_report(tmp.path()).unwrap();
         assert!(report.project.loaded);
-        assert!(report.project.checksum.as_ref().unwrap().starts_with("sha256:"));
+        assert!(
+            report
+                .project
+                .checksum
+                .as_ref()
+                .unwrap()
+                .starts_with("sha256:")
+        );
         let merged = report.merged.unwrap();
         assert!(merged.contains("Project Guide"));
     }
@@ -183,7 +205,8 @@ mod tests {
         std::fs::write(
             dir.join("style-guide.md"),
             b"+++\nname = \"x\"\n+++\n# Title\nWarm beige aesthetic with amber accents.\n",
-        ).unwrap();
+        )
+        .unwrap();
         let report = load_report(tmp.path()).unwrap();
         assert_eq!(
             report.project.headline.as_deref(),

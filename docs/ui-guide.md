@@ -221,7 +221,8 @@ to generate raw Excalidraw element arrays.
 | Insert Drawing Here | Create | Inserts `![[drawing.excalidraw]]` at cursor (Notes view only, requires open note) |
 | Today's Note | Create | Daily note from template, or opens existing |
 | New from: `<template>` | Template | Creates timestamped note from project template |
-| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags. **Silently no-ops on non-Git projects.** |
+| Show Note History | View | Opens active-note history with diff preview and restore-as-copy |
+| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags, then opens Note History. |
 | Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
 | Create Project in iCloud | Create | Creates iCloud project + opens new instance |
 | `<note title>` | Open | Opens matching note in tab |
@@ -476,8 +477,10 @@ to generate raw Excalidraw element arrays.
 
 | Action | Trigger | Result |
 |--------|---------|--------|
-| Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags |
-| **Non-Git project** | Same command | **Silently no-ops. No error, no feedback.** |
+| Show Note History | `Cmd+P → Show Note History` or Notes toolbar `History` | Lists commits touching the active note, shows selected commit vs current note diff, supports `Restore as copy` |
+| Restore as copy | History modal | Writes the selected snapshot to `Recovered/<note> <commit>.md` and opens the recovered copy without overwriting the active note |
+| Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags, then opens Note History |
+| **Non-Git project** | Same commands | History shows a Git-history error; snapshot command logs and makes no project changes |
 
 ### Project Migration
 
@@ -541,7 +544,6 @@ to generate raw Excalidraw element arrays.
 | iCloud conflicts | "Conflicted copy" files not detected | Medium — manual reconciliation needed |
 | Project migration | Synchronous, blocks UI, no progress | Medium — large projects freeze |
 | Column rename | No empty-name validation | Low — cosmetic |
-| Create Snapshot | Silent no-op on non-Git projects | Low — confusing but harmless |
 | Mobile settings | Read-only, no editing | Medium — must use desktop for config |
 | Delegation files | Accumulate without cleanup | Low — searchable, hidden from sidebar |
 | Sync status | Only for Git backend | Low — cloud providers handle their own |

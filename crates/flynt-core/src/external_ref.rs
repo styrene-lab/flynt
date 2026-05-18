@@ -69,23 +69,38 @@ impl Provider {
 /// Returns `None` for unrecognized URLs (they render as plain links).
 pub fn parse_ref(url: &str) -> ExternalRef {
     // GitHub: issues, PRs, discussions
-    if let Some(r) = parse_github(url) { return r; }
+    if let Some(r) = parse_github(url) {
+        return r;
+    }
     // GitLab: issues, MRs
-    if let Some(r) = parse_gitlab(url) { return r; }
+    if let Some(r) = parse_gitlab(url) {
+        return r;
+    }
     // Linear: issues
-    if let Some(r) = parse_linear(url) { return r; }
+    if let Some(r) = parse_linear(url) {
+        return r;
+    }
     // Notion: pages
-    if let Some(r) = parse_notion(url) { return r; }
+    if let Some(r) = parse_notion(url) {
+        return r;
+    }
     // Jira: issues
-    if let Some(r) = parse_jira(url) { return r; }
+    if let Some(r) = parse_jira(url) {
+        return r;
+    }
     // Azure DevOps: work items
-    if let Some(r) = parse_ado(url) { return r; }
+    if let Some(r) = parse_ado(url) {
+        return r;
+    }
     // Forgejo/Gitea: issues, PRs (self-hosted, configurable domain)
-    if let Some(r) = parse_forgejo(url) { return r; }
+    if let Some(r) = parse_forgejo(url) {
+        return r;
+    }
 
     // Generic fallback
     let label = url
-        .strip_prefix("https://").or_else(|| url.strip_prefix("http://"))
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
         .unwrap_or(url)
         .trim_end_matches('/')
         .to_string();
@@ -125,7 +140,9 @@ fn parse_github(url: &str) -> Option<ExternalRef> {
     // https://github.com/org/repo/discussions/789
     let path = url.strip_prefix("https://github.com/")?;
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() < 4 { return None; }
+    if parts.len() < 4 {
+        return None;
+    }
 
     let org = parts[0];
     let repo = parts[1];
@@ -135,16 +152,17 @@ fn parse_github(url: &str) -> Option<ExternalRef> {
     let (label, badge_url) = match kind {
         "issues" => (
             format!("{org}/{repo}#{number}"),
-            Some(format!("https://img.shields.io/github/issues/detail/state/{org}/{repo}/{number}?style=flat-square&label=")),
+            Some(format!(
+                "https://img.shields.io/github/issues/detail/state/{org}/{repo}/{number}?style=flat-square&label="
+            )),
         ),
         "pull" => (
             format!("{org}/{repo}#{number}"),
-            Some(format!("https://img.shields.io/github/pulls/detail/state/{org}/{repo}/{number}?style=flat-square&label=")),
+            Some(format!(
+                "https://img.shields.io/github/pulls/detail/state/{org}/{repo}/{number}?style=flat-square&label="
+            )),
         ),
-        "discussions" => (
-            format!("{org}/{repo} discussion #{number}"),
-            None,
-        ),
+        "discussions" => (format!("{org}/{repo} discussion #{number}"), None),
         _ => return None,
     };
 
@@ -162,7 +180,9 @@ fn parse_gitlab(url: &str) -> Option<ExternalRef> {
     // https://gitlab.com/org/repo/-/merge_requests/456
     let path = url.strip_prefix("https://gitlab.com/")?;
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() < 5 || parts[2] != "-" { return None; }
+    if parts.len() < 5 || parts[2] != "-" {
+        return None;
+    }
 
     let org = parts[0];
     let repo = parts[1];
@@ -188,7 +208,9 @@ fn parse_linear(url: &str) -> Option<ExternalRef> {
     // https://linear.app/ORG/issue/ABC-123
     let path = url.strip_prefix("https://linear.app/")?;
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() < 3 || parts[1] != "issue" { return None; }
+    if parts.len() < 3 || parts[1] != "issue" {
+        return None;
+    }
 
     Some(ExternalRef {
         url: url.to_string(),
@@ -201,7 +223,8 @@ fn parse_linear(url: &str) -> Option<ExternalRef> {
 
 fn parse_notion(url: &str) -> Option<ExternalRef> {
     // https://www.notion.so/Page-Title-abc123def456
-    let path = url.strip_prefix("https://www.notion.so/")
+    let path = url
+        .strip_prefix("https://www.notion.so/")
         .or_else(|| url.strip_prefix("https://notion.so/"))?;
     let page = path.split('?').next().unwrap_or(path);
     let label = page.replace('-', " ");
@@ -224,9 +247,13 @@ fn parse_notion(url: &str) -> Option<ExternalRef> {
 
 fn parse_jira(url: &str) -> Option<ExternalRef> {
     // https://org.atlassian.net/browse/PROJ-123
-    if !url.contains(".atlassian.net/browse/") { return None; }
+    if !url.contains(".atlassian.net/browse/") {
+        return None;
+    }
     let key = url.rsplit('/').next()?;
-    if !key.contains('-') { return None; }
+    if !key.contains('-') {
+        return None;
+    }
 
     Some(ExternalRef {
         url: url.to_string(),
@@ -241,7 +268,9 @@ fn parse_ado(url: &str) -> Option<ExternalRef> {
     // https://dev.azure.com/org/project/_workitems/edit/12345
     let path = url.strip_prefix("https://dev.azure.com/")?;
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() < 4 || !parts.contains(&"_workitems") { return None; }
+    if parts.len() < 4 || !parts.contains(&"_workitems") {
+        return None;
+    }
 
     let id = parts.last()?;
 
@@ -262,7 +291,9 @@ fn parse_forgejo(url: &str) -> Option<ExternalRef> {
     // For now, match URLs that have been explicitly tagged with a forge: query param
     // (e.g., ?forge=forgejo) or that contain /src/ (Gitea/Forgejo file browser pattern).
     // Full integration will use scribe's forge registry to resolve known Forgejo domains.
-    let path = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let path = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
 
     // Check for ?forge=forgejo tag (explicit tagging by scribe)
     if !url.contains("forge=forgejo") && !url.contains("forge=gitea") {
@@ -270,7 +301,9 @@ fn parse_forgejo(url: &str) -> Option<ExternalRef> {
     }
 
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() < 4 { return None; }
+    if parts.len() < 4 {
+        return None;
+    }
 
     // parts[0] = domain, parts[1] = org, parts[2] = repo, parts[3] = kind
     let _domain = parts[0];
@@ -278,7 +311,9 @@ fn parse_forgejo(url: &str) -> Option<ExternalRef> {
     let repo = parts[2];
     let kind = parts[3].split('?').next().unwrap_or(parts[3]);
 
-    if parts.len() < 5 { return None; }
+    if parts.len() < 5 {
+        return None;
+    }
     let number = parts[4].split('?').next().unwrap_or(parts[4]);
 
     let label = match kind {
@@ -299,17 +334,20 @@ fn parse_forgejo(url: &str) -> Option<ExternalRef> {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max { s.to_string() }
-    else { format!("{}…", &s[..max]) }
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max])
+    }
 }
 
 fn html_escape(s: &str) -> Cow<'_, str> {
     if s.contains('&') || s.contains('<') || s.contains('>') || s.contains('"') {
         Cow::Owned(
             s.replace('&', "&amp;")
-             .replace('<', "&lt;")
-             .replace('>', "&gt;")
-             .replace('"', "&quot;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;"),
         )
     } else {
         Cow::Borrowed(s)

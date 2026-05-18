@@ -1,16 +1,21 @@
-use flynt_core::{models::SearchResult, store::ProjectStore};
+use crate::{
+    bootstrap::AppContext,
+    state::{Route, TabState},
+};
 use dioxus::prelude::*;
-use crate::{bootstrap::AppContext, state::{Route, TabState}};
+use flynt_core::{models::SearchResult, store::ProjectStore};
 
 #[derive(Clone)]
 struct SearchGroup {
     folder: String,
-    items:  Vec<SearchResult>,
+    items: Vec<SearchResult>,
 }
 
 fn top_level_folder(path: &std::path::Path) -> String {
     let mut comps = path.components();
-    let Some(first) = comps.next() else { return String::new(); };
+    let Some(first) = comps.next() else {
+        return String::new();
+    };
     if comps.next().is_some() {
         first.as_os_str().to_string_lossy().into_owned()
     } else {
@@ -26,7 +31,10 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
         if let Some(group) = groups.iter_mut().find(|group| group.folder == folder) {
             group.items.push(item);
         } else {
-            groups.push(SearchGroup { folder, items: vec![item] });
+            groups.push(SearchGroup {
+                folder,
+                items: vec![item],
+            });
         }
     }
 
@@ -35,9 +43,19 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
     }
 
     groups.sort_by(|a, b| {
-        let a_score = a.items.first().map(|item| item.score).unwrap_or(f32::NEG_INFINITY);
-        let b_score = b.items.first().map(|item| item.score).unwrap_or(f32::NEG_INFINITY);
-        b_score.total_cmp(&a_score).then_with(|| a.folder.cmp(&b.folder))
+        let a_score = a
+            .items
+            .first()
+            .map(|item| item.score)
+            .unwrap_or(f32::NEG_INFINITY);
+        let b_score = b
+            .items
+            .first()
+            .map(|item| item.score)
+            .unwrap_or(f32::NEG_INFINITY);
+        b_score
+            .total_cmp(&a_score)
+            .then_with(|| a.folder.cmp(&b.folder))
     });
 
     groups
@@ -45,15 +63,17 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
 
 #[component]
 pub fn SearchView(mut search_query: Signal<String>) -> Element {
-    let ctx              = use_context::<AppContext>();
-    let mut tab_state    = use_context::<Signal<TabState>>();
+    let ctx = use_context::<AppContext>();
+    let mut tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
 
     let results = use_resource(move || {
         let q = search_query.read().clone();
         let project = ctx.project();
         async move {
-            if q.trim().is_empty() { return vec![]; }
+            if q.trim().is_empty() {
+                return vec![];
+            }
             tokio::task::spawn_blocking(move || {
                 project.store.search_documents(&q).unwrap_or_default()
             })
@@ -62,9 +82,9 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
         }
     });
 
-    let q_val   = search_query.read().clone();
+    let q_val = search_query.read().clone();
     let q_match = q_val.clone();
-    let q_disp  = q_val.clone();
+    let q_disp = q_val.clone();
 
     rsx! {
         div { class: "search-view",
@@ -208,7 +228,10 @@ mod tests {
 
     #[test]
     fn top_level_folder_only_for_nested_paths() {
-        assert_eq!(top_level_folder(PathBuf::from("notes/alpha.md").as_path()), "notes");
+        assert_eq!(
+            top_level_folder(PathBuf::from("notes/alpha.md").as_path()),
+            "notes"
+        );
         assert_eq!(top_level_folder(PathBuf::from("alpha.md").as_path()), "");
     }
 

@@ -27,13 +27,25 @@ pub struct PartnershipId(pub Uuid);
 pub struct EngagementId(pub Uuid);
 
 impl PartnershipId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
 }
 impl EngagementId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
 }
-impl Default for PartnershipId { fn default() -> Self { Self::new() } }
-impl Default for EngagementId { fn default() -> Self { Self::new() } }
+impl Default for PartnershipId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Default for EngagementId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ── Partnership ─────────────────────────────────────────────────────────────
 
@@ -162,7 +174,9 @@ pub struct RepoBinding {
     pub forge_kind_override: Option<ForgeKind>,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl RepoBinding {
     pub fn new(org: impl Into<String>, repo: impl Into<String>) -> Self {

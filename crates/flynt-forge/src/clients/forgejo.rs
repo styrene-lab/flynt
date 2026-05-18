@@ -50,7 +50,11 @@ impl ForgejoForgeClient {
             .user_agent(USER_AGENT)
             .build()
             .expect("failed to build reqwest client");
-        Self { http, endpoint, token }
+        Self {
+            http,
+            endpoint,
+            token,
+        }
     }
 
     fn base(&self) -> &str {
@@ -137,7 +141,9 @@ impl ForgejoForgeClient {
         }
         req = req.query(&[("limit", per_page.as_str())]);
 
-        let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+        let resp = self
+            .check_response(req.send().await.map_err(reqwest_err)?)
+            .await?;
         let mut next = Self::next_page_url(resp.headers(), &expected_host);
         let items: Vec<T> = resp.json().await.map_err(reqwest_err)?;
         all.extend(items);
@@ -145,17 +151,20 @@ impl ForgejoForgeClient {
         let mut pages = 1usize;
         while let Some(url) = next {
             if pages >= MAX_PAGES {
-                warn!(max_pages = MAX_PAGES, total = all.len(), "pagination capped");
+                warn!(
+                    max_pages = MAX_PAGES,
+                    total = all.len(),
+                    "pagination capped"
+                );
                 break;
             }
-            let mut req = self
-                .http
-                .get(&url)
-                .header(ACCEPT, "application/json");
+            let mut req = self.http.get(&url).header(ACCEPT, "application/json");
             if let Some(token) = self.token.resolve() {
                 req = req.header(AUTHORIZATION, format!("token {token}"));
             }
-            let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+            let resp = self
+                .check_response(req.send().await.map_err(reqwest_err)?)
+                .await?;
             next = Self::next_page_url(resp.headers(), &expected_host);
             let items: Vec<T> = resp.json().await.map_err(reqwest_err)?;
             if items.is_empty() {
@@ -221,7 +230,9 @@ impl ForgeClient for ForgejoForgeClient {
             if !opts.labels.is_empty() {
                 req = req.query(&[("labels", opts.labels.join(","))]);
             }
-            let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+            let resp = self
+                .check_response(req.send().await.map_err(reqwest_err)?)
+                .await?;
             let issues: Vec<FjIssue> = resp.json().await.map_err(reqwest_err)?;
             return Ok(issues
                 .into_iter()
@@ -278,11 +289,14 @@ impl ForgeClient for ForgejoForgeClient {
         });
         let resp = self
             .check_response(
-                self.request(reqwest::Method::POST, &format!("/repos/{owner}/{repo}/issues"))
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(reqwest_err)?,
+                self.request(
+                    reqwest::Method::POST,
+                    &format!("/repos/{owner}/{repo}/issues"),
+                )
+                .json(&body)
+                .send()
+                .await
+                .map_err(reqwest_err)?,
             )
             .await?;
         let created: FjIssue = resp.json().await.map_err(reqwest_err)?;
@@ -384,12 +398,13 @@ impl ForgeClient for ForgejoForgeClient {
     async fn list_repos(&self, org: &str) -> ForgeResult<Vec<ForgeRepo>> {
         // Forgejo has separate /orgs/{org}/repos and /users/{user}/repos;
         // both work the same way. Try org first, fall back to user.
-        let repos: Vec<FjRepo> = match self
-            .get_all_pages(&format!("/orgs/{org}/repos"), &[])
-            .await
+        let repos: Vec<FjRepo> = match self.get_all_pages(&format!("/orgs/{org}/repos"), &[]).await
         {
             Ok(r) => r,
-            Err(_) => self.get_all_pages(&format!("/users/{org}/repos"), &[]).await?,
+            Err(_) => {
+                self.get_all_pages(&format!("/users/{org}/repos"), &[])
+                    .await?
+            }
         };
         Ok(repos.into_iter().map(FjRepo::into_forge_repo).collect())
     }
@@ -425,7 +440,10 @@ impl ForgeClient for ForgejoForgeClient {
     ) -> ForgeResult<ForgeWebhook> {
         let mut config = serde_json::Map::new();
         config.insert("url".into(), serde_json::Value::String(hook.url.clone()));
-        config.insert("content_type".into(), serde_json::Value::String("json".into()));
+        config.insert(
+            "content_type".into(),
+            serde_json::Value::String("json".into()),
+        );
         if let Some(s) = &hook.secret {
             config.insert("secret".into(), serde_json::Value::String(s.clone()));
         }
@@ -437,11 +455,14 @@ impl ForgeClient for ForgejoForgeClient {
         });
         let resp = self
             .check_response(
-                self.request(reqwest::Method::POST, &format!("/repos/{owner}/{repo}/hooks"))
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(reqwest_err)?,
+                self.request(
+                    reqwest::Method::POST,
+                    &format!("/repos/{owner}/{repo}/hooks"),
+                )
+                .json(&body)
+                .send()
+                .await
+                .map_err(reqwest_err)?,
             )
             .await?;
         let created: FjWebhook = resp.json().await.map_err(reqwest_err)?;
