@@ -1,14 +1,16 @@
-use dioxus::prelude::*;
-use flynt_core::store::ProjectStore;
 use crate::bootstrap::AppContext;
 use crate::state::TabState;
+use dioxus::prelude::*;
+use flynt_core::store::ProjectStore;
 
 #[component]
 pub fn TabBar() -> Element {
     let tab_state = use_context::<Signal<TabState>>();
     let tabs = tab_state.read().tabs.clone();
 
-    if tabs.is_empty() { return rsx! { div { class: "tab-bar tab-bar-empty" } }; }
+    if tabs.is_empty() {
+        return rsx! { div { class: "tab-bar tab-bar-empty" } };
+    }
 
     rsx! {
         div { class: "tab-bar",
@@ -33,7 +35,12 @@ pub fn TabBar() -> Element {
 }
 
 #[component]
-fn TabItem(index: usize, title: String, doc_id: flynt_core::models::DocumentId, is_active: bool) -> Element {
+fn TabItem(
+    index: usize,
+    title: String,
+    doc_id: flynt_core::models::DocumentId,
+    is_active: bool,
+) -> Element {
     let ctx = use_context::<AppContext>();
     let mut tab_state = use_context::<Signal<TabState>>();
     let mut renaming = use_signal(|| false);
@@ -44,7 +51,12 @@ fn TabItem(index: usize, title: String, doc_id: flynt_core::models::DocumentId, 
     rsx! {
         div {
             class: if is_active { "tab active" } else { "tab" },
-            onclick: move |_| tab_state.write().active = i,
+            onclick: move |_| {
+                if let Ok(Some(doc)) = ctx.project().store.get_document(&doc_id) {
+                    let _ = document::eval(&crate::views::notes::cm6_fast_swap_js(&doc.content));
+                }
+                tab_state.write().active = i;
+            },
             ondoubleclick: move |_| {
                 *rename_input.write() = title.clone();
                 *renaming.write() = true;

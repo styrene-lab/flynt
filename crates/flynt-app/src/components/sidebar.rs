@@ -319,6 +319,9 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
             },
             style: "padding-left: {indent + 20.0}px;",
             onclick: move |_| {
+                    if let Ok(Some(doc)) = ctx.project().store.get_document(&id) {
+                        let _ = document::eval(&crate::views::notes::cm6_fast_swap_js(&doc.content));
+                    }
                     tab_state.write().open(id.clone(), title.clone());
                     // Only write route if we're not already on Notes — avoids
                     // triggering a full app route re-evaluation for no reason.
@@ -373,6 +376,9 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                             *ctx_menu.write() = None;
                             match action.as_str() {
                                 "open-tab" => {
+                                    if let Ok(Some(doc)) = ctx.project().store.get_document(&id_for_tab) {
+                                        let _ = document::eval(&crate::views::notes::cm6_fast_swap_js(&doc.content));
+                                    }
                                     tab_state.write().open(id_for_tab.clone(), title_for_tab.clone());
                                     *active_route.write() = Route::Notes;
                                 }
