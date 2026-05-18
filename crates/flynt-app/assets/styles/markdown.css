@@ -427,6 +427,85 @@
   color: var(--foreground);
 }
 
+.note-publication-editor {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.note-property-toggle {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  color:       var(--foreground);
+  font-size:   var(--font-size-sm);
+}
+
+.note-property-control-grid {
+  display:        grid;
+  grid-template-columns: 1fr;
+  gap:            var(--space-2);
+}
+
+.note-property-control-label {
+  display:        block;
+  margin-bottom:  4px;
+  color:          var(--muted-foreground);
+  font-size:      var(--font-size-xs);
+}
+
+.note-property-input {
+  width:         100%;
+  min-width:     0;
+  padding:       var(--space-2);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background:    var(--input);
+  color:         var(--foreground);
+  font-size:     var(--font-size-sm);
+}
+
+.publish-preview-modal {
+  width:  min(760px, calc(100vw - 64px));
+  height: auto;
+}
+
+.publish-report-body {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-4);
+  padding:        var(--space-4);
+  overflow:       auto;
+}
+
+.publish-report-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.publish-report-stat {
+  padding:       var(--space-3);
+  border:        1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  background:    var(--surface);
+}
+
+.publish-report-label {
+  display:       block;
+  color:         var(--muted-foreground);
+  font-size:     var(--font-size-xs);
+  margin-bottom: var(--space-1);
+}
+
+.publish-report-path {
+  display:       block;
+  overflow:      hidden;
+  color:         var(--foreground);
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+
 .history-overlay {
   position: fixed;
   inset:    0;

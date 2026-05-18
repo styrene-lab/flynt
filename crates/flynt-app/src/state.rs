@@ -41,6 +41,12 @@ pub struct NoteHistoryCommand {
     pub version: u64,
 }
 
+/// One-shot command bus for publication preview/export.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PublicationPreviewCommand {
+    pub version: u64,
+}
+
 /// Whether the settings modal is currently open. Settings used to be
 /// a top-level Route, but that meant entering settings replaced the
 /// whole main content area (including the project sidebar and tab

@@ -85,6 +85,10 @@ pub fn App() -> Element {
     // use this to open the active note recovery modal.
     use_context_provider(|| Signal::new(crate::state::NoteHistoryCommand::default()));
 
+    // Publication preview/export command bus — command palette can trigger
+    // the notes workflow without knowing NotesView internals.
+    use_context_provider(|| Signal::new(crate::state::PublicationPreviewCommand::default()));
+
     // Settings tab — which panel is shown in SettingsView
     use_context_provider(|| Signal::new(SettingsPage::default()));
 

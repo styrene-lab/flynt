@@ -123,12 +123,12 @@ Move publication out of advanced settings only and into the note authoring flow.
 
 | Task ID | Scope | Files likely touched | Acceptance |
 | --- | --- | --- | --- |
-| OP-04.1 | Publication fields in Properties | OP-01 properties tab | Active note can toggle enabled, visibility, slug, collections. |
-| OP-04.2 | Safe frontmatter writer | `flynt-store/src/project.rs` | Publication updates preserve unrelated frontmatter and body. |
-| OP-04.3 | Publish preview command | `command_palette.rs`, `bootstrap.rs` | Palette command exports preview and shows report. |
-| OP-04.4 | Export report view | settings or modal | Shows exported/skipped/error counts and output path. |
-| OP-04.5 | Adapter contract design | `design/publication-adapters.md` | Static folder, GitHub Pages, Astro adapter boundaries defined. |
-| OP-04.6 | Tests | `flynt-store` publication tests | Frontmatter update and report output verified. |
+| OP-04.1 | Publication fields in Properties | OP-01 properties tab | Done — active note can toggle enabled, visibility, slug, collections. |
+| OP-04.2 | Safe frontmatter writer | `flynt-store/src/project.rs` | Done — publication updates preserve unrelated frontmatter and body. |
+| OP-04.3 | Publish preview command | `command_palette.rs`, `bootstrap.rs` | Done — palette command exports preview and shows report. |
+| OP-04.4 | Export report view | settings or modal | Done — modal shows exported/skipped/error counts and output path. |
+| OP-04.5 | Adapter contract design | `design/publication-adapters.md` | Done — static folder, GitHub Pages, Astro adapter boundaries defined. |
+| OP-04.6 | Tests | `flynt-store` publication tests | Done — frontmatter update and report output verified. |
 
 ## OP-05: Bookmarks And Saved Searches
 

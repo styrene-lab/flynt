@@ -7,7 +7,8 @@
 use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
 use crate::state::{
-    NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget, Route, TabState,
+    NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget, PublicationPreviewCommand,
+    Route, TabState,
 };
 use dioxus::prelude::*;
 use flynt_core::store::ProjectStore;
@@ -120,6 +121,7 @@ fn execute_command(
     settings_open: &mut Signal<crate::state::SettingsOpen>,
     note_inspector: &mut Signal<NoteInspectorCommand>,
     note_history: &mut Signal<NoteHistoryCommand>,
+    publication_preview: &mut Signal<PublicationPreviewCommand>,
 ) {
     match id {
         "view-notes" => *active_route.write() = Route::Notes,
@@ -162,6 +164,13 @@ fn execute_command(
         "note-history" => {
             let next_version = note_history.read().version.wrapping_add(1);
             *note_history.write() = NoteHistoryCommand {
+                version: next_version,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "publish-preview" => {
+            let next_version = publication_preview.read().version.wrapping_add(1);
+            *publication_preview.write() = PublicationPreviewCommand {
                 version: next_version,
             };
             *active_route.write() = Route::Notes;
@@ -426,6 +435,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
     let mut settings_open = use_context::<Signal<crate::state::SettingsOpen>>();
     let mut note_inspector = use_context::<Signal<NoteInspectorCommand>>();
     let mut note_history = use_context::<Signal<NoteHistoryCommand>>();
+    let mut publication_preview = use_context::<Signal<PublicationPreviewCommand>>();
 
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
@@ -485,6 +495,11 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 id: "note-history".into(),
                 label: "Show Note History".into(),
                 category: "View".into(),
+            },
+            Cmd {
+                id: "publish-preview".into(),
+                label: "Export Publication Preview".into(),
+                category: "Publish".into(),
             },
             Cmd {
                 id: "new-note".into(),
@@ -643,7 +658,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                     }
                                     Key::Enter => {
                                         if let Some(cmd) = filtered.get(sel) {
-                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history);
+                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview);
                                             close();
                                         }
                                     }
@@ -662,7 +677,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             key: "{i}-{cmd_id}",
                                             class: if i == sel { "palette-item selected" } else { "palette-item" },
                                             onclick: move |_| {
-                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history);
+                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview);
                                                 close();
                                             },
                                             span { class: "palette-category", "{cmd.category}" }

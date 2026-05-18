@@ -167,6 +167,12 @@ For users who chose "Create local project" or "Open existing project" and want t
 - Recovery is non-destructive. `Restore as copy` writes `Recovered/<note> <commit>.md` and opens that copy in a tab instead of overwriting the active note.
 - `Cmd+P -> Create Snapshot` auto-commits, creates a `snapshot-YYYYMMDD-HHMMSS` tag, pushes tags when possible, then opens Note History so the snapshot is part of the same recovery workflow.
 
+### Publication authoring
+- The active note Properties panel exposes publication controls for enabled, visibility, slug, and collections.
+- Publication edits update only the `[publication]` frontmatter table and preserve unrelated metadata/body content.
+- `Export preview` in Properties and `Cmd+P -> Export Publication Preview` run the local static export and show exported/skipped/error counts plus the output path.
+- Adapter boundaries are tracked in `design/publication-adapters.md`: local static folder first, GitHub Pages/Astro as delivery layers over the same manifest.
+
 ### Credential flow
 Git operations use `git2` with credential callbacks. For **HTTPS URLs** (recommended):
 1. Stored personal access token or OAuth token from `~/.config/omegon/auth.json`

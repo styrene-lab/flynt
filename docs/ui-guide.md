@@ -223,6 +223,7 @@ to generate raw Excalidraw element arrays.
 | New from: `<template>` | Template | Creates timestamped note from project template |
 | Show Note History | View | Opens active-note history with diff preview and restore-as-copy |
 | Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags, then opens Note History. |
+| Export Publication Preview | Publish | Exports the local publication preview and opens an export report |
 | Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
 | Create Project in iCloud | Create | Creates iCloud project + opens new instance |
 | `<note title>` | Open | Opens matching note in tab |
@@ -481,6 +482,13 @@ to generate raw Excalidraw element arrays.
 | Restore as copy | History modal | Writes the selected snapshot to `Recovered/<note> <commit>.md` and opens the recovered copy without overwriting the active note |
 | Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags, then opens Note History |
 | **Non-Git project** | Same commands | History shows a Git-history error; snapshot command logs and makes no project changes |
+
+### Publication Authoring
+
+| Action | Trigger | Result |
+|--------|---------|--------|
+| Edit note publication | Notes → Properties → Publish | Updates `[publication]` frontmatter for enabled, visibility, slug, and collections |
+| Export preview | Properties → `Export preview` or `Cmd+P → Export Publication Preview` | Runs the local publication exporter and shows exported/skipped/error counts plus output path |
 
 ### Project Migration
 

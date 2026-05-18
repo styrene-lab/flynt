@@ -1,10 +1,13 @@
 use crate::{
     bootstrap::AppContext,
-    state::{NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget, Route, TabState},
+    state::{
+        NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget, PublicationPreviewCommand,
+        Route, TabState,
+    },
 };
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
-use flynt_core::models::{DocumentMeta, Frontmatter};
+use flynt_core::models::{DocumentMeta, Frontmatter, PublicationConfig, PublicationVisibility};
 use flynt_core::parser::parse_document_source;
 use flynt_core::store::ProjectStore;
 use flynt_store::sync::git::{FileHistoryEntry, FileSnapshot, GitSync};
@@ -61,6 +64,22 @@ struct OutgoingLinkContext {
 struct HistoryPanelState {
     entries: Vec<FileHistoryEntry>,
     error: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct PublishPreviewState {
+    output_path: std::path::PathBuf,
+    exported: usize,
+    skipped_private: usize,
+    errors: Vec<String>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum PublicationEdit {
+    Enabled(bool),
+    Visibility(PublicationVisibility),
+    Slug(String),
+    Collections(String),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1610,6 +1629,8 @@ fn NoteInspector(
     link_context: Option<LinkContext>,
     on_open_doc: EventHandler<DocumentMeta>,
     on_jump_line: EventHandler<usize>,
+    on_publication_change: EventHandler<PublicationEdit>,
+    on_publish_preview: EventHandler<()>,
     on_close: EventHandler<()>,
 ) -> Element {
     let headings = extract_headings(&body);
@@ -1646,6 +1667,8 @@ fn NoteInspector(
                     InspectorTab::Properties => rsx! {
                         NotePropertiesPanel {
                             frontmatter,
+                            on_publication_change,
+                            on_publish_preview,
                         }
                     },
                 }
@@ -1809,7 +1832,11 @@ fn NoteOutlinePanel(headings: Vec<NoteHeading>, on_jump_line: EventHandler<usize
 }
 
 #[component]
-fn NotePropertiesPanel(frontmatter: Frontmatter) -> Element {
+fn NotePropertiesPanel(
+    frontmatter: Frontmatter,
+    on_publication_change: EventHandler<PublicationEdit>,
+    on_publish_preview: EventHandler<()>,
+) -> Element {
     let kind = frontmatter
         .kind
         .clone()
@@ -1819,11 +1846,14 @@ fn NotePropertiesPanel(frontmatter: Frontmatter) -> Element {
         .id
         .map(|id| id.to_string())
         .unwrap_or_else(|| "unmanaged".into());
-    let publication = if frontmatter.publication.enabled {
-        format!("{:?}", frontmatter.publication.visibility).to_lowercase()
+    let publication = frontmatter.publication.clone();
+    let publication_status = if publication.enabled {
+        format!("{:?}", publication.visibility).to_lowercase()
     } else {
         "disabled".into()
     };
+    let slug = publication.slug.clone().unwrap_or_default();
+    let collections = publication.collections.join(", ");
     let data_rows = frontmatter_data_rows(&frontmatter);
 
     rsx! {
@@ -1831,7 +1861,56 @@ fn NotePropertiesPanel(frontmatter: Frontmatter) -> Element {
             PropertyRow { label: "Kind", value: kind }
             PropertyRow { label: "Status", value: status }
             PropertyRow { label: "ID", value: id }
-            PropertyRow { label: "Publication", value: publication }
+            PropertyRow { label: "Publication", value: publication_status }
+            div { class: "note-property-block note-publication-editor",
+                div { class: "note-property-label", "Publish" }
+                label { class: "note-property-toggle",
+                    input {
+                        r#type: "checkbox",
+                        checked: publication.enabled,
+                        onchange: move |e| on_publication_change.call(PublicationEdit::Enabled(e.checked())),
+                    }
+                    span { "Enabled for export" }
+                }
+                div { class: "note-property-control-grid",
+                    label {
+                        span { class: "note-property-control-label", "Visibility" }
+                        select {
+                            class: "note-property-input",
+                            value: "{visibility_value(publication.visibility)}",
+                            onchange: move |e| {
+                                on_publication_change.call(PublicationEdit::Visibility(parse_visibility(&e.value())));
+                            },
+                            option { value: "private", "private" }
+                            option { value: "unlisted", "unlisted" }
+                            option { value: "public", "public" }
+                        }
+                    }
+                    label {
+                        span { class: "note-property-control-label", "Slug" }
+                        input {
+                            class: "note-property-input",
+                            value: "{slug}",
+                            placeholder: "auto from title",
+                            onchange: move |e| on_publication_change.call(PublicationEdit::Slug(e.value())),
+                        }
+                    }
+                    label {
+                        span { class: "note-property-control-label", "Collections" }
+                        input {
+                            class: "note-property-input",
+                            value: "{collections}",
+                            placeholder: "guide, release-notes",
+                            onchange: move |e| on_publication_change.call(PublicationEdit::Collections(e.value())),
+                        }
+                    }
+                }
+                button {
+                    class: "btn btn-ghost btn-sm",
+                    onclick: move |_| on_publish_preview.call(()),
+                    "Export preview"
+                }
+            }
             div { class: "note-property-block",
                 div { class: "note-property-label", "Tags" }
                 if frontmatter.tags.is_empty() {
@@ -1890,6 +1969,47 @@ fn frontmatter_data_rows(frontmatter: &Frontmatter) -> Vec<(String, String)> {
     data.iter()
         .map(|(key, value)| (key.clone(), compact_toml_value(value)))
         .collect()
+}
+
+fn visibility_value(visibility: PublicationVisibility) -> &'static str {
+    match visibility {
+        PublicationVisibility::Private => "private",
+        PublicationVisibility::Unlisted => "unlisted",
+        PublicationVisibility::Public => "public",
+    }
+}
+
+fn parse_visibility(value: &str) -> PublicationVisibility {
+    match value {
+        "public" => PublicationVisibility::Public,
+        "unlisted" => PublicationVisibility::Unlisted,
+        _ => PublicationVisibility::Private,
+    }
+}
+
+fn parse_collections(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn apply_publication_edit(
+    mut publication: PublicationConfig,
+    edit: PublicationEdit,
+) -> PublicationConfig {
+    match edit {
+        PublicationEdit::Enabled(enabled) => publication.enabled = enabled,
+        PublicationEdit::Visibility(visibility) => publication.visibility = visibility,
+        PublicationEdit::Slug(value) => {
+            let value = value.trim().trim_matches('/').to_string();
+            publication.slug = if value.is_empty() { None } else { Some(value) };
+        }
+        PublicationEdit::Collections(value) => publication.collections = parse_collections(&value),
+    }
+    publication
 }
 
 fn compact_toml_value(value: &toml::Value) -> String {
@@ -2033,6 +2153,67 @@ fn NoteHistoryModal(
     }
 }
 
+#[component]
+fn PublishPreviewModal(
+    state: Option<PublishPreviewState>,
+    error: Option<String>,
+    on_close: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "history-overlay", onclick: move |_| on_close.call(()) }
+        div { class: "history-modal publish-preview-modal", onclick: move |e| e.stop_propagation(),
+            div { class: "history-header",
+                div {
+                    div { class: "history-title", "Publication Preview" }
+                    div { class: "history-path", "Local static export report" }
+                }
+                button {
+                    class: "note-inspector-close",
+                    title: "Close publication preview",
+                    onclick: move |_| on_close.call(()),
+                    "\u{00D7}"
+                }
+            }
+            div { class: "publish-report-body",
+                if let Some(error) = error {
+                    div { class: "history-error", "{error}" }
+                } else if let Some(state) = state {
+                    div { class: "publish-report-grid",
+                        div { class: "publish-report-stat",
+                            span { class: "publish-report-label", "Exported" }
+                            strong { "{state.exported}" }
+                        }
+                        div { class: "publish-report-stat",
+                            span { class: "publish-report-label", "Skipped private" }
+                            strong { "{state.skipped_private}" }
+                        }
+                        div { class: "publish-report-stat",
+                            span { class: "publish-report-label", "Errors" }
+                            strong { "{state.errors.len()}" }
+                        }
+                    }
+                    div { class: "note-property-block",
+                        div { class: "note-property-label", "Output" }
+                        code { class: "publish-report-path", "{state.output_path.display()}" }
+                    }
+                    if !state.errors.is_empty() {
+                        div { class: "note-property-block",
+                            div { class: "note-property-label", "Errors" }
+                            div { class: "history-diff-content",
+                                for error in state.errors {
+                                    div { class: "history-error", "{error}" }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    div { class: "note-inspector-empty", "Exporting publication preview..." }
+                }
+            }
+        }
+    }
+}
+
 // ── Notes view ──────────────────────────────────────────────────────────────
 
 #[component]
@@ -2055,10 +2236,15 @@ pub fn NotesView() -> Element {
     let mut history_snapshot: Signal<Option<FileSnapshot>> = use_signal(|| None);
     let mut history_snapshot_error: Signal<Option<String>> = use_signal(|| None);
     let mut history_restore_message: Signal<Option<String>> = use_signal(|| None);
+    let mut publish_preview_open = use_signal(|| false);
+    let mut publish_preview_state: Signal<Option<PublishPreviewState>> = use_signal(|| None);
+    let mut publish_preview_error: Signal<Option<String>> = use_signal(|| None);
     let inspector_command = use_context::<Signal<NoteInspectorCommand>>();
     let mut last_inspector_command = use_signal(|| 0u64);
     let history_command = use_context::<Signal<NoteHistoryCommand>>();
     let mut last_history_command = use_signal(|| 0u64);
+    let publication_preview_command = use_context::<Signal<PublicationPreviewCommand>>();
+    let mut last_publication_preview_command = use_signal(|| 0u64);
 
     use_effect(move || {
         let command = *inspector_command.read();
@@ -2096,6 +2282,42 @@ pub fn NotesView() -> Element {
         *history_snapshot_error.write() = None;
         *history_restore_message.write() = None;
         *history_open.write() = true;
+    });
+
+    use_effect(move || {
+        let command = *publication_preview_command.read();
+        if command.version == *last_publication_preview_command.peek() {
+            return;
+        }
+        *last_publication_preview_command.write() = command.version;
+        *publish_preview_open.write() = true;
+        *publish_preview_state.write() = None;
+        *publish_preview_error.write() = None;
+        let c = ctx.clone();
+        spawn(async move {
+            let project = c.project();
+            let result = tokio::task::spawn_blocking(move || {
+                crate::bootstrap::OmegonRuntimeContext::export_publication_preview_report(&project)
+            })
+            .await;
+            match result {
+                Ok(Ok((output_path, report))) => {
+                    *publish_preview_state.write() = Some(PublishPreviewState {
+                        output_path,
+                        exported: report.exported,
+                        skipped_private: report.skipped_private,
+                        errors: report.errors,
+                    });
+                }
+                Ok(Err(e)) => {
+                    *publish_preview_error.write() = Some(format!("Publication export failed: {e}"))
+                }
+                Err(e) => {
+                    *publish_preview_error.write() =
+                        Some(format!("Publication export interrupted: {e}"))
+                }
+            }
+        });
     });
 
     // ── Two-phase rendering ───────────────────────────────────────────
@@ -2737,6 +2959,7 @@ pub fn NotesView() -> Element {
     let history_modal_path = path.clone();
     let history_select_path = path.clone();
     let history_restore_path = path.clone();
+    let publication_edit_path = path.clone();
 
     rsx! {
         crate::components::TabBar {}
@@ -3106,6 +3329,48 @@ pub fn NotesView() -> Element {
                     );
                     document::eval(&js);
                 },
+                on_publication_change: move |edit: PublicationEdit| {
+                    let c = ctx.clone();
+                    let p = publication_edit_path.clone();
+                    let publication = apply_publication_edit(frontmatter.publication.clone(), edit);
+                    spawn(async move {
+                        let project = c.project();
+                        let result = tokio::task::spawn_blocking(move || {
+                            project.set_publication_config(&p, &publication)
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok(())) => *render_ver.write() += 1,
+                            Ok(Err(e)) => tracing::warn!("Publication update failed: {e}"),
+                            Err(e) => tracing::warn!("Publication update interrupted: {e}"),
+                        }
+                    });
+                },
+                on_publish_preview: move |_| {
+                    *publish_preview_open.write() = true;
+                    *publish_preview_state.write() = None;
+                    *publish_preview_error.write() = None;
+                    let c = ctx.clone();
+                    spawn(async move {
+                        let project = c.project();
+                        let result = tokio::task::spawn_blocking(move || {
+                            crate::bootstrap::OmegonRuntimeContext::export_publication_preview_report(&project)
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok((output_path, report))) => {
+                                *publish_preview_state.write() = Some(PublishPreviewState {
+                                    output_path,
+                                    exported: report.exported,
+                                    skipped_private: report.skipped_private,
+                                    errors: report.errors,
+                                });
+                            }
+                            Ok(Err(e)) => *publish_preview_error.write() = Some(format!("Publication export failed: {e}")),
+                            Err(e) => *publish_preview_error.write() = Some(format!("Publication export interrupted: {e}")),
+                        }
+                    });
+                },
             }
         }
         if *history_open.read() {
@@ -3182,6 +3447,13 @@ pub fn NotesView() -> Element {
                         }
                     });
                 },
+            }
+        }
+        if *publish_preview_open.read() {
+            PublishPreviewModal {
+                state: publish_preview_state.read().clone(),
+                error: publish_preview_error.read().clone(),
+                on_close: move |_| *publish_preview_open.write() = false,
             }
         }
         }

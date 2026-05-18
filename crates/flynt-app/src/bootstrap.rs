@@ -429,13 +429,20 @@ impl OmegonRuntimeContext {
     }
 
     pub fn export_publication_preview(project: &Project) -> anyhow::Result<PathBuf> {
-        let target = publication_output_path(project);
-        std::fs::create_dir_all(&target)?;
-        let report = project.export_publication_tree(&target)?;
+        let (target, report) = Self::export_publication_preview_report(project)?;
         if !report.errors.is_empty() {
             anyhow::bail!(report.errors.join("; "));
         }
         Ok(target)
+    }
+
+    pub fn export_publication_preview_report(
+        project: &Project,
+    ) -> anyhow::Result<(PathBuf, flynt_store::project::PublicationExportReport)> {
+        let target = publication_output_path(project);
+        std::fs::create_dir_all(&target)?;
+        let report = project.export_publication_tree(&target)?;
+        Ok((target, report))
     }
 
     pub fn publication_target(project: &Project) -> Option<PublicationTarget> {

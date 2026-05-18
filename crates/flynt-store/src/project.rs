@@ -588,6 +588,78 @@ impl Project {
         Ok(())
     }
 
+    /// Replace the `[publication]` table for a document while preserving
+    /// unrelated frontmatter fields and the markdown body.
+    pub fn set_publication_config(
+        &self,
+        rel_path: &Path,
+        publication: &PublicationConfig,
+    ) -> Result<()> {
+        self.set_publication_config_inner(rel_path, publication, true)
+    }
+
+    /// Same as [`set_publication_config`] but does NOT fire the save hook.
+    pub fn set_publication_config_silent(
+        &self,
+        rel_path: &Path,
+        publication: &PublicationConfig,
+    ) -> Result<()> {
+        self.set_publication_config_inner(rel_path, publication, false)
+    }
+
+    fn set_publication_config_inner(
+        &self,
+        rel_path: &Path,
+        publication: &PublicationConfig,
+        notify: bool,
+    ) -> Result<()> {
+        if !self.config.indexing.should_write_frontmatter(rel_path) {
+            anyhow::bail!(
+                "Cannot edit publication settings on discoverable file {:?} — configure an indexing scope to manage this path",
+                rel_path,
+            );
+        }
+
+        let abs_path = self.root.join(rel_path);
+        let raw = fs::read_to_string(&abs_path)
+            .with_context(|| format!("read {}", abs_path.display()))?;
+
+        let (mut doc, body) = if let Some(fm_block) = extract_raw_frontmatter_block(&raw) {
+            let fm_inner = fm_block
+                .trim_start_matches("+++\n")
+                .trim_start_matches("+++\r\n")
+                .trim_end_matches("+++")
+                .trim_end_matches('\n')
+                .trim_end_matches('\r');
+            let doc: toml_edit::DocumentMut = fm_inner
+                .parse()
+                .with_context(|| format!("parse frontmatter for {}", rel_path.display()))?;
+            let body = &raw[fm_block.len()..];
+            let body = body.strip_prefix('\n').unwrap_or(body).to_string();
+            (doc, body)
+        } else {
+            (toml_edit::DocumentMut::new(), raw)
+        };
+
+        let publication_toml =
+            toml::to_string(publication).context("serialize publication config")?;
+        let publication_doc: toml_edit::DocumentMut = publication_toml
+            .parse()
+            .context("parse publication config as editable TOML")?;
+        doc.insert(
+            "publication",
+            toml_edit::Item::Table(publication_doc.as_table().clone()),
+        );
+
+        let new_raw = format!("+++\n{}+++\n{}", doc, body);
+        fs::write(&abs_path, &new_raw).with_context(|| format!("write {}", abs_path.display()))?;
+        self.index_file(&abs_path)?;
+        if notify {
+            self.notify_task_saved(rel_path);
+        }
+        Ok(())
+    }
+
     /// Write updated markdown content to a new file path and index it.
     pub fn create_document(&self, rel_path: &Path, title: &str) -> Result<()> {
         let abs_path = self.root.join(rel_path);
@@ -2080,12 +2152,12 @@ mod tests {
     use chrono::Utc;
     use flynt_core::{
         models::{
-            Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue, PublicationRule,
-            PublicationVisibility,
+            Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue,
+            PublicationConfig, PublicationRule, PublicationVisibility,
         },
         store::ProjectStore,
     };
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
     use tempfile::TempDir;
 
     // ── set_data_field ──────────────────────────────────────────────
@@ -2977,6 +3049,48 @@ See [[roadmap]].\n",
             .unwrap();
         assert_eq!(report.exported, 1);
         assert_eq!(report.skipped_private, 1);
+    }
+
+    #[test]
+    fn set_publication_config_preserves_frontmatter_and_body() {
+        let tmp = TempDir::new().unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
+        let path = PathBuf::from("Publish Me.md");
+        let raw = "+++\ntitle = \"Publish Me\"\ntags = [\"docs\"]\ncustom = \"keep\"\n\n[data]\nstatus = \"draft\"\n+++\n\n# Publish Me\n\nBody stays here.\n";
+        fs::write(project.root.join(&path), raw).unwrap();
+        project.index_file(&project.root.join(&path)).unwrap();
+
+        let publication = PublicationConfig {
+            enabled: true,
+            slug: Some("publish-me".into()),
+            visibility: PublicationVisibility::Unlisted,
+            target: None,
+            collections: vec!["guides".into(), "release".into()],
+        };
+        project.set_publication_config(&path, &publication).unwrap();
+
+        let updated = fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(updated.contains("custom = \"keep\""));
+        assert!(updated.contains("[data]\nstatus = \"draft\""));
+        assert!(updated.contains("[publication]"));
+        assert!(updated.contains("enabled = true"));
+        assert!(updated.contains("slug = \"publish-me\""));
+        assert!(updated.contains("visibility = \"unlisted\""));
+        assert!(updated.contains("collections = [\"guides\", \"release\"]"));
+        assert!(updated.contains("# Publish Me\n\nBody stays here."));
+
+        let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
+        assert!(doc.frontmatter.publication.enabled);
+        assert_eq!(
+            doc.frontmatter.publication.visibility,
+            PublicationVisibility::Unlisted
+        );
+        assert_eq!(
+            doc.frontmatter.publication.slug.as_deref(),
+            Some("publish-me")
+        );
     }
 
     #[test]
