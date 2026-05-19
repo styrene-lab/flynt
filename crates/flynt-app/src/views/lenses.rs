@@ -28,17 +28,29 @@ pub fn LensesView() -> Element {
         }
     });
 
-    let loaded = lenses.read();
-    let current = loaded
-        .as_ref()
-        .and_then(|result| result.as_ref().ok())
-        .and_then(|items| items.get((*selected.read()).min(items.len().saturating_sub(1))))
-        .cloned();
-
-    let result = current.as_ref().map(|(_, lens)| {
+    let lens_result = use_resource(move || {
         let project = ctx.project();
-        execute_lens(lens, project.store.as_ref())
+        let selected_idx = *selected.read();
+        let _ = refresh();
+        async move {
+            tokio::task::spawn_blocking(move || {
+                let items = project.load_lenses()?;
+                let Some((path, lens)) = items
+                    .get(selected_idx.min(items.len().saturating_sub(1)))
+                    .cloned()
+                else {
+                    return Ok(None);
+                };
+                let result = execute_lens(&lens, project.store.as_ref())?;
+                Ok::<_, anyhow::Error>(Some((path, lens, result)))
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!(e.to_string())))
+        }
     });
+
+    let loaded = lenses.read();
+    let result_state = lens_result.read();
 
     rsx! {
         div { class: "lenses-view",
@@ -90,12 +102,18 @@ pub fn LensesView() -> Element {
             }
 
             main { class: "lenses-content",
-                match (current, result) {
-                    (Some((path, lens)), Some(Ok(result))) => rsx! {
+                match result_state.as_ref() {
+                    None => rsx! {
+                        div { class: "lens-placeholder",
+                            div { class: "lens-placeholder-mark", dangerous_inner_html: crate::icons::ICON_LENS }
+                            div { class: "lens-placeholder-title", "Loading lens" }
+                        }
+                    },
+                    Some(Ok(Some((path, lens, result)))) => rsx! {
                         LensDetail {
-                            path,
-                            lens,
-                            result,
+                            path: path.clone(),
+                            lens: lens.clone(),
+                            result: result.clone(),
                             on_open_document: move |doc_id: flynt_core::models::DocumentId| {
                                 let project = ctx.project();
                                 if let Ok(Some(doc)) = project.store.get_document(&doc_id) {
@@ -105,13 +123,13 @@ pub fn LensesView() -> Element {
                             }
                         }
                     },
-                    (Some((_path, lens)), Some(Err(err))) => rsx! {
+                    Some(Err(err)) => rsx! {
                         div { class: "lens-detail",
-                            h1 { "{lens.title}" }
+                            h1 { "Project Lenses" }
                             div { class: "lenses-error", "{err}" }
                         }
                     },
-                    _ => rsx! {
+                    Some(Ok(None)) => rsx! {
                         div { class: "lens-placeholder",
                             div { class: "lens-placeholder-mark", dangerous_inner_html: crate::icons::ICON_LENS }
                             div { class: "lens-placeholder-title", "Select a lens" }

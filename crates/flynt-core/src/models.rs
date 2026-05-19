@@ -364,6 +364,7 @@ pub struct LensFilter {
     pub field: String,
     #[serde(default)]
     pub op: LensFilterOp,
+    #[serde(default)]
     pub value: String,
 }
 

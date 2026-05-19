@@ -444,7 +444,7 @@ fn document_column_value(doc: &DocumentMeta, field: &str, store: &dyn ProjectSto
         "kind" => doc
             .entity_kind
             .as_ref()
-            .map(|kind| format!("{kind:?}").to_lowercase())
+            .map(|kind| kind.as_str().to_string())
             .unwrap_or_default(),
         "status" => load_document(doc, store)
             .and_then(|document| document.frontmatter.status)
@@ -454,7 +454,8 @@ fn document_column_value(doc: &DocumentMeta, field: &str, store: &dyn ProjectSto
             .unwrap_or_default(),
         "publication.visibility" => load_document(doc, store)
             .map(|document| {
-                format!("{:?}", document.frontmatter.publication.visibility).to_lowercase()
+                publication_visibility_label(document.frontmatter.publication.visibility)
+                    .to_string()
             })
             .unwrap_or_default(),
         "publication.slug" => load_document(doc, store)
@@ -505,8 +506,8 @@ fn task_field_value(task: &Task, field: &str) -> Option<String> {
     let value = match field {
         "title" | "name" => task.title.clone(),
         "column" => task.column.clone(),
-        "status" => format!("{:?}", task.status).to_lowercase(),
-        "priority" => format!("{:?}", task.priority).to_lowercase(),
+        "status" => task_status_label(task.status).to_string(),
+        "priority" => priority_label(task.priority).to_string(),
         "tags" => task.tags.join(", "),
         "due_date" | "due" => task
             .due_date
@@ -535,6 +536,32 @@ fn sort_task_rows(tasks: &mut [Task], sort: &[LensSort]) {
         if sort.direction == LensSortDirection::Desc {
             tasks.reverse();
         }
+    }
+}
+
+fn publication_visibility_label(value: PublicationVisibility) -> &'static str {
+    match value {
+        PublicationVisibility::Private => "private",
+        PublicationVisibility::Public => "public",
+        PublicationVisibility::Unlisted => "unlisted",
+    }
+}
+
+fn task_status_label(value: TaskStatus) -> &'static str {
+    match value {
+        TaskStatus::Todo => "todo",
+        TaskStatus::InProgress => "in_progress",
+        TaskStatus::Done => "done",
+        TaskStatus::Archived => "archived",
+    }
+}
+
+fn priority_label(value: Priority) -> &'static str {
+    match value {
+        Priority::Medium => "medium",
+        Priority::Low => "low",
+        Priority::High => "high",
+        Priority::Critical => "critical",
     }
 }
 
@@ -979,7 +1006,12 @@ mod tests {
         let store = MockStore {
             docs: vec![],
             tasks: vec![
-                task("Active task", "Active", TaskStatus::Todo, Priority::High),
+                task(
+                    "Active task",
+                    "Active",
+                    TaskStatus::InProgress,
+                    Priority::High,
+                ),
                 task("Done task", "Done", TaskStatus::Done, Priority::Low),
             ],
         };
@@ -990,11 +1022,15 @@ mod tests {
             filters: vec![LensFilter {
                 field: "status".into(),
                 op: LensFilterOp::Equals,
-                value: "todo".into(),
+                value: "in_progress".into(),
             }],
             columns: vec![
                 LensColumn {
                     field: "title".into(),
+                    label: None,
+                },
+                LensColumn {
+                    field: "status".into(),
                     label: None,
                 },
                 LensColumn {
@@ -1009,8 +1045,28 @@ mod tests {
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.rows[0].title, "Active task");
         assert_eq!(
+            result.rows[0].values.get("status").map(String::as_str),
+            Some("in_progress")
+        );
+        assert_eq!(
             result.rows[0].values.get("priority").map(String::as_str),
             Some("high")
         );
+    }
+
+    #[test]
+    fn lens_exists_filter_does_not_require_value_in_toml() {
+        let lens: ProjectLens = toml::from_str(
+            r#"
+title = "Notes with tags"
+source = "documents"
+
+[[filters]]
+field = "tags"
+op = "exists"
+"#,
+        )
+        .unwrap();
+        assert_eq!(lens.filters[0].value, "");
     }
 }
