@@ -178,11 +178,11 @@ Add delayed hover previews for note links, then extend to search and graph.
 
 | Task ID | Scope | Files likely touched | Acceptance |
 | --- | --- | --- | --- |
-| OP-07.1 | Preview renderer | `notes.rs` renderer helper | Produces capped safe HTML without heavy embeds. |
-| OP-07.2 | Wikilink hover bridge | CodeMirror/rendered markdown JS | Hover after delay shows preview, Escape/dismiss works. |
-| OP-07.3 | Search/sidebar preview | `search.rs`, sidebar component | Same preview component reused. |
+| OP-07.1 | Preview renderer | `note_preview.rs` | Done — produces capped text preview without heavy embeds. |
+| OP-07.2 | Wikilink hover bridge | `notes.rs` JS bridge | Done — CodeMirror and rendered markdown wikilinks show delayed previews and dismiss on Escape/mouseout. |
+| OP-07.3 | Search/sidebar preview | `search.rs`, sidebar component | Done — same preview card reused for search results and sidebar notes. |
 | OP-07.4 | Graph preview | `graph.rs` tooltip | Graph hover can show title/excerpt. |
-| OP-07.5 | Tests | e2e visual smoke | Preview appears and does not steal clicks. |
+| OP-07.5 | Tests | unit + e2e visual smoke | Partial — preview excerpt unit tests covered; e2e visual smoke remains. |
 
 ## OP-08: Canvas Card Parity
 

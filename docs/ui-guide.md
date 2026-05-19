@@ -360,6 +360,7 @@ Project Lenses are saved views over existing indexed project data. Lens files li
 | | Not shown | No Git sync configured |
 | Search input | Type | Live full-text search, results grouped by folder |
 | Search result | Click | Opens note in tab |
+| Search result | Hover | Shows capped note preview |
 | Agent toggle | Click | Shows/hides agent rail |
 
 ---
@@ -393,7 +394,18 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 12. Agent Rail (sidebar panel)
+## 12. Page Previews
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Wikilink in note editor | Hover | Delayed preview card with title, path, and capped body excerpt |
+| Wikilink in rendered markdown | Hover | Same preview card; Escape or mouseout dismisses it |
+| Sidebar note | Hover | Same preview card, positioned near the note row |
+| Search result | Hover | Same preview card, positioned near the result |
+
+---
+
+## 13. Agent Rail (sidebar panel)
 
 **Trigger:** Toolbar agent toggle
 
@@ -415,7 +427,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 13. Keyboard Shortcuts
+## 14. Keyboard Shortcuts
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
@@ -432,7 +444,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 14. Mobile (iOS)
+## 15. Mobile (iOS)
 
 ### Onboarding
 
@@ -474,7 +486,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 15. File Formats
+## 16. File Formats
 
 | File | Format | Location | Notes |
 |------|--------|----------|-------|
@@ -497,7 +509,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 16. Sync Behaviors
+## 17. Sync Behaviors
 
 | Backend | Mechanism | Conflict handling |
 |---------|-----------|-------------------|
@@ -535,7 +547,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 17. Visualization Pipeline
+## 18. Visualization Pipeline
 
 | Source | Trigger | Renderer | Output | Timeout |
 |--------|---------|----------|--------|---------|
@@ -563,7 +575,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 18. Environment Variables
+## 19. Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -576,7 +588,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 19. Known Gaps
+## 20. Known Gaps
 
 | Area | Gap | Severity |
 |------|-----|----------|

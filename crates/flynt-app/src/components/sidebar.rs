@@ -1,5 +1,6 @@
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext},
+    components::{NotePreview, NotePreviewCard},
     state::{BookmarkRefresh, Route, TabState},
 };
 use dioxus::prelude::*;
@@ -456,6 +457,7 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
     let indent = depth as f32 * 12.0;
 
     let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
+    let mut preview: Signal<Option<NotePreview>> = use_signal(|| None);
 
     // Task files live under Tasks/ — they're real notes but get a
     // subtle visual cue (different icon + class) so the operator can
@@ -469,12 +471,26 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
     rsx! {
         button {
             class: match (is_active, is_task) {
-                (true, true)   => "tree-item tree-file tree-file-task active",
-                (true, false)  => "tree-item tree-file active",
-                (false, true)  => "tree-item tree-file tree-file-task",
-                (false, false) => "tree-item tree-file",
+                (true, true)   => "tree-item tree-file tree-file-task note-preview-anchor active",
+                (true, false)  => "tree-item tree-file note-preview-anchor active",
+                (false, true)  => "tree-item tree-file tree-file-task note-preview-anchor",
+                (false, false) => "tree-item tree-file note-preview-anchor",
             },
             style: "padding-left: {indent + 20.0}px;",
+            onmouseenter: move |_| {
+                if preview.peek().is_some() {
+                    return;
+                }
+                let project = ctx.project();
+                let id = meta.id.clone();
+                spawn(async move {
+                    if let Ok(Some(preview_data)) = tokio::task::spawn_blocking(move || {
+                        NotePreview::load_by_id(&project, &id)
+                    }).await {
+                        preview.set(Some(preview_data));
+                    }
+                });
+            },
             onclick: move |_| {
                     if let Ok(Some(doc)) = ctx.project().store.get_document(&id) {
                         let _ = document::eval(&crate::views::notes::cm6_fast_swap_js(&doc.content));
@@ -495,6 +511,11 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                 if is_task { "\u{2611}" } else { "\u{25C7}" }
             }
             span { class: "tree-name", "{meta.title}" }
+            if let Some(preview_data) = preview.read().clone() {
+                div { class: "note-preview-inline",
+                    NotePreviewCard { preview: preview_data }
+                }
+            }
         }
 
         if let Some((x, y)) = *ctx_menu.read() {

@@ -1,5 +1,6 @@
 use crate::{
     bootstrap::AppContext,
+    components::{NotePreview, NotePreviewCard},
     state::{Route, TabState},
 };
 use dioxus::prelude::*;
@@ -64,7 +65,7 @@ fn group_results(list: &[SearchResult]) -> Vec<SearchGroup> {
 #[component]
 pub fn SearchView(mut search_query: Signal<String>) -> Element {
     let ctx = use_context::<AppContext>();
-    let mut tab_state = use_context::<Signal<TabState>>();
+    let tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
 
     let results = use_resource(move || {
@@ -160,42 +161,14 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
                                         }
 
                                         for item in group.items {
-                                            {
-                                                let doc_id  = item.document_id.clone();
-                                                let title   = item.title.clone();
-                                                let t2      = title.clone();
-                                                let path    = item.path.to_string_lossy().to_string();
-                                                let excerpt = item.excerpt.clone();
-                                                let breadcrumb: String = {
-                                                    let mut parts: Vec<&str> = path.split('/').collect();
-                                                    if parts.len() > 1 { parts.pop(); }
-                                                    parts.join(" › ")
-                                                };
-
-                                                rsx! {
-                                                    button {
-                                                        class: "search-result-card",
-                                                        onclick: move |_| {
-                                                            tab_state.write().open(doc_id.clone(), t2.clone());
-                                                            *active_route.write() = Route::Notes;
-                                                        },
-                                                        div { class: "src-header",
-                                                            span { class: "src-file-icon nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
-                                                            div { class: "src-meta",
-                                                                span { class: "src-title", "{title}" }
-                                                                if !breadcrumb.is_empty() {
-                                                                    span { class: "src-path muted", "{breadcrumb}" }
-                                                                }
-                                                            }
-                                                        }
-                                                        if !excerpt.is_empty() {
-                                                            div {
-                                                                class: "src-excerpt",
-                                                                dangerous_inner_html: "{excerpt}",
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                            SearchResultCard {
+                                                key: "{item.document_id.0}",
+                                                document_id: item.document_id,
+                                                title: item.title,
+                                                path: item.path.to_string_lossy().to_string(),
+                                                excerpt: item.excerpt,
+                                                tab_state,
+                                                active_route,
                                             }
                                         }
                                     }
@@ -203,6 +176,73 @@ pub fn SearchView(mut search_query: Signal<String>) -> Element {
                             }
                         }
                     },
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn SearchResultCard(
+    document_id: flynt_core::models::DocumentId,
+    title: String,
+    path: String,
+    excerpt: String,
+    mut tab_state: Signal<TabState>,
+    mut active_route: Signal<Route>,
+) -> Element {
+    let ctx = use_context::<AppContext>();
+    let open_title = title.clone();
+    let hover_id = document_id.clone();
+    let open_id = document_id.clone();
+    let mut preview: Signal<Option<NotePreview>> = use_signal(|| None);
+    let breadcrumb: String = {
+        let mut parts: Vec<&str> = path.split('/').collect();
+        if parts.len() > 1 {
+            parts.pop();
+        }
+        parts.join(" › ")
+    };
+
+    rsx! {
+        button {
+            class: "search-result-card note-preview-anchor",
+            onmouseenter: move |_| {
+                if preview.peek().is_some() {
+                    return;
+                }
+                let project = ctx.project();
+                let id = hover_id.clone();
+                spawn(async move {
+                    if let Ok(Some(preview_data)) = tokio::task::spawn_blocking(move || {
+                        NotePreview::load_by_id(&project, &id)
+                    }).await {
+                        preview.set(Some(preview_data));
+                    }
+                });
+            },
+            onclick: move |_| {
+                tab_state.write().open(open_id.clone(), open_title.clone());
+                *active_route.write() = Route::Notes;
+            },
+            div { class: "src-header",
+                span { class: "src-file-icon nav-icon", dangerous_inner_html: crate::icons::ICON_SCROLL }
+                div { class: "src-meta",
+                    span { class: "src-title", "{title}" }
+                    if !breadcrumb.is_empty() {
+                        span { class: "src-path muted", "{breadcrumb}" }
+                    }
+                }
+            }
+            if !excerpt.is_empty() {
+                div {
+                    class: "src-excerpt",
+                    dangerous_inner_html: "{excerpt}",
+                }
+            }
+            if let Some(preview_data) = preview.read().clone() {
+                div { class: "note-preview-inline",
+                    NotePreviewCard { preview: preview_data }
                 }
             }
         }

@@ -187,6 +187,12 @@ For users who chose "Create local project" or "Open existing project" and want t
 - `Cmd+P -> Save Search as Lens` writes a search-backed lens definition and opens the Lenses view.
 - The first lens UI renders document/task sources as table or list layouts; the full builder remains a later pass.
 
+### Page previews
+- Hovering wikilinks in the note editor or rendered markdown shows a delayed note preview.
+- Sidebar note rows and search results use the same preview card.
+- Previews show title, path, and a capped body excerpt; heavy embeds are skipped.
+- Escape, mouseout, or moving away from a link dismisses the preview.
+
 ### Credential flow
 Git operations use `git2` with credential callbacks. For **HTTPS URLs** (recommended):
 1. Stored personal access token or OAuth token from `~/.config/omegon/auth.json`

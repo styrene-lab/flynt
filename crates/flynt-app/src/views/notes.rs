@@ -1,3 +1,4 @@
+use crate::components::{FloatingNotePreview, NotePreview};
 use crate::{
     bootstrap::AppContext,
     state::{
@@ -72,6 +73,13 @@ struct PublishPreviewState {
     exported: usize,
     skipped_private: usize,
     errors: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct HoverPreviewState {
+    preview: NotePreview,
+    x: f64,
+    y: f64,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -1490,6 +1498,51 @@ fn cm6_init_js(content: &str) -> String {
                     }}
                     if (found) return true;
                 }},
+                mousemove(event, view) {{
+                    const pos = view.posAtCoords({{ x: event.clientX, y: event.clientY }});
+                    if (pos === null) return;
+                    const line = view.state.doc.lineAt(pos);
+                    const text = line.text;
+                    const colInLine = pos - line.from;
+                    let idx = 0;
+                    let target = null;
+                    while ((idx = text.indexOf('[[', idx)) !== -1) {{
+                        const end = text.indexOf(']]', idx + 2);
+                        if (end > idx) {{
+                            const absFrom = line.from + idx;
+                            const absTo = line.from + end + 2;
+                            if (pos >= absFrom && pos <= absTo) {{
+                                const inner = text.substring(idx + 2, end);
+                                const pipe = inner.indexOf('|');
+                                target = (pipe >= 0 ? inner.substring(0, pipe) : inner).trim();
+                                break;
+                            }}
+                            idx = end + 2;
+                        }} else break;
+                    }}
+                    if (!target) {{
+                        if (window._flyntCmPreviewTimer) clearTimeout(window._flyntCmPreviewTimer);
+                        window._flyntCmPreviewTarget = null;
+                        window._flyntNotify('preview-clear', '');
+                        return;
+                    }}
+                    if (window._flyntCmPreviewTarget === target) return;
+                    if (window._flyntCmPreviewTimer) clearTimeout(window._flyntCmPreviewTimer);
+                    window._flyntCmPreviewTarget = target;
+                    window._flyntCmPreviewTimer = setTimeout(() => {{
+                        if (window._flyntCmPreviewTarget !== target) return;
+                        window._flyntNotify('preview-note', JSON.stringify({{
+                            slug: target,
+                            x: event.clientX,
+                            y: event.clientY
+                        }}));
+                    }}, 450);
+                }},
+                mouseleave() {{
+                    if (window._flyntCmPreviewTimer) clearTimeout(window._flyntCmPreviewTimer);
+                    window._flyntCmPreviewTarget = null;
+                    window._flyntNotify('preview-clear', '');
+                }},
                 contextmenu(event) {{
                     event.preventDefault();
                     // Remove old menu
@@ -1617,6 +1670,44 @@ document.addEventListener('click', function(e) {
         if (drawing) {
             window._flyntNotify('open-drawing', drawing);
         }
+    }
+    const note = e.target.closest('a[data-flynt-note]');
+    if (note) {
+        e.preventDefault();
+        const slug = note.getAttribute('data-flynt-note');
+        if (slug) {
+            window._flyntNotify('nav', slug);
+        }
+    }
+});
+
+document.addEventListener('mouseover', function(e) {
+    const note = e.target.closest('a[data-flynt-note]');
+    if (!note || note._flyntPreviewArmed) return;
+    note._flyntPreviewArmed = true;
+    const slug = note.getAttribute('data-flynt-note');
+    const timer = setTimeout(function() {
+        if (!note.matches(':hover')) return;
+        window._flyntNotify('preview-note', JSON.stringify({
+            slug: slug,
+            x: e.clientX,
+            y: e.clientY
+        }));
+    }, 450);
+    note._flyntPreviewTimer = timer;
+});
+
+document.addEventListener('mouseout', function(e) {
+    const note = e.target.closest('a[data-flynt-note]');
+    if (!note) return;
+    if (note._flyntPreviewTimer) clearTimeout(note._flyntPreviewTimer);
+    note._flyntPreviewArmed = false;
+    window._flyntNotify('preview-clear', '');
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        window._flyntNotify('preview-clear', '');
     }
 });
 "#;
@@ -2239,6 +2330,7 @@ pub fn NotesView() -> Element {
     let mut publish_preview_open = use_signal(|| false);
     let mut publish_preview_state: Signal<Option<PublishPreviewState>> = use_signal(|| None);
     let mut publish_preview_error: Signal<Option<String>> = use_signal(|| None);
+    let mut hover_preview: Signal<Option<HoverPreviewState>> = use_signal(|| None);
     let inspector_command = use_context::<Signal<NoteInspectorCommand>>();
     let mut last_inspector_command = use_signal(|| 0u64);
     let history_command = use_context::<Signal<NoteHistoryCommand>>();
@@ -2827,6 +2919,31 @@ pub fn NotesView() -> Element {
                             *ar_link.write() = Route::Notes;
                         }
                     }
+                    "preview-note" => {
+                        let Ok(payload) = serde_json::from_str::<serde_json::Value>(data) else {
+                            continue;
+                        };
+                        let slug = payload["slug"].as_str().unwrap_or("").to_string();
+                        if slug.trim().is_empty() {
+                            continue;
+                        }
+                        let x = payload["x"].as_f64().unwrap_or(0.0);
+                        let y = payload["y"].as_f64().unwrap_or(0.0);
+                        let project = c.project();
+                        match tokio::task::spawn_blocking(move || {
+                            NotePreview::load_by_slug(&project, &slug)
+                        })
+                        .await
+                        {
+                            Ok(Some(preview)) => {
+                                *hover_preview.write() = Some(HoverPreviewState { preview, x, y });
+                            }
+                            _ => *hover_preview.write() = None,
+                        }
+                    }
+                    "preview-clear" => {
+                        *hover_preview.write() = None;
+                    }
                     _ => {}
                 }
             }
@@ -2962,75 +3079,103 @@ pub fn NotesView() -> Element {
     let publication_edit_path = path.clone();
 
     rsx! {
-        crate::components::TabBar {}
-        div { class: "notes-workspace",
-        div { class: "notes-pane",
-            // Conflict resolution banner
-            if *conflict_detected.read() {
-                div { class: "conflict-banner",
-                    span { class: "conflict-icon", "\u{26A0}" }
-                    span { "This file has merge conflicts." }
-                    div { class: "conflict-actions",
-                        button {
-                            class: "btn btn-sm btn-ghost",
-                            onclick: move |_| {
-                                let content = edit_body.read().clone();
-                                let resolved = flynt_core::conflict::resolve_ours(&content);
-                                *edit_body.write() = resolved.clone();
-                                // Auto-save
-                                let p = rendered.read().as_ref().and_then(|r| r.as_ref().map(|t| t.0.clone()));
-                                let c = ctx.clone();
-                                if let Some(path) = p {
-                                    spawn(async move {
-                                        let project = c.project();
-                                        let _ = project.save_document_content(&path, &resolved);
-                                        *render_ver.write() += 1;
-                                    });
-                                }
-                            },
-                            "Keep mine"
-                        }
-                        button {
-                            class: "btn btn-sm btn-ghost",
-                            onclick: move |_| {
-                                let content = edit_body.read().clone();
-                                let resolved = flynt_core::conflict::resolve_theirs(&content);
-                                *edit_body.write() = resolved.clone();
-                                let p = rendered.read().as_ref().and_then(|r| r.as_ref().map(|t| t.0.clone()));
-                                let c = ctx.clone();
-                                if let Some(path) = p {
-                                    spawn(async move {
-                                        let project = c.project();
-                                        let _ = project.save_document_content(&path, &resolved);
-                                        *render_ver.write() += 1;
-                                    });
-                                }
-                            },
-                            "Keep theirs"
-                        }
-                        button {
-                            class: "btn btn-sm btn-primary",
-                            onclick: move |_| {
-                                *mode.write() = EditMode::Source;
-                            },
-                            "Edit manually"
+            crate::components::TabBar {}
+            div { class: "notes-workspace",
+            div { class: "notes-pane",
+                // Conflict resolution banner
+                if *conflict_detected.read() {
+                    div { class: "conflict-banner",
+                        span { class: "conflict-icon", "\u{26A0}" }
+                        span { "This file has merge conflicts." }
+                        div { class: "conflict-actions",
+                            button {
+                                class: "btn btn-sm btn-ghost",
+                                onclick: move |_| {
+                                    let content = edit_body.read().clone();
+                                    let resolved = flynt_core::conflict::resolve_ours(&content);
+                                    *edit_body.write() = resolved.clone();
+                                    // Auto-save
+                                    let p = rendered.read().as_ref().and_then(|r| r.as_ref().map(|t| t.0.clone()));
+                                    let c = ctx.clone();
+                                    if let Some(path) = p {
+                                        spawn(async move {
+                                            let project = c.project();
+                                            let _ = project.save_document_content(&path, &resolved);
+                                            *render_ver.write() += 1;
+                                        });
+                                    }
+                                },
+                                "Keep mine"
+                            }
+                            button {
+                                class: "btn btn-sm btn-ghost",
+                                onclick: move |_| {
+                                    let content = edit_body.read().clone();
+                                    let resolved = flynt_core::conflict::resolve_theirs(&content);
+                                    *edit_body.write() = resolved.clone();
+                                    let p = rendered.read().as_ref().and_then(|r| r.as_ref().map(|t| t.0.clone()));
+                                    let c = ctx.clone();
+                                    if let Some(path) = p {
+                                        spawn(async move {
+                                            let project = c.project();
+                                            let _ = project.save_document_content(&path, &resolved);
+                                            *render_ver.write() += 1;
+                                        });
+                                    }
+                                },
+                                "Keep theirs"
+                            }
+                            button {
+                                class: "btn btn-sm btn-primary",
+                                onclick: move |_| {
+                                    *mode.write() = EditMode::Source;
+                                },
+                                "Edit manually"
+                            }
                         }
                     }
                 }
-            }
-            div { class: "notes-topbar",
-                if *renaming.read() {
-                    div { class: "rename-inline",
-                        input {
-                            autofocus: true,
-                            class: "rename-input",
-                            value: "{rename_input}",
-                            oninput: move |e| *rename_input.write() = e.value(),
-                            onkeydown: move |e| {
-                                if e.key() == Key::Escape {
-                                    *renaming.write() = false;
-                                }
-                                if e.key() == Key::Enter {
+                div { class: "notes-topbar",
+                    if *renaming.read() {
+                        div { class: "rename-inline",
+                            input {
+                                autofocus: true,
+                                class: "rename-input",
+                                value: "{rename_input}",
+                                oninput: move |e| *rename_input.write() = e.value(),
+                                onkeydown: move |e| {
+                                    if e.key() == Key::Escape {
+                                        *renaming.write() = false;
+                                    }
+                                    if e.key() == Key::Enter {
+                                        let new_title = rename_input.read().trim().to_string();
+                                        if new_title.is_empty() || new_title == title { *renaming.write() = false; return; }
+                                        let p = path_for_rename.clone();
+                                        let c = ctx_rename.clone();
+                                        spawn(async move {
+                                            let project = c.project();
+                                            match tokio::task::spawn_blocking(move || {
+                                                project.rename_document(&p, &new_title)
+                                            }).await {
+                                                Ok(Ok(n)) => {
+                                                    *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
+                                                    render_ver += 1;
+                                                }
+                                                Ok(Err(e)) => *rename_msg.write() = Some(format!("Rename failed — {e}")),
+                                                Err(e) => *rename_msg.write() = Some(format!("Rename interrupted — {e}")),
+                                            }
+                                            *renaming.write() = false;
+                                        });
+                                    }
+                                },
+                            }
+                            {
+                                let title = title.clone();
+                                let path_for_rename = path_for_rename.clone();
+                                let ctx_rename = ctx_rename.clone();
+                                rsx! { button {
+                                class: "btn btn-primary btn-xs",
+                                onclick: move |_| {
                                     let new_title = rename_input.read().trim().to_string();
                                     if new_title.is_empty() || new_title == title { *renaming.write() = false; return; }
                                     let p = path_for_rename.clone();
@@ -3049,188 +3194,160 @@ pub fn NotesView() -> Element {
                                         }
                                         *renaming.write() = false;
                                     });
+                                },
+                                "Save"
+                            } }
+                            }
+                            button { class: "btn btn-ghost btn-xs", onclick: move |_| *renaming.write() = false, "Cancel" }
+                        }
+                    } else {
+                        h1 {
+                            class: "doc-title",
+                            ondoubleclick: move |_| {
+                                *rename_input.write() = title.clone();
+                                *renaming.write() = true;
+                            },
+                            "{title}"
+                        }
+                    }
+                    if let Some(ref msg) = *rename_msg.read() {
+                        span { class: "rename-msg", "{msg}" }
+                    }
+                    div { class: "notes-actions",
+                        // Save status updated via JS to avoid Dioxus re-render
+                        span { class: "save-status" }
+                        button {
+                            class: if *inspector_open.read() { "btn btn-ghost active" } else { "btn btn-ghost" },
+                            title: "Toggle note context",
+                            onclick: move |_| {
+                                let open = *inspector_open.read();
+                                *inspector_open.write() = !open;
+                            },
+                            "Context"
+                        }
+                        button {
+                            class: "btn btn-ghost",
+                            title: "Open note history",
+                            onclick: move |_| {
+                                *history_snapshot.write() = None;
+                                *history_snapshot_error.write() = None;
+                                *history_restore_message.write() = None;
+                                *history_open.write() = true;
+                            },
+                            "History"
+                        }
+                        match *mode.read() {
+                            EditMode::Live => rsx! {
+                                span { class: "mode-hint", "⌘E source" }
+                                button {
+                                    class: "btn btn-ghost",
+                                    onclick: move |_| {
+                                        spawn(async move {
+                                            let mut eval = document::eval("if(window._flyntCM){dioxus.send(window._flyntCM.state.doc.toString())}else{dioxus.send('')}");
+                                            if let Ok(content) = eval.recv::<String>().await {
+                                                if !content.is_empty() {
+                                                    *edit_body.write() = content;
+                                                }
+                                            }
+                                            *mode.write() = EditMode::Source;
+                                        });
+                                    },
+                                    "Source"
+                                }
+                            },
+                            EditMode::Source => rsx! {
+                                button {
+                                    class: "btn btn-primary",
+                                    onclick: move |_| {
+                                        let content = edit_body.read().clone();
+                                        let p       = path.clone();
+                                        let c       = ctx.clone();
+
+                                        spawn(async move {
+                                            let project = c.project();
+                                            match tokio::task::spawn_blocking(move || {
+                                                project.save_document_content(&p, &content)
+                                            }).await {
+                                                Ok(Ok(())) => {
+                                                    render_ver += 1;
+                                                    *save_err.write() = None;
+                                                    *save_state.write() = SaveState::Saved;
+                                                }
+                                                Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
+                                                Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
+                                            }
+                                        });
+                                        // Stay in Source mode — operator hits
+                                        // "Live" explicitly when ready to review.
+                                        // Auto-flipping caused a race where CM6
+                                        // re-init lagged behind the mode change,
+                                        // and the subsequent Source-toggle would
+                                        // adopt CM6's stale content into edit_body.
+                                    },
+                                    "Save"
+                                }
+                                button {
+                                    class: "btn btn-ghost",
+                                    onclick: move |_| *mode.write() = EditMode::Live,
+                                    "Live"
                                 }
                             },
                         }
-                        {
-                            let title = title.clone();
-                            let path_for_rename = path_for_rename.clone();
-                            let ctx_rename = ctx_rename.clone();
-                            rsx! { button {
-                            class: "btn btn-primary btn-xs",
-                            onclick: move |_| {
-                                let new_title = rename_input.read().trim().to_string();
-                                if new_title.is_empty() || new_title == title { *renaming.write() = false; return; }
-                                let p = path_for_rename.clone();
-                                let c = ctx_rename.clone();
-                                spawn(async move {
-                                    let project = c.project();
-                                    match tokio::task::spawn_blocking(move || {
-                                        project.rename_document(&p, &new_title)
-                                    }).await {
-                                        Ok(Ok(n)) => {
-                                            *rename_msg.write() = Some(format!("Renamed, {n} link(s) updated"));
-                                            render_ver += 1;
-                                        }
-                                        Ok(Err(e)) => *rename_msg.write() = Some(format!("Rename failed — {e}")),
-                                        Err(e) => *rename_msg.write() = Some(format!("Rename interrupted — {e}")),
-                                    }
-                                    *renaming.write() = false;
-                                });
-                            },
-                            "Save"
-                        } }
+                    }
+                }
+
+                // Task metadata strip — between title bar and editor body.
+                // Renders only when the doc is `kind = "task"`. Pills are
+                // editable inline; changes flow through the dispatcher
+                // channel installed above.
+                if frontmatter.kind.as_deref() == Some("task")
+                    && !crate::views::excalidraw::is_excalidraw(&rel_path)
+                    && !crate::views::flow::is_flow(&rel_path)
+                {
+                    crate::components::TaskMetadataStrip {
+                        path: rel_path.clone(),
+                        frontmatter: frontmatter.clone(),
+                        boards: ReadSignal::<Vec<flynt_core::models::Board>>::from(boards_cache),
+                        engagements: ReadSignal::<Vec<flynt_core::models::Engagement>>::from(engagements_cache),
+                    }
+                }
+
+                div { class: "notes-scroll",
+                // Excalidraw and .flow files get their own editor; everything
+                // else goes through the markdown editor.
+                {
+                let check_path = rel_path.clone();
+                let is_special =
+                    crate::views::excalidraw::is_excalidraw(&check_path)
+                    || crate::views::flow::is_flow(&check_path);
+                rsx! {
+                if crate::views::excalidraw::is_excalidraw(&check_path) {
+                    crate::views::ExcalidrawView { path: rel_path.clone() }
+                } else if crate::views::flow::is_flow(&check_path) {
+                    crate::views::FlowView { path: rel_path.clone() }
+                }
+
+                match *mode.read() {
+                    EditMode::Live if !is_special => {
+                        rsx! {
+                            div {
+                                id: "flynt-cm-editor",
+                                class: "cm-editor-container",
+                            }
                         }
-                        button { class: "btn btn-ghost btn-xs", onclick: move |_| *renaming.write() = false, "Cancel" }
-                    }
-                } else {
-                    h1 {
-                        class: "doc-title",
-                        ondoubleclick: move |_| {
-                            *rename_input.write() = title.clone();
-                            *renaming.write() = true;
-                        },
-                        "{title}"
-                    }
-                }
-                if let Some(ref msg) = *rename_msg.read() {
-                    span { class: "rename-msg", "{msg}" }
-                }
-                div { class: "notes-actions",
-                    // Save status updated via JS to avoid Dioxus re-render
-                    span { class: "save-status" }
-                    button {
-                        class: if *inspector_open.read() { "btn btn-ghost active" } else { "btn btn-ghost" },
-                        title: "Toggle note context",
-                        onclick: move |_| {
-                            let open = *inspector_open.read();
-                            *inspector_open.write() = !open;
-                        },
-                        "Context"
-                    }
-                    button {
-                        class: "btn btn-ghost",
-                        title: "Open note history",
-                        onclick: move |_| {
-                            *history_snapshot.write() = None;
-                            *history_snapshot_error.write() = None;
-                            *history_restore_message.write() = None;
-                            *history_open.write() = true;
-                        },
-                        "History"
-                    }
-                    match *mode.read() {
-                        EditMode::Live => rsx! {
-                            span { class: "mode-hint", "⌘E source" }
-                            button {
-                                class: "btn btn-ghost",
-                                onclick: move |_| {
-                                    spawn(async move {
-                                        let mut eval = document::eval("if(window._flyntCM){dioxus.send(window._flyntCM.state.doc.toString())}else{dioxus.send('')}");
-                                        if let Ok(content) = eval.recv::<String>().await {
-                                            if !content.is_empty() {
-                                                *edit_body.write() = content;
-                                            }
-                                        }
-                                        *mode.write() = EditMode::Source;
-                                    });
-                                },
-                                "Source"
-                            }
-                        },
-                        EditMode::Source => rsx! {
-                            button {
-                                class: "btn btn-primary",
-                                onclick: move |_| {
-                                    let content = edit_body.read().clone();
-                                    let p       = path.clone();
-                                    let c       = ctx.clone();
-
-                                    spawn(async move {
-                                        let project = c.project();
-                                        match tokio::task::spawn_blocking(move || {
-                                            project.save_document_content(&p, &content)
-                                        }).await {
-                                            Ok(Ok(())) => {
-                                                render_ver += 1;
-                                                *save_err.write() = None;
-                                                *save_state.write() = SaveState::Saved;
-                                            }
-                                            Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
-                                            Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
-                                        }
-                                    });
-                                    // Stay in Source mode — operator hits
-                                    // "Live" explicitly when ready to review.
-                                    // Auto-flipping caused a race where CM6
-                                    // re-init lagged behind the mode change,
-                                    // and the subsequent Source-toggle would
-                                    // adopt CM6's stale content into edit_body.
-                                },
-                                "Save"
-                            }
-                            button {
-                                class: "btn btn-ghost",
-                                onclick: move |_| *mode.write() = EditMode::Live,
-                                "Live"
-                            }
-                        },
-                    }
-                }
-            }
-
-            // Task metadata strip — between title bar and editor body.
-            // Renders only when the doc is `kind = "task"`. Pills are
-            // editable inline; changes flow through the dispatcher
-            // channel installed above.
-            if frontmatter.kind.as_deref() == Some("task")
-                && !crate::views::excalidraw::is_excalidraw(&rel_path)
-                && !crate::views::flow::is_flow(&rel_path)
-            {
-                crate::components::TaskMetadataStrip {
-                    path: rel_path.clone(),
-                    frontmatter: frontmatter.clone(),
-                    boards: ReadSignal::<Vec<flynt_core::models::Board>>::from(boards_cache),
-                    engagements: ReadSignal::<Vec<flynt_core::models::Engagement>>::from(engagements_cache),
-                }
-            }
-
-            div { class: "notes-scroll",
-            // Excalidraw and .flow files get their own editor; everything
-            // else goes through the markdown editor.
-            {
-            let check_path = rel_path.clone();
-            let is_special =
-                crate::views::excalidraw::is_excalidraw(&check_path)
-                || crate::views::flow::is_flow(&check_path);
-            rsx! {
-            if crate::views::excalidraw::is_excalidraw(&check_path) {
-                crate::views::ExcalidrawView { path: rel_path.clone() }
-            } else if crate::views::flow::is_flow(&check_path) {
-                crate::views::FlowView { path: rel_path.clone() }
-            }
-
-            match *mode.read() {
-                EditMode::Live if !is_special => {
-                    rsx! {
-                        div {
-                            id: "flynt-cm-editor",
-                            class: "cm-editor-container",
-                        }
-                    }
-                },
-                EditMode::Live => rsx! {},
-                // Source mode is disabled for special files — the markdown
-                // editor would rewrite a .flow JSON body (or .excalidraw
-                // scene) as plain text on save, corrupting the file. The
-                // mode toggle is still rendered (`EditMode::Source` is the
-                // user's stated intent) but the source-editor body
-                // short-circuits to empty for these kinds.
-                EditMode::Source if is_special => rsx! {},
-                EditMode::Source => {
-                    let path_save = rel_path.clone();
-                    rsx! {
-                        { document::eval(r#"(function(){
+                    },
+                    EditMode::Live => rsx! {},
+                    // Source mode is disabled for special files — the markdown
+                    // editor would rewrite a .flow JSON body (or .excalidraw
+                    // scene) as plain text on save, corrupting the file. The
+                    // mode toggle is still rendered (`EditMode::Source` is the
+                    // user's stated intent) but the source-editor body
+                    // short-circuits to empty for these kinds.
+                    EditMode::Source if is_special => rsx! {},
+                    EditMode::Source => {
+                        let path_save = rel_path.clone();
+                        rsx! {
+                            { document::eval(r#"(function(){
                             const ed=document.getElementById('flynt-editor');
                             const pr=document.getElementById('flynt-preview');
                             if(typeof hljs!=='undefined') pr&&pr.querySelectorAll('pre code:not([data-highlighted])').forEach(b=>hljs.highlightElement(b));
@@ -3240,76 +3357,76 @@ pub fn NotesView() -> Element {
                             ed.addEventListener('scroll',function(){if(busy)return;busy=true;const p=ed.scrollTop/Math.max(1,ed.scrollHeight-ed.clientHeight);pr.scrollTop=p*(pr.scrollHeight-pr.clientHeight);requestAnimationFrame(()=>busy=false);});
                             pr.addEventListener('scroll',function(){if(busy)return;busy=true;const p=pr.scrollTop/Math.max(1,pr.scrollHeight-pr.clientHeight);ed.scrollTop=p*(ed.scrollHeight-ed.clientHeight);requestAnimationFrame(()=>busy=false);});
                         })();"#); }
-                        div { class: "editor-split",
-                            div { class: "editor-pane",
-                                textarea {
-                                    id: "flynt-editor",
-                                    class: "editor-textarea",
-                                    value: "{edit_body}",
-                                    oninput: move |e| *edit_body.write() = e.value(),
-                                    onkeydown: move |e| {
-                                        let save_key = e.modifiers().meta() || e.modifiers().ctrl();
-                                        if save_key && e.key() == Key::Character("s".to_string()) {
-                                            let content = edit_body.read().clone();
-                                            let p       = path_save.clone();
-                                            let c       = ctx_save2.clone();
+                            div { class: "editor-split",
+                                div { class: "editor-pane",
+                                    textarea {
+                                        id: "flynt-editor",
+                                        class: "editor-textarea",
+                                        value: "{edit_body}",
+                                        oninput: move |e| *edit_body.write() = e.value(),
+                                        onkeydown: move |e| {
+                                            let save_key = e.modifiers().meta() || e.modifiers().ctrl();
+                                            if save_key && e.key() == Key::Character("s".to_string()) {
+                                                let content = edit_body.read().clone();
+                                                let p       = path_save.clone();
+                                                let c       = ctx_save2.clone();
 
-                                            spawn(async move {
-                                                let project = c.project();
-                                                match tokio::task::spawn_blocking(move || {
-                                                    project.save_document_content(&p, &content)
-                                                }).await {
-                                                    Ok(Ok(())) => {
-                                                        render_ver += 1;
-                                                        *save_err.write() = None;
-                                                        *save_state.write() = SaveState::Saved;
+                                                spawn(async move {
+                                                    let project = c.project();
+                                                    match tokio::task::spawn_blocking(move || {
+                                                        project.save_document_content(&p, &content)
+                                                    }).await {
+                                                        Ok(Ok(())) => {
+                                                            render_ver += 1;
+                                                            *save_err.write() = None;
+                                                            *save_state.write() = SaveState::Saved;
+                                                        }
+                                                        Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
+                                                        Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
                                                     }
-                                                    Ok(Err(e)) => *save_err.write() = Some(format!("Could not save — {e}")),
-                                                    Err(e)     => *save_err.write() = Some(format!("Save interrupted — {e}")),
-                                                }
-                                            });
-                                            // ⌘S stays in Source mode; the
-                                            // operator clicks Live explicitly.
-                                        }
-                                    },
+                                                });
+                                                // ⌘S stays in Source mode; the
+                                                // operator clicks Live explicitly.
+                                            }
+                                        },
+                                    }
                                 }
-                            }
-                            div { class: "editor-divider" }
-                            div {
-                                id: "flynt-preview",
-                                class: "preview-pane",
+                                div { class: "editor-divider" }
                                 div {
-                                    class: "markdown-body",
-                                    // Source mode renders directly from edit_body
-                                    // so the preview tracks keystrokes live. The
-                                    // cached `rendered_html` is for Live mode's
-                                    // post-save HTML — using it here would mean
-                                    // the preview lags behind by a save cycle and
-                                    // operators see no update while typing.
-                                    dangerous_inner_html: "{render_html(&edit_body.read())}",
+                                    id: "flynt-preview",
+                                    class: "preview-pane",
+                                    div {
+                                        class: "markdown-body",
+                                        // Source mode renders directly from edit_body
+                                        // so the preview tracks keystrokes live. The
+                                        // cached `rendered_html` is for Live mode's
+                                        // post-save HTML — using it here would mean
+                                        // the preview lags behind by a save cycle and
+                                        // operators see no update while typing.
+                                        dangerous_inner_html: "{render_html(&edit_body.read())}",
+                                    }
                                 }
                             }
                         }
-                    }
-                },
+                    },
+                }
+                } // rsx block
+                } // check_path scope
+                } // notes-scroll
             }
-            } // rsx block
-            } // check_path scope
-            } // notes-scroll
-        }
-        if *inspector_open.read() {
-            NoteInspector {
-                tab: inspector_tab,
-                body: edit_body.read().clone(),
-                frontmatter: frontmatter.clone(),
-                link_context: link_context.read().clone().flatten(),
-                on_close: move |_| *inspector_open.write() = false,
-                on_open_doc: move |doc: DocumentMeta| {
-                    tab_state.write().open(doc.id.clone(), doc.title.clone());
-                },
-                on_jump_line: move |line: usize| {
-                    let js = format!(
-                        r#"(function(){{
+            if *inspector_open.read() {
+                NoteInspector {
+                    tab: inspector_tab,
+                    body: edit_body.read().clone(),
+                    frontmatter: frontmatter.clone(),
+                    link_context: link_context.read().clone().flatten(),
+                    on_close: move |_| *inspector_open.write() = false,
+                    on_open_doc: move |doc: DocumentMeta| {
+                        tab_state.write().open(doc.id.clone(), doc.title.clone());
+                    },
+                    on_jump_line: move |line: usize| {
+                        let js = format!(
+                            r#"(function(){{
                             if(window._flyntCM){{
                                 const line = window._flyntCM.state.doc.line(Math.max(1, {line}));
                                 window._flyntCM.dispatch({{selection: {{anchor: line.from}}, effects: window.CM.EditorView.scrollIntoView(line.from, {{y: "start", yMargin: 24}})}});
@@ -3326,136 +3443,143 @@ pub fn NotesView() -> Element {
                                 ed.scrollTop = Math.max(0, ({line} - 1) * 24);
                             }}
                         }})();"#
-                    );
-                    document::eval(&js);
-                },
-                on_publication_change: move |edit: PublicationEdit| {
-                    let c = ctx.clone();
-                    let p = publication_edit_path.clone();
-                    let publication = apply_publication_edit(frontmatter.publication.clone(), edit);
-                    spawn(async move {
-                        let project = c.project();
-                        let result = tokio::task::spawn_blocking(move || {
-                            project.set_publication_config(&p, &publication)
-                        })
-                        .await;
-                        match result {
-                            Ok(Ok(())) => *render_ver.write() += 1,
-                            Ok(Err(e)) => tracing::warn!("Publication update failed: {e}"),
-                            Err(e) => tracing::warn!("Publication update interrupted: {e}"),
-                        }
-                    });
-                },
-                on_publish_preview: move |_| {
-                    *publish_preview_open.write() = true;
-                    *publish_preview_state.write() = None;
-                    *publish_preview_error.write() = None;
-                    let c = ctx.clone();
-                    spawn(async move {
-                        let project = c.project();
-                        let result = tokio::task::spawn_blocking(move || {
-                            crate::bootstrap::OmegonRuntimeContext::export_publication_preview_report(&project)
-                        })
-                        .await;
-                        match result {
-                            Ok(Ok((output_path, report))) => {
-                                *publish_preview_state.write() = Some(PublishPreviewState {
-                                    output_path,
-                                    exported: report.exported,
-                                    skipped_private: report.skipped_private,
-                                    errors: report.errors,
-                                });
+                        );
+                        document::eval(&js);
+                    },
+                    on_publication_change: move |edit: PublicationEdit| {
+                        let c = ctx.clone();
+                        let p = publication_edit_path.clone();
+                        let publication = apply_publication_edit(frontmatter.publication.clone(), edit);
+                        spawn(async move {
+                            let project = c.project();
+                            let result = tokio::task::spawn_blocking(move || {
+                                project.set_publication_config(&p, &publication)
+                            })
+                            .await;
+                            match result {
+                                Ok(Ok(())) => *render_ver.write() += 1,
+                                Ok(Err(e)) => tracing::warn!("Publication update failed: {e}"),
+                                Err(e) => tracing::warn!("Publication update interrupted: {e}"),
                             }
-                            Ok(Err(e)) => *publish_preview_error.write() = Some(format!("Publication export failed: {e}")),
-                            Err(e) => *publish_preview_error.write() = Some(format!("Publication export interrupted: {e}")),
-                        }
-                    });
-                },
-            }
-        }
-        if *history_open.read() {
-            NoteHistoryModal {
-                path: history_modal_path.clone(),
-                state: history_state.read().clone().flatten(),
-                snapshot: history_snapshot.read().clone(),
-                current_body: edit_body.read().clone(),
-                snapshot_error: history_snapshot_error.read().clone(),
-                restore_message: history_restore_message.read().clone(),
-                on_close: move |_| *history_open.write() = false,
-                on_select_commit: move |commit: String| {
-                    *history_snapshot.write() = None;
-                    *history_snapshot_error.write() = None;
-                    *history_restore_message.write() = None;
-                    let c = ctx.clone();
-                    let p = history_select_path.clone();
-                    spawn(async move {
-                        let project = c.project();
-                        let (remote, branch) = match &project.config.sync {
-                            flynt_core::models::SyncConfig::Git { remote, branch, .. } => {
-                                (remote.clone(), branch.clone())
-                            }
-                            _ => ("origin".into(), "main".into()),
-                        };
-                        let result = tokio::task::spawn_blocking(move || {
-                            let git = GitSync::new(project.root.clone(), remote, branch);
-                            git.read_file_at_commit(&p, &commit)
-                        })
-                        .await;
-                        match result {
-                            Ok(Ok(snapshot)) => *history_snapshot.write() = Some(snapshot),
-                            Ok(Err(e)) => *history_snapshot_error.write() = Some(format!("Could not load snapshot: {e}")),
-                            Err(e) => *history_snapshot_error.write() = Some(format!("Snapshot load interrupted: {e}")),
-                        }
-                    });
-                },
-                on_restore_snapshot: move |snapshot: FileSnapshot| {
-                    *history_restore_message.write() = None;
-                    let c = ctx.clone();
-                    let original_path = history_restore_path.clone();
-                    spawn(async move {
-                        let project = c.project();
-                        let short = snapshot.commit.chars().take(7).collect::<String>();
-                        let stem = original_path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("note");
-                        let recovered = std::path::PathBuf::from("Recovered")
-                            .join(format!("{stem} {short}.md"));
-                        let save_result = project.save_document_content(&recovered, &snapshot.content);
-                        match save_result {
-                            Ok(()) => {
-                                let _ = project.reindex();
-                                *render_ver.write() += 1;
-                                if let Ok(Some(meta)) = project
-                                    .store
-                                    .get_document_by_path(&recovered)
-                                    .map(|doc| doc.map(|doc| DocumentMeta {
-                                        id: doc.id,
-                                        path: doc.path,
-                                        title: doc.title,
-                                        tags: doc.frontmatter.tags,
-                                        metadata: Default::default(),
-                                        entity_kind: doc.entity.map(|entity| entity.kind),
-                                        updated_at: doc.updated_at,
-                                    }))
-                                {
-                                    tab_state.write().open(meta.id.clone(), meta.title.clone());
+                        });
+                    },
+                    on_publish_preview: move |_| {
+                        *publish_preview_open.write() = true;
+                        *publish_preview_state.write() = None;
+                        *publish_preview_error.write() = None;
+                        let c = ctx.clone();
+                        spawn(async move {
+                            let project = c.project();
+                            let result = tokio::task::spawn_blocking(move || {
+                                crate::bootstrap::OmegonRuntimeContext::export_publication_preview_report(&project)
+                            })
+                            .await;
+                            match result {
+                                Ok(Ok((output_path, report))) => {
+                                    *publish_preview_state.write() = Some(PublishPreviewState {
+                                        output_path,
+                                        exported: report.exported,
+                                        skipped_private: report.skipped_private,
+                                        errors: report.errors,
+                                    });
                                 }
-                                *history_restore_message.write() = Some(format!("Restored copy to {}", recovered.display()));
+                                Ok(Err(e)) => *publish_preview_error.write() = Some(format!("Publication export failed: {e}")),
+                                Err(e) => *publish_preview_error.write() = Some(format!("Publication export interrupted: {e}")),
                             }
-                            Err(e) => *history_snapshot_error.write() = Some(format!("Restore failed: {e}")),
-                        }
-                    });
-                },
+                        });
+                    },
+                }
             }
-        }
-        if *publish_preview_open.read() {
-            PublishPreviewModal {
-                state: publish_preview_state.read().clone(),
-                error: publish_preview_error.read().clone(),
-                on_close: move |_| *publish_preview_open.write() = false,
+            if *history_open.read() {
+                NoteHistoryModal {
+                    path: history_modal_path.clone(),
+                    state: history_state.read().clone().flatten(),
+                    snapshot: history_snapshot.read().clone(),
+                    current_body: edit_body.read().clone(),
+                    snapshot_error: history_snapshot_error.read().clone(),
+                    restore_message: history_restore_message.read().clone(),
+                    on_close: move |_| *history_open.write() = false,
+                    on_select_commit: move |commit: String| {
+                        *history_snapshot.write() = None;
+                        *history_snapshot_error.write() = None;
+                        *history_restore_message.write() = None;
+                        let c = ctx.clone();
+                        let p = history_select_path.clone();
+                        spawn(async move {
+                            let project = c.project();
+                            let (remote, branch) = match &project.config.sync {
+                                flynt_core::models::SyncConfig::Git { remote, branch, .. } => {
+                                    (remote.clone(), branch.clone())
+                                }
+                                _ => ("origin".into(), "main".into()),
+                            };
+                            let result = tokio::task::spawn_blocking(move || {
+                                let git = GitSync::new(project.root.clone(), remote, branch);
+                                git.read_file_at_commit(&p, &commit)
+                            })
+                            .await;
+                            match result {
+                                Ok(Ok(snapshot)) => *history_snapshot.write() = Some(snapshot),
+                                Ok(Err(e)) => *history_snapshot_error.write() = Some(format!("Could not load snapshot: {e}")),
+                                Err(e) => *history_snapshot_error.write() = Some(format!("Snapshot load interrupted: {e}")),
+                            }
+                        });
+                    },
+                    on_restore_snapshot: move |snapshot: FileSnapshot| {
+                        *history_restore_message.write() = None;
+                        let c = ctx.clone();
+                        let original_path = history_restore_path.clone();
+                        spawn(async move {
+                            let project = c.project();
+                            let short = snapshot.commit.chars().take(7).collect::<String>();
+                            let stem = original_path
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("note");
+                            let recovered = std::path::PathBuf::from("Recovered")
+                                .join(format!("{stem} {short}.md"));
+                            let save_result = project.save_document_content(&recovered, &snapshot.content);
+                            match save_result {
+                                Ok(()) => {
+                                    let _ = project.reindex();
+                                    *render_ver.write() += 1;
+                                    if let Ok(Some(meta)) = project
+                                        .store
+                                        .get_document_by_path(&recovered)
+                                        .map(|doc| doc.map(|doc| DocumentMeta {
+                                            id: doc.id,
+                                            path: doc.path,
+                                            title: doc.title,
+                                            tags: doc.frontmatter.tags,
+                                            metadata: Default::default(),
+                                            entity_kind: doc.entity.map(|entity| entity.kind),
+                                            updated_at: doc.updated_at,
+                                        }))
+                                    {
+                                        tab_state.write().open(meta.id.clone(), meta.title.clone());
+                                    }
+                                    *history_restore_message.write() = Some(format!("Restored copy to {}", recovered.display()));
+                                }
+                                Err(e) => *history_snapshot_error.write() = Some(format!("Restore failed: {e}")),
+                            }
+                        });
+                    },
+                }
             }
-        }
+            if *publish_preview_open.read() {
+                PublishPreviewModal {
+                    state: publish_preview_state.read().clone(),
+                    error: publish_preview_error.read().clone(),
+                    on_close: move |_| *publish_preview_open.write() = false,
+                }
+            }
+            if let Some(state) = hover_preview.read().clone() {
+                FloatingNotePreview {
+                    preview: state.preview,
+                    x: state.x,
+                    y: state.y,
+                }
+            }
         }
     }
 }
