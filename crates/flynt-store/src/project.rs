@@ -82,6 +82,10 @@ impl Project {
         self.root.join(".flynt").join("bookmarks.toml")
     }
 
+    fn lenses_dir(&self) -> PathBuf {
+        self.root.join(".flynt").join("lenses")
+    }
+
     /// Open (or create) a project rooted at `root`.
     pub fn open(root: &Path) -> Result<Self> {
         fs::create_dir_all(root)?;
@@ -1245,6 +1249,39 @@ impl Project {
         Ok(removed)
     }
 
+    pub fn load_lenses(&self) -> Result<Vec<(PathBuf, ProjectLens)>> {
+        let dir = self.lenses_dir();
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut lenses = Vec::new();
+        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
+                continue;
+            }
+            let raw =
+                fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            let lens: ProjectLens =
+                toml::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+            let rel = path.strip_prefix(&self.root).unwrap_or(&path).to_path_buf();
+            lenses.push((rel, lens));
+        }
+        lenses.sort_by(|(_, a), (_, b)| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        Ok(lenses)
+    }
+
+    pub fn save_lens(&self, lens: &ProjectLens) -> Result<PathBuf> {
+        let dir = self.lenses_dir();
+        fs::create_dir_all(&dir)?;
+        let filename = format!("{}.toml", slugify_title(&lens.title));
+        let path = dir.join(filename);
+        fs::write(&path, toml::to_string_pretty(lens)?)?;
+        Ok(path.strip_prefix(&self.root).unwrap_or(&path).to_path_buf())
+    }
+
     // ── Rename document + update links ────────────────────────────────────────
 
     /// Rename a document: moves the file on disk, updates frontmatter title,
@@ -2217,8 +2254,9 @@ mod tests {
     use chrono::Utc;
     use flynt_core::{
         models::{
-            BookmarkTarget, Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue,
-            PublicationConfig, PublicationRule, PublicationVisibility,
+            BookmarkTarget, Document, DocumentId, Frontmatter, LensColumn, LensFilter,
+            LensFilterOp, LensLayout, LensSort, LensSortDirection, LensSource, LocalRuntimeConfig,
+            MetadataValue, ProjectLens, PublicationConfig, PublicationRule, PublicationVisibility,
         },
         store::ProjectStore,
     };
@@ -3202,6 +3240,55 @@ See [[roadmap]].\n",
                 .expect("remove bookmark")
         );
         assert_eq!(project.load_bookmarks().unwrap().bookmarks.len(), 1);
+    }
+
+    #[test]
+    fn lenses_round_trip_as_definition_files() {
+        let tmp = TempDir::new().unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
+
+        let lens = ProjectLens {
+            title: "Publication Candidates".into(),
+            source: LensSource::Documents,
+            layout: LensLayout::Table,
+            filters: vec![LensFilter {
+                field: "tags".into(),
+                op: LensFilterOp::Contains,
+                value: "publish".into(),
+            }],
+            columns: vec![
+                LensColumn {
+                    field: "title".into(),
+                    label: None,
+                },
+                LensColumn {
+                    field: "publication.visibility".into(),
+                    label: Some("Visibility".into()),
+                },
+            ],
+            sort: vec![LensSort {
+                field: "updated_at".into(),
+                direction: LensSortDirection::Desc,
+            }],
+            limit: Some(50),
+        };
+
+        let rel_path = project.save_lens(&lens).expect("save lens");
+        assert_eq!(
+            rel_path,
+            PathBuf::from(".flynt/lenses/publication-candidates.toml")
+        );
+        let raw = fs::read_to_string(project.root.join(&rel_path)).unwrap();
+        assert!(raw.contains("title = \"Publication Candidates\""));
+        assert!(!raw.contains("rows"));
+        assert!(!raw.contains("results"));
+
+        let loaded = project.load_lenses().expect("load lenses");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0, rel_path);
+        assert_eq!(loaded[0].1, lens);
     }
 
     #[test]

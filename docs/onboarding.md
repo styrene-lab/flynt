@@ -180,6 +180,13 @@ For users who chose "Create local project" or "Open existing project" and want t
 - The sidebar Bookmarks section opens note targets directly and restores saved searches by navigating to Search with the saved query populated.
 - The bookmark schema already reserves target types for headings, graph filters, canvas files, and drawings; the first UI pass exposes note and search actions.
 
+### Project Lenses
+- Project Lenses are Dataview-style saved views over existing indexed project data.
+- Lens definitions live in `.flynt/lenses/*.toml` and contain source, filter, column, sort, layout, and limit settings only.
+- Lenses do not persist query results, document snapshots, or duplicated metadata.
+- `Cmd+P -> Save Search as Lens` writes a search-backed lens definition and opens the Lenses view.
+- The first lens UI renders document/task sources as table or list layouts; the full builder remains a later pass.
+
 ### Credential flow
 Git operations use `git2` with credential callbacks. For **HTTPS URLs** (recommended):
 1. Stored personal access token or OAuth token from `~/.config/omegon/auth.json`
@@ -204,7 +211,7 @@ Tokens entered during clone are persisted automatically. Tokens can also be mana
 | Daily notes | Supported (same date format) |
 | Templates | Supported (`.flynt/templates/`) |
 | Canvas/Excalidraw | Excalidraw drawings supported |
-| Dataview queries | Flynt query blocks (`TABLE`, `LIST`, `TASK`) |
+| Dataview queries | Flynt query blocks (`TABLE`, `LIST`, `TASK`) and Project Lenses |
 | Community plugins | Not supported |
 | YAML frontmatter | Read but not written (Flynt uses TOML `+++`) |
 | Vim mode | Not yet |

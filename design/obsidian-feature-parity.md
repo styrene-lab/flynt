@@ -29,7 +29,7 @@ Primary upstream references:
 - Build a plugin: https://docs.obsidian.md/Plugins/Getting%20started/Build%20a%20plugin
 - Plugin/theme manifest: https://docs.obsidian.md/Reference/Manifest
 - Vault API guide: https://docs.obsidian.md/Plugins/Vault
-- Bases plugin view guide: https://docs.obsidian.md/plugins/guides/bases-view
+- Obsidian Bases plugin view guide: https://docs.obsidian.md/plugins/guides/bases-view
 - Plugin load-time guide: https://docs.obsidian.md/plugins/guides/load-time
 - Secret storage guide: https://docs.obsidian.md/plugins/guides/secret-storage
 - Obsidian community directory: https://community.obsidian.md/
@@ -49,7 +49,7 @@ Primary upstream references:
 | Templates | Covered | `.flynt/templates/*.md`, palette creation commands. |
 | Tags | Partial | Indexed from frontmatter and visible in search/graph/palette, but no dedicated tag pane. |
 | Properties | Partial | Frontmatter and indexed metadata exist; UI is currently task-biased. |
-| Bases / Dataview-like views | Partial | Query blocks support `TABLE`, `LIST`, and `TASK`; no saved base/view builder. |
+| Project Lenses / Dataview-like views | Partial | Query blocks support `TABLE`, `LIST`, and `TASK`; lenses persist reusable query/display definitions without storing results. |
 | Canvas | Partial | JSON Canvas and Excalidraw/Flow exist, but Obsidian-style note/media/web/folder cards need a single operator-facing canvas model. |
 | Outgoing links | Partial | Indexed on documents, used by graph, but no active-note pane. |
 | Backlinks pane | Partial | Store API exists; no active-note pane with linked and unlinked mentions. |
@@ -209,7 +209,7 @@ integrations, files, editing, automation, commands, links, AI, and Markdown.
 Official developer docs support TypeScript plugins, themes, CSS variables, and
 CSS snippets. Plugins are developed in a vault-local `.obsidian/plugins`
 directory, declare a `manifest.json`, and can register commands, views,
-Markdown post-processors, editor extensions, Bases views, event handlers, and
+Markdown post-processors, editor extensions, saved views, event handlers, and
 settings. Obsidian also documents load-time guidance and secret storage.
 
 Flynt's current extension surfaces:
@@ -364,20 +364,21 @@ Implementation tasks:
 
 This gives the highest parity lift with minimal storage changes.
 
-### P1: Bases UI Over Existing Query Engine
+### P1: Project Lenses Over Existing Query Engine
 
-Obsidian Bases are custom views over files using properties, filters, and
-multiple layouts. Flynt's query blocks cover the execution concept but are not
-discoverable enough for operators.
+Project Lenses are Dataview-style saved views over existing project data using
+properties, filters, and multiple layouts. Flynt's query blocks cover the
+execution concept, but lenses make it discoverable and reusable for operators.
+Lens files store definitions only, not results or duplicate metadata.
 
 Implementation tasks:
 
-1. Introduce `.flynt/bases/*.toml` saved view definitions.
+1. Introduce `.flynt/lenses/*.toml` saved lens definitions.
 2. Model fields: name, source, columns, filters, sort, layout.
 3. Support layouts initially: table, list, task board link.
-4. Render a Bases view in the app using the existing `ProjectStore` metadata index.
-5. Add command palette entries: `New Base`, `Open Base`.
-6. Keep query blocks as the inline Markdown representation; Bases are reusable UI wrappers.
+4. Render a Lenses view in the app using the existing `ProjectStore` metadata index.
+5. Add command palette entries: `Open Lenses`, `Save Search as Lens`.
+6. Keep query blocks as the inline Markdown representation; lenses are reusable UI wrappers.
 
 ### P1: Bookmarks And Saved Searches
 
@@ -480,7 +481,7 @@ These are intentionally not parity targets right now:
 1. Active Note Context Pane: backlinks, outgoing links, outline, properties.
 2. File Recovery UI over Git history.
 3. Bookmarks and saved searches.
-4. Bases UI on top of indexed metadata and query blocks.
+4. Project Lenses on top of indexed metadata and query blocks.
 5. Page preview for wikilinks/search/sidebar.
 6. Canvas card parity and reference indexing.
 7. Slash commands, word count, footnotes.

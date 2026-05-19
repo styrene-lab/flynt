@@ -200,7 +200,23 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 6. Command Palette
+## 6. Project Lenses
+
+**Route:** `Lenses` | **Sidebar:** Lens icon
+
+Project Lenses are saved views over existing indexed project data. Lens files live in `.flynt/lenses/*.toml` and store only source/filter/column/sort/layout definitions.
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Lens list | Click | Selects a saved lens definition |
+| Lens table | Display | Executes live against the current project store |
+| Title cell | Click | Opens matching document rows in Notes |
+| Refresh | Click | Reloads lens definition files from disk |
+| Empty state | Display | Points operators to `Save Search as Lens` or `.flynt/lenses/` |
+
+---
+
+## 7. Command Palette
 
 ### Command Mode (`Cmd+P`)
 
@@ -215,7 +231,7 @@ to generate raw Excalidraw element arrays.
 
 | Command | Category | Action |
 |---------|----------|--------|
-| Notes / Board / Graph / Settings / Welcome | Navigate | Switch view |
+| Notes / Board / Lenses / Graph / Settings / Welcome | Navigate | Switch view |
 | New Note | Create | Timestamped note, opens in tab |
 | New Drawing | Create | Excalidraw `.excalidraw` + wrapper `.md` |
 | Insert Drawing Here | Create | Inserts `![[drawing.excalidraw]]` at cursor (Notes view only, requires open note) |
@@ -226,6 +242,7 @@ to generate raw Excalidraw element arrays.
 | Export Publication Preview | Publish | Exports the local publication preview and opens an export report |
 | Bookmark Current Note | Bookmark | Saves the active note to `.flynt/bookmarks.toml` |
 | Bookmark Current Search | Bookmark | Saves the current search query to `.flynt/bookmarks.toml` |
+| Save Search as Lens | Lens | Writes a search-backed lens definition under `.flynt/lenses/` |
 | Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
 | Create Project in iCloud | Create | Creates iCloud project + opens new instance |
 | `<note title>` | Open | Opens matching note in tab |
@@ -244,7 +261,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 7. Settings
+## 8. Settings
 
 **Route:** `Settings` | **Sidebar:** Settings icon
 
@@ -330,7 +347,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 8. Toolbar
+## 9. Toolbar
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
@@ -347,7 +364,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 9. Sidebar — Project Switcher
+## 10. Sidebar — Project Switcher
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
@@ -363,7 +380,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 10. Sidebar — Bookmarks
+## 11. Sidebar — Bookmarks
 
 Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
@@ -376,7 +393,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 11. Agent Rail (sidebar panel)
+## 12. Agent Rail (sidebar panel)
 
 **Trigger:** Toolbar agent toggle
 
@@ -398,7 +415,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 12. Keyboard Shortcuts
+## 13. Keyboard Shortcuts
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
@@ -415,7 +432,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 13. Mobile (iOS)
+## 14. Mobile (iOS)
 
 ### Onboarding
 
@@ -457,7 +474,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 14. File Formats
+## 15. File Formats
 
 | File | Format | Location | Notes |
 |------|--------|----------|-------|
@@ -480,7 +497,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 15. Sync Behaviors
+## 16. Sync Behaviors
 
 | Backend | Mechanism | Conflict handling |
 |---------|-----------|-------------------|
@@ -518,7 +535,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 16. Visualization Pipeline
+## 17. Visualization Pipeline
 
 | Source | Trigger | Renderer | Output | Timeout |
 |--------|---------|----------|--------|---------|
@@ -546,7 +563,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 17. Environment Variables
+## 18. Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -559,7 +576,7 @@ Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
 
 ---
 
-## 18. Known Gaps
+## 19. Known Gaps
 
 | Area | Gap | Severity |
 |------|-----|----------|

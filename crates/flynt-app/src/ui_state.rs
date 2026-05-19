@@ -43,6 +43,7 @@ fn route_label(route: &Route) -> &'static str {
         Route::Welcome => "welcome",
         Route::Notes => "notes",
         Route::Search => "search",
+        Route::Lenses => "lenses",
         Route::Kanban => "kanban",
         Route::Graph => "graph",
     }

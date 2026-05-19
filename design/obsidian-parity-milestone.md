@@ -45,7 +45,7 @@ and Omegon as the extension/agent plane.
 | Sync activity | OP-03 | P0 | GitSync status + conflict data | Inspectable sync diagnostics and config boundary docs. |
 | Publication workflow | OP-04 | P1 | active properties inspector | Per-note publish controls and export report. |
 | Bookmarks/searches | OP-05 | P1 | command palette + project config IO | Portable bookmarks and saved searches. |
-| Bases UI | OP-06 | P1 | metadata index + query engine | Saved table/list/card views over project files. |
+| Project Lenses | OP-06 | P1 | metadata index + query engine | Saved table/list views over existing project data. |
 | Page preview | OP-07 | P2 | active-note link handling | Hover previews for wikilinks/search/sidebar. |
 | Canvas card parity | OP-08 | P2 | current canvas/flow/excalidraw surfaces | Note/media/web/folder canvas cards with graph references. |
 | Extension API | OP-09 | P1 | Omegon/flynt-agent extension plane | Versioned manifest, capability schema, permission model. |
@@ -147,22 +147,26 @@ Add portable navigation anchors stored under `.flynt/bookmarks.toml`.
 | OP-05.5 | Saved search route | `search.rs`, `app.rs`, `sidebar.rs` | Done — clicking a saved search opens Search with the query populated. |
 | OP-05.6 | Tests | `flynt-store` tests | Done — bookmark round-trip, target serialization, dedupe, and remove covered. |
 
-## OP-06: Bases UI
+## OP-06: Project Lenses
 
 ### Plan
 
-Make Flynt's query engine discoverable as saved project views.
+Make Flynt's query engine discoverable as saved project lenses.
+
+Project Lenses are Dataview-style saved views over existing indexed project
+data. They persist query and display definitions only; they must not persist
+query results, document snapshots, or duplicated metadata.
 
 ### Implementation tasks
 
 | Task ID | Scope | Files likely touched | Acceptance |
 | --- | --- | --- | --- |
-| OP-06.1 | `.flynt/bases/*.toml` schema | new design + `flynt-core` model | Name, source, filters, columns, sort, layout. |
-| OP-06.2 | Store/query execution | `flynt-core/src/query.rs`, `flynt-store` | Supports metadata filters beyond tags/title. |
-| OP-06.3 | Bases view | new app view | Renders table and list layouts. |
-| OP-06.4 | Base builder MVP | app UI | Operator can add columns/filter/sort without editing TOML. |
-| OP-06.5 | Inline query compatibility | `notes.rs` renderer | Bases can emit equivalent query block or link. |
-| OP-06.6 | Tests | query tests + e2e | Saved base returns expected docs. |
+| OP-06.1 | `.flynt/lenses/*.toml` schema | `flynt-core/src/models.rs` | Done — source, filters, columns, sort, layout, and limit definitions. |
+| OP-06.2 | Store/query execution | `flynt-core/src/query.rs`, `flynt-store/src/project.rs` | Done — executes document/task lenses against existing store APIs. |
+| OP-06.3 | Lenses view | `views/lenses.rs` | Done — renders table and list layouts. |
+| OP-06.4 | Lens creation MVP | `command_palette.rs` | Partial — Save Search as Lens creates a search-backed lens; full builder deferred. |
+| OP-06.5 | Inline query compatibility | `notes.rs` renderer | Deferred — lenses can later emit/query-block equivalents. |
+| OP-06.6 | Tests | core/store tests | Done — lens execution and definition-file round-trip covered. |
 
 ## OP-07: Page Preview
 
@@ -279,7 +283,7 @@ Milestone-level feature issues, not one issue per task:
 | [#9](https://github.com/styrene-lab/flynt/issues/9) | OP-03 Sync activity and config boundary |
 | [#10](https://github.com/styrene-lab/flynt/issues/10) | OP-04 Publication authoring workflow |
 | [#11](https://github.com/styrene-lab/flynt/issues/11) | OP-05 Bookmarks and saved searches |
-| [#12](https://github.com/styrene-lab/flynt/issues/12) | OP-06 Bases UI over metadata/query engine |
+| [#12](https://github.com/styrene-lab/flynt/issues/12) | OP-06 Project Lenses over metadata/query engine |
 | [#13](https://github.com/styrene-lab/flynt/issues/13) | OP-07 Page preview |
 | [#14](https://github.com/styrene-lab/flynt/issues/14) | OP-08 Canvas card parity |
 | [#15](https://github.com/styrene-lab/flynt/issues/15) | OP-09 Flynt extension API foundation |
@@ -297,7 +301,7 @@ resolution in this document for agent handoff.
 2. OP-02 Git recovery and OP-03 Sync activity in parallel
 3. OP-04 Publication workflow and OP-05 Bookmarks
 4. OP-09 Extension API foundation
-5. OP-06 Bases UI
+5. OP-06 Project Lenses
 6. OP-07 Page preview
 7. OP-08 Canvas card parity
 8. OP-10 Sealing vertical slice

@@ -11,7 +11,10 @@ use crate::state::{
     PublicationPreviewCommand, Route, TabState,
 };
 use dioxus::prelude::*;
-use flynt_core::models::BookmarkTarget;
+use flynt_core::models::{
+    BookmarkTarget, LensColumn, LensFilter, LensFilterOp, LensLayout, LensSort, LensSortDirection,
+    LensSource, ProjectLens,
+};
 use flynt_core::store::ProjectStore;
 use std::rc::Rc;
 
@@ -129,6 +132,7 @@ fn execute_command(
     match id {
         "view-notes" => *active_route.write() = Route::Notes,
         "view-board" => *active_route.write() = Route::Kanban,
+        "view-lenses" => *active_route.write() = Route::Lenses,
         "view-graph" => *active_route.write() = Route::Graph,
         "view-settings" => *settings_open.write() = crate::state::SettingsOpen(true),
         "view-welcome" => *active_route.write() = Route::Welcome,
@@ -235,6 +239,52 @@ fn execute_command(
                     }
                     Ok(Err(e)) => tracing::warn!("Bookmark Current Search: {e}"),
                     Err(e) => tracing::warn!("Bookmark Current Search task failed: {e}"),
+                }
+            });
+        }
+        "save-search-as-lens" => {
+            let query = search_query.read().trim().to_string();
+            if query.is_empty() {
+                tracing::warn!("Save Search as Lens: search query is empty");
+                return;
+            }
+            let c = ctx;
+            let mut ar = *active_route;
+            spawn(async move {
+                let project = c.project();
+                let lens = ProjectLens {
+                    title: format!("Search: {query}"),
+                    source: LensSource::Documents,
+                    layout: LensLayout::Table,
+                    filters: vec![LensFilter {
+                        field: "search".into(),
+                        op: LensFilterOp::Contains,
+                        value: query,
+                    }],
+                    columns: vec![
+                        LensColumn {
+                            field: "title".into(),
+                            label: None,
+                        },
+                        LensColumn {
+                            field: "path".into(),
+                            label: None,
+                        },
+                        LensColumn {
+                            field: "updated_at".into(),
+                            label: Some("Updated".into()),
+                        },
+                    ],
+                    sort: vec![LensSort {
+                        field: "updated_at".into(),
+                        direction: LensSortDirection::Desc,
+                    }],
+                    limit: Some(100),
+                };
+                match tokio::task::spawn_blocking(move || project.save_lens(&lens)).await {
+                    Ok(Ok(_)) => *ar.write() = Route::Lenses,
+                    Ok(Err(e)) => tracing::warn!("Save Search as Lens: {e}"),
+                    Err(e) => tracing::warn!("Save Search as Lens task failed: {e}"),
                 }
             });
         }
@@ -522,6 +572,11 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 category: "Navigate".into(),
             },
             Cmd {
+                id: "view-lenses".into(),
+                label: "Lenses".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
                 id: "view-graph".into(),
                 label: "Graph".into(),
                 category: "Navigate".into(),
@@ -575,6 +630,11 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 id: "bookmark-current-search".into(),
                 label: "Bookmark Current Search".into(),
                 category: "Bookmark".into(),
+            },
+            Cmd {
+                id: "save-search-as-lens".into(),
+                label: "Save Search as Lens".into(),
+                category: "Lens".into(),
             },
             Cmd {
                 id: "new-note".into(),

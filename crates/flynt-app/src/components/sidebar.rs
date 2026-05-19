@@ -118,6 +118,12 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
                 }
                 button {
+                    class: if *active_route.read() == Route::Lenses   { "nav-btn active" } else { "nav-btn" },
+                    title: "Lenses",
+                    onclick: move |_| *active_route.write() = Route::Lenses,
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_LENS }
+                }
+                button {
                     class: if *active_route.read() == Route::Graph    { "nav-btn active" } else { "nav-btn" },
                     title: "Graph",
                     onclick: move |_| *active_route.write() = Route::Graph,

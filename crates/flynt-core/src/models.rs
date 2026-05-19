@@ -299,6 +299,106 @@ impl BookmarkTarget {
     }
 }
 
+// ── Project Lenses ──────────────────────────────────────────────────────────
+
+/// A saved, portable view over existing indexed project data.
+///
+/// Project lenses persist query/display definitions only. They do not store
+/// document/task snapshots, query results, or duplicate metadata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectLens {
+    pub title: String,
+    #[serde(default)]
+    pub source: LensSource,
+    #[serde(default)]
+    pub layout: LensLayout,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<LensFilter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<LensColumn>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sort: Vec<LensSort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+impl Default for ProjectLens {
+    fn default() -> Self {
+        Self {
+            title: "Untitled Lens".into(),
+            source: LensSource::default(),
+            layout: LensLayout::default(),
+            filters: Vec::new(),
+            columns: default_lens_columns(),
+            sort: Vec::new(),
+            limit: Some(100),
+        }
+    }
+}
+
+fn default_lens_columns() -> Vec<LensColumn> {
+    vec![LensColumn {
+        field: "title".into(),
+        label: None,
+    }]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensSource {
+    #[default]
+    Documents,
+    Tasks,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensLayout {
+    #[default]
+    Table,
+    List,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LensFilter {
+    pub field: String,
+    #[serde(default)]
+    pub op: LensFilterOp,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensFilterOp {
+    #[default]
+    Equals,
+    Contains,
+    NotEquals,
+    Exists,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LensColumn {
+    pub field: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LensSort {
+    pub field: String,
+    #[serde(default)]
+    pub direction: LensSortDirection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensSortDirection {
+    #[default]
+    Asc,
+    Desc,
+}
+
 // ── Kanban Task ───────────────────────────────────────────────────────────────
 
 // Task, Priority, TaskStatus, DecayRate, TaskId, BoardId, DocumentId

@@ -15,6 +15,155 @@
 use crate::models::*;
 use crate::store::ProjectStore;
 use anyhow::Result;
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LensResult {
+    pub columns: Vec<LensColumn>,
+    pub rows: Vec<LensRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LensRow {
+    pub key: String,
+    pub title: String,
+    pub document_id: Option<DocumentId>,
+    pub values: BTreeMap<String, String>,
+}
+
+/// Execute a Project Lens against the existing project store. Lenses are saved
+/// query/display definitions only; result rows are always computed live.
+pub fn execute_lens(lens: &ProjectLens, store: &dyn ProjectStore) -> Result<LensResult> {
+    let columns = if lens.columns.is_empty() {
+        vec![LensColumn {
+            field: "title".into(),
+            label: None,
+        }]
+    } else {
+        lens.columns.clone()
+    };
+
+    let rows = match lens.source {
+        LensSource::Documents => execute_document_lens(lens, store, &columns)?,
+        LensSource::Tasks => execute_task_lens(lens, store, &columns)?,
+    };
+
+    Ok(LensResult { columns, rows })
+}
+
+fn execute_document_lens(
+    lens: &ProjectLens,
+    store: &dyn ProjectStore,
+    columns: &[LensColumn],
+) -> Result<Vec<LensRow>> {
+    let search_filter = lens.filters.iter().find(|filter| {
+        matches!(filter.field.as_str(), "search" | "content" | "body")
+            && matches!(filter.op, LensFilterOp::Contains | LensFilterOp::Equals)
+            && !filter.value.trim().is_empty()
+    });
+
+    let mut docs = if let Some(filter) = search_filter {
+        store
+            .search_documents(&filter.value)?
+            .into_iter()
+            .filter_map(|result| store.get_document(&result.document_id).ok().flatten())
+            .map(|doc| DocumentMeta {
+                id: doc.id,
+                path: doc.path,
+                title: doc.title,
+                tags: doc.frontmatter.tags,
+                metadata: doc
+                    .frontmatter
+                    .metadata
+                    .into_iter()
+                    .map(|(key, value)| {
+                        (
+                            key,
+                            MetadataField {
+                                value,
+                                protection: MetadataProtection::PlaintextIndexed,
+                            },
+                        )
+                    })
+                    .collect(),
+                entity_kind: doc.entity.as_ref().map(|entity| entity.kind.clone()),
+                updated_at: doc.updated_at,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        store.list_documents()?
+    };
+
+    docs.retain(|doc| {
+        lens.filters
+            .iter()
+            .filter(|filter| !matches!(filter.field.as_str(), "search" | "content" | "body"))
+            .all(|filter| {
+                let value = document_field_value(doc, filter, store);
+                lens_filter_matches(value.as_deref(), filter)
+            })
+    });
+
+    sort_document_rows(&mut docs, &lens.sort, store);
+    if let Some(limit) = lens.limit {
+        docs.truncate(limit);
+    }
+
+    Ok(docs
+        .into_iter()
+        .map(|doc| {
+            let mut values = BTreeMap::new();
+            for column in columns {
+                values.insert(
+                    column.field.clone(),
+                    document_column_value(&doc, &column.field, store),
+                );
+            }
+            LensRow {
+                key: doc.id.0.to_string(),
+                title: doc.title,
+                document_id: Some(doc.id),
+                values,
+            }
+        })
+        .collect())
+}
+
+fn execute_task_lens(
+    lens: &ProjectLens,
+    store: &dyn ProjectStore,
+    columns: &[LensColumn],
+) -> Result<Vec<LensRow>> {
+    let mut tasks = store.list_tasks(&crate::store::TaskFilter::default())?;
+    tasks.retain(|task| {
+        lens.filters.iter().all(|filter| {
+            let value = task_field_value(task, &filter.field);
+            lens_filter_matches(value.as_deref(), filter)
+        })
+    });
+    sort_task_rows(&mut tasks, &lens.sort);
+    if let Some(limit) = lens.limit {
+        tasks.truncate(limit);
+    }
+    Ok(tasks
+        .into_iter()
+        .map(|task| {
+            let mut values = BTreeMap::new();
+            for column in columns {
+                values.insert(
+                    column.field.clone(),
+                    task_field_value(&task, &column.field).unwrap_or_default(),
+                );
+            }
+            LensRow {
+                key: task.id.0.to_string(),
+                title: task.title,
+                document_id: None,
+                values,
+            }
+        })
+        .collect())
+}
 
 /// Parse and execute a query block, returning rendered HTML.
 pub fn execute_query(source: &str, store: &dyn ProjectStore) -> Result<String> {
@@ -259,6 +408,136 @@ fn extract_quoted(s: &str) -> Option<String> {
     Some(val.to_string())
 }
 
+fn lens_filter_matches(value: Option<&str>, filter: &LensFilter) -> bool {
+    match filter.op {
+        LensFilterOp::Exists => value.is_some_and(|value| !value.trim().is_empty()),
+        LensFilterOp::Equals => value
+            .map(|value| value.eq_ignore_ascii_case(filter.value.trim()))
+            .unwrap_or(false),
+        LensFilterOp::NotEquals => value
+            .map(|value| !value.eq_ignore_ascii_case(filter.value.trim()))
+            .unwrap_or(true),
+        LensFilterOp::Contains => value
+            .map(|value| {
+                value
+                    .to_lowercase()
+                    .contains(&filter.value.trim().to_lowercase())
+            })
+            .unwrap_or(false),
+    }
+}
+
+fn document_field_value(
+    doc: &DocumentMeta,
+    filter: &LensFilter,
+    store: &dyn ProjectStore,
+) -> Option<String> {
+    Some(document_column_value(doc, &filter.field, store)).filter(|value| !value.is_empty())
+}
+
+fn document_column_value(doc: &DocumentMeta, field: &str, store: &dyn ProjectStore) -> String {
+    match field {
+        "title" | "name" => doc.title.clone(),
+        "path" => doc.path.to_string_lossy().to_string(),
+        "tags" => doc.tags.join(", "),
+        "updated_at" | "updated" | "date" => doc.updated_at.format("%Y-%m-%d").to_string(),
+        "kind" => doc
+            .entity_kind
+            .as_ref()
+            .map(|kind| format!("{kind:?}").to_lowercase())
+            .unwrap_or_default(),
+        "status" => load_document(doc, store)
+            .and_then(|document| document.frontmatter.status)
+            .unwrap_or_default(),
+        "publication.enabled" => load_document(doc, store)
+            .map(|document| document.frontmatter.publication.enabled.to_string())
+            .unwrap_or_default(),
+        "publication.visibility" => load_document(doc, store)
+            .map(|document| {
+                format!("{:?}", document.frontmatter.publication.visibility).to_lowercase()
+            })
+            .unwrap_or_default(),
+        "publication.slug" => load_document(doc, store)
+            .and_then(|document| document.frontmatter.publication.slug)
+            .unwrap_or_default(),
+        field => doc
+            .metadata
+            .get(field)
+            .map(|field| metadata_value_string(&field.value))
+            .unwrap_or_default(),
+    }
+}
+
+fn load_document(doc: &DocumentMeta, store: &dyn ProjectStore) -> Option<Document> {
+    store
+        .get_document(&doc.id)
+        .ok()
+        .flatten()
+        .or_else(|| store.get_document_by_path(&doc.path).ok().flatten())
+}
+
+fn metadata_value_string(value: &MetadataValue) -> String {
+    match value {
+        MetadataValue::Null => String::new(),
+        MetadataValue::Bool(value) => value.to_string(),
+        MetadataValue::Integer(value) => value.to_string(),
+        MetadataValue::Float(value) => value.to_string(),
+        MetadataValue::String(value) => value.clone(),
+        MetadataValue::StringList(values) => values.join(", "),
+    }
+}
+
+fn sort_document_rows(docs: &mut [DocumentMeta], sort: &[LensSort], store: &dyn ProjectStore) {
+    for sort in sort.iter().rev() {
+        let field = sort.field.clone();
+        docs.sort_by(|a, b| {
+            let a_value = document_column_value(a, &field, store);
+            let b_value = document_column_value(b, &field, store);
+            a_value.to_lowercase().cmp(&b_value.to_lowercase())
+        });
+        if sort.direction == LensSortDirection::Desc {
+            docs.reverse();
+        }
+    }
+}
+
+fn task_field_value(task: &Task, field: &str) -> Option<String> {
+    let value = match field {
+        "title" | "name" => task.title.clone(),
+        "column" => task.column.clone(),
+        "status" => format!("{:?}", task.status).to_lowercase(),
+        "priority" => format!("{:?}", task.priority).to_lowercase(),
+        "tags" => task.tags.join(", "),
+        "due_date" | "due" => task
+            .due_date
+            .map(|date| date.to_string())
+            .unwrap_or_default(),
+        "updated_at" | "updated" | "date" => task.updated_at.format("%Y-%m-%d").to_string(),
+        "openspec_change" => task.openspec_change.clone().unwrap_or_default(),
+        "engagement_id" => task
+            .engagement_id
+            .as_ref()
+            .map(|id| id.0.to_string())
+            .unwrap_or_default(),
+        _ => String::new(),
+    };
+    Some(value).filter(|value| !value.is_empty())
+}
+
+fn sort_task_rows(tasks: &mut [Task], sort: &[LensSort]) {
+    for sort in sort.iter().rev() {
+        let field = sort.field.clone();
+        tasks.sort_by(|a, b| {
+            let a_value = task_field_value(a, &field).unwrap_or_default();
+            let b_value = task_field_value(b, &field).unwrap_or_default();
+            a_value.to_lowercase().cmp(&b_value.to_lowercase())
+        });
+        if sort.direction == LensSortDirection::Desc {
+            tasks.reverse();
+        }
+    }
+}
+
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -270,7 +549,7 @@ mod tests {
     use super::*;
     use crate::datum::EntityKind;
     use crate::store::{DocumentMetadataFilter, TaskFilter};
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -280,11 +559,19 @@ mod tests {
     }
 
     impl ProjectStore for MockStore {
-        fn get_document(&self, _id: &DocumentId) -> Result<Option<Document>> {
-            Ok(None)
+        fn get_document(&self, id: &DocumentId) -> Result<Option<Document>> {
+            Ok(self
+                .docs
+                .iter()
+                .find(|doc| &doc.id == id)
+                .map(document_from_meta))
         }
-        fn get_document_by_path(&self, _path: &std::path::Path) -> Result<Option<Document>> {
-            Ok(None)
+        fn get_document_by_path(&self, path: &std::path::Path) -> Result<Option<Document>> {
+            Ok(self
+                .docs
+                .iter()
+                .find(|doc| doc.path == path)
+                .map(document_from_meta))
         }
         fn find_document_by_slug(&self, _slug: &str) -> Result<Option<DocumentMeta>> {
             Ok(None)
@@ -304,8 +591,19 @@ mod tests {
         fn delete_document(&self, _id: &DocumentId) -> Result<()> {
             Ok(())
         }
-        fn search_documents(&self, _query: &str) -> Result<Vec<crate::models::SearchResult>> {
-            Ok(vec![])
+        fn search_documents(&self, query: &str) -> Result<Vec<crate::models::SearchResult>> {
+            Ok(self
+                .docs
+                .iter()
+                .filter(|doc| doc.title.to_lowercase().contains(&query.to_lowercase()))
+                .map(|doc| crate::models::SearchResult {
+                    document_id: doc.id.clone(),
+                    path: doc.path.clone(),
+                    title: doc.title.clone(),
+                    excerpt: String::new(),
+                    score: 1.0,
+                })
+                .collect())
         }
         fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> {
             Ok(vec![])
@@ -366,6 +664,29 @@ mod tests {
             metadata: BTreeMap::new(),
             entity_kind: None,
             updated_at: Utc::now(),
+        }
+    }
+
+    fn document_from_meta(meta: &DocumentMeta) -> Document {
+        Document {
+            id: meta.id.clone(),
+            path: meta.path.clone(),
+            title: meta.title.clone(),
+            content: String::new(),
+            frontmatter: Frontmatter {
+                title: Some(meta.title.clone()),
+                tags: meta.tags.clone(),
+                metadata: meta
+                    .metadata
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.value.clone()))
+                    .collect(),
+                ..Default::default()
+            },
+            outgoing_links: Vec::new(),
+            created_at: meta.updated_at,
+            updated_at: meta.updated_at,
+            entity: None,
         }
     }
 
@@ -584,5 +905,112 @@ mod tests {
         let html = execute_query("TASK", &store).unwrap();
         assert!(html.contains("<ul"));
         assert!(!html.contains("<li"));
+    }
+
+    #[test]
+    fn lens_filters_documents_without_storing_results() {
+        let store = MockStore {
+            docs: vec![
+                doc("Publish Me", &["publish"]),
+                doc("Keep Private", &["internal"]),
+            ],
+            tasks: vec![],
+        };
+        let lens = ProjectLens {
+            title: "Publication candidates".into(),
+            source: LensSource::Documents,
+            layout: LensLayout::Table,
+            filters: vec![LensFilter {
+                field: "tags".into(),
+                op: LensFilterOp::Contains,
+                value: "publish".into(),
+            }],
+            columns: vec![
+                LensColumn {
+                    field: "title".into(),
+                    label: None,
+                },
+                LensColumn {
+                    field: "tags".into(),
+                    label: None,
+                },
+            ],
+            sort: Vec::new(),
+            limit: None,
+        };
+        let result = execute_lens(&lens, &store).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].title, "Publish Me");
+        assert_eq!(
+            result.rows[0].values.get("tags").map(String::as_str),
+            Some("publish")
+        );
+    }
+
+    #[test]
+    fn lens_search_filter_uses_existing_search_surface() {
+        let store = MockStore {
+            docs: vec![doc("Manager Failover", &[]), doc("Publication Plan", &[])],
+            tasks: vec![],
+        };
+        let lens = ProjectLens {
+            title: "Search: manager".into(),
+            source: LensSource::Documents,
+            layout: LensLayout::Table,
+            filters: vec![LensFilter {
+                field: "search".into(),
+                op: LensFilterOp::Contains,
+                value: "manager".into(),
+            }],
+            columns: vec![LensColumn {
+                field: "title".into(),
+                label: None,
+            }],
+            sort: Vec::new(),
+            limit: Some(10),
+        };
+        let result = execute_lens(&lens, &store).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].title, "Manager Failover");
+    }
+
+    #[test]
+    fn lens_filters_tasks_from_existing_task_store() {
+        let store = MockStore {
+            docs: vec![],
+            tasks: vec![
+                task("Active task", "Active", TaskStatus::Todo, Priority::High),
+                task("Done task", "Done", TaskStatus::Done, Priority::Low),
+            ],
+        };
+        let lens = ProjectLens {
+            title: "Open tasks".into(),
+            source: LensSource::Tasks,
+            layout: LensLayout::Table,
+            filters: vec![LensFilter {
+                field: "status".into(),
+                op: LensFilterOp::Equals,
+                value: "todo".into(),
+            }],
+            columns: vec![
+                LensColumn {
+                    field: "title".into(),
+                    label: None,
+                },
+                LensColumn {
+                    field: "priority".into(),
+                    label: None,
+                },
+            ],
+            sort: Vec::new(),
+            limit: None,
+        };
+        let result = execute_lens(&lens, &store).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].title, "Active task");
+        assert_eq!(
+            result.rows[0].values.get("priority").map(String::as_str),
+            Some("high")
+        );
     }
 }

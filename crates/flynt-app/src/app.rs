@@ -8,7 +8,7 @@ use crate::{
         Route, SettingsOpen, SettingsPage, SyncActivityState, SyncRunOutcome, SyncStatus, TabState,
         ThemeName,
     },
-    views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
+    views::{GraphView, KanbanView, LensesView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use dioxus::prelude::*;
 use flynt_core::store::ProjectStore;
@@ -584,6 +584,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/task-strip.css") }
         document::Stylesheet { href: asset!("/assets/styles/tabs.css") }
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
+        document::Stylesheet { href: asset!("/assets/styles/lenses.css") }
         document::Stylesheet { href: asset!("/assets/styles/graph.css") }
         document::Stylesheet { href: asset!("/assets/styles/welcome.css") }
         document::Stylesheet { href: asset!("/assets/styles/canvas.css") }
@@ -837,6 +838,7 @@ pub fn App() -> Element {
                         Route::Notes    => rsx! { NotesView {} },
 
                         Route::Search   => rsx! { SearchView { search_query } },
+                        Route::Lenses   => rsx! { LensesView {} },
                         Route::Kanban   => rsx! { KanbanView {} },
                         Route::Graph    => rsx! { GraphView {} },
                     }

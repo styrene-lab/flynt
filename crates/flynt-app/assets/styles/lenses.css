@@ -1,0 +1,211 @@
+/* ── Project Lenses ─────────────────────────────────────────────────────── */
+.lenses-view {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--background);
+}
+
+.lenses-sidebar {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lenses-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.lenses-title {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+.lenses-subtitle,
+.lens-list-meta,
+.lens-detail-meta {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+
+.lenses-list {
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.lens-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.lens-list-item:hover {
+  background: var(--accent);
+}
+
+.lens-list-item.active {
+  background: var(--sidebar-item-active);
+  border-color: var(--border);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.lens-list-title {
+  color: var(--foreground);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lenses-empty,
+.lenses-error {
+  padding: var(--space-4);
+  color: var(--muted-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.lenses-error {
+  color: var(--error);
+}
+
+.lenses-empty-title {
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-1);
+}
+
+.lenses-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.lens-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--muted-foreground);
+}
+
+.lens-placeholder-mark {
+  width: 44px;
+  height: 44px;
+  opacity: 0.45;
+}
+
+.lens-placeholder-title {
+  font-size: 0.95rem;
+}
+
+.lens-detail {
+  min-width: 0;
+  padding: var(--space-6);
+}
+
+.lens-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+
+.lens-detail h1 {
+  margin: 0 0 var(--space-1);
+  font-size: 1.4rem;
+  line-height: 1.2;
+  color: var(--foreground);
+}
+
+.lens-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.lens-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.lens-table th,
+.lens-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-dim);
+  text-align: left;
+  vertical-align: top;
+}
+
+.lens-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: var(--font-weight-semibold);
+}
+
+.lens-table tr:last-child td {
+  border-bottom: none;
+}
+
+.lens-row-link,
+.lens-list-row {
+  color: var(--primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.lens-row-link:hover,
+.lens-list-row:hover {
+  text-decoration: underline;
+}
+
+.lens-empty-cell {
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.lens-list-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lens-list-row {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.lens-list-row:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+  text-decoration: none;
+}
