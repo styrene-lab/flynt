@@ -24,6 +24,8 @@ and Omegon as the extension/agent plane.
 
 **Release target:** next minor feature train after theme/logo stabilization.
 
+**Validation plan:** [Obsidian parity validation plan](obsidian-parity-validation.md)
+
 **Release criteria:**
 
 - Active-note context is navigable without opening the global graph.
