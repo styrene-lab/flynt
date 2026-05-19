@@ -173,6 +173,13 @@ For users who chose "Create local project" or "Open existing project" and want t
 - `Export preview` in Properties and `Cmd+P -> Export Publication Preview` run the local static export and show exported/skipped/error counts plus the output path.
 - Adapter boundaries are tracked in `design/publication-adapters.md`: local static folder first, GitHub Pages/Astro as delivery layers over the same manifest.
 
+### Bookmarks and saved searches
+- Project bookmarks are stored in `.flynt/bookmarks.toml` so they can travel with a synced project.
+- `Cmd+P -> Bookmark Current Note` saves the active note.
+- `Cmd+P -> Bookmark Current Search` saves the current search query.
+- The sidebar Bookmarks section opens note targets directly and restores saved searches by navigating to Search with the saved query populated.
+- The bookmark schema already reserves target types for headings, graph filters, canvas files, and drawings; the first UI pass exposes note and search actions.
+
 ### Credential flow
 Git operations use `git2` with credential callbacks. For **HTTPS URLs** (recommended):
 1. Stored personal access token or OAuth token from `~/.config/omegon/auth.json`

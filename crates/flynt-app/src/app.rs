@@ -89,6 +89,10 @@ pub fn App() -> Element {
     // the notes workflow without knowing NotesView internals.
     use_context_provider(|| Signal::new(crate::state::PublicationPreviewCommand::default()));
 
+    // Sidebar bookmark list refreshes from the project-local bookmark file
+    // whenever command palette actions add or remove entries.
+    use_context_provider(|| Signal::new(crate::state::BookmarkRefresh::default()));
+
     // Settings tab — which panel is shown in SettingsView
     use_context_provider(|| Signal::new(SettingsPage::default()));
 
@@ -218,7 +222,7 @@ pub fn App() -> Element {
     }
 
     // Shared search query — lives here so toolbar and search view share it
-    let search_query: Signal<String> = use_signal(String::new);
+    let search_query: Signal<String> = use_context_provider(|| Signal::new(String::new()));
 
     // ── Native menu event handler ────────────────────────────────────────
     let ctx_menu_handler = ctx.clone();

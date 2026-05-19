@@ -224,6 +224,8 @@ to generate raw Excalidraw element arrays.
 | Show Note History | View | Opens active-note history with diff preview and restore-as-copy |
 | Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags, then opens Note History. |
 | Export Publication Preview | Publish | Exports the local publication preview and opens an export report |
+| Bookmark Current Note | Bookmark | Saves the active note to `.flynt/bookmarks.toml` |
+| Bookmark Current Search | Bookmark | Saves the current search query to `.flynt/bookmarks.toml` |
 | Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
 | Create Project in iCloud | Create | Creates iCloud project + opens new instance |
 | `<note title>` | Open | Opens matching note in tab |
@@ -361,7 +363,20 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 10. Agent Rail (sidebar panel)
+## 10. Sidebar — Bookmarks
+
+Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Bookmark row | Click | Opens note/canvas/drawing targets in Notes, or opens Search with a saved query |
+| Bookmark × button | Click | Removes bookmark from `.flynt/bookmarks.toml` |
+| Header | Click | Collapses/expands bookmark list |
+| Count badge | Display | Number of stored project bookmarks |
+
+---
+
+## 11. Agent Rail (sidebar panel)
 
 **Trigger:** Toolbar agent toggle
 
@@ -383,7 +398,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 11. Keyboard Shortcuts
+## 12. Keyboard Shortcuts
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
@@ -400,7 +415,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 12. Mobile (iOS)
+## 13. Mobile (iOS)
 
 ### Onboarding
 
@@ -442,7 +457,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 13. File Formats
+## 14. File Formats
 
 | File | Format | Location | Notes |
 |------|--------|----------|-------|
@@ -465,7 +480,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 14. Sync Behaviors
+## 15. Sync Behaviors
 
 | Backend | Mechanism | Conflict handling |
 |---------|-----------|-------------------|
@@ -503,7 +518,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 15. Visualization Pipeline
+## 16. Visualization Pipeline
 
 | Source | Trigger | Renderer | Output | Timeout |
 |--------|---------|----------|--------|---------|
@@ -531,7 +546,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 16. Environment Variables
+## 17. Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -544,7 +559,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 17. Known Gaps
+## 18. Known Gaps
 
 | Area | Gap | Severity |
 |------|-----|----------|

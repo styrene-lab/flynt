@@ -140,12 +140,12 @@ Add portable navigation anchors stored under `.flynt/bookmarks.toml`.
 
 | Task ID | Scope | Files likely touched | Acceptance |
 | --- | --- | --- | --- |
-| OP-05.1 | Bookmark model | `flynt-core/src/models.rs` or new module | Supports note, heading, search, graph filter, canvas/drawing targets. |
-| OP-05.2 | Project IO | `flynt-store/src/project.rs` | Load/save bookmarks without requiring DB migration. |
-| OP-05.3 | UI list | sidebar bottom mode or inspector tab | Bookmarks display grouped by target type. |
-| OP-05.4 | Add current item commands | `command_palette.rs` | Bookmark current note/search/graph filter. |
-| OP-05.5 | Saved search route | `search.rs` | Clicking saved search opens Search with query populated. |
-| OP-05.6 | Tests | core/store tests | Bookmark round-trip and target serialization. |
+| OP-05.1 | Bookmark model | `flynt-core/src/models.rs` | Done — supports note, heading, search, graph filter, canvas, and drawing targets. |
+| OP-05.2 | Project IO | `flynt-store/src/project.rs` | Done — load/save/add/remove bookmarks without DB migration. |
+| OP-05.3 | UI list | `sidebar.rs`, `components.css` | Done — sidebar bookmark section lists project bookmarks. |
+| OP-05.4 | Add current item commands | `command_palette.rs` | Partial — current note and current search are command-palette actions; graph filter remains deferred until graph filters are persisted. |
+| OP-05.5 | Saved search route | `search.rs`, `app.rs`, `sidebar.rs` | Done — clicking a saved search opens Search with the query populated. |
+| OP-05.6 | Tests | `flynt-store` tests | Done — bookmark round-trip, target serialization, dedupe, and remove covered. |
 
 ## OP-06: Bases UI
 

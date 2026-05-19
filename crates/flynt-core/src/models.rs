@@ -197,6 +197,108 @@ pub struct WikiLink {
     pub anchor: Option<String>,
 }
 
+// ── Bookmarks ───────────────────────────────────────────────────────────────
+
+/// Portable project bookmarks stored in `.flynt/bookmarks.toml`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BookmarkFile {
+    #[serde(default = "BookmarkFile::default_version")]
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bookmarks: Vec<Bookmark>,
+}
+
+impl Default for BookmarkFile {
+    fn default() -> Self {
+        Self {
+            version: Self::default_version(),
+            bookmarks: Vec::new(),
+        }
+    }
+}
+
+impl BookmarkFile {
+    fn default_version() -> u32 {
+        1
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub id: String,
+    pub title: String,
+    pub target: BookmarkTarget,
+    #[serde(default = "default_bookmark_created_at")]
+    pub created_at: DateTime<Utc>,
+}
+
+fn default_bookmark_created_at() -> DateTime<Utc> {
+    Utc::now()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BookmarkTarget {
+    Note {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        document_id: Option<DocumentId>,
+        path: PathBuf,
+    },
+    Heading {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        document_id: Option<DocumentId>,
+        path: PathBuf,
+        anchor: String,
+    },
+    Search {
+        query: String,
+    },
+    Graph {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<String>,
+    },
+    Canvas {
+        path: PathBuf,
+    },
+    Drawing {
+        path: PathBuf,
+    },
+}
+
+impl BookmarkTarget {
+    pub fn stable_key(&self) -> String {
+        match self {
+            Self::Note { document_id, path } => document_id
+                .as_ref()
+                .map(|id| format!("note:id:{}", id.0))
+                .unwrap_or_else(|| format!("note:path:{}", path.to_string_lossy())),
+            Self::Heading {
+                document_id,
+                path,
+                anchor,
+            } => document_id
+                .as_ref()
+                .map(|id| format!("heading:id:{}#{anchor}", id.0))
+                .unwrap_or_else(|| format!("heading:path:{}#{anchor}", path.to_string_lossy())),
+            Self::Search { query } => format!("search:{}", query.trim()),
+            Self::Graph { filter } => format!("graph:{}", filter.as_deref().unwrap_or_default()),
+            Self::Canvas { path } => format!("canvas:{}", path.to_string_lossy()),
+            Self::Drawing { path } => format!("drawing:{}", path.to_string_lossy()),
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Note { .. } => "Note",
+            Self::Heading { .. } => "Heading",
+            Self::Search { .. } => "Search",
+            Self::Graph { .. } => "Graph",
+            Self::Canvas { .. } => "Canvas",
+            Self::Drawing { .. } => "Drawing",
+        }
+    }
+}
+
 // ── Kanban Task ───────────────────────────────────────────────────────────────
 
 // Task, Priority, TaskStatus, DecayRate, TaskId, BoardId, DocumentId

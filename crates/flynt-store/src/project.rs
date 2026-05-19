@@ -78,6 +78,10 @@ enum ImportDisposition {
 }
 
 impl Project {
+    fn bookmarks_path(&self) -> PathBuf {
+        self.root.join(".flynt").join("bookmarks.toml")
+    }
+
     /// Open (or create) a project rooted at `root`.
     pub fn open(root: &Path) -> Result<Self> {
         fs::create_dir_all(root)?;
@@ -1180,6 +1184,67 @@ impl Project {
         Ok(())
     }
 
+    pub fn load_bookmarks(&self) -> Result<BookmarkFile> {
+        let path = self.bookmarks_path();
+        if !path.exists() {
+            return Ok(BookmarkFile::default());
+        }
+        let raw = fs::read_to_string(&path)
+            .with_context(|| format!("read bookmarks from {}", path.display()))?;
+        let bookmarks: BookmarkFile = toml::from_str(&raw)
+            .with_context(|| format!("parse bookmarks from {}", path.display()))?;
+        Ok(bookmarks)
+    }
+
+    pub fn save_bookmarks(&self, bookmarks: &BookmarkFile) -> Result<()> {
+        let path = self.bookmarks_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, toml::to_string_pretty(bookmarks)?)?;
+        Ok(())
+    }
+
+    pub fn add_bookmark(
+        &self,
+        title: impl Into<String>,
+        target: BookmarkTarget,
+    ) -> Result<Bookmark> {
+        let mut file = self.load_bookmarks()?;
+        let target_key = target.stable_key();
+        if let Some(existing) = file
+            .bookmarks
+            .iter_mut()
+            .find(|bookmark| bookmark.target.stable_key() == target_key)
+        {
+            existing.title = title.into();
+            let bookmark = existing.clone();
+            self.save_bookmarks(&file)?;
+            return Ok(bookmark);
+        }
+
+        let bookmark = Bookmark {
+            id: uuid::Uuid::new_v4().to_string(),
+            title: title.into(),
+            target,
+            created_at: Utc::now(),
+        };
+        file.bookmarks.push(bookmark.clone());
+        self.save_bookmarks(&file)?;
+        Ok(bookmark)
+    }
+
+    pub fn remove_bookmark(&self, id: &str) -> Result<bool> {
+        let mut file = self.load_bookmarks()?;
+        let before = file.bookmarks.len();
+        file.bookmarks.retain(|bookmark| bookmark.id != id);
+        let removed = file.bookmarks.len() != before;
+        if removed {
+            self.save_bookmarks(&file)?;
+        }
+        Ok(removed)
+    }
+
     // ── Rename document + update links ────────────────────────────────────────
 
     /// Rename a document: moves the file on disk, updates frontmatter title,
@@ -2152,7 +2217,7 @@ mod tests {
     use chrono::Utc;
     use flynt_core::{
         models::{
-            Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue,
+            BookmarkTarget, Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue,
             PublicationConfig, PublicationRule, PublicationVisibility,
         },
         store::ProjectStore,
@@ -3091,6 +3156,52 @@ See [[roadmap]].\n",
             doc.frontmatter.publication.slug.as_deref(),
             Some("publish-me")
         );
+    }
+
+    #[test]
+    fn bookmarks_round_trip_and_dedupe_by_target() {
+        let tmp = TempDir::new().unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
+
+        let note_id = DocumentId(uuid::Uuid::new_v4());
+        let note_target = BookmarkTarget::Note {
+            document_id: Some(note_id),
+            path: PathBuf::from("notes/alpha.md"),
+        };
+        let first = project
+            .add_bookmark("Alpha", note_target.clone())
+            .expect("add note bookmark");
+        let second = project
+            .add_bookmark("Alpha Updated", note_target)
+            .expect("update note bookmark");
+        assert_eq!(first.id, second.id);
+
+        let search = project
+            .add_bookmark(
+                "Search: manager failover",
+                BookmarkTarget::Search {
+                    query: "manager failover".into(),
+                },
+            )
+            .expect("add search bookmark");
+
+        let reloaded = project.load_bookmarks().expect("load bookmarks");
+        assert_eq!(reloaded.version, 1);
+        assert_eq!(reloaded.bookmarks.len(), 2);
+        assert_eq!(reloaded.bookmarks[0].title, "Alpha Updated");
+        assert!(matches!(
+            reloaded.bookmarks[1].target,
+            BookmarkTarget::Search { .. }
+        ));
+
+        assert!(
+            project
+                .remove_bookmark(&search.id)
+                .expect("remove bookmark")
+        );
+        assert_eq!(project.load_bookmarks().unwrap().bookmarks.len(), 1);
     }
 
     #[test]

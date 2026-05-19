@@ -47,6 +47,11 @@ pub struct PublicationPreviewCommand {
     pub version: u64,
 }
 
+/// Bumped after bookmark writes so sidebar/bookmark panels can reload the
+/// project-local `.flynt/bookmarks.toml` file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct BookmarkRefresh(pub u64);
+
 /// Whether the settings modal is currently open. Settings used to be
 /// a top-level Route, but that meant entering settings replaced the
 /// whole main content area (including the project sidebar and tab

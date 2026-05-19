@@ -7,10 +7,11 @@
 use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
 use crate::state::{
-    NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget, PublicationPreviewCommand,
-    Route, TabState,
+    BookmarkRefresh, NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget,
+    PublicationPreviewCommand, Route, TabState,
 };
 use dioxus::prelude::*;
+use flynt_core::models::BookmarkTarget;
 use flynt_core::store::ProjectStore;
 use std::rc::Rc;
 
@@ -122,6 +123,8 @@ fn execute_command(
     note_inspector: &mut Signal<NoteInspectorCommand>,
     note_history: &mut Signal<NoteHistoryCommand>,
     publication_preview: &mut Signal<PublicationPreviewCommand>,
+    bookmark_refresh: &mut Signal<BookmarkRefresh>,
+    search_query: &Signal<String>,
 ) {
     match id {
         "view-notes" => *active_route.write() = Route::Notes,
@@ -174,6 +177,66 @@ fn execute_command(
                 version: next_version,
             };
             *active_route.write() = Route::Notes;
+        }
+        "bookmark-current-note" => {
+            let c = ctx;
+            let active = tab_state.read().active_id().cloned();
+            let mut refresh = *bookmark_refresh;
+            spawn(async move {
+                let Some(doc_id) = active else {
+                    tracing::warn!("Bookmark Current Note: no active document");
+                    return;
+                };
+                let project = c.project();
+                let result = tokio::task::spawn_blocking(move || {
+                    let doc = project
+                        .store
+                        .get_document(&doc_id)?
+                        .ok_or_else(|| anyhow::anyhow!("active document not found"))?;
+                    project.add_bookmark(
+                        doc.title.clone(),
+                        BookmarkTarget::Note {
+                            document_id: Some(doc.id),
+                            path: doc.path,
+                        },
+                    )
+                })
+                .await;
+                match result {
+                    Ok(Ok(_)) => {
+                        let next = refresh.read().0.wrapping_add(1);
+                        refresh.write().0 = next;
+                    }
+                    Ok(Err(e)) => tracing::warn!("Bookmark Current Note: {e}"),
+                    Err(e) => tracing::warn!("Bookmark Current Note task failed: {e}"),
+                }
+            });
+        }
+        "bookmark-current-search" => {
+            let query = search_query.read().trim().to_string();
+            if query.is_empty() {
+                tracing::warn!("Bookmark Current Search: search query is empty");
+                return;
+            }
+            let c = ctx;
+            let mut refresh = *bookmark_refresh;
+            spawn(async move {
+                let project = c.project();
+                let title = format!("Search: {query}");
+                let target = BookmarkTarget::Search {
+                    query: query.clone(),
+                };
+                let result =
+                    tokio::task::spawn_blocking(move || project.add_bookmark(title, target)).await;
+                match result {
+                    Ok(Ok(_)) => {
+                        let next = refresh.read().0.wrapping_add(1);
+                        refresh.write().0 = next;
+                    }
+                    Ok(Err(e)) => tracing::warn!("Bookmark Current Search: {e}"),
+                    Err(e) => tracing::warn!("Bookmark Current Search task failed: {e}"),
+                }
+            });
         }
         "new-note" => {
             let c = ctx;
@@ -436,6 +499,8 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
     let mut note_inspector = use_context::<Signal<NoteInspectorCommand>>();
     let mut note_history = use_context::<Signal<NoteHistoryCommand>>();
     let mut publication_preview = use_context::<Signal<PublicationPreviewCommand>>();
+    let mut bookmark_refresh = use_context::<Signal<BookmarkRefresh>>();
+    let search_query = use_context::<Signal<String>>();
 
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
@@ -500,6 +565,16 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                 id: "publish-preview".into(),
                 label: "Export Publication Preview".into(),
                 category: "Publish".into(),
+            },
+            Cmd {
+                id: "bookmark-current-note".into(),
+                label: "Bookmark Current Note".into(),
+                category: "Bookmark".into(),
+            },
+            Cmd {
+                id: "bookmark-current-search".into(),
+                label: "Bookmark Current Search".into(),
+                category: "Bookmark".into(),
             },
             Cmd {
                 id: "new-note".into(),
@@ -658,7 +733,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                     }
                                     Key::Enter => {
                                         if let Some(cmd) = filtered.get(sel) {
-                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview);
+                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview, &mut bookmark_refresh, &search_query);
                                             close();
                                         }
                                     }
@@ -677,7 +752,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             key: "{i}-{cmd_id}",
                                             class: if i == sel { "palette-item selected" } else { "palette-item" },
                                             onclick: move |_| {
-                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview);
+                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview, &mut bookmark_refresh, &search_query);
                                                 close();
                                             },
                                             span { class: "palette-category", "{cmd.category}" }
