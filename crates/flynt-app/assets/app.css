@@ -11,3 +11,10 @@
 @import "./styles/markdown.css";
 @import "./styles/settings.css";
 @import "./styles/kanban.css";
+@import "./styles/task-strip.css";
+@import "./styles/tabs.css";
+@import "./styles/search.css";
+@import "./styles/lenses.css";
+@import "./styles/graph.css";
+@import "./styles/welcome.css";
+@import "./styles/canvas.css";

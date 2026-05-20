@@ -200,7 +200,23 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 6. Command Palette
+## 6. Project Lenses
+
+**Route:** `Lenses` | **Sidebar:** Lens icon
+
+Project Lenses are saved views over existing indexed project data. Lens files live in `.flynt/lenses/*.toml` and store only source/filter/column/sort/layout definitions.
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Lens list | Click | Selects a saved lens definition |
+| Lens table | Display | Executes live against the current project store |
+| Title cell | Click | Opens matching document rows in Notes |
+| Refresh | Click | Reloads lens definition files from disk |
+| Empty state | Display | Points operators to `Save Search as Lens` or `.flynt/lenses/` |
+
+---
+
+## 7. Command Palette
 
 ### Command Mode (`Cmd+P`)
 
@@ -215,13 +231,18 @@ to generate raw Excalidraw element arrays.
 
 | Command | Category | Action |
 |---------|----------|--------|
-| Notes / Board / Graph / Settings / Welcome | Navigate | Switch view |
+| Notes / Board / Lenses / Graph / Settings / Welcome | Navigate | Switch view |
 | New Note | Create | Timestamped note, opens in tab |
 | New Drawing | Create | Excalidraw `.excalidraw` + wrapper `.md` |
 | Insert Drawing Here | Create | Inserts `![[drawing.excalidraw]]` at cursor (Notes view only, requires open note) |
 | Today's Note | Create | Daily note from template, or opens existing |
 | New from: `<template>` | Template | Creates timestamped note from project template |
-| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags. **Silently no-ops on non-Git projects.** |
+| Show Note History | View | Opens active-note history with diff preview and restore-as-copy |
+| Create Snapshot | Action | **Git sync only.** Auto-commits + creates `snapshot-YYYYMMDD-HHMMSS` tag + pushes tags, then opens Note History. |
+| Export Publication Preview | Publish | Exports the local publication preview and opens an export report |
+| Bookmark Current Note | Bookmark | Saves the active note to `.flynt/bookmarks.toml` |
+| Bookmark Current Search | Bookmark | Saves the current search query to `.flynt/bookmarks.toml` |
+| Save Search as Lens | Lens | Writes a search-backed lens definition under `.flynt/lenses/` |
 | Sync Now | Action | **Git sync only.** Manual commit + pull + push. |
 | Create Project in iCloud | Create | Creates iCloud project + opens new instance |
 | `<note title>` | Open | Opens matching note in tab |
@@ -240,7 +261,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 7. Settings
+## 8. Settings
 
 **Route:** `Settings` | **Sidebar:** Settings icon
 
@@ -248,7 +269,7 @@ to generate raw Excalidraw element arrays.
 
 | Section | Field | Type | Notes |
 |---------|-------|------|-------|
-| **Appearance** | Theme | Card grid | Currently: Alpharius only |
+| **Appearance** | Theme | Card grid + import | Alpharius, Light, curated upstream tweak.cn presets, and operator-imported tweak.cn themes |
 | | Font size | Button group | Small / Medium / Large / XLarge |
 | **Project** | Name | Text input | |
 | | Location | Read-only path | |
@@ -256,6 +277,8 @@ to generate raw Excalidraw element arrays.
 | | Remote (Git) | Text input | Only shown for Git backend |
 | | Branch (Git) | Text input | |
 | | Auto-commit (Git) | Number input | Seconds, minimum 30, 0 = manual only |
+
+**Theme import:** Operators can import a tweak.cn JSON file, a public tweak.cn theme URL, a registry slug, or a theme ID from Appearance. Flynt normalizes the tweak.cn variables into the broader UI token set, applies the theme immediately, and persists theme selection plus imported themes in `.flynt/operator-settings.json`.
 
 **Sync backend change on Save:** Triggers project migration.
 - **None → iCloud:** Copies all project files to iCloud Drive folder, updates config, switches runtime. **Synchronous — UI blocks during copy, no progress indicator.** Large projects may appear to freeze.
@@ -324,7 +347,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 8. Toolbar
+## 9. Toolbar
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
@@ -337,11 +360,12 @@ to generate raw Excalidraw element arrays.
 | | Not shown | No Git sync configured |
 | Search input | Type | Live full-text search, results grouped by folder |
 | Search result | Click | Opens note in tab |
+| Search result | Hover | Shows capped note preview |
 | Agent toggle | Click | Shows/hides agent rail |
 
 ---
 
-## 9. Sidebar — Project Switcher
+## 10. Sidebar — Project Switcher
 
 | Element | Behavior | Expected Result |
 |---------|----------|-----------------|
@@ -357,7 +381,31 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 10. Agent Rail (sidebar panel)
+## 11. Sidebar — Bookmarks
+
+Bookmarks are project-portable data stored in `.flynt/bookmarks.toml`.
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Bookmark row | Click | Opens note/canvas/drawing targets in Notes, or opens Search with a saved query |
+| Bookmark × button | Click | Removes bookmark from `.flynt/bookmarks.toml` |
+| Header | Click | Collapses/expands bookmark list |
+| Count badge | Display | Number of stored project bookmarks |
+
+---
+
+## 12. Page Previews
+
+| Element | Behavior | Expected Result |
+|---------|----------|-----------------|
+| Wikilink in note editor | Hover | Delayed preview card with title, path, and capped body excerpt |
+| Wikilink in rendered markdown | Hover | Same preview card; Escape or mouseout dismisses it |
+| Sidebar note | Hover | Same preview card, positioned near the note row |
+| Search result | Hover | Same preview card, positioned near the result |
+
+---
+
+## 13. Agent Rail (sidebar panel)
 
 **Trigger:** Toolbar agent toggle
 
@@ -379,7 +427,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 11. Keyboard Shortcuts
+## 14. Keyboard Shortcuts
 
 | Shortcut | Action | Context |
 |----------|--------|---------|
@@ -396,7 +444,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 12. Mobile (iOS)
+## 15. Mobile (iOS)
 
 ### Onboarding
 
@@ -438,7 +486,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 13. File Formats
+## 16. File Formats
 
 | File | Format | Location | Notes |
 |------|--------|----------|-------|
@@ -461,7 +509,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 14. Sync Behaviors
+## 17. Sync Behaviors
 
 | Backend | Mechanism | Conflict handling |
 |---------|-----------|-------------------|
@@ -474,8 +522,17 @@ to generate raw Excalidraw element arrays.
 
 | Action | Trigger | Result |
 |--------|---------|--------|
-| Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags |
-| **Non-Git project** | Same command | **Silently no-ops. No error, no feedback.** |
+| Show Note History | `Cmd+P → Show Note History` or Notes toolbar `History` | Lists commits touching the active note, shows selected commit vs current note diff, supports `Restore as copy` |
+| Restore as copy | History modal | Writes the selected snapshot to `Recovered/<note> <commit>.md` and opens the recovered copy without overwriting the active note |
+| Create Snapshot | `Cmd+P → Create Snapshot` | Auto-commits + tags HEAD as `snapshot-YYYYMMDD-HHMMSS` + pushes tags, then opens Note History |
+| **Non-Git project** | Same commands | History shows a Git-history error; snapshot command logs and makes no project changes |
+
+### Publication Authoring
+
+| Action | Trigger | Result |
+|--------|---------|--------|
+| Edit note publication | Notes → Properties → Publish | Updates `[publication]` frontmatter for enabled, visibility, slug, and collections |
+| Export preview | Properties → `Export preview` or `Cmd+P → Export Publication Preview` | Runs the local publication exporter and shows exported/skipped/error counts plus output path |
 
 ### Project Migration
 
@@ -490,7 +547,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 15. Visualization Pipeline
+## 18. Visualization Pipeline
 
 | Source | Trigger | Renderer | Output | Timeout |
 |--------|---------|----------|--------|---------|
@@ -518,7 +575,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 16. Environment Variables
+## 19. Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -531,7 +588,7 @@ to generate raw Excalidraw element arrays.
 
 ---
 
-## 17. Known Gaps
+## 20. Known Gaps
 
 | Area | Gap | Severity |
 |------|-----|----------|
@@ -539,7 +596,6 @@ to generate raw Excalidraw element arrays.
 | iCloud conflicts | "Conflicted copy" files not detected | Medium — manual reconciliation needed |
 | Project migration | Synchronous, blocks UI, no progress | Medium — large projects freeze |
 | Column rename | No empty-name validation | Low — cosmetic |
-| Create Snapshot | Silent no-op on non-Git projects | Low — confusing but harmless |
 | Mobile settings | Read-only, no editing | Medium — must use desktop for config |
 | Delegation files | Accumulate without cleanup | Low — searchable, hidden from sidebar |
 | Sync status | Only for Git backend | Low — cloud providers handle their own |

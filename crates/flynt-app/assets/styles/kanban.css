@@ -145,7 +145,7 @@
 .board-delete-btn:hover {
   opacity:    1;
   color:      var(--error);
-  background: rgba(200, 48, 48, 0.12);
+  background: color-mix(in srgb, var(--error) 14%, transparent);
 }
 
 .board-delete-confirm-label {
@@ -156,7 +156,7 @@
 
 .btn-danger {
   background: var(--error);
-  color:      #fff;
+  color:      var(--error-foreground);
   border:     none;
 }
 .btn-danger:hover {
@@ -262,7 +262,7 @@
 .kanban-column.drag-over {
   border-color: var(--primary-muted);
   box-shadow:   inset 0 0 0 1px var(--primary-muted),
-                0 0 16px rgba(42, 180, 200, 0.1);
+                0 0 16px color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .kanban-column-header {
@@ -349,7 +349,7 @@
 
 .kanban-wip.over {
   color:      var(--warning);
-  background: rgba(200, 100, 24, 0.15);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
 }
 
 /* Cards scroll area */
@@ -494,7 +494,7 @@
 .task-tag {
   font-size:     var(--font-size-xs);
   color:         var(--primary-muted);
-  background:    rgba(42, 180, 200, 0.08);
+  background:    color-mix(in srgb, var(--primary) 8%, transparent);
   border-radius: var(--radius-full);
   padding:       1px 6px;
 }
@@ -525,7 +525,7 @@
   padding:        1px 6px;
   border-radius:  var(--radius-full);
   border:         1px solid transparent;
-  color:          var(--text-muted, #888);
+  color:          var(--muted-foreground);
   background:     transparent;
   white-space:    nowrap;
   opacity:        0.6;
@@ -539,30 +539,30 @@
 }
 
 .task-chip:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text, #ddd);
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .task-chip-trigger {
-  border-color: rgba(108, 140, 255, 0.35);
-  color: rgba(150, 175, 255, 0.95);
+  border-color: color-mix(in srgb, var(--chart-primary) 35%, transparent);
+  color: var(--chart-primary);
 }
 .task-chip-model {
-  border-color: rgba(180, 140, 255, 0.35);
-  color: rgba(190, 165, 255, 0.95);
+  border-color: color-mix(in srgb, var(--chart-secondary) 35%, transparent);
+  color: var(--chart-secondary);
   font-family: var(--font-mono, ui-monospace, monospace);
 }
 .task-chip-design {
-  border-color: rgba(245, 158, 11, 0.4);
-  color: rgba(245, 200, 100, 0.95);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
 }
 .task-chip-spec {
-  border-color: rgba(6, 182, 212, 0.4);
-  color: rgba(80, 200, 220, 0.95);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
 }
 .task-chip-engagement {
-  border-color: rgba(34, 197, 94, 0.4);
-  color: rgba(120, 220, 150, 0.95);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  color: var(--success);
 }
 
 /* ── Sentry / Lifecycle inline section ──────────────────────────────── */
@@ -574,14 +574,14 @@
  */
 .task-sentry-section {
   margin-top:    var(--space-2);
-  border-top:    1px solid var(--border, #2a2a2a);
+  border-top:    1px solid var(--border);
   padding-top:   var(--space-2);
 }
 
 .task-sentry-toggle {
   background:    transparent;
   border:        none;
-  color:         var(--text-muted, #888);
+  color:         var(--muted-foreground);
   font-size:     var(--font-size-xs);
   font-weight:   500;
   letter-spacing: 0.02em;
@@ -591,7 +591,7 @@
   transition:    color var(--duration-fast) var(--ease);
 }
 .task-sentry-toggle:hover {
-  color: var(--text, #ddd);
+  color: var(--foreground);
 }
 
 .task-sentry-fields {
@@ -606,9 +606,9 @@
   flex-direction: column;
   gap:            var(--space-2);
   padding:        var(--space-2);
-  background:     rgba(255, 255, 255, 0.02);
+  background:     var(--surface);
   border-radius:  var(--radius-md);
-  border:         1px solid var(--border, #2a2a2a);
+  border:         1px solid var(--border);
 }
 
 .task-sentry-group-label {
@@ -616,7 +616,7 @@
   font-weight:    600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color:          var(--text-muted, #888);
+  color:          var(--muted-foreground);
   margin-bottom:  2px;
 }
 
@@ -628,7 +628,7 @@
 .task-sentry-empty code {
   padding:        1px 4px;
   border-radius:  3px;
-  background:     rgba(255, 255, 255, 0.06);
+  background:     var(--muted);
   font-family:    var(--font-mono, monospace);
 }
 
@@ -663,7 +663,7 @@
 
 .task-action-btn:hover {
   color:      var(--error);
-  background: rgba(200, 48, 48, 0.12);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
 }
 
 /* ── Inline add-task form ─────────────────────────────────────────────────── */
@@ -719,7 +719,7 @@
   border:         1px solid var(--ring);
   border-radius:  var(--radius);
   padding:        var(--space-3);
-  box-shadow:     0 0 0 2px rgba(42, 180, 200, 0.15);
+  box-shadow:     0 0 0 2px color-mix(in srgb, var(--ring) 15%, transparent);
 }
 
 .new-task-card input {
@@ -811,14 +811,14 @@
 }
 .task-tag {
   font-size:      10px;
-  background:     rgba(139, 92, 246, 0.15);
-  color:          #8b5cf6;
+  background:     color-mix(in srgb, var(--chart-secondary) 15%, transparent);
+  color:          var(--chart-secondary);
   padding:        0 4px;
   border-radius:  3px;
 }
 
 .text-error {
-  color:          #ef4444;
+  color:          var(--error);
   font-size:      var(--font-size-sm);
 }
 

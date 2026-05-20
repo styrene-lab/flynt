@@ -46,7 +46,9 @@ pub struct AgentDaemonConfig {
     pub capabilities: Vec<InboundCapability>,
 }
 
-fn default_port() -> u16 { 7842 }
+fn default_port() -> u16 {
+    7842
+}
 
 impl Default for AgentDaemonConfig {
     fn default() -> Self {
@@ -123,7 +125,9 @@ pub struct EmailChannel {
     pub allowed_senders: Vec<String>,
 }
 
-fn default_inbox() -> String { "INBOX".into() }
+fn default_inbox() -> String {
+    "INBOX".into()
+}
 
 /// Generic webhook inbound — HTTP POST to the daemon.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -206,14 +210,30 @@ impl InboundCapability {
     /// System prompt fragment describing this capability to the agent.
     pub fn system_prompt(&self) -> &'static str {
         match self {
-            Self::ResearchLinks => "When the user sends a URL or link, fetch the content, analyze it, and create a research note in the project with a summary, key points, and relevant tags.",
-            Self::CaptureIdeas => "When the user shares a thought or idea, capture it as an entry in today's daily note under the Notes section.",
-            Self::ManageTasks => "When the user mentions something they need to do, create a task on the appropriate board. When they ask about tasks, query the boards and respond.",
-            Self::AnswerQuestions => "When the user asks a question about their project, notes, or projects, search the project and knowledge graph to provide accurate answers with references.",
-            Self::DailyDigest => "When asked for a digest or summary, compile due tasks, decaying items needing attention, and recent project activity.",
-            Self::CreateDocuments => "When the user describes something in detail that should be a document, create a properly structured markdown note with frontmatter.",
-            Self::SearchProject => "When the user asks to find something, search across documents, tasks, and the graph. Return relevant excerpts and links.",
-            Self::EnrichNotes => "When the user provides new information about an existing topic, find the relevant note and suggest updates or additions.",
+            Self::ResearchLinks => {
+                "When the user sends a URL or link, fetch the content, analyze it, and create a research note in the project with a summary, key points, and relevant tags."
+            }
+            Self::CaptureIdeas => {
+                "When the user shares a thought or idea, capture it as an entry in today's daily note under the Notes section."
+            }
+            Self::ManageTasks => {
+                "When the user mentions something they need to do, create a task on the appropriate board. When they ask about tasks, query the boards and respond."
+            }
+            Self::AnswerQuestions => {
+                "When the user asks a question about their project, notes, or projects, search the project and knowledge graph to provide accurate answers with references."
+            }
+            Self::DailyDigest => {
+                "When asked for a digest or summary, compile due tasks, decaying items needing attention, and recent project activity."
+            }
+            Self::CreateDocuments => {
+                "When the user describes something in detail that should be a document, create a properly structured markdown note with frontmatter."
+            }
+            Self::SearchProject => {
+                "When the user asks to find something, search across documents, tasks, and the graph. Return relevant excerpts and links."
+            }
+            Self::EnrichNotes => {
+                "When the user provides new information about an existing topic, find the relevant note and suggest updates or additions."
+            }
         }
     }
 }
@@ -251,17 +271,11 @@ pub enum DaemonState {
     /// Starting up.
     Starting,
     /// Running and healthy.
-    Running {
-        pid: u32,
-        port: u16,
-        ws_url: String,
-    },
+    Running { pid: u32, port: u16, ws_url: String },
     /// Running but unhealthy.
     Unhealthy(String),
     /// Managed by Auspex (Tier 2).
-    AuspexManaged {
-        instance_id: String,
-    },
+    AuspexManaged { instance_id: String },
 }
 
 impl fmt::Display for DaemonState {
@@ -306,7 +320,10 @@ mod tests {
         for cap in &caps {
             let prompt = cap.system_prompt();
             assert!(!prompt.is_empty(), "{cap:?} has empty system prompt");
-            assert!(prompt.len() > 20, "{cap:?} system prompt too short: {prompt}");
+            assert!(
+                prompt.len() > 20,
+                "{cap:?} system prompt too short: {prompt}"
+            );
         }
     }
 

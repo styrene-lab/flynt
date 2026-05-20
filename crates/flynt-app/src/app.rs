@@ -4,8 +4,11 @@ use crate::{
         runtime_state_for_project_root,
     },
     components::{AgentRail, CommandPalette, Sidebar, Toolbar, initial_note_id_for_project},
-    state::{Route, SettingsOpen, SettingsPage, SyncStatus, TabState, ThemeName},
-    views::{GraphView, KanbanView, NotesView, SearchView, SettingsView, WelcomeView},
+    state::{
+        Route, SettingsOpen, SettingsPage, SyncActivityState, SyncRunOutcome, SyncStatus, TabState,
+        ThemeName,
+    },
+    views::{GraphView, KanbanView, LensesView, NotesView, SearchView, SettingsView, WelcomeView},
 };
 use dioxus::prelude::*;
 use flynt_core::store::ProjectStore;
@@ -33,15 +36,22 @@ pub fn App() -> Element {
 
     let current_runtime = ctx.runtime.read().clone();
 
-    let theme = use_context_provider(|| {
-        Signal::new(ThemeName(
-            current_runtime.project.config.appearance.theme.clone(),
-        ))
-    });
+    let operator_settings = current_runtime.omegon.load_operator_settings();
+    let initial_theme = if operator_settings.ui_theme.active_theme.trim().is_empty() {
+        current_runtime.project.config.appearance.theme.clone()
+    } else {
+        operator_settings.ui_theme.active_theme.clone()
+    };
+    let theme = use_context_provider(|| Signal::new(ThemeName(initial_theme)));
     let font_size =
         use_context_provider(|| Signal::new(current_runtime.project.config.appearance.font_size));
     use_context_provider(|| Signal::new(current_runtime.omegon.load_project_profile()));
-    use_context_provider(|| Signal::new(current_runtime.omegon.load_operator_settings()));
+    use_context_provider(|| Signal::new(operator_settings.clone()));
+    use_context_provider(|| {
+        Signal::new(crate::theme::ThemeLibrary::from_operator(
+            &operator_settings,
+        ))
+    });
     use_context_provider(|| Signal::new(None::<tokio::process::Child>));
     use_context_provider(|| Signal::new(None::<u32>));
     use_context_provider(|| Signal::new(None::<String>));
@@ -67,6 +77,22 @@ pub fn App() -> Element {
     // Rename trigger — sidebar bumps this, NotesView watches and opens inline rename
     use_context_provider(|| Signal::new(crate::state::RenameTrigger(0)));
 
+    // Note context inspector command bus — command palette bumps this,
+    // NotesView applies the requested tab/toggle behavior if mounted.
+    use_context_provider(|| Signal::new(crate::state::NoteInspectorCommand::default()));
+
+    // Note history/recovery command bus — command palette and snapshot actions
+    // use this to open the active note recovery modal.
+    use_context_provider(|| Signal::new(crate::state::NoteHistoryCommand::default()));
+
+    // Publication preview/export command bus — command palette can trigger
+    // the notes workflow without knowing NotesView internals.
+    use_context_provider(|| Signal::new(crate::state::PublicationPreviewCommand::default()));
+
+    // Sidebar bookmark list refreshes from the project-local bookmark file
+    // whenever command palette actions add or remove entries.
+    use_context_provider(|| Signal::new(crate::state::BookmarkRefresh::default()));
+
     // Settings tab — which panel is shown in SettingsView
     use_context_provider(|| Signal::new(SettingsPage::default()));
 
@@ -88,16 +114,18 @@ pub fn App() -> Element {
     let mut tab_state = use_context::<Signal<TabState>>();
     let show_agent = use_signal(|| false);
     let mut sync_status = use_signal(|| SyncStatus::Idle);
+    let mut sync_activity = use_context_provider(|| Signal::new(SyncActivityState::default()));
 
     // Poll sync status from the auto-sync watcher
     {
         let runtime_for_sync = ctx.runtime.clone();
         use_future(move || async move {
+            let mut run_active = false;
             loop {
                 let rx_opt = runtime_for_sync.read().sync_status_rx.clone();
                 if let Some(rx) = rx_opt {
                     let status = rx.borrow().clone();
-                    let ui_status = match status {
+                    let ui_status = match &status {
                         flynt_store::sync::AutoSyncStatus::Idle => SyncStatus::Idle,
                         flynt_store::sync::AutoSyncStatus::Committing
                         | flynt_store::sync::AutoSyncStatus::Pulling
@@ -107,6 +135,56 @@ pub fn App() -> Element {
                         }
                         flynt_store::sync::AutoSyncStatus::Error(_) => SyncStatus::Syncing, // transient
                     };
+                    let now = chrono::Utc::now();
+                    match status {
+                        flynt_store::sync::AutoSyncStatus::Idle => {
+                            if run_active {
+                                run_active = false;
+                                let mut activity = sync_activity.write();
+                                activity.current_phase = None;
+                                activity.last_finished_at = Some(now);
+                                activity.last_outcome = Some(SyncRunOutcome::Success);
+                                activity.successful_runs =
+                                    activity.successful_runs.saturating_add(1);
+                            }
+                        }
+                        flynt_store::sync::AutoSyncStatus::Committing
+                        | flynt_store::sync::AutoSyncStatus::Pulling
+                        | flynt_store::sync::AutoSyncStatus::Pushing => {
+                            if !run_active {
+                                run_active = true;
+                                let mut activity = sync_activity.write();
+                                activity.last_started_at = Some(now);
+                                activity.last_finished_at = None;
+                                activity.last_outcome = None;
+                            }
+                            sync_activity.write().current_phase = Some(
+                                match status {
+                                    flynt_store::sync::AutoSyncStatus::Committing => "Committing",
+                                    flynt_store::sync::AutoSyncStatus::Pulling => "Pulling",
+                                    flynt_store::sync::AutoSyncStatus::Pushing => "Pushing",
+                                    _ => unreachable!(),
+                                }
+                                .into(),
+                            );
+                        }
+                        flynt_store::sync::AutoSyncStatus::Conflict(files) => {
+                            run_active = false;
+                            let mut activity = sync_activity.write();
+                            activity.current_phase = None;
+                            activity.last_finished_at = Some(now);
+                            activity.last_outcome = Some(SyncRunOutcome::Conflict(files));
+                            activity.failed_runs = activity.failed_runs.saturating_add(1);
+                        }
+                        flynt_store::sync::AutoSyncStatus::Error(error) => {
+                            run_active = false;
+                            let mut activity = sync_activity.write();
+                            activity.current_phase = None;
+                            activity.last_finished_at = Some(now);
+                            activity.last_outcome = Some(SyncRunOutcome::Error(error));
+                            activity.failed_runs = activity.failed_runs.saturating_add(1);
+                        }
+                    }
                     *sync_status.write() = ui_status;
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -144,7 +222,7 @@ pub fn App() -> Element {
     }
 
     // Shared search query — lives here so toolbar and search view share it
-    let search_query: Signal<String> = use_signal(String::new);
+    let search_query: Signal<String> = use_context_provider(|| Signal::new(String::new()));
 
     // ── Native menu event handler ────────────────────────────────────────
     let ctx_menu_handler = ctx.clone();
@@ -464,6 +542,11 @@ pub fn App() -> Element {
         ctx.set_runtime(runtime_state_for_project_root(selected_root));
     };
 
+    let shell_theme_style = {
+        let library = use_context::<Signal<crate::theme::ThemeLibrary>>();
+        library.read().active_vars(&theme.read().0)
+    };
+
     rsx! {
         // Prevent flash of unstyled content — hide body until theme loads
         document::Style { "body {{ opacity: 0; transition: opacity 0.1s; }} body.ready {{ opacity: 1; }}" }
@@ -501,6 +584,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/styles/task-strip.css") }
         document::Stylesheet { href: asset!("/assets/styles/tabs.css") }
         document::Stylesheet { href: asset!("/assets/styles/search.css") }
+        document::Stylesheet { href: asset!("/assets/styles/lenses.css") }
         document::Stylesheet { href: asset!("/assets/styles/graph.css") }
         document::Stylesheet { href: asset!("/assets/styles/welcome.css") }
         document::Stylesheet { href: asset!("/assets/styles/canvas.css") }
@@ -542,6 +626,7 @@ pub fn App() -> Element {
         div {
             class: "flynt-shell {font_size.read().css_class()}",
             "data-theme": "{theme.read().0}",
+            style: "{shell_theme_style}",
             tabindex: "0",
             onkeydown: move |e| {
                 // ⌘P — command palette (command mode)
@@ -753,6 +838,7 @@ pub fn App() -> Element {
                         Route::Notes    => rsx! { NotesView {} },
 
                         Route::Search   => rsx! { SearchView { search_query } },
+                        Route::Lenses   => rsx! { LensesView {} },
                         Route::Kanban   => rsx! { KanbanView {} },
                         Route::Graph    => rsx! { GraphView {} },
                     }

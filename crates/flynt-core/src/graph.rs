@@ -1,6 +1,6 @@
 use crate::{
-    models::{MetadataValue},
-    store::{TaskFilter, ProjectStore},
+    models::MetadataValue,
+    store::{ProjectStore, TaskFilter},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -86,11 +86,17 @@ pub fn build_graph_payload(store: &dyn ProjectStore) -> Result<GraphPayload> {
             _ if matches!(
                 meta.metadata.get("kind").map(|field| &field.value),
                 Some(MetadataValue::String(value)) if value == "agent_communication"
-            ) => GraphNodeKind::Communication,
+            ) =>
+            {
+                GraphNodeKind::Communication
+            }
             _ if matches!(
                 meta.metadata.get("kind").map(|field| &field.value),
                 Some(MetadataValue::String(value)) if value == "memory_fact"
-            ) => GraphNodeKind::MemoryFact,
+            ) =>
+            {
+                GraphNodeKind::MemoryFact
+            }
             _ => GraphNodeKind::Document,
         };
         for tag in &meta.tags {
@@ -106,9 +112,11 @@ pub fn build_graph_payload(store: &dyn ProjectStore) -> Result<GraphPayload> {
                 })
                 .or_else(|| {
                     // Fall back to entity fields if available
-                    store.get_document(&meta.id).ok().flatten()
-                        .and_then(|doc| doc.entity.as_ref()
-                            .and_then(|e| e.get_text("status").map(String::from)))
+                    store.get_document(&meta.id).ok().flatten().and_then(|doc| {
+                        doc.entity
+                            .as_ref()
+                            .and_then(|e| e.get_text("status").map(String::from))
+                    })
                 })
         } else {
             None
@@ -221,7 +229,12 @@ pub fn build_graph_payload(store: &dyn ProjectStore) -> Result<GraphPayload> {
     let mut all_tags = tag_set.into_keys().collect::<Vec<_>>();
     all_tags.sort();
 
-    Ok(GraphPayload { nodes, edges, groups, all_tags })
+    Ok(GraphPayload {
+        nodes,
+        edges,
+        groups,
+        all_tags,
+    })
 }
 
 /// Public helper for matching node kind strings (used by MCP filter).
@@ -384,16 +397,16 @@ pub fn kind_color(kind: &GraphNodeKind) -> &'static str {
 /// Status icon for design node lifecycle phases.
 pub fn design_node_status_icon(status: &str) -> &'static str {
     match status {
-        "seed" => "\u{25CC}",           // ◌  hollow circle
-        "exploring" => "\u{25D0}",      // ◐  half-filled
-        "resolved" => "\u{25C9}",       // ◉  mostly filled
-        "decided" => "\u{25CF}",        // ●  filled
-        "implementing" => "\u{2699}",   // ⚙  gear
-        "implemented" => "\u{2713}",    // ✓  checkmark
-        "blocked" => "\u{2715}",        // ✕  X
-        "deferred" => "\u{25D1}",       // ◑  half-right
-        "archived" => "\u{25CB}",       // ○  dimmed (open circle)
-        _ => "\u{25CC}",               // ◌  default to seed
+        "seed" => "\u{25CC}",         // ◌  hollow circle
+        "exploring" => "\u{25D0}",    // ◐  half-filled
+        "resolved" => "\u{25C9}",     // ◉  mostly filled
+        "decided" => "\u{25CF}",      // ●  filled
+        "implementing" => "\u{2699}", // ⚙  gear
+        "implemented" => "\u{2713}",  // ✓  checkmark
+        "blocked" => "\u{2715}",      // ✕  X
+        "deferred" => "\u{25D1}",     // ◑  half-right
+        "archived" => "\u{25CB}",     // ○  dimmed (open circle)
+        _ => "\u{25CC}",              // ◌  default to seed
     }
 }
 
@@ -489,14 +502,20 @@ pub fn render_graph_svg(payload: &GraphPayload, config: &LayoutConfig) -> String
 
 #[cfg(test)]
 mod tests {
-    use super::{build_graph_payload, GraphEdgeKind, GraphNodeKind};
+    use super::{GraphEdgeKind, GraphNodeKind, build_graph_payload};
     use crate::{
-        models::{Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, MetadataField, MetadataProtection, MetadataValue, SearchResult, Task, TaskId, WikiLink},
-        store::{DocumentMetadataFilter, TaskFilter, ProjectStore},
+        models::{
+            Board, BoardId, Document, DocumentId, DocumentMeta, Frontmatter, MetadataField,
+            MetadataProtection, MetadataValue, SearchResult, Task, TaskId, WikiLink,
+        },
+        store::{DocumentMetadataFilter, ProjectStore, TaskFilter},
     };
     use anyhow::Result;
     use chrono::Utc;
-    use std::{collections::HashMap, path::{Path, PathBuf}};
+    use std::{
+        collections::HashMap,
+        path::{Path, PathBuf},
+    };
 
     struct StubStore {
         docs: Vec<DocumentMeta>,
@@ -509,38 +528,93 @@ mod tests {
         fn get_document(&self, id: &DocumentId) -> Result<Option<Document>> {
             Ok(self.full_docs.get(&id.0.to_string()).cloned())
         }
-        fn get_document_by_path(&self, _path: &Path) -> Result<Option<Document>> { Ok(None) }
+        fn get_document_by_path(&self, _path: &Path) -> Result<Option<Document>> {
+            Ok(None)
+        }
         fn find_document_by_slug(&self, slug: &str) -> Result<Option<DocumentMeta>> {
-            Ok(self.docs.iter().find(|doc| doc.title.eq_ignore_ascii_case(slug) || doc.path.to_string_lossy().contains(slug)).cloned())
+            Ok(self
+                .docs
+                .iter()
+                .find(|doc| {
+                    doc.title.eq_ignore_ascii_case(slug)
+                        || doc.path.to_string_lossy().contains(slug)
+                })
+                .cloned())
         }
-        fn list_documents(&self) -> Result<Vec<DocumentMeta>> { Ok(self.docs.clone()) }
-        fn list_documents_by_metadata(&self, _filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
-        fn save_document(&self, _doc: &Document) -> Result<()> { Ok(()) }
-        fn delete_document(&self, _id: &DocumentId) -> Result<()> { Ok(()) }
-        fn search_documents(&self, _query: &str) -> Result<Vec<SearchResult>> { Ok(vec![]) }
-        fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> { Ok(vec![]) }
-        fn list_entities_by_kind(&self, kind: &crate::datum::EntityKind) -> Result<Vec<DocumentMeta>> {
-            Ok(self.docs.iter().filter(|d| d.entity_kind.as_ref() == Some(kind)).cloned().collect())
+        fn list_documents(&self) -> Result<Vec<DocumentMeta>> {
+            Ok(self.docs.clone())
         }
-        fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> { Ok(None) }
-        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> { Ok(self.tasks.clone()) }
-        fn save_task(&self, _task: &Task) -> Result<()> { Ok(()) }
-        fn update_task(&self, _id: &TaskId, _patch: &flynt_models::TaskPatch) -> Result<bool> { Ok(true) }
-        fn delete_task(&self, _id: &TaskId) -> Result<()> { Ok(()) }
-        fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> { Ok(None) }
-        fn list_boards(&self) -> Result<Vec<Board>> { Ok(self.boards.clone()) }
-        fn save_board(&self, _board: &Board) -> Result<()> { Ok(()) }
-        fn delete_board(&self, _id: &BoardId) -> Result<()> { Ok(()) }
+        fn list_documents_by_metadata(
+            &self,
+            _filter: &DocumentMetadataFilter,
+        ) -> Result<Vec<DocumentMeta>> {
+            Ok(vec![])
+        }
+        fn save_document(&self, _doc: &Document) -> Result<()> {
+            Ok(())
+        }
+        fn delete_document(&self, _id: &DocumentId) -> Result<()> {
+            Ok(())
+        }
+        fn search_documents(&self, _query: &str) -> Result<Vec<SearchResult>> {
+            Ok(vec![])
+        }
+        fn get_backlinks(&self, _id: &DocumentId) -> Result<Vec<DocumentMeta>> {
+            Ok(vec![])
+        }
+        fn list_entities_by_kind(
+            &self,
+            kind: &crate::datum::EntityKind,
+        ) -> Result<Vec<DocumentMeta>> {
+            Ok(self
+                .docs
+                .iter()
+                .filter(|d| d.entity_kind.as_ref() == Some(kind))
+                .cloned()
+                .collect())
+        }
+        fn get_task(&self, _id: &TaskId) -> Result<Option<Task>> {
+            Ok(None)
+        }
+        fn list_tasks(&self, _filter: &TaskFilter) -> Result<Vec<Task>> {
+            Ok(self.tasks.clone())
+        }
+        fn save_task(&self, _task: &Task) -> Result<()> {
+            Ok(())
+        }
+        fn update_task(&self, _id: &TaskId, _patch: &flynt_models::TaskPatch) -> Result<bool> {
+            Ok(true)
+        }
+        fn delete_task(&self, _id: &TaskId) -> Result<()> {
+            Ok(())
+        }
+        fn get_board(&self, _id: &BoardId) -> Result<Option<Board>> {
+            Ok(None)
+        }
+        fn list_boards(&self) -> Result<Vec<Board>> {
+            Ok(self.boards.clone())
+        }
+        fn save_board(&self, _board: &Board) -> Result<()> {
+            Ok(())
+        }
+        fn delete_board(&self, _id: &BoardId) -> Result<()> {
+            Ok(())
+        }
         fn get_engagement(
             &self,
             _id: &flynt_models::engagement::EngagementId,
-        ) -> Result<Option<flynt_models::engagement::Engagement>> { Ok(None) }
-        fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> { Ok(vec![]) }
-        fn save_engagement(&self, _e: &flynt_models::engagement::Engagement) -> Result<()> { Ok(()) }
-        fn delete_engagement(
-            &self,
-            _id: &flynt_models::engagement::EngagementId,
-        ) -> Result<bool> { Ok(true) }
+        ) -> Result<Option<flynt_models::engagement::Engagement>> {
+            Ok(None)
+        }
+        fn list_engagements(&self) -> Result<Vec<flynt_models::engagement::Engagement>> {
+            Ok(vec![])
+        }
+        fn save_engagement(&self, _e: &flynt_models::engagement::Engagement) -> Result<()> {
+            Ok(())
+        }
+        fn delete_engagement(&self, _id: &flynt_models::engagement::EngagementId) -> Result<bool> {
+            Ok(true)
+        }
     }
 
     #[test]
@@ -551,8 +625,24 @@ mod tests {
         let board_id = BoardId::new();
         let task_id = TaskId::new();
         let docs = vec![
-            DocumentMeta { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), tags: vec![], metadata: Default::default(), entity_kind: None, updated_at: now },
-            DocumentMeta { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), tags: vec![], metadata: Default::default(), entity_kind: None, updated_at: now },
+            DocumentMeta {
+                id: a.clone(),
+                path: PathBuf::from("design/alpha.md"),
+                title: "alpha".into(),
+                tags: vec![],
+                metadata: Default::default(),
+                entity_kind: None,
+                updated_at: now,
+            },
+            DocumentMeta {
+                id: b.clone(),
+                path: PathBuf::from("design/beta.md"),
+                title: "beta".into(),
+                tags: vec![],
+                metadata: Default::default(),
+                entity_kind: None,
+                updated_at: now,
+            },
             DocumentMeta {
                 id: DocumentId::new(),
                 path: PathBuf::from("references/comms/vox/standup.md"),
@@ -585,8 +675,38 @@ mod tests {
             },
         ];
         let full_docs = HashMap::from([
-            (a.0.to_string(), Document { id: a.clone(), path: PathBuf::from("design/alpha.md"), title: "alpha".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![WikiLink { target: "beta".into(), display: None, anchor: None }], created_at: now, updated_at: now, entity: None }),
-            (b.0.to_string(), Document { id: b.clone(), path: PathBuf::from("design/beta.md"), title: "beta".into(), content: String::new(), frontmatter: Frontmatter::default(), outgoing_links: vec![], created_at: now, updated_at: now, entity: None }),
+            (
+                a.0.to_string(),
+                Document {
+                    id: a.clone(),
+                    path: PathBuf::from("design/alpha.md"),
+                    title: "alpha".into(),
+                    content: String::new(),
+                    frontmatter: Frontmatter::default(),
+                    outgoing_links: vec![WikiLink {
+                        target: "beta".into(),
+                        display: None,
+                        anchor: None,
+                    }],
+                    created_at: now,
+                    updated_at: now,
+                    entity: None,
+                },
+            ),
+            (
+                b.0.to_string(),
+                Document {
+                    id: b.clone(),
+                    path: PathBuf::from("design/beta.md"),
+                    title: "beta".into(),
+                    content: String::new(),
+                    frontmatter: Frontmatter::default(),
+                    outgoing_links: vec![],
+                    created_at: now,
+                    updated_at: now,
+                    entity: None,
+                },
+            ),
         ]);
         let store = StubStore {
             docs,
@@ -617,14 +737,54 @@ mod tests {
         };
 
         let graph = build_graph_payload(&store).unwrap();
-        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Document));
-        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Communication));
-        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::MemoryFact));
-        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Board));
-        assert!(graph.nodes.iter().any(|node| node.kind == GraphNodeKind::Task));
-        assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::Wikilink));
-        assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::TaskMembership));
-        assert!(graph.edges.iter().any(|edge| edge.kind == GraphEdgeKind::SemanticSupport));
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.kind == GraphNodeKind::Document)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.kind == GraphNodeKind::Communication)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.kind == GraphNodeKind::MemoryFact)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.kind == GraphNodeKind::Board)
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.kind == GraphNodeKind::Task)
+        );
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| edge.kind == GraphEdgeKind::Wikilink)
+        );
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| edge.kind == GraphEdgeKind::TaskMembership)
+        );
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| edge.kind == GraphEdgeKind::SemanticSupport)
+        );
         assert!(graph.groups.contains(&"design".into()));
         assert!(graph.groups.contains(&"boards".into()));
         assert!(graph.groups.contains(&"Backlog".into()));

@@ -9,7 +9,8 @@
      doesn't reflow content by ~15px. Without this, text rewrap
      flickers as the operator moves the mouse near the right edge. */
   scrollbar-gutter: stable;
-  background: var(--background);
+  background: var(--panel-bg);
+  color:      var(--panel-fg);
 }
 
 /* Split layout: sidebar (left) + scrollable content (right).
@@ -47,8 +48,9 @@
 
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 .settings-sidebar {
-  border-right:  1px solid var(--border);
-  background:    var(--background);
+  border-right:  1px solid var(--chrome-border);
+  background:    var(--chrome-bg);
+  color:         var(--chrome-fg);
   padding:       var(--space-6) var(--space-3);
   overflow-y:    auto;
   scrollbar-gutter: stable;
@@ -63,7 +65,7 @@
   text-align:    left;
   padding:       6px 10px;
   font-size:     var(--font-size-sm);
-  color:         var(--foreground);
+  color:         var(--chrome-fg);
   background:    transparent;
   border:        none;
   border-radius: 4px;
@@ -71,12 +73,16 @@
   transition:    background var(--duration-fast) var(--ease);
 }
 
-.settings-nav-item:hover { background: var(--surface, rgba(255,255,255,0.04)); }
+.settings-nav-item:hover {
+  background: var(--control-hover);
+  color:      var(--control-hover-fg, var(--foreground));
+}
 
 .settings-nav-item.active {
-  color:      var(--primary);
-  background: var(--surface-active, rgba(42, 180, 200, 0.10));
+  color:      var(--selection-foreground);
+  background: var(--selection);
   font-weight: var(--font-weight-medium);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .settings-nav-item.nested {
@@ -148,7 +154,7 @@
   color:         var(--muted-foreground);
   margin-bottom: var(--space-4);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-dim);
+  border-bottom: 1px solid var(--divider);
 }
 
 /* ── Row ──────────────────────────────────────────────────────────────────── */
@@ -186,6 +192,12 @@
   max-width: 120px;
 }
 
+.theme-import-input {
+  flex:      1 1 360px;
+  min-width: 260px;
+  max-width: 520px;
+}
+
 .settings-path {
   font-family:    var(--font-mono);
   font-size:      var(--font-size-sm);
@@ -202,6 +214,38 @@
 }
 
 /* ── Theme grid ───────────────────────────────────────────────────────────── */
+.theme-stack {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.theme-actions {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+  flex-wrap:   wrap;
+}
+
+.theme-actions .btn-ghost {
+  background:   var(--control-bg);
+  border-color: var(--control-border);
+  color:        var(--control-fg);
+}
+
+.theme-actions .btn-ghost:hover {
+  background:   var(--control-hover);
+  border-color: var(--focus);
+  color:        var(--control-hover-fg, var(--foreground));
+}
+
+.settings-inline-msg {
+  font-size: var(--font-size-sm);
+}
+
+.settings-inline-msg.ok { color: var(--success); }
+.settings-inline-msg.err { color: var(--error); }
+
 .theme-grid {
   display: flex;
   gap:     var(--space-3);
@@ -215,8 +259,9 @@
   gap:            var(--space-2);
   padding:        var(--space-2);
   border-radius:  var(--radius-md);
-  border:         2px solid var(--border);
-  background:     var(--card);
+  border:         2px solid var(--panel-border);
+  background:     var(--elevated-bg);
+  color:          var(--elevated-fg);
   cursor:         pointer;
   transition:     border-color var(--duration-fast) var(--ease),
                   box-shadow   var(--duration-fast) var(--ease);
@@ -273,7 +318,13 @@
 .theme-name {
   font-size:   var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-  color:       var(--foreground);
+  color:       var(--elevated-fg);
+}
+
+.theme-kind {
+  margin-top:  calc(var(--space-1) * -1);
+  font-size:   var(--font-size-xs);
+  color:       var(--muted-foreground);
 }
 
 .theme-active-badge {
@@ -295,9 +346,9 @@
   width:         40px;
   height:        32px;
   border-radius: var(--radius);
-  border:        1px solid var(--border);
-  background:    var(--card);
-  color:         var(--muted-foreground);
+  border:        1px solid var(--control-border);
+  background:    var(--control-bg);
+  color:         var(--control-muted-fg, var(--muted-foreground));
   font-size:     var(--font-size-sm);
   font-weight:   var(--font-weight-medium);
   transition:    border-color var(--duration-fast) var(--ease),
@@ -312,8 +363,8 @@
 
 .font-size-btn.active {
   border-color: var(--primary);
-  background:   var(--accent);
-  color:        var(--primary);
+  background:   var(--selection);
+  color:        var(--selection-foreground);
 }
 
 /* ── Sync radio ───────────────────────────────────────────────────────────── */
@@ -392,12 +443,12 @@
   flex-shrink:   0;
 }
 
-.daemon-status.running   { background: rgb(34, 197, 94);  }
-.daemon-status.starting  { background: rgb(234, 179, 8);  }
-.daemon-status.unhealthy { background: rgb(239, 68, 68);  }
+.daemon-status.running   { background: var(--success);  }
+.daemon-status.starting  { background: var(--warning);  }
+.daemon-status.unhealthy { background: var(--error);  }
 .daemon-status.disabled  { background: var(--muted-foreground); opacity: 0.4; }
 .daemon-status.stopped   { background: var(--muted-foreground); }
-.daemon-status.auspex    { background: rgb(139, 92, 246); }
+.daemon-status.auspex    { background: var(--chart-quaternary); }
 
 .daemon-status-text {
   font-size: var(--font-size-sm);
@@ -450,7 +501,7 @@
   opacity:       0.3;
 }
 .identity-dot.active {
-  background:    rgb(34, 197, 94);
+  background:    var(--success);
   opacity:       1;
 }
 .identity-status-text {
@@ -506,8 +557,8 @@
   flex-shrink:   0;
 }
 
-.provider-status.authenticated { background: rgb(34, 197, 94);  }
-.provider-status.expired       { background: rgb(234, 179, 8);  }
+.provider-status.authenticated { background: var(--success);  }
+.provider-status.expired       { background: var(--warning);  }
 .provider-status.missing       { background: var(--muted-foreground); opacity: 0.3; }
 
 .provider-status-text {
@@ -673,7 +724,7 @@
 
 .raw-config-textarea:focus {
   border-color: var(--ring);
-  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  box-shadow:   0 0 0 2px color-mix(in srgb, var(--ring) 22%, transparent);
   outline:      none;
 }
 
@@ -729,7 +780,7 @@
 }
 
 .extension-card-badge.disabled {
-  background: rgba(96, 120, 136, 0.15);
+  background: color-mix(in srgb, var(--muted-foreground) 16%, transparent);
   color:      var(--muted-foreground);
 }
 
@@ -905,7 +956,7 @@
   align-items:   center;
   gap:           var(--space-2);
   padding:       var(--space-2) var(--space-3);
-  background:    rgba(200, 100, 24, 0.1);
+  background:    color-mix(in srgb, var(--warning) 12%, transparent);
   border:        1px solid var(--warning);
   border-radius: var(--radius);
   margin-bottom: var(--space-3);
@@ -982,10 +1033,10 @@
   transition: background var(--duration-fast) var(--ease);
 }
 
-.armory-item:hover { background: var(--surface, rgba(255,255,255,0.04)); }
+.armory-item:hover { background: var(--surface); }
 
 .armory-item.active {
-  background: var(--surface-active, rgba(42, 180, 200, 0.10));
+  background: var(--surface-active);
 }
 
 .armory-item-name {
@@ -1060,7 +1111,7 @@
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 3px;
-  background: var(--surface, rgba(255,255,255,0.04));
+  background: var(--surface);
   color: var(--muted-foreground);
 }
 
@@ -1086,9 +1137,9 @@
   border-radius: 4px;
 }
 
-.armory-status.ok { color: var(--success, #22c55e); background: rgba(34, 197, 94, 0.10); }
-.armory-status.err { color: var(--error, #ef4444); background: rgba(239, 68, 68, 0.10); }
-.armory-status.running { color: var(--muted-foreground); background: var(--surface, rgba(255,255,255,0.04)); }
+.armory-status.ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.armory-status.err { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+.armory-status.running { color: var(--muted-foreground); background: var(--surface); }
 
 .armory-empty,
 .armory-loading,
@@ -1099,7 +1150,7 @@
   font-size: var(--font-size-sm);
 }
 
-.armory-error { color: var(--error, #ef4444); }
+.armory-error { color: var(--error); }
 
 /* ── Posture picker (card layout, replaces radio buttons) ───────────────── */
 .posture-picker {
@@ -1116,7 +1167,7 @@
   padding: var(--space-3) var(--space-4);
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: var(--card, transparent);
+  background: var(--card);
   cursor: pointer;
   text-align: left;
   transition: border-color var(--duration-fast) var(--ease),
@@ -1124,12 +1175,12 @@
 }
 
 .posture-card:hover {
-  border-color: var(--primary-muted, var(--primary));
+  border-color: var(--primary-muted);
 }
 
 .posture-card.active {
   border-color: var(--primary);
-  background: rgba(42, 180, 200, 0.08);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
 .posture-card-header {
@@ -1148,7 +1199,7 @@
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 3px;
-  background: var(--surface, rgba(255,255,255,0.04));
+  background: var(--surface);
   color: var(--muted-foreground);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1214,6 +1265,10 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  background: var(--panel-bg);
+  color:      var(--panel-fg);
+  border:     1px solid var(--panel-border);
+  box-shadow: 0 24px 80px color-mix(in srgb, var(--background) 70%, transparent);
 }
 
 /* Close button sits in the top-right of the modal, outside the split. */
@@ -1227,7 +1282,7 @@
   border-radius: 4px;
   border: none;
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--control-muted-fg, var(--muted-foreground));
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -1236,15 +1291,15 @@
 }
 
 .settings-modal-close:hover {
-  background: var(--surface, rgba(255,255,255,0.06));
-  color: var(--foreground);
+  background: var(--control-hover);
+  color: var(--control-hover-fg, var(--foreground));
 }
 
 /* Settings root inside the modal: drop the outer height: 100% chain
    and let the modal dimensions drive sizing. */
 .settings-modal-dialog .settings-root {
   height: 100%;
-  background: var(--background);
+  background: var(--panel-bg);
 }
 
 .settings-modal-dialog .settings-root-split {
@@ -1282,8 +1337,8 @@
 
 .help-hint:hover .help-hint-icon,
 .help-hint:focus-visible .help-hint-icon {
-  background: var(--primary-muted, rgba(42, 180, 200, 0.18));
-  border-color: var(--primary-muted, var(--primary));
+  background: var(--primary-muted);
+  border-color: var(--primary-muted);
   color: var(--primary);
 }
 
@@ -1298,11 +1353,11 @@
   left: 0;
   width: 240px;
   padding: 8px 11px;
-  background: var(--background, #0b0f16);
+  background: var(--background);
   color: var(--foreground);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-md);
   font-size: 12px;
   font-weight: var(--font-weight-normal, 400);
   line-height: 1.45;
@@ -1345,9 +1400,9 @@
   gap: 8px;
   margin-top: var(--space-3);
   padding: 8px 12px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.30);
-  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
+  border-radius: var(--radius);
   font-size: 12px;
   color: var(--foreground);
   line-height: 1.4;
@@ -1357,7 +1412,7 @@
   font-size: 14px;
   line-height: 1;
   margin-top: 1px;
-  color: var(--warning, #f59e0b);
+  color: var(--warning);
 }
 
 /* ── Extensions empty state ────────────────────────────────────────────── */
@@ -1366,7 +1421,7 @@
   padding: var(--space-10) var(--space-6);
   border: 1px dashed var(--border);
   border-radius: 8px;
-  background: var(--surface, rgba(255,255,255,0.02));
+  background: var(--surface);
   margin-bottom: var(--space-6);
 }
 
@@ -1421,16 +1476,16 @@
   gap: 12px;
   padding: 14px 16px;
   margin-bottom: var(--space-6);
-  background: rgba(245, 158, 11, 0.10);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 36%, transparent);
+  border-radius: var(--radius-md);
 }
 
 .settings-advanced-warning-icon {
   font-size: 20px;
   line-height: 1;
   margin-top: 2px;
-  color: var(--warning, #f59e0b);
+  color: var(--warning);
 }
 
 .settings-advanced-warning-title {
@@ -1450,7 +1505,7 @@
 .settings-providers-hint {
   padding: 10px 14px;
   margin-bottom: var(--space-5);
-  background: var(--surface, rgba(255,255,255,0.03));
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 12px;
@@ -1478,7 +1533,7 @@
   padding: var(--space-10) var(--space-6);
   border: 1px dashed var(--border);
   border-radius: 8px;
-  background: var(--surface, rgba(255,255,255,0.02));
+  background: var(--surface);
 }
 
 .armory-launch-icon {
@@ -1505,10 +1560,10 @@
 
 .armory-launch-error {
   font-size: 12px;
-  color: var(--error, #ef4444);
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  border-radius: 6px;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 28%, transparent);
+  border-radius: var(--radius);
   padding: 8px 12px;
   margin: 0 auto var(--space-4);
   max-width: 480px;
@@ -1518,7 +1573,7 @@
 
 .armory-launch-error code {
   font-family: var(--font-mono);
-  background: rgba(255,255,255,0.05);
+  background: var(--muted);
   padding: 1px 4px;
   border-radius: 3px;
 }

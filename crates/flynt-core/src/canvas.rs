@@ -69,7 +69,11 @@ impl Default for Canvas {
 
 impl Default for Grid {
     fn default() -> Self {
-        Self { cols: 12, rows: 8, gap: 8 }
+        Self {
+            cols: 12,
+            rows: 8,
+            gap: 8,
+        }
     }
 }
 
@@ -84,8 +88,8 @@ impl Canvas {
 
     /// Parse from a JSON string. Same error semantics as `load`.
     pub fn from_json(data: &str) -> anyhow::Result<Self> {
-        let canvas: Canvas = serde_json::from_str(data)
-            .map_err(|e| anyhow::anyhow!("parse canvas json: {e}"))?;
+        let canvas: Canvas =
+            serde_json::from_str(data).map_err(|e| anyhow::anyhow!("parse canvas json: {e}"))?;
         if canvas.version > CANVAS_VERSION {
             anyhow::bail!(
                 "canvas version {} is newer than supported version {}",
@@ -185,7 +189,9 @@ pub struct CaptureRequest {
     pub include_metrics: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BoxXywh {
@@ -223,11 +229,17 @@ pub struct CaptureResponse {
 }
 
 pub fn capture_request_dir(project_root: &Path) -> PathBuf {
-    project_root.join(".flynt-local").join("flynt").join("capture-requests")
+    project_root
+        .join(".flynt-local")
+        .join("flynt")
+        .join("capture-requests")
 }
 
 pub fn capture_response_dir(project_root: &Path) -> PathBuf {
-    project_root.join(".flynt-local").join("flynt").join("capture-responses")
+    project_root
+        .join(".flynt-local")
+        .join("flynt")
+        .join("capture-responses")
 }
 
 /// Operator-level canvas settings, persisted in `FlyntOperatorSettings.canvas`.
@@ -263,7 +275,10 @@ mod tests {
     fn sample_cell(id: &str) -> Cell {
         Cell {
             id: id.into(),
-            x: 0, y: 0, w: 4, h: 2,
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 2,
             html: "<button class=\"btn\">Hi</button>".into(),
             css: ".btn { color: red; }".into(),
             js: None,
@@ -286,7 +301,10 @@ mod tests {
         c.upsert_cell(sample_cell("a"));
         c.upsert_cell(Cell {
             id: "b".into(),
-            x: 5, y: 0, w: 3, h: 4,
+            x: 5,
+            y: 0,
+            w: 3,
+            h: 4,
             html: "<div>ok</div>".into(),
             css: "".into(),
             js: Some("console.log(1)".into()),
@@ -312,8 +330,10 @@ mod tests {
     #[test]
     fn canvas_load_rejects_missing_required_fields() {
         // theme missing → serde error via from_json
-        let err = Canvas::from_json(r#"{"version":1,"grid":{"cols":1,"rows":1,"gap":0},"cells":[]}"#)
-            .unwrap_err().to_string();
+        let err =
+            Canvas::from_json(r#"{"version":1,"grid":{"cols":1,"rows":1,"gap":0},"cells":[]}"#)
+                .unwrap_err()
+                .to_string();
         assert!(err.contains("parse canvas json"), "got: {err}");
     }
 

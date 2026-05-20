@@ -1,11 +1,9 @@
+use crate::sqlite::SqliteStore;
+use crate::task_file;
 use anyhow::{Context, Result};
-use flynt_core::{
-    models::*,
-    parser::parse_document_source,
-    store::ProjectStore,
-};
 use chrono::Utc;
-use comrak::{markdown_to_html, Options};
+use comrak::{Options, markdown_to_html};
+use flynt_core::{models::*, parser::parse_document_source, store::ProjectStore};
 use serde::Serialize;
 use std::{
     fs,
@@ -13,8 +11,6 @@ use std::{
     sync::Arc,
 };
 use tracing::{debug, info, warn};
-use crate::sqlite::SqliteStore;
-use crate::task_file;
 
 /// Project manages the root directory layout:
 ///
@@ -82,6 +78,14 @@ enum ImportDisposition {
 }
 
 impl Project {
+    fn bookmarks_path(&self) -> PathBuf {
+        self.root.join(".flynt").join("bookmarks.toml")
+    }
+
+    fn lenses_dir(&self) -> PathBuf {
+        self.root.join(".flynt").join("lenses")
+    }
+
     /// Open (or create) a project rooted at `root`.
     pub fn open(root: &Path) -> Result<Self> {
         fs::create_dir_all(root)?;
@@ -117,8 +121,14 @@ impl Project {
                 .unwrap_or_else(|| "Flynt".to_string());
 
             let indexing = if looks_like_code_repo(root) {
-                info!("Code repo detected at {:?} — defaulting write_frontmatter to false", root);
-                IndexingConfig { write_frontmatter: false, scopes: Vec::new() }
+                info!(
+                    "Code repo detected at {:?} — defaulting write_frontmatter to false",
+                    root
+                );
+                IndexingConfig {
+                    write_frontmatter: false,
+                    scopes: Vec::new(),
+                }
             } else {
                 IndexingConfig::default()
             };
@@ -141,7 +151,10 @@ impl Project {
         let gitignore = root.join(".gitignore");
         if !gitignore.exists() {
             if let Err(e) = fs::write(&gitignore, ".flynt-local/\n.DS_Store\n*.swp\n*~\n") {
-                tracing::warn!("Could not create .gitignore at {}: {e} — local state may be committed if git sync is enabled", gitignore.display());
+                tracing::warn!(
+                    "Could not create .gitignore at {}: {e} — local state may be committed if git sync is enabled",
+                    gitignore.display()
+                );
             }
         }
 
@@ -188,9 +201,15 @@ impl Project {
     /// from sqlite to confirm it's a task before firing — we never
     /// notify on plain notes.
     fn notify_task_saved(&self, rel_path: &Path) {
-        let Some(hook) = self.save_hook.get() else { return };
-        let Ok(Some(doc)) = self.store.get_document_by_path(rel_path) else { return };
-        if doc.frontmatter.kind.as_deref() != Some("task") { return }
+        let Some(hook) = self.save_hook.get() else {
+            return;
+        };
+        let Ok(Some(doc)) = self.store.get_document_by_path(rel_path) else {
+            return;
+        };
+        if doc.frontmatter.kind.as_deref() != Some("task") {
+            return;
+        }
         hook.on_task_saved(doc.id.0);
     }
 
@@ -216,13 +235,11 @@ impl Project {
     pub fn reindex(&self) -> Result<(usize, Vec<String>)> {
         let mut indexed = 0;
         let mut errors = Vec::new();
-        self.walk_markdown(&mut |path| {
-            match self.index_file(path) {
-                Ok(_) => indexed += 1,
-                Err(e) => {
-                    errors.push(format!("{}: {e}", path.display()));
-                    debug!("index error: {e}");
-                }
+        self.walk_markdown(&mut |path| match self.index_file(path) {
+            Ok(_) => indexed += 1,
+            Err(e) => {
+                errors.push(format!("{}: {e}", path.display()));
+                debug!("index error: {e}");
             }
         })?;
 
@@ -415,14 +432,17 @@ impl Project {
         let updated = if raw.starts_with("+++") {
             // Find the closing +++ by scanning byte offsets directly
             // (handles both LF and CRLF line endings)
-            let first_newline = raw.find('\n').ok_or_else(|| anyhow::anyhow!("Malformed frontmatter"))?;
+            let first_newline = raw
+                .find('\n')
+                .ok_or_else(|| anyhow::anyhow!("Malformed frontmatter"))?;
             let search_start = first_newline + 1;
             let mut closing_pos = None;
             for (i, line) in raw[search_start..].split('\n').enumerate() {
                 let trimmed = line.trim_end_matches('\r').trim();
                 if trimmed == "+++" {
                     // Calculate byte offset from start of raw
-                    let offset: usize = raw[search_start..].split('\n')
+                    let offset: usize = raw[search_start..]
+                        .split('\n')
                         .take(i)
                         .map(|l| l.len() + 1) // +1 for the \n
                         .sum();
@@ -430,10 +450,12 @@ impl Project {
                     break;
                 }
             }
-            let closing_pos = closing_pos.ok_or_else(|| anyhow::anyhow!("Malformed frontmatter: no closing +++"))?;
+            let closing_pos = closing_pos
+                .ok_or_else(|| anyhow::anyhow!("Malformed frontmatter: no closing +++"))?;
 
             let fm_text = &raw[first_newline + 1..closing_pos];
-            let closing_line_end = raw[closing_pos..].find('\n')
+            let closing_line_end = raw[closing_pos..]
+                .find('\n')
                 .map(|p| closing_pos + p + 1)
                 .unwrap_or(raw.len());
             let after_fm = &raw[closing_line_end..];
@@ -529,8 +551,9 @@ impl Project {
         // Pull the frontmatter block (`+++\n...\n+++`) and the body.
         // We need the raw bytes for the body so we don't mangle it on
         // round-trip — toml_edit only operates on the frontmatter.
-        let fm_block = extract_raw_frontmatter_block(&raw)
-            .ok_or_else(|| anyhow::anyhow!("file has no TOML frontmatter: {}", rel_path.display()))?;
+        let fm_block = extract_raw_frontmatter_block(&raw).ok_or_else(|| {
+            anyhow::anyhow!("file has no TOML frontmatter: {}", rel_path.display())
+        })?;
         // The block returned includes the closing `+++` line. Strip the
         // delimiters to feed toml_edit just the inner TOML.
         let fm_inner = fm_block
@@ -540,7 +563,8 @@ impl Project {
             .trim_end_matches('\n')
             .trim_end_matches('\r');
 
-        let mut doc: toml_edit::DocumentMut = fm_inner.parse()
+        let mut doc: toml_edit::DocumentMut = fm_inner
+            .parse()
             .with_context(|| format!("parse frontmatter for {}", rel_path.display()))?;
 
         // Ensure [data] table exists — create empty if absent. Operators
@@ -549,7 +573,8 @@ impl Project {
         if doc.get("data").is_none() {
             doc.insert("data", toml_edit::Item::Table(toml_edit::Table::new()));
         }
-        let data = doc["data"].as_table_mut()
+        let data = doc["data"]
+            .as_table_mut()
             .ok_or_else(|| anyhow::anyhow!("[data] is not a table in {}", rel_path.display()))?;
         data.insert(key, toml_edit::Item::Value(value));
 
@@ -561,12 +586,83 @@ impl Project {
         let body = body.strip_prefix('\n').unwrap_or(body);
         let new_raw = format!("+++\n{}+++\n{}", doc, body);
 
-        fs::write(&abs_path, &new_raw)
-            .with_context(|| format!("write {}", abs_path.display()))?;
+        fs::write(&abs_path, &new_raw).with_context(|| format!("write {}", abs_path.display()))?;
         self.index_file(&abs_path)?;
         if notify {
             // Fan out to the save hook (push debouncer when installed).
             // No-op when no hook is registered (tests, headless agents).
+            self.notify_task_saved(rel_path);
+        }
+        Ok(())
+    }
+
+    /// Replace the `[publication]` table for a document while preserving
+    /// unrelated frontmatter fields and the markdown body.
+    pub fn set_publication_config(
+        &self,
+        rel_path: &Path,
+        publication: &PublicationConfig,
+    ) -> Result<()> {
+        self.set_publication_config_inner(rel_path, publication, true)
+    }
+
+    /// Same as [`set_publication_config`] but does NOT fire the save hook.
+    pub fn set_publication_config_silent(
+        &self,
+        rel_path: &Path,
+        publication: &PublicationConfig,
+    ) -> Result<()> {
+        self.set_publication_config_inner(rel_path, publication, false)
+    }
+
+    fn set_publication_config_inner(
+        &self,
+        rel_path: &Path,
+        publication: &PublicationConfig,
+        notify: bool,
+    ) -> Result<()> {
+        if !self.config.indexing.should_write_frontmatter(rel_path) {
+            anyhow::bail!(
+                "Cannot edit publication settings on discoverable file {:?} — configure an indexing scope to manage this path",
+                rel_path,
+            );
+        }
+
+        let abs_path = self.root.join(rel_path);
+        let raw = fs::read_to_string(&abs_path)
+            .with_context(|| format!("read {}", abs_path.display()))?;
+
+        let (mut doc, body) = if let Some(fm_block) = extract_raw_frontmatter_block(&raw) {
+            let fm_inner = fm_block
+                .trim_start_matches("+++\n")
+                .trim_start_matches("+++\r\n")
+                .trim_end_matches("+++")
+                .trim_end_matches('\n')
+                .trim_end_matches('\r');
+            let doc: toml_edit::DocumentMut = fm_inner
+                .parse()
+                .with_context(|| format!("parse frontmatter for {}", rel_path.display()))?;
+            let body = &raw[fm_block.len()..];
+            let body = body.strip_prefix('\n').unwrap_or(body).to_string();
+            (doc, body)
+        } else {
+            (toml_edit::DocumentMut::new(), raw)
+        };
+
+        let publication_toml =
+            toml::to_string(publication).context("serialize publication config")?;
+        let publication_doc: toml_edit::DocumentMut = publication_toml
+            .parse()
+            .context("parse publication config as editable TOML")?;
+        doc.insert(
+            "publication",
+            toml_edit::Item::Table(publication_doc.as_table().clone()),
+        );
+
+        let new_raw = format!("+++\n{}+++\n{}", doc, body);
+        fs::write(&abs_path, &new_raw).with_context(|| format!("write {}", abs_path.display()))?;
+        self.index_file(&abs_path)?;
+        if notify {
             self.notify_task_saved(rel_path);
         }
         Ok(())
@@ -608,12 +704,17 @@ impl Project {
         frontmatter
             .metadata
             .insert("channel".into(), MetadataValue::String(channel.to_string()));
-        frontmatter
-            .metadata
-            .insert("kind".into(), MetadataValue::String("agent_communication".into()));
+        frontmatter.metadata.insert(
+            "kind".into(),
+            MetadataValue::String("agent_communication".into()),
+        );
 
         let document = Document {
-            id: DocumentId(frontmatter.id.expect("frontmatter id set for communication")),
+            id: DocumentId(
+                frontmatter
+                    .id
+                    .expect("frontmatter id set for communication"),
+            ),
             path: relative_path.clone(),
             title: title.to_string(),
             content: content.to_string(),
@@ -634,12 +735,7 @@ impl Project {
     }
 
     /// Persist a durable memory fact as a canonical markdown knowledge artifact.
-    pub fn store_memory_fact(
-        &self,
-        topic: &str,
-        title: &str,
-        content: &str,
-    ) -> Result<PathBuf> {
+    pub fn store_memory_fact(&self, topic: &str, title: &str, content: &str) -> Result<PathBuf> {
         let now = Utc::now();
         let slug = slugify_title(title);
         let relative_path = PathBuf::from("ai/memory")
@@ -695,8 +791,7 @@ impl Project {
             .filter_entry(|e| !is_hidden(e))
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.file_type().is_file()
-                    && e.path().extension().map(|x| x == "md").unwrap_or(false)
+                e.file_type().is_file() && e.path().extension().map(|x| x == "md").unwrap_or(false)
             })
         {
             match self.import_markdown_file(source_root, entry.path()) {
@@ -706,10 +801,18 @@ impl Project {
             }
         }
 
-        Ok(ImportReport { imported, skipped, errors })
+        Ok(ImportReport {
+            imported,
+            skipped,
+            errors,
+        })
     }
 
-    fn import_markdown_file(&self, source_root: &Path, source_path: &Path) -> Result<ImportDisposition> {
+    fn import_markdown_file(
+        &self,
+        source_root: &Path,
+        source_path: &Path,
+    ) -> Result<ImportDisposition> {
         let relative = source_path.strip_prefix(source_root)?;
         let destination = import_destination_path(relative);
         let absolute_destination = self.root.join(&destination);
@@ -787,7 +890,8 @@ impl Project {
                     }
                     exported += 1;
                     let doc_obj = self.store.get_document_by_path(&document.path)?;
-                    let vis = doc_obj.as_ref()
+                    let vis = doc_obj
+                        .as_ref()
                         .map(|d| effective_publication_visibility(d, &self.config.publication))
                         .unwrap_or(PublicationVisibility::Public);
                     manifest_entries.push(PublicationManifestEntry {
@@ -824,23 +928,29 @@ impl Project {
         let mut index_mu = String::from(">`!Flynt`\n\n");
         for entry in &manifest.documents {
             if entry.visibility != PublicationVisibility::Unlisted {
-                index_mu.push_str(&format!(
-                    "`[{}`/page/{}.mu]\n",
-                    entry.title, entry.slug
-                ));
+                index_mu.push_str(&format!("`[{}`/page/{}.mu]\n", entry.title, entry.slug));
             }
         }
         fs::write(output_root.join("index.mu"), &index_mu)?;
 
-        Ok(PublicationExportReport { exported, skipped_private, errors })
+        Ok(PublicationExportReport {
+            exported,
+            skipped_private,
+            errors,
+        })
     }
 
-    fn export_published_document(&self, relative_path: &Path, output_root: &Path) -> Result<Option<PublishedDocument>> {
+    fn export_published_document(
+        &self,
+        relative_path: &Path,
+        output_root: &Path,
+    ) -> Result<Option<PublishedDocument>> {
         let Some(document) = self.store.get_document_by_path(relative_path)? else {
             return Ok(None);
         };
         let visibility = effective_publication_visibility(&document, &self.config.publication);
-        if !document.frontmatter.publication.enabled || visibility == PublicationVisibility::Private {
+        if !document.frontmatter.publication.enabled || visibility == PublicationVisibility::Private
+        {
             return Ok(None);
         }
 
@@ -876,30 +986,58 @@ impl Project {
     /// file representation refreshed (almost always — the file is the
     /// canonical surface for the operator now). Returns false if no
     /// task with that id exists.
-    pub fn update_any_task(
-        &self,
-        id: &TaskId,
-        patch: &flynt_models::TaskPatch,
-    ) -> Result<bool> {
-        let Some(mut task) = self.store.get_task(id)? else { return Ok(false) };
+    pub fn update_any_task(&self, id: &TaskId, patch: &flynt_models::TaskPatch) -> Result<bool> {
+        let Some(mut task) = self.store.get_task(id)? else {
+            return Ok(false);
+        };
         // Apply the patch in-place — duplicates the inner logic of
         // SqliteStore::update_task to keep that contract a sqlite-only
         // concern. If patch grows new fields, mirror them here.
-        if let Some(v) = &patch.column { task.column = v.clone(); }
-        if let Some(v) = &patch.title { task.title = v.clone(); }
-        if let Some(v) = &patch.description { task.description = v.clone(); }
-        if let Some(v) = patch.priority { task.priority = v; }
-        if let Some(v) = patch.status { task.status = v; }
-        if let Some(v) = &patch.tags { task.tags = v.clone(); }
-        if let Some(v) = patch.due_date { task.due_date = v; }
-        if let Some(v) = &patch.external_refs { task.external_refs = v.clone(); }
-        if let Some(v) = &patch.document_refs { task.document_refs = v.clone(); }
-        if let Some(v) = patch.position { task.position = v; }
-        if let Some(v) = patch.decay { task.decay = v; }
-        if let Some(v) = patch.design_node_id { task.design_node_id = v; }
-        if let Some(v) = &patch.openspec_change { task.openspec_change = v.clone(); }
-        if let Some(v) = &patch.engagement_id { task.engagement_id = v.clone(); }
-        if let Some(v) = &patch.execution { task.execution = v.clone(); }
+        if let Some(v) = &patch.column {
+            task.column = v.clone();
+        }
+        if let Some(v) = &patch.title {
+            task.title = v.clone();
+        }
+        if let Some(v) = &patch.description {
+            task.description = v.clone();
+        }
+        if let Some(v) = patch.priority {
+            task.priority = v;
+        }
+        if let Some(v) = patch.status {
+            task.status = v;
+        }
+        if let Some(v) = &patch.tags {
+            task.tags = v.clone();
+        }
+        if let Some(v) = patch.due_date {
+            task.due_date = v;
+        }
+        if let Some(v) = &patch.external_refs {
+            task.external_refs = v.clone();
+        }
+        if let Some(v) = &patch.document_refs {
+            task.document_refs = v.clone();
+        }
+        if let Some(v) = patch.position {
+            task.position = v;
+        }
+        if let Some(v) = patch.decay {
+            task.decay = v;
+        }
+        if let Some(v) = patch.design_node_id {
+            task.design_node_id = v;
+        }
+        if let Some(v) = &patch.openspec_change {
+            task.openspec_change = v.clone();
+        }
+        if let Some(v) = &patch.engagement_id {
+            task.engagement_id = v.clone();
+        }
+        if let Some(v) = &patch.execution {
+            task.execution = v.clone();
+        }
         task.updated_at = Utc::now();
         self.persist_task(&task)?;
         Ok(true)
@@ -965,7 +1103,9 @@ impl Project {
         };
         let title_slug = slugify_title(&task.title);
         let desired_dir = self.root.join("Tasks").join(&board_slug);
-        let mut desired_rel = PathBuf::from("Tasks").join(&board_slug).join(format!("{title_slug}.md"));
+        let mut desired_rel = PathBuf::from("Tasks")
+            .join(&board_slug)
+            .join(format!("{title_slug}.md"));
 
         // Step 2: if there's an existing file path stored for this task
         // and the title slug changed, plan a rename. The previous file
@@ -1000,8 +1140,7 @@ impl Project {
         std::fs::create_dir_all(&desired_dir)
             .with_context(|| format!("create Tasks dir {}", desired_dir.display()))?;
         let md = task_file::serialize_task_to_markdown(task);
-        std::fs::write(&abs, &md)
-            .with_context(|| format!("write task file {}", abs.display()))?;
+        std::fs::write(&abs, &md).with_context(|| format!("write task file {}", abs.display()))?;
 
         // Step 5: remove the prior file if we renamed.
         if let Some(prior_path) = prior_abs.as_ref()
@@ -1027,7 +1166,9 @@ impl Project {
         let unfiled = self.store.tasks_without_file()?;
         let mut migrated = 0;
         for tid in unfiled {
-            let Some(task) = self.store.get_task(&tid)? else { continue };
+            let Some(task) = self.store.get_task(&tid)? else {
+                continue;
+            };
             match self.save_any_task(&task) {
                 Ok(_) => migrated += 1,
                 Err(e) => warn!("migrate task {} to file: {e}", tid.0),
@@ -1045,6 +1186,100 @@ impl Project {
         let config_path = self.root.join(".flynt").join("config.toml");
         fs::write(&config_path, toml::to_string_pretty(config)?)?;
         Ok(())
+    }
+
+    pub fn load_bookmarks(&self) -> Result<BookmarkFile> {
+        let path = self.bookmarks_path();
+        if !path.exists() {
+            return Ok(BookmarkFile::default());
+        }
+        let raw = fs::read_to_string(&path)
+            .with_context(|| format!("read bookmarks from {}", path.display()))?;
+        let bookmarks: BookmarkFile = toml::from_str(&raw)
+            .with_context(|| format!("parse bookmarks from {}", path.display()))?;
+        Ok(bookmarks)
+    }
+
+    pub fn save_bookmarks(&self, bookmarks: &BookmarkFile) -> Result<()> {
+        let path = self.bookmarks_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, toml::to_string_pretty(bookmarks)?)?;
+        Ok(())
+    }
+
+    pub fn add_bookmark(
+        &self,
+        title: impl Into<String>,
+        target: BookmarkTarget,
+    ) -> Result<Bookmark> {
+        let mut file = self.load_bookmarks()?;
+        let target_key = target.stable_key();
+        if let Some(existing) = file
+            .bookmarks
+            .iter_mut()
+            .find(|bookmark| bookmark.target.stable_key() == target_key)
+        {
+            existing.title = title.into();
+            let bookmark = existing.clone();
+            self.save_bookmarks(&file)?;
+            return Ok(bookmark);
+        }
+
+        let bookmark = Bookmark {
+            id: uuid::Uuid::new_v4().to_string(),
+            title: title.into(),
+            target,
+            created_at: Utc::now(),
+        };
+        file.bookmarks.push(bookmark.clone());
+        self.save_bookmarks(&file)?;
+        Ok(bookmark)
+    }
+
+    pub fn remove_bookmark(&self, id: &str) -> Result<bool> {
+        let mut file = self.load_bookmarks()?;
+        let before = file.bookmarks.len();
+        file.bookmarks.retain(|bookmark| bookmark.id != id);
+        let removed = file.bookmarks.len() != before;
+        if removed {
+            self.save_bookmarks(&file)?;
+        }
+        Ok(removed)
+    }
+
+    pub fn load_lenses(&self) -> Result<Vec<(PathBuf, ProjectLens)>> {
+        let dir = self.lenses_dir();
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut lenses = Vec::new();
+        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
+                continue;
+            }
+            let raw =
+                fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            let lens: ProjectLens =
+                toml::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+            let rel = path.strip_prefix(&self.root).unwrap_or(&path).to_path_buf();
+            lenses.push((rel, lens));
+        }
+        lenses.sort_by(|(_, a), (_, b)| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        Ok(lenses)
+    }
+
+    pub fn save_lens(&self, lens: &ProjectLens) -> Result<PathBuf> {
+        let dir = self.lenses_dir();
+        fs::create_dir_all(&dir)?;
+        let filename = format!("{}.toml", slugify_title(&lens.title));
+        let path = dir.join(filename);
+        fs::write(&path, toml::to_string_pretty(lens)?)?;
+        Ok(path.strip_prefix(&self.root).unwrap_or(&path).to_path_buf())
     }
 
     // ── Rename document + update links ────────────────────────────────────────
@@ -1066,14 +1301,16 @@ impl Project {
         // Derive the old title for link matching
         let (_body, old_fm, _links) = flynt_core::parser::parse_document_source(&raw);
         let old_title = old_fm.title.clone().unwrap_or_else(|| {
-            old_path.file_stem()
+            old_path
+                .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
 
         // Build the new filename from the new title
         let new_filename = format!("{}.md", new_title);
-        let new_path = old_path.parent()
+        let new_path = old_path
+            .parent()
             .map(|p| p.join(&new_filename))
             .unwrap_or_else(|| PathBuf::from(&new_filename));
 
@@ -1084,7 +1321,12 @@ impl Project {
                 let before = &raw[..title_line_start];
                 let after_title = &raw[title_line_start..];
                 if let Some(end_quote) = after_title[9..].find('"') {
-                    format!("{}title = \"{}\"{}", before, new_title, &after_title[9 + end_quote + 1..])
+                    format!(
+                        "{}title = \"{}\"{}",
+                        before,
+                        new_title,
+                        &after_title[9 + end_quote + 1..]
+                    )
                 } else {
                     raw.clone()
                 }
@@ -1107,7 +1349,8 @@ impl Project {
 
         // Now scan all markdown files and update wikilinks
         let old_title_lower = old_title.to_lowercase();
-        let old_stem = old_path.file_stem()
+        let old_stem = old_path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
 
@@ -1115,25 +1358,23 @@ impl Project {
         self.walk_markdown(&mut |path| {
             // Skip the renamed file itself
             let rel = path.strip_prefix(&self.root).unwrap_or(path);
-            if rel == new_path { return; }
+            if rel == new_path {
+                return;
+            }
 
-            let Ok(content) = fs::read_to_string(path) else { return; };
+            let Ok(content) = fs::read_to_string(path) else {
+                return;
+            };
 
             // Check if this file contains wikilinks to the old name
             let mut new_content = content.clone();
             let mut changed = false;
 
             // Replace [[Old Title]] → [[New Title]]
-            let patterns = [
-                format!("[[{}]]", old_title),
-                format!("[[{}]]", old_stem),
-            ];
+            let patterns = [format!("[[{}]]", old_title), format!("[[{}]]", old_stem)];
             for pat in &patterns {
                 if new_content.contains(pat.as_str()) {
-                    new_content = new_content.replace(
-                        pat.as_str(),
-                        &format!("[[{}]]", new_title),
-                    );
+                    new_content = new_content.replace(pat.as_str(), &format!("[[{}]]", new_title));
                     changed = true;
                 }
             }
@@ -1144,7 +1385,8 @@ impl Project {
                 let pipe_prefix = format!("[[{}|", old_ref);
                 while let Some(start) = new_content.find(&pipe_prefix) {
                     if let Some(end) = new_content[start..].find("]]") {
-                        let display = &new_content[start + pipe_prefix.len()..start + end].to_string();
+                        let display =
+                            &new_content[start + pipe_prefix.len()..start + end].to_string();
                         let replacement = format!("[[{}|{}]]", new_title, display);
                         new_content = format!(
                             "{}{}{}",
@@ -1210,7 +1452,8 @@ impl Project {
     /// List all unique tags across the project with document counts.
     pub fn list_tags(&self) -> Result<Vec<(String, usize)>> {
         let docs = self.store.list_documents()?;
-        let mut tag_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut tag_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for doc in &docs {
             for tag in &doc.tags {
                 *tag_counts.entry(tag.clone()).or_default() += 1;
@@ -1227,15 +1470,21 @@ impl Project {
     pub fn rename_tag(&self, old_tag: &str, new_tag: &str) -> Result<usize> {
         let mut files_updated = 0;
         self.walk_markdown(&mut |path| {
-            let Ok(content) = fs::read_to_string(path) else { return; };
+            let Ok(content) = fs::read_to_string(path) else {
+                return;
+            };
 
             let (_body, fm, _links) = flynt_core::parser::parse_document_source(&content);
-            if !fm.tags.iter().any(|t| t == old_tag) { return; }
+            if !fm.tags.iter().any(|t| t == old_tag) {
+                return;
+            }
 
             // Replace in the tags array by rebuilding it
             let mut new_tags = fm.tags.clone();
             for tag in &mut new_tags {
-                if tag == old_tag { *tag = new_tag.to_string(); }
+                if tag == old_tag {
+                    *tag = new_tag.to_string();
+                }
             }
             // Deduplicate
             new_tags.sort();
@@ -1248,7 +1497,10 @@ impl Project {
             }
         })?;
         self.reindex()?;
-        info!("Renamed tag '{}' → '{}', updated {} file(s)", old_tag, new_tag, files_updated);
+        info!(
+            "Renamed tag '{}' → '{}', updated {} file(s)",
+            old_tag, new_tag, files_updated
+        );
         Ok(files_updated)
     }
 
@@ -1256,10 +1508,14 @@ impl Project {
     pub fn delete_tag(&self, tag: &str) -> Result<usize> {
         let mut files_updated = 0;
         self.walk_markdown(&mut |path| {
-            let Ok(content) = fs::read_to_string(path) else { return; };
+            let Ok(content) = fs::read_to_string(path) else {
+                return;
+            };
 
             let (_body, fm, _links) = flynt_core::parser::parse_document_source(&content);
-            if !fm.tags.iter().any(|t| t == tag) { return; }
+            if !fm.tags.iter().any(|t| t == tag) {
+                return;
+            }
 
             let new_tags: Vec<String> = fm.tags.into_iter().filter(|t| t != tag).collect();
 
@@ -1299,11 +1555,18 @@ impl Project {
     /// Read all pending notifications (not yet delivered on this device).
     pub fn pending_notifications(&self) -> Result<Vec<flynt_core::models::Notification>> {
         let dir = self.root.join(".flynt/notifications/pending");
-        if !dir.exists() { return Ok(vec![]); }
+        if !dir.exists() {
+            return Ok(vec![]);
+        }
         let mut result = Vec::new();
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
-            if entry.path().extension().map(|e| e == "json").unwrap_or(false) {
+            if entry
+                .path()
+                .extension()
+                .map(|e| e == "json")
+                .unwrap_or(false)
+            {
                 match fs::read_to_string(entry.path()) {
                     Ok(raw) => match serde_json::from_str(&raw) {
                         Ok(notif) => result.push(notif),
@@ -1319,7 +1582,9 @@ impl Project {
     /// Mark a notification as delivered — moves from pending to delivered.
     /// Safe against concurrent access: ignores missing files.
     pub fn mark_notification_delivered(&self, id: &uuid::Uuid) -> Result<()> {
-        let pending = self.root.join(format!(".flynt/notifications/pending/{id}.json"));
+        let pending = self
+            .root
+            .join(format!(".flynt/notifications/pending/{id}.json"));
         let delivered_dir = self.root.join(".flynt/notifications/delivered");
         fs::create_dir_all(&delivered_dir)?;
 
@@ -1350,7 +1615,9 @@ impl Project {
     pub fn check_task_notifications(&self) -> Result<Vec<flynt_core::models::Notification>> {
         use flynt_core::models::*;
 
-        let tasks = self.store.list_tasks(&flynt_core::store::TaskFilter::default())?;
+        let tasks = self
+            .store
+            .list_tasks(&flynt_core::store::TaskFilter::default())?;
         let project_name = self.config.project_name.clone();
         let today = chrono::Local::now().date_naive();
 
@@ -1382,8 +1649,13 @@ impl Project {
                         format!("\"{}\" is {} day(s) overdue", task.title, days)
                     };
                     notifications.push(
-                        Notification::new(NotificationKind::DueDate, &task.title, body, &project_name)
-                            .for_task(task.id.clone()),
+                        Notification::new(
+                            NotificationKind::DueDate,
+                            &task.title,
+                            body,
+                            &project_name,
+                        )
+                        .for_task(task.id.clone()),
                     );
                 }
             }
@@ -1394,7 +1666,10 @@ impl Project {
                     Notification::new(
                         NotificationKind::Decay,
                         &task.title,
-                        format!("\"{}\" is losing relevance. Touch it or let it archive.", task.title),
+                        format!(
+                            "\"{}\" is losing relevance. Touch it or let it archive.",
+                            task.title
+                        ),
                         &project_name,
                     )
                     .for_task(task.id.clone()),
@@ -1413,8 +1688,7 @@ impl Project {
             .filter_entry(|e| e.path() != flynt_dir && !is_hidden(e))
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.file_type().is_file()
-                    && e.path().extension().map(|x| x == "md").unwrap_or(false)
+                e.file_type().is_file() && e.path().extension().map(|x| x == "md").unwrap_or(false)
             })
         {
             cb(entry.path());
@@ -1428,7 +1702,9 @@ impl Project {
 /// return None. Used by save_document_content to preserve unknown
 /// frontmatter fields when re-writing a document body.
 fn extract_raw_frontmatter_block(raw: &str) -> Option<String> {
-    let r = raw.strip_prefix("+++\n").or_else(|| raw.strip_prefix("+++\r\n"))?;
+    let r = raw
+        .strip_prefix("+++\n")
+        .or_else(|| raw.strip_prefix("+++\r\n"))?;
     let mut offset = 0usize;
     for line in r.split_inclusive('\n') {
         let trimmed = line.trim_end_matches('\n').trim_end_matches('\r').trim();
@@ -1436,7 +1712,8 @@ fn extract_raw_frontmatter_block(raw: &str) -> Option<String> {
             // Length of the frontmatter section: prefix "+++\n" + r
             // up through this closing line (without trailing newline).
             let prefix_len = raw.len() - r.len();
-            let end_in_r = offset + line.len() - (line.len() - line.trim_end_matches('\n').trim_end_matches('\r').len());
+            let end_in_r = offset + line.len()
+                - (line.len() - line.trim_end_matches('\n').trim_end_matches('\r').len());
             let block = &raw[..prefix_len + end_in_r];
             return Some(block.to_string());
         }
@@ -1474,7 +1751,10 @@ fn contains_single_embed(raw: &str, suffix: &str) -> bool {
     } else {
         raw.trim()
     };
-    let lines: Vec<&str> = body.lines().filter(|line| !line.trim().is_empty()).collect();
+    let lines: Vec<&str> = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
     lines.len() == 1 && {
         let line = lines[0].trim();
         line.starts_with("![[") && line.ends_with(&format!("{suffix}]]"))
@@ -1521,7 +1801,13 @@ fn canonical_document_source(document: &Document) -> String {
 fn slugify_title(title: &str) -> String {
     let slug: String = title
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = slug
         .split('-')
@@ -1555,7 +1841,13 @@ fn effective_publication_visibility(
         let tag_match = rule
             .match_tag
             .as_ref()
-            .map(|tag| document.frontmatter.tags.iter().any(|doc_tag| doc_tag == tag))
+            .map(|tag| {
+                document
+                    .frontmatter
+                    .tags
+                    .iter()
+                    .any(|doc_tag| doc_tag == tag)
+            })
             .unwrap_or(false);
         let path_match = rule
             .match_path_prefix
@@ -1576,7 +1868,8 @@ fn effective_publication_visibility(
 }
 
 fn render_published_markdown(project: &Project, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Markdown)?;
+    let body =
+        rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Markdown)?;
     let mut frontmatter = document.frontmatter.clone();
     frontmatter.imported_reference = false;
     frontmatter.source_path = None;
@@ -1587,7 +1880,8 @@ fn render_published_markdown(project: &Project, document: &Document) -> Result<S
 }
 
 fn render_published_html(project: &Project, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Html)?;
+    let body =
+        rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Html)?;
     let mut options = Options::default();
     options.extension.table = true;
     options.extension.strikethrough = true;
@@ -1600,7 +1894,8 @@ fn render_published_html(project: &Project, document: &Document) -> Result<Strin
 }
 
 fn render_published_micron(project: &Project, document: &Document) -> Result<String> {
-    let body = rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Micron)?;
+    let body =
+        rewrite_wikilinks_for_publication(project, &document.content, PublicationRender::Micron)?;
     let micron = markdown_to_micron(&body);
     Ok(format!("# title: {}\n\n{micron}", document.title))
 }
@@ -1766,14 +2061,18 @@ enum PublicationRender {
     Micron,
 }
 
-fn rewrite_wikilinks_for_publication(project: &Project, body: &str, mode: PublicationRender) -> Result<String> {
+fn rewrite_wikilinks_for_publication(
+    project: &Project,
+    body: &str,
+    mode: PublicationRender,
+) -> Result<String> {
     let mut rendered = String::new();
     let mut remaining = body;
 
     while let Some(start) = remaining.find("[[") {
         rendered.push_str(&remaining[..start]);
         let after = &remaining[start + 2..];
-        let Some(end) = after.find("]]" ) else {
+        let Some(end) = after.find("]]") else {
             rendered.push_str(&remaining[start..]);
             return Ok(rendered);
         };
@@ -1840,7 +2139,11 @@ fn rewrite_wikilinks_for_publication(project: &Project, body: &str, mode: Public
 }
 
 fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
-    if let Some(path) = runtime.flynt_index_db_path.as_ref().filter(|path| path.is_absolute()) {
+    if let Some(path) = runtime
+        .flynt_index_db_path
+        .as_ref()
+        .filter(|path| path.is_absolute())
+    {
         return path.clone();
     }
 
@@ -1852,11 +2155,17 @@ fn resolve_index_db_path(root: &Path, runtime: &LocalRuntimeConfig) -> PathBuf {
         return local_state_root.join("flynt").join("flynt-index.db");
     }
 
-    root.join(".flynt-local").join("flynt").join("flynt-index.db")
+    root.join(".flynt-local")
+        .join("flynt")
+        .join("flynt-index.db")
 }
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
-    entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false)
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| s.starts_with('.'))
+        .unwrap_or(false)
 }
 
 /// Heuristic: directory has `.git` plus at least one build manifest → code repo.
@@ -1886,7 +2195,9 @@ fn looks_like_code_repo(root: &Path) -> bool {
 fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String> {
     // Find +++...+++ frontmatter block — must be at line boundaries
     // First +++ must be at the very start of the content
-    if !content.starts_with("+++") { return None; }
+    if !content.starts_with("+++") {
+        return None;
+    }
     let first = 0;
     // Second +++ is the next line that is exactly "+++"
     let second = content[3..]
@@ -1901,7 +2212,10 @@ fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String
     let fm_text = &content[first + 3..second];
 
     // Find the tags line
-    let tags_serialized: Vec<String> = new_tags.iter().map(|t| format!("\"{}\"", t.replace('"', ""))).collect();
+    let tags_serialized: Vec<String> = new_tags
+        .iter()
+        .map(|t| format!("\"{}\"", t.replace('"', "")))
+        .collect();
     let new_tags_line = format!("tags = [{}]", tags_serialized.join(", "));
 
     // Replace the tags = [...] line in the frontmatter
@@ -1923,19 +2237,30 @@ fn replace_frontmatter_tags(content: &str, new_tags: &[String]) -> Option<String
 
     // Skip past the closing "+++" and its newline
     let after_fm = second + 3;
-    let body_start = if content[after_fm..].starts_with('\n') { after_fm + 1 } else { after_fm };
+    let body_start = if content[after_fm..].starts_with('\n') {
+        after_fm + 1
+    } else {
+        after_fm
+    };
     Some(format!("+++\n{}+++\n{}", new_fm, &content[body_start..]))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_document_source, import_destination_path, markdown_to_micron, resolve_index_db_path, Project};
+    use super::{
+        Project, canonical_document_source, import_destination_path, markdown_to_micron,
+        resolve_index_db_path,
+    };
     use chrono::Utc;
     use flynt_core::{
-        models::{Document, DocumentId, Frontmatter, LocalRuntimeConfig, MetadataValue, PublicationRule, PublicationVisibility},
+        models::{
+            BookmarkTarget, Document, DocumentId, Frontmatter, LensColumn, LensFilter,
+            LensFilterOp, LensLayout, LensSort, LensSortDirection, LensSource, LocalRuntimeConfig,
+            MetadataValue, ProjectLens, PublicationConfig, PublicationRule, PublicationVisibility,
+        },
         store::ProjectStore,
     };
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
     use tempfile::TempDir;
 
     // ── set_data_field ──────────────────────────────────────────────
@@ -1944,7 +2269,9 @@ mod tests {
         let path = std::path::PathBuf::from(rel);
         let abs = project.root.join(&path);
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
-        std::fs::write(&abs, r#"+++
+        std::fs::write(
+            &abs,
+            r#"+++
 id = "550e8400-e29b-41d4-a716-446655440000"
 kind = "task"
 
@@ -1958,7 +2285,9 @@ position = 0
 +++
 
 Original body content.
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         project.index_file(&abs).unwrap();
         path
     }
@@ -2001,7 +2330,9 @@ Original body content.
         project.install_save_hook(hook.clone());
 
         let path = write_task_file(&project, "Tasks/x/t.md");
-        project.set_data_field(&path, "status", toml_edit::Value::from("in_progress")).unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("in_progress"))
+            .unwrap();
 
         let fired = hook.fired();
         assert_eq!(fired.len(), 1, "hook fires exactly once per set_data_field");
@@ -2023,9 +2354,14 @@ Original body content.
         let abs = project.root.join(&path);
         std::fs::write(&abs, "# Just a plain note\n\nBody.\n").unwrap();
         project.index_file(&abs).unwrap();
-        project.save_document_content(&path, "Updated body").unwrap();
+        project
+            .save_document_content(&path, "Updated body")
+            .unwrap();
 
-        assert!(hook.fired().is_empty(), "no task-saved fire for plain notes");
+        assert!(
+            hook.fired().is_empty(),
+            "no task-saved fire for plain notes"
+        );
     }
 
     #[test]
@@ -2036,9 +2372,15 @@ Original body content.
         project.install_save_hook(hook.clone());
 
         let path = write_task_file(&project, "Tasks/x/t.md");
-        project.save_document_content(&path, "New description").unwrap();
+        project
+            .save_document_content(&path, "New description")
+            .unwrap();
 
-        assert_eq!(hook.fired().len(), 1, "save_document_content fires once for task files");
+        assert_eq!(
+            hook.fired().len(),
+            1,
+            "save_document_content fires once for task files"
+        );
     }
 
     #[test]
@@ -2052,7 +2394,9 @@ Original body content.
         project.install_save_hook(hook2.clone());
 
         let path = write_task_file(&project, "Tasks/x/t.md");
-        project.set_data_field(&path, "status", toml_edit::Value::from("done")).unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("done"))
+            .unwrap();
 
         assert_eq!(hook1.fired().len(), 1, "first hook still fires");
         assert!(hook2.fired().is_empty(), "second hook never installed");
@@ -2070,12 +2414,17 @@ Original body content.
         project.install_save_hook(hook.clone());
 
         let path = write_task_file(&project, "Tasks/x/t.md");
-        project.set_data_field_silent(&path, "status", toml_edit::Value::from("done")).unwrap();
+        project
+            .set_data_field_silent(&path, "status", toml_edit::Value::from("done"))
+            .unwrap();
 
         assert!(hook.fired().is_empty(), "silent variant must not fire");
         // But the write actually happened.
         let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
-        assert!(raw.contains("status = \"done\""), "write still happened: {raw}");
+        assert!(
+            raw.contains("status = \"done\""),
+            "write still happened: {raw}"
+        );
     }
 
     #[test]
@@ -2086,11 +2435,16 @@ Original body content.
         project.install_save_hook(hook.clone());
 
         let path = write_task_file(&project, "Tasks/x/t.md");
-        project.save_document_content_silent(&path, "Pulled body from upstream").unwrap();
+        project
+            .save_document_content_silent(&path, "Pulled body from upstream")
+            .unwrap();
 
         assert!(hook.fired().is_empty(), "silent variant must not fire");
         let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
-        assert!(raw.contains("Pulled body from upstream"), "body written: {raw}");
+        assert!(
+            raw.contains("Pulled body from upstream"),
+            "body written: {raw}"
+        );
     }
 
     #[test]
@@ -2104,7 +2458,10 @@ Original body content.
 
         let board_id = BoardId(uuid::Uuid::new_v4());
         let board = flynt_core::models::Board::minimalist("Default");
-        let board = flynt_core::models::Board { id: board_id.clone(), ..board };
+        let board = flynt_core::models::Board {
+            id: board_id.clone(),
+            ..board
+        };
         project.store.save_board(&board).unwrap();
 
         let task_id = TaskId(uuid::Uuid::new_v4());
@@ -2137,9 +2494,15 @@ Original body content.
         let removed = project.delete_task(&task_id).unwrap();
         assert!(removed, "task existed and was removed");
         assert!(!abs.exists(), "task file gone");
-        assert_eq!(hook.deleted(), vec![task_id.0], "on_task_deleted fired once");
-        assert!(project.store.get_task(&task_id).unwrap().is_none(),
-                "sqlite row gone");
+        assert_eq!(
+            hook.deleted(),
+            vec![task_id.0],
+            "on_task_deleted fired once"
+        );
+        assert!(
+            project.store.get_task(&task_id).unwrap().is_none(),
+            "sqlite row gone"
+        );
     }
 
     #[test]
@@ -2161,7 +2524,9 @@ Original body content.
         let tmp = TempDir::new().unwrap();
         let project = Project::open(tmp.path()).unwrap();
         let path = write_task_file(&project, "Tasks/x/t.md");
-        project.set_data_field(&path, "status", toml_edit::Value::from("done")).unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("done"))
+            .unwrap();
         // No panic, no error. The point of the test is that we don't
         // require a hook for set_data_field to function.
     }
@@ -2172,16 +2537,20 @@ Original body content.
         let project = Project::open(tmp.path()).unwrap();
         let path = write_task_file(&project, "Tasks/x/t.md");
 
-        project.set_data_field(
-            &path,
-            "status",
-            toml_edit::Value::from("in_progress"),
-        ).unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("in_progress"))
+            .unwrap();
 
         let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
         assert!(raw.contains("status = \"in_progress\""), "{raw}");
-        assert!(raw.contains("Original body content"), "body preserved: {raw}");
-        assert!(!raw.contains("status = \"todo\""), "old status removed: {raw}");
+        assert!(
+            raw.contains("Original body content"),
+            "body preserved: {raw}"
+        );
+        assert!(
+            !raw.contains("status = \"todo\""),
+            "old status removed: {raw}"
+        );
     }
 
     #[test]
@@ -2190,7 +2559,9 @@ Original body content.
         let project = Project::open(tmp.path()).unwrap();
         let path = write_task_file(&project, "Tasks/x/t.md");
 
-        project.set_data_field(&path, "priority", toml_edit::Value::from(4i64)).unwrap();
+        project
+            .set_data_field(&path, "priority", toml_edit::Value::from(4i64))
+            .unwrap();
         let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
         assert!(raw.contains("priority = 4"), "{raw}");
     }
@@ -2204,7 +2575,9 @@ Original body content.
         let mut tags = toml_edit::Array::new();
         tags.push("infra");
         tags.push("pipeline");
-        project.set_data_field(&path, "tags", toml_edit::Value::Array(tags)).unwrap();
+        project
+            .set_data_field(&path, "tags", toml_edit::Value::Array(tags))
+            .unwrap();
 
         let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
         assert!(raw.contains("tags = [\"infra\", \"pipeline\"]"), "{raw}");
@@ -2216,7 +2589,9 @@ Original body content.
         let project = Project::open(tmp.path()).unwrap();
         let path = write_task_file(&project, "Tasks/x/t.md");
 
-        project.set_data_field(&path, "status", toml_edit::Value::from("done")).unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("done"))
+            .unwrap();
         let raw = std::fs::read_to_string(project.root.join(&path)).unwrap();
 
         // Title, board, column, priority, position all survive.
@@ -2235,10 +2610,16 @@ Original body content.
 
         let path = std::path::PathBuf::from("note.md");
         let abs = project.root.join(&path);
-        std::fs::write(&abs, "+++\nid = \"550e8400-e29b-41d4-a716-446655440000\"\nkind = \"task\"\n+++\n\nbody\n").unwrap();
+        std::fs::write(
+            &abs,
+            "+++\nid = \"550e8400-e29b-41d4-a716-446655440000\"\nkind = \"task\"\n+++\n\nbody\n",
+        )
+        .unwrap();
         project.index_file(&abs).unwrap();
 
-        project.set_data_field(&path, "status", toml_edit::Value::from("todo")).unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("todo"))
+            .unwrap();
         let raw = std::fs::read_to_string(&abs).unwrap();
         assert!(raw.contains("[data]"), "[data] table created: {raw}");
         assert!(raw.contains("status = \"todo\""), "{raw}");
@@ -2253,15 +2634,15 @@ Original body content.
         let project = Project::open(tmp.path()).unwrap();
         let path = write_task_file(&project, "Tasks/x/t.md");
 
-        project.set_data_field(
-            &path,
-            "title",
-            toml_edit::Value::from("Renamed"),
-        ).unwrap();
+        project
+            .set_data_field(&path, "title", toml_edit::Value::from("Renamed"))
+            .unwrap();
 
         let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
-        assert_eq!(doc.title, "Renamed",
-                   "indexed title reflects the new [data].title");
+        assert_eq!(
+            doc.title, "Renamed",
+            "indexed title reflects the new [data].title"
+        );
     }
 
     #[test]
@@ -2287,7 +2668,10 @@ Original body content.
         {
             let project = Project::open(tmp.path()).unwrap();
             // Add a sibling board so we exercise both branches.
-            project.store.save_board(&flynt_core::models::Board::minimalist("Personal")).unwrap();
+            project
+                .store
+                .save_board(&flynt_core::models::Board::minimalist("Personal"))
+                .unwrap();
         }
         let project = Project::open(tmp.path()).unwrap();
         let boards = project.store.list_boards().unwrap();
@@ -2306,7 +2690,11 @@ Original body content.
         // survives.
         let tmp = TempDir::new().unwrap();
         let project = Project::open(tmp.path()).unwrap();
-        let board = project.store.list_boards().unwrap().into_iter()
+        let board = project
+            .store
+            .list_boards()
+            .unwrap()
+            .into_iter()
             .find(|b| b.name == "Default")
             .expect("Default board materialized by ensure_default_board");
 
@@ -2317,12 +2705,32 @@ Original body content.
 
         // Apply the same sequence the palette command runs.
         project.set_document_kind(&path, Some("task")).unwrap();
-        project.set_data_field(&path, "title", toml_edit::Value::from("Investigate the indexer")).unwrap();
-        project.set_data_field(&path, "board", toml_edit::Value::from(board.id.0.to_string())).unwrap();
-        project.set_data_field(&path, "column", toml_edit::Value::from("Active")).unwrap();
-        project.set_data_field(&path, "status", toml_edit::Value::from("todo")).unwrap();
-        project.set_data_field(&path, "priority", toml_edit::Value::from(2_i64)).unwrap();
-        project.set_data_field(&path, "position", toml_edit::Value::from(0_i64)).unwrap();
+        project
+            .set_data_field(
+                &path,
+                "title",
+                toml_edit::Value::from("Investigate the indexer"),
+            )
+            .unwrap();
+        project
+            .set_data_field(
+                &path,
+                "board",
+                toml_edit::Value::from(board.id.0.to_string()),
+            )
+            .unwrap();
+        project
+            .set_data_field(&path, "column", toml_edit::Value::from("Active"))
+            .unwrap();
+        project
+            .set_data_field(&path, "status", toml_edit::Value::from("todo"))
+            .unwrap();
+        project
+            .set_data_field(&path, "priority", toml_edit::Value::from(2_i64))
+            .unwrap();
+        project
+            .set_data_field(&path, "position", toml_edit::Value::from(0_i64))
+            .unwrap();
 
         let raw = std::fs::read_to_string(&abs).unwrap();
         // Sanity: kind set, [data] populated, body preserved.
@@ -2330,7 +2738,10 @@ Original body content.
         assert!(raw.contains("title = \"Investigate the indexer\""));
         assert!(raw.contains("status = \"todo\""));
         assert!(raw.contains("priority = 2"));
-        assert!(raw.contains("Notes about the bug."), "body preserved: {raw}");
+        assert!(
+            raw.contains("Notes about the bug."),
+            "body preserved: {raw}"
+        );
 
         // The indexed Document picks up the [data].title (via the title
         // resolution chain we fixed earlier) — this is the user-facing
@@ -2350,11 +2761,18 @@ Original body content.
         for b in project.store.list_boards().unwrap() {
             project.store.delete_board(&b.id).unwrap();
         }
-        project.store.save_board(&flynt_core::models::Board::default_sprint("Sprint 1")).unwrap();
+        project
+            .store
+            .save_board(&flynt_core::models::Board::default_sprint("Sprint 1"))
+            .unwrap();
         // Now run ensure_default_board directly — should be a no-op.
         project.ensure_default_board().unwrap();
         let boards = project.store.list_boards().unwrap();
-        assert_eq!(boards.len(), 1, "no Default re-added when other board exists");
+        assert_eq!(
+            boards.len(),
+            1,
+            "no Default re-added when other board exists"
+        );
         assert_eq!(boards[0].name, "Sprint 1");
     }
 
@@ -2369,12 +2787,15 @@ Original body content.
         let root = tmp.path().join("project");
         let project = Project::open(&root).unwrap();
 
-        let task_path = PathBuf::from("Tasks/sprint/ami-bake-pipeline-produces-drifted-manifest.md");
+        let task_path =
+            PathBuf::from("Tasks/sprint/ami-bake-pipeline-produces-drifted-manifest.md");
         let abs = project.root.join(&task_path);
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
         // Real shape produced by `task_file::serialize_task_to_markdown`:
         // title in [data], empty body for description-less tasks.
-        std::fs::write(&abs, r#"+++
+        std::fs::write(
+            &abs,
+            r#"+++
 id = "550e8400-e29b-41d4-a716-446655440000"
 kind = "task"
 
@@ -2386,7 +2807,9 @@ priority = 2
 status = "todo"
 position = 0
 +++
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         project.index_file(&abs).unwrap();
 
@@ -2396,8 +2819,7 @@ position = 0
             .unwrap()
             .expect("task is indexed");
         assert_eq!(
-            indexed.title,
-            "AMI bake pipeline produces drifted manifest",
+            indexed.title, "AMI bake pipeline produces drifted manifest",
             "task title should come from [data].title, not filename slug"
         );
     }
@@ -2413,7 +2835,9 @@ position = 0
 
         let doc_path = PathBuf::from("note.md");
         let abs = project.root.join(&doc_path);
-        std::fs::write(&abs, r#"+++
+        std::fs::write(
+            &abs,
+            r#"+++
 id = "550e8400-e29b-41d4-a716-446655440000"
 title = "Top level wins"
 kind = "design_node"
@@ -2423,11 +2847,17 @@ title = "Data block loses"
 +++
 
 Body
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         project.index_file(&abs).unwrap();
 
-        let indexed = project.store.get_document_by_path(&doc_path).unwrap().unwrap();
+        let indexed = project
+            .store
+            .get_document_by_path(&doc_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(indexed.title, "Top level wins");
     }
 
@@ -2443,7 +2873,9 @@ Body
         let doc_path = PathBuf::from("Tasks/sprint/empty-title.md");
         let abs = project.root.join(&doc_path);
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
-        std::fs::write(&abs, r#"+++
+        std::fs::write(
+            &abs,
+            r#"+++
 id = "550e8400-e29b-41d4-a716-446655440000"
 kind = "task"
 
@@ -2455,10 +2887,16 @@ priority = 2
 status = "todo"
 position = 0
 +++
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         project.index_file(&abs).unwrap();
-        let indexed = project.store.get_document_by_path(&doc_path).unwrap().unwrap();
+        let indexed = project
+            .store
+            .get_document_by_path(&doc_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(indexed.title, "empty-title");
     }
 
@@ -2521,14 +2959,27 @@ See [[roadmap]].\n",
         assert!(report.errors.is_empty());
 
         let imported_rel = import_destination_path(std::path::Path::new("notes/design.md"));
-        let imported_doc = project.store.get_document_by_path(&imported_rel).unwrap().unwrap();
+        let imported_doc = project
+            .store
+            .get_document_by_path(&imported_rel)
+            .unwrap()
+            .unwrap();
         assert_eq!(imported_doc.title, "Design");
         assert_eq!(imported_doc.outgoing_links.len(), 1);
         assert_eq!(imported_doc.outgoing_links[0].target, "roadmap");
-        assert_eq!(imported_doc.frontmatter.source_format.as_deref(), Some("markdown"));
+        assert_eq!(
+            imported_doc.frontmatter.source_format.as_deref(),
+            Some("markdown")
+        );
         assert_eq!(
             imported_doc.frontmatter.source_path.as_deref(),
-            Some(source_root.join("notes/design.md").display().to_string().as_str())
+            Some(
+                source_root
+                    .join("notes/design.md")
+                    .display()
+                    .to_string()
+                    .as_str()
+            )
         );
         assert!(imported_doc.frontmatter.imported_reference);
         assert!(imported_doc.frontmatter.id.is_some());
@@ -2537,7 +2988,11 @@ See [[roadmap]].\n",
             Some(&MetadataValue::String("alpharius".into()))
         );
 
-        let imported_meta = project.store.get_document_by_path(&imported_rel).unwrap().unwrap();
+        let imported_meta = project
+            .store
+            .get_document_by_path(&imported_rel)
+            .unwrap()
+            .unwrap();
         assert_eq!(imported_meta.path, imported_rel);
     }
 
@@ -2552,9 +3007,16 @@ See [[roadmap]].\n",
             .unwrap();
 
         assert!(relative_path.starts_with("references/comms/vox"));
-        let doc = project.store.get_document_by_path(&relative_path).unwrap().unwrap();
+        let doc = project
+            .store
+            .get_document_by_path(&relative_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(doc.title, "Standup Recall");
-        assert_eq!(doc.frontmatter.source_format.as_deref(), Some("omegon_comm"));
+        assert_eq!(
+            doc.frontmatter.source_format.as_deref(),
+            Some("omegon_comm")
+        );
         assert_eq!(doc.frontmatter.source_path.as_deref(), Some("omegon://vox"));
         assert!(doc.frontmatter.imported_reference);
         assert_eq!(
@@ -2577,10 +3039,20 @@ See [[roadmap]].\n",
             .unwrap();
 
         assert!(relative_path.starts_with("ai/memory/storage"));
-        let doc = project.store.get_document_by_path(&relative_path).unwrap().unwrap();
+        let doc = project
+            .store
+            .get_document_by_path(&relative_path)
+            .unwrap()
+            .unwrap();
         assert_eq!(doc.title, "Canonical vs Local");
-        assert_eq!(doc.frontmatter.source_format.as_deref(), Some("omegon_memory"));
-        assert_eq!(doc.frontmatter.source_path.as_deref(), Some("omegon://memory/storage"));
+        assert_eq!(
+            doc.frontmatter.source_format.as_deref(),
+            Some("omegon_memory")
+        );
+        assert_eq!(
+            doc.frontmatter.source_path.as_deref(),
+            Some("omegon://memory/storage")
+        );
         assert_eq!(
             doc.frontmatter.metadata.get("topic"),
             Some(&MetadataValue::String("storage".into()))
@@ -2683,6 +3155,143 @@ See [[roadmap]].\n",
     }
 
     #[test]
+    fn set_publication_config_preserves_frontmatter_and_body() {
+        let tmp = TempDir::new().unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
+        let path = PathBuf::from("Publish Me.md");
+        let raw = "+++\ntitle = \"Publish Me\"\ntags = [\"docs\"]\ncustom = \"keep\"\n\n[data]\nstatus = \"draft\"\n+++\n\n# Publish Me\n\nBody stays here.\n";
+        fs::write(project.root.join(&path), raw).unwrap();
+        project.index_file(&project.root.join(&path)).unwrap();
+
+        let publication = PublicationConfig {
+            enabled: true,
+            slug: Some("publish-me".into()),
+            visibility: PublicationVisibility::Unlisted,
+            target: None,
+            collections: vec!["guides".into(), "release".into()],
+        };
+        project.set_publication_config(&path, &publication).unwrap();
+
+        let updated = fs::read_to_string(project.root.join(&path)).unwrap();
+        assert!(updated.contains("custom = \"keep\""));
+        assert!(updated.contains("[data]\nstatus = \"draft\""));
+        assert!(updated.contains("[publication]"));
+        assert!(updated.contains("enabled = true"));
+        assert!(updated.contains("slug = \"publish-me\""));
+        assert!(updated.contains("visibility = \"unlisted\""));
+        assert!(updated.contains("collections = [\"guides\", \"release\"]"));
+        assert!(updated.contains("# Publish Me\n\nBody stays here."));
+
+        let doc = project.store.get_document_by_path(&path).unwrap().unwrap();
+        assert!(doc.frontmatter.publication.enabled);
+        assert_eq!(
+            doc.frontmatter.publication.visibility,
+            PublicationVisibility::Unlisted
+        );
+        assert_eq!(
+            doc.frontmatter.publication.slug.as_deref(),
+            Some("publish-me")
+        );
+    }
+
+    #[test]
+    fn bookmarks_round_trip_and_dedupe_by_target() {
+        let tmp = TempDir::new().unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
+
+        let note_id = DocumentId(uuid::Uuid::new_v4());
+        let note_target = BookmarkTarget::Note {
+            document_id: Some(note_id),
+            path: PathBuf::from("notes/alpha.md"),
+        };
+        let first = project
+            .add_bookmark("Alpha", note_target.clone())
+            .expect("add note bookmark");
+        let second = project
+            .add_bookmark("Alpha Updated", note_target)
+            .expect("update note bookmark");
+        assert_eq!(first.id, second.id);
+
+        let search = project
+            .add_bookmark(
+                "Search: manager failover",
+                BookmarkTarget::Search {
+                    query: "manager failover".into(),
+                },
+            )
+            .expect("add search bookmark");
+
+        let reloaded = project.load_bookmarks().expect("load bookmarks");
+        assert_eq!(reloaded.version, 1);
+        assert_eq!(reloaded.bookmarks.len(), 2);
+        assert_eq!(reloaded.bookmarks[0].title, "Alpha Updated");
+        assert!(matches!(
+            reloaded.bookmarks[1].target,
+            BookmarkTarget::Search { .. }
+        ));
+
+        assert!(
+            project
+                .remove_bookmark(&search.id)
+                .expect("remove bookmark")
+        );
+        assert_eq!(project.load_bookmarks().unwrap().bookmarks.len(), 1);
+    }
+
+    #[test]
+    fn lenses_round_trip_as_definition_files() {
+        let tmp = TempDir::new().unwrap();
+        let project_root = tmp.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let project = Project::open(&project_root).unwrap();
+
+        let lens = ProjectLens {
+            title: "Publication Candidates".into(),
+            source: LensSource::Documents,
+            layout: LensLayout::Table,
+            filters: vec![LensFilter {
+                field: "tags".into(),
+                op: LensFilterOp::Contains,
+                value: "publish".into(),
+            }],
+            columns: vec![
+                LensColumn {
+                    field: "title".into(),
+                    label: None,
+                },
+                LensColumn {
+                    field: "publication.visibility".into(),
+                    label: Some("Visibility".into()),
+                },
+            ],
+            sort: vec![LensSort {
+                field: "updated_at".into(),
+                direction: LensSortDirection::Desc,
+            }],
+            limit: Some(50),
+        };
+
+        let rel_path = project.save_lens(&lens).expect("save lens");
+        assert_eq!(
+            rel_path,
+            PathBuf::from(".flynt/lenses/publication-candidates.toml")
+        );
+        let raw = fs::read_to_string(project.root.join(&rel_path)).unwrap();
+        assert!(raw.contains("title = \"Publication Candidates\""));
+        assert!(!raw.contains("rows"));
+        assert!(!raw.contains("results"));
+
+        let loaded = project.load_lenses().expect("load lenses");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0, rel_path);
+        assert_eq!(loaded[0].1, lens);
+    }
+
+    #[test]
     fn exports_public_documents_with_resolved_wikilinks() {
         let tmp = TempDir::new().unwrap();
         let project_root = tmp.path().join("project");
@@ -2734,13 +3343,22 @@ See [[roadmap|the roadmap]].\n",
 
         // Micron export
         let micron = std::fs::read_to_string(output_root.join("design.mu")).unwrap();
-        assert!(micron.contains("`[the roadmap`/page/roadmap.mu]"), "micron wikilink: {micron}");
+        assert!(
+            micron.contains("`[the roadmap`/page/roadmap.mu]"),
+            "micron wikilink: {micron}"
+        );
         assert!(micron.contains(">`!Design`"), "micron heading: {micron}");
 
         // NomadNet index page
         let index = std::fs::read_to_string(output_root.join("index.mu")).unwrap();
-        assert!(index.contains("`[Design`/page/design.mu]"), "index entry: {index}");
-        assert!(index.contains("`[Roadmap`/page/roadmap.mu]"), "index entry: {index}");
+        assert!(
+            index.contains("`[Design`/page/design.mu]"),
+            "index entry: {index}"
+        );
+        assert!(
+            index.contains("`[Roadmap`/page/roadmap.mu]"),
+            "index entry: {index}"
+        );
 
         let manifest: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(output_root.join("manifest.json")).unwrap(),
@@ -2819,18 +3437,31 @@ Design for the authentication subsystem.
         // Verify entity kind
         assert!(doc.entity.is_some(), "document should have an entity");
         let entity = doc.entity.as_ref().unwrap();
-        assert_eq!(entity.kind, EntityKind::DesignNode, "entity kind should be DesignNode");
+        assert_eq!(
+            entity.kind,
+            EntityKind::DesignNode,
+            "entity kind should be DesignNode"
+        );
 
         // Verify entity fields
         assert_eq!(entity.get_text("status"), Some("exploring"));
         assert_eq!(entity.get_text("parent").unwrap(), parent_id.to_string());
         assert_eq!(entity.get_int("priority"), Some(3));
         assert_eq!(entity.get_text_list("dependencies"), vec!["dep-a", "dep-b"]);
-        assert_eq!(entity.get_text_list("open_questions"), vec!["Which OAuth flow?", "Token rotation?"]);
+        assert_eq!(
+            entity.get_text_list("open_questions"),
+            vec!["Which OAuth flow?", "Token rotation?"]
+        );
 
         // Verify it shows up in list_entities_by_kind
-        let design_nodes = project.store.list_entities_by_kind(&EntityKind::DesignNode).unwrap();
-        assert!(design_nodes.iter().any(|m| m.id == doc_id), "design node should appear in kind listing");
+        let design_nodes = project
+            .store
+            .list_entities_by_kind(&EntityKind::DesignNode)
+            .unwrap();
+        assert!(
+            design_nodes.iter().any(|m| m.id == doc_id),
+            "design node should appear in kind listing"
+        );
     }
 
     #[test]
@@ -2843,19 +3474,31 @@ Design for the authentication subsystem.
         let project = Project::open(&project_root).unwrap();
 
         // Create a plain document with frontmatter
-        let content = "+++\ntitle = \"My Note\"\ntags = [\"test\"]\n+++\n\n# My Note\n\nSome content.\n";
+        let content =
+            "+++\ntitle = \"My Note\"\ntags = [\"test\"]\n+++\n\n# My Note\n\nSome content.\n";
         let path = std::path::PathBuf::from("my-note.md");
         std::fs::write(project_root.join(&path), content).unwrap();
         project.reindex().unwrap();
 
         // Set kind to design_node
-        project.set_document_kind(&path, Some("design_node")).unwrap();
+        project
+            .set_document_kind(&path, Some("design_node"))
+            .unwrap();
 
         // Re-read the file and verify
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.contains("kind = \"design_node\""), "should contain kind field: {updated}");
-        assert!(updated.contains("title = \"My Note\""), "should preserve title");
-        assert!(updated.contains("tags = [\"test\"]"), "should preserve tags");
+        assert!(
+            updated.contains("kind = \"design_node\""),
+            "should contain kind field: {updated}"
+        );
+        assert!(
+            updated.contains("title = \"My Note\""),
+            "should preserve title"
+        );
+        assert!(
+            updated.contains("tags = [\"test\"]"),
+            "should preserve tags"
+        );
         assert!(updated.contains("# My Note"), "should preserve body");
 
         // Reindex and verify entity kind
@@ -2879,8 +3522,14 @@ Design for the authentication subsystem.
         // Change kind from task to project
         project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.contains("kind = \"project\""), "should have new kind: {updated}");
-        assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
+        assert!(
+            updated.contains("kind = \"project\""),
+            "should have new kind: {updated}"
+        );
+        assert!(
+            !updated.contains("kind = \"task\""),
+            "should not have old kind: {updated}"
+        );
     }
 
     #[test]
@@ -2897,8 +3546,14 @@ Design for the authentication subsystem.
         // Clear the kind
         project.set_document_kind(&path, None).unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
-        assert!(updated.contains("title = \"Typed\""), "should preserve title");
+        assert!(
+            !updated.contains("kind ="),
+            "should not contain kind: {updated}"
+        );
+        assert!(
+            updated.contains("title = \"Typed\""),
+            "should preserve title"
+        );
     }
 
     #[test]
@@ -2912,10 +3567,18 @@ Design for the authentication subsystem.
         let path = std::path::PathBuf::from("plain.md");
         std::fs::write(project_root.join(&path), content).unwrap();
 
-        project.set_document_kind(&path, Some("design_node")).unwrap();
+        project
+            .set_document_kind(&path, Some("design_node"))
+            .unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.starts_with("+++\n"), "should start with frontmatter");
-        assert!(updated.contains("kind = \"design_node\""), "should contain kind");
+        assert!(
+            updated.starts_with("+++\n"),
+            "should start with frontmatter"
+        );
+        assert!(
+            updated.contains("kind = \"design_node\""),
+            "should contain kind"
+        );
         assert!(updated.contains("# Just a note"), "should preserve body");
     }
 
@@ -2933,7 +3596,10 @@ Design for the authentication subsystem.
         project.set_document_kind(&path, None).unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
         // File gets reindexed (frontmatter added by indexer) but no kind field
-        assert!(!updated.contains("kind ="), "should not contain kind: {updated}");
+        assert!(
+            !updated.contains("kind ="),
+            "should not contain kind: {updated}"
+        );
         assert!(updated.contains("# Plain"), "should preserve body");
     }
 
@@ -2951,10 +3617,22 @@ Design for the authentication subsystem.
         // Change kind — [data] table should be preserved
         project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.contains("kind = \"project\""), "new kind: {updated}");
-        assert!(updated.contains("[data]"), "should preserve data table: {updated}");
-        assert!(updated.contains("status = \"exploring\""), "should preserve data fields: {updated}");
-        assert!(updated.contains("priority = 5"), "should preserve data fields: {updated}");
+        assert!(
+            updated.contains("kind = \"project\""),
+            "new kind: {updated}"
+        );
+        assert!(
+            updated.contains("[data]"),
+            "should preserve data table: {updated}"
+        );
+        assert!(
+            updated.contains("status = \"exploring\""),
+            "should preserve data fields: {updated}"
+        );
+        assert!(
+            updated.contains("priority = 5"),
+            "should preserve data fields: {updated}"
+        );
     }
 
     #[test]
@@ -2971,8 +3649,14 @@ Design for the authentication subsystem.
 
         project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.contains("kind = \"project\""), "should have kind: {updated}");
-        assert!(updated.contains("kind_of_thing = \"misc\""), "should preserve similar field: {updated}");
+        assert!(
+            updated.contains("kind = \"project\""),
+            "should have kind: {updated}"
+        );
+        assert!(
+            updated.contains("kind_of_thing = \"misc\""),
+            "should preserve similar field: {updated}"
+        );
     }
 
     #[test]
@@ -2989,9 +3673,15 @@ Design for the authentication subsystem.
 
         project.set_document_kind(&path, Some("project")).unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.contains("kind = \"project\""), "should have new top-level kind: {updated}");
+        assert!(
+            updated.contains("kind = \"project\""),
+            "should have new top-level kind: {updated}"
+        );
         // The [data] section's kind field should be preserved
-        assert!(updated.contains("kind = \"subtype-a\""), "should preserve kind inside [data]: {updated}");
+        assert!(
+            updated.contains("kind = \"subtype-a\""),
+            "should preserve kind inside [data]: {updated}"
+        );
     }
 
     #[test]
@@ -3006,10 +3696,18 @@ Design for the authentication subsystem.
         let path = std::path::PathBuf::from("crlf.md");
         std::fs::write(project_root.join(&path), content).unwrap();
 
-        project.set_document_kind(&path, Some("design_node")).unwrap();
+        project
+            .set_document_kind(&path, Some("design_node"))
+            .unwrap();
         let updated = std::fs::read_to_string(project_root.join(&path)).unwrap();
-        assert!(updated.contains("kind = \"design_node\""), "should have new kind: {updated}");
-        assert!(!updated.contains("kind = \"task\""), "should not have old kind: {updated}");
+        assert!(
+            updated.contains("kind = \"design_node\""),
+            "should have new kind: {updated}"
+        );
+        assert!(
+            !updated.contains("kind = \"task\""),
+            "should not have old kind: {updated}"
+        );
         assert!(updated.contains("Body"), "should preserve body: {updated}");
     }
 
@@ -3037,23 +3735,42 @@ Design for the authentication subsystem.
         assert!(errors.is_empty());
 
         // Verify outgoing links are stored
-        let doc_a = project.store.get_document(&flynt_core::models::DocumentId(id_a)).unwrap().unwrap();
+        let doc_a = project
+            .store
+            .get_document(&flynt_core::models::DocumentId(id_a))
+            .unwrap()
+            .unwrap();
         assert_eq!(doc_a.outgoing_links.len(), 1, "alpha should link to beta");
         assert_eq!(doc_a.outgoing_links[0].target.to_lowercase(), "beta");
 
-        let doc_b = project.store.get_document(&flynt_core::models::DocumentId(id_b)).unwrap().unwrap();
+        let doc_b = project
+            .store
+            .get_document(&flynt_core::models::DocumentId(id_b))
+            .unwrap()
+            .unwrap();
         assert_eq!(doc_b.outgoing_links.len(), 1, "beta should link to alpha");
         assert_eq!(doc_b.outgoing_links[0].target.to_lowercase(), "alpha");
 
         // Build graph and verify edges
         let graph = flynt_core::graph::build_graph_payload(&*project.store).unwrap();
         assert!(graph.nodes.len() >= 2, "should have at least 2 nodes");
-        assert!(!graph.edges.is_empty(), "should have wikilink edges, got: {:?}", graph.edges);
+        assert!(
+            !graph.edges.is_empty(),
+            "should have wikilink edges, got: {:?}",
+            graph.edges
+        );
 
-        let wikilink_edges: Vec<_> = graph.edges.iter()
+        let wikilink_edges: Vec<_> = graph
+            .edges
+            .iter()
             .filter(|e| matches!(e.kind, flynt_core::graph::GraphEdgeKind::Wikilink))
             .collect();
-        assert_eq!(wikilink_edges.len(), 2, "should have 2 wikilink edges (A→B and B→A), got {}", wikilink_edges.len());
+        assert_eq!(
+            wikilink_edges.len(),
+            2,
+            "should have 2 wikilink edges (A→B and B→A), got {}",
+            wikilink_edges.len()
+        );
     }
 
     // ── save_any_task: every task becomes a file ────────────────────────────
@@ -3072,7 +3789,10 @@ Design for the authentication subsystem.
         let (_tmp, project, board) = project_with_board();
         let task = flynt_core::models::Task::new(board.id.clone(), "Backlog", "Auth Rewrite");
         let rel = project.save_any_task(&task).unwrap();
-        assert_eq!(rel, std::path::PathBuf::from("Tasks/sprint-1/auth-rewrite.md"));
+        assert_eq!(
+            rel,
+            std::path::PathBuf::from("Tasks/sprint-1/auth-rewrite.md")
+        );
         assert!(project.root.join(&rel).exists(), "file must exist on disk");
         assert_eq!(
             project.store.task_file_path(&task.id).unwrap().as_deref(),
@@ -3091,7 +3811,10 @@ Design for the authentication subsystem.
         let second = project.save_any_task(&task).unwrap();
         assert_ne!(first, second, "rename must produce a different path");
         assert!(project.root.join(&second).exists(), "new file must exist");
-        assert!(!project.root.join(&first).exists(), "old file must be removed");
+        assert!(
+            !project.root.join(&first).exists(),
+            "old file must be removed"
+        );
     }
 
     #[test]
@@ -3137,7 +3860,10 @@ Design for the authentication subsystem.
         t.description = "Original body".into();
         let rel = project.save_any_task(&t).unwrap();
         let before = std::fs::read_to_string(project.root.join(&rel)).unwrap();
-        assert!(before.contains("kind = \"task\""), "task fm before edit:\n{before}");
+        assert!(
+            before.contains("kind = \"task\""),
+            "task fm before edit:\n{before}"
+        );
         assert!(before.contains("[data]"), "task fm before edit:\n{before}");
 
         // Simulate a notes-view body edit.
@@ -3198,7 +3924,8 @@ Design for the authentication subsystem.
         let p2 = project.save_any_task(&task).unwrap();
         assert_eq!(p1, p2);
         // Only one file under Tasks/sprint-1/
-        let entries: Vec<_> = std::fs::read_dir(project.root.join("Tasks/sprint-1")).unwrap()
+        let entries: Vec<_> = std::fs::read_dir(project.root.join("Tasks/sprint-1"))
+            .unwrap()
             .filter_map(|e| e.ok())
             .collect();
         assert_eq!(entries.len(), 1, "no duplicate files on resave");

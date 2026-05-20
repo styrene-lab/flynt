@@ -1,7 +1,7 @@
-use std::time::Duration;
-use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;
 use crate::views::{agent, graph, kanban, notes, onboarding};
+use dioxus::prelude::*;
+use std::time::Duration;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {

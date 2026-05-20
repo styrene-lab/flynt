@@ -43,12 +43,17 @@ fn route_label(route: &Route) -> &'static str {
         Route::Welcome => "welcome",
         Route::Notes => "notes",
         Route::Search => "search",
+        Route::Lenses => "lenses",
         Route::Kanban => "kanban",
         Route::Graph => "graph",
     }
 }
 
-fn resolve_doc_ref(project: &Project, id: &flynt_core::models::DocumentId, title: &str) -> Option<DocumentRef> {
+fn resolve_doc_ref(
+    project: &Project,
+    id: &flynt_core::models::DocumentId,
+    title: &str,
+) -> Option<DocumentRef> {
     let doc = project.store.get_document(id).ok().flatten()?;
     let path_str = doc.path.to_string_lossy().to_string();
     Some(DocumentRef {
@@ -64,9 +69,13 @@ fn classify_document(project: &Project, rel_path: &Path) -> &'static str {
     // (canvas or drawing wrapper). Also recovers drawing wrappers from
     // frontmatter + sibling data file, matching NotesView dispatch.
     let abs = project.root.join(rel_path);
-    let Ok(content) = std::fs::read_to_string(&abs) else { return "note"; };
+    let Ok(content) = std::fs::read_to_string(&abs) else {
+        return "note";
+    };
     let body = if let Some(rest) = content.strip_prefix("+++\n") {
-        rest.find("\n+++").map(|end| rest[end + 4..].trim()).unwrap_or(content.trim())
+        rest.find("\n+++")
+            .map(|end| rest[end + 4..].trim())
+            .unwrap_or(content.trim())
     } else {
         content.trim()
     };
@@ -74,8 +83,12 @@ fn classify_document(project: &Project, rel_path: &Path) -> &'static str {
     if lines.len() == 1 {
         let line = lines[0].trim();
         if line.starts_with("![[") {
-            if line.ends_with(".canvas]]") { return "canvas"; }
-            if line.ends_with(".excalidraw]]") { return "drawing"; }
+            if line.ends_with(".canvas]]") {
+                return "canvas";
+            }
+            if line.ends_with(".excalidraw]]") {
+                return "drawing";
+            }
         }
     }
     if crate::views::excalidraw::frontmatter_has_drawing_tag(&content) {

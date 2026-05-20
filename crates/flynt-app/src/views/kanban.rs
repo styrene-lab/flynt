@@ -1,11 +1,13 @@
-use chrono::Utc;
-use flynt_core::{
-    models::{Board, BoardId, Column, Engagement, EngagementId, Priority, Task, TaskId, TaskStatus},
-    store::{TaskFilter, ProjectStore},
-};
-use dioxus::prelude::*;
 use crate::bootstrap::AppContext;
 use crate::state::{Route, TabState};
+use chrono::Utc;
+use dioxus::prelude::*;
+use flynt_core::{
+    models::{
+        Board, BoardId, Column, Engagement, EngagementId, Priority, Task, TaskId, TaskStatus,
+    },
+    store::{ProjectStore, TaskFilter},
+};
 
 // ── Shared async helpers (avoid move-closure duplication) ────────────────────
 
@@ -22,7 +24,7 @@ async fn move_task(ctx: AppContext, task_id: TaskId, col: String) {
     let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
-            t.column     = col;
+            t.column = col;
             t.updated_at = Utc::now();
             project.persist_task(&t)
         } else {
@@ -36,7 +38,7 @@ async fn archive_task(ctx: AppContext, task_id: TaskId) {
     let project = ctx.project();
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(Some(mut t)) = project.store.get_task(&task_id) {
-            t.status     = TaskStatus::Archived;
+            t.status = TaskStatus::Archived;
             t.updated_at = Utc::now();
             project.persist_task(&t)
         } else {
@@ -48,11 +50,9 @@ async fn archive_task(ctx: AppContext, task_id: TaskId) {
 
 async fn create_board(ctx: AppContext, name: String) -> anyhow::Result<()> {
     let project = ctx.project();
-    tokio::task::spawn_blocking(move || {
-        project.store.save_board(&Board::default_sprint(name))
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("{e}"))??;
+    tokio::task::spawn_blocking(move || project.store.save_board(&Board::default_sprint(name)))
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))??;
     Ok(())
 }
 
@@ -202,7 +202,9 @@ impl TaskFilterKind {
     fn title(&self) -> &'static str {
         match self {
             Self::All => "All non-archived tasks",
-            Self::Actionable => "Tasks that sentry would pick up next: column=Scheduled, status=Todo",
+            Self::Actionable => {
+                "Tasks that sentry would pick up next: column=Scheduled, status=Todo"
+            }
             Self::LifecycleLinked => "Tasks linked to a design node or openspec change",
             Self::Manual => "Hand-tracked tasks (no sentry triggers or execution metadata)",
             Self::Archived => "Archived tasks (otherwise hidden everywhere)",
@@ -213,17 +215,12 @@ impl TaskFilterKind {
     fn matches(&self, task: &Task) -> bool {
         match self {
             Self::All => task.status != TaskStatus::Archived,
-            Self::Actionable => {
-                task.column == "Scheduled"
-                    && task.status == TaskStatus::Todo
-            }
+            Self::Actionable => task.column == "Scheduled" && task.status == TaskStatus::Todo,
             Self::LifecycleLinked => {
                 task.status != TaskStatus::Archived
                     && (task.design_node_id.is_some() || task.openspec_change.is_some())
             }
-            Self::Manual => {
-                task.status != TaskStatus::Archived && !task.is_sentry_managed()
-            }
+            Self::Manual => task.status != TaskStatus::Archived && !task.is_sentry_managed(),
             Self::Archived => task.status == TaskStatus::Archived,
         }
     }
@@ -231,7 +228,7 @@ impl TaskFilterKind {
 
 #[component]
 fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
-    let ctx     = use_context::<AppContext>();
+    let ctx = use_context::<AppContext>();
     let board_id = board.id.clone();
 
     let tasks = use_resource(move || {
@@ -242,7 +239,10 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
             tokio::task::spawn_blocking(move || {
                 project
                     .store
-                    .list_tasks(&TaskFilter { board_id: Some(bid), ..Default::default() })
+                    .list_tasks(&TaskFilter {
+                        board_id: Some(bid),
+                        ..Default::default()
+                    })
                     .unwrap_or_default()
             })
             .await
@@ -258,9 +258,11 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
         let _ = refresh();
         let project = ctx.project();
         async move {
-            tokio::task::spawn_blocking(move || project.store.list_engagements().unwrap_or_default())
-                .await
-                .unwrap_or_default()
+            tokio::task::spawn_blocking(move || {
+                project.store.list_engagements().unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default()
         }
     });
 
@@ -501,21 +503,21 @@ fn KanbanBoard(board: Board, refresh: Signal<u64>) -> Element {
                 }      // close the let-binding block
             }          // close div kanban-board
         }              // close div kanban-board-shell
-    }                  // close rsx!
-}                      // close fn KanbanBoard
+    } // close rsx!
+} // close fn KanbanBoard
 
 // ── Column ────────────────────────────────────────────────────────────────────
 
 #[component]
 fn KanbanColumn(
-    board_id:   BoardId,
-    column:     Column,
-    tasks:      Vec<Task>,
-    dragging:   Signal<Option<TaskId>>,
+    board_id: BoardId,
+    column: Column,
+    tasks: Vec<Task>,
+    dragging: Signal<Option<TaskId>>,
     mut refresh: Signal<u64>,
     can_remove: bool,
-    on_remove:  EventHandler<()>,
-    on_rename:  EventHandler<String>,
+    on_remove: EventHandler<()>,
+    on_rename: EventHandler<String>,
     /// (id_string, name) pairs for the inline editor's engagement
     /// dropdown. Plain strings rather than `Vec<Engagement>` so the
     /// component prop type stays PartialEq (Engagement isn't —
@@ -526,18 +528,21 @@ fn KanbanColumn(
     /// "engagement" placeholder flashing on first render.
     engagements_loaded: bool,
 ) -> Element {
-    let ctx         = use_context::<AppContext>();
-    let col_name    = column.name.clone();
+    let ctx = use_context::<AppContext>();
+    let col_name = column.name.clone();
     let mut editing_name = use_signal(|| false);
     let mut edit_value = use_signal(|| column.name.clone());
-    let count       = tasks.len();
-    let over_wip    = column.wip_limit.map(|l| count > l as usize).unwrap_or(false);
-    let wip_label   = match column.wip_limit {
+    let count = tasks.len();
+    let over_wip = column
+        .wip_limit
+        .map(|l| count > l as usize)
+        .unwrap_or(false);
+    let wip_label = match column.wip_limit {
         Some(l) => format!("{count}/{l}"),
-        None    => format!("{count}"),
+        None => format!("{count}"),
     };
 
-    let mut adding    = use_signal(|| false);
+    let mut adding = use_signal(|| false);
     let mut new_title = use_signal(String::new);
     let mut drag_over = use_signal(|| false);
 
@@ -546,16 +551,18 @@ fn KanbanColumn(
 
     // Add task — shared inline logic, duplicated per handler to avoid move issues.
     // (Signals are Copy; only String/Arc values need cloning.)
-    let ctx_add1  = ctx.clone();
-    let col_add1  = col_name.clone();
-    let bid_add1  = board_id.clone();
-    let ctx_add2  = ctx.clone();
-    let col_add2  = col_name.clone();
-    let bid_add2  = board_id.clone();
+    let ctx_add1 = ctx.clone();
+    let col_add1 = col_name.clone();
+    let bid_add1 = board_id.clone();
+    let ctx_add2 = ctx.clone();
+    let col_add2 = col_name.clone();
+    let bid_add2 = board_id.clone();
 
     let do_add_onclick = move |_| {
         let title = new_title.read().trim().to_string();
-        if title.is_empty() { return; }
+        if title.is_empty() {
+            return;
+        }
         let c = ctx_add1.clone();
         let col = col_add1.clone();
         let bid = bid_add1.clone();
@@ -567,33 +574,33 @@ fn KanbanColumn(
         *adding.write() = false;
     };
 
-    let do_add_keydown = move |e: Event<KeyboardData>| {
-        match e.key() {
-            Key::Enter => {
-                let title = new_title.read().trim().to_string();
-                if title.is_empty() { return; }
-                let c = ctx_add2.clone();
-                let col = col_add2.clone();
-                let bid = bid_add2.clone();
-                spawn(async move {
-                    create_task(c, bid, col, title).await;
-                    *refresh.write() += 1;
-                });
-                *new_title.write() = String::new();
-                *adding.write() = false;
+    let do_add_keydown = move |e: Event<KeyboardData>| match e.key() {
+        Key::Enter => {
+            let title = new_title.read().trim().to_string();
+            if title.is_empty() {
+                return;
             }
-            Key::Escape => {
-                *new_title.write() = String::new();
-                *adding.write() = false;
-            }
-            _ => {}
+            let c = ctx_add2.clone();
+            let col = col_add2.clone();
+            let bid = bid_add2.clone();
+            spawn(async move {
+                create_task(c, bid, col, title).await;
+                *refresh.write() += 1;
+            });
+            *new_title.write() = String::new();
+            *adding.write() = false;
         }
+        Key::Escape => {
+            *new_title.write() = String::new();
+            *adding.write() = false;
+        }
+        _ => {}
     };
 
     let col_class = match (over_wip, *drag_over.read()) {
-        (true, true)   => "kanban-column over-wip drag-over",
-        (true, false)  => "kanban-column over-wip",
-        (false, true)  => "kanban-column drag-over",
+        (true, true) => "kanban-column over-wip drag-over",
+        (true, false) => "kanban-column over-wip",
+        (false, true) => "kanban-column drag-over",
         (false, false) => "kanban-column",
     };
 
@@ -730,7 +737,10 @@ fn TaskCard(
     let mut inline_title = use_signal(|| task.title.clone());
     let mut inline_priority = use_signal(|| task.priority);
     let mut inline_engagement = use_signal(|| {
-        task.engagement_id.as_ref().map(|e| e.0.to_string()).unwrap_or_default()
+        task.engagement_id
+            .as_ref()
+            .map(|e| e.0.to_string())
+            .unwrap_or_default()
     });
 
     let tid_drag = task.id.clone();
@@ -1082,7 +1092,9 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
 
     let do_create = move |_| {
         let n = name.read().trim().to_string();
-        if n.is_empty() { return; }
+        if n.is_empty() {
+            return;
+        }
         let c = ctx.clone();
         spawn(async move {
             match create_board(c, n).await {
@@ -1133,7 +1145,7 @@ fn NewBoardPrompt(mut refresh: Signal<u64>) -> Element {
 
 #[component]
 fn NewBoardInline(mut refresh: Signal<u64>) -> Element {
-    let ctx      = use_context::<AppContext>();
+    let ctx = use_context::<AppContext>();
     let mut open = use_signal(|| false);
     let mut name = use_signal(String::new);
 

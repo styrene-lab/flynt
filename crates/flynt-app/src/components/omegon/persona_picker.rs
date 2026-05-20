@@ -30,7 +30,8 @@ fn parse_persona_list(v: &serde_json::Value) -> Vec<PersonaEntry> {
     let Some(arr) = arr else { return Vec::new() };
     arr.iter()
         .filter_map(|p| {
-            let id = p.get("id")
+            let id = p
+                .get("id")
                 .or_else(|| p.get("name"))
                 .and_then(|s| s.as_str())?
                 .to_string();
@@ -45,7 +46,11 @@ fn parse_persona_list(v: &serde_json::Value) -> Vec<PersonaEntry> {
                 .and_then(|s| s.as_str())
                 .unwrap_or("")
                 .to_string();
-            Some(PersonaEntry { id, name, description })
+            Some(PersonaEntry {
+                id,
+                name,
+                description,
+            })
         })
         .collect()
 }
@@ -70,7 +75,10 @@ pub fn PersonaPicker(current: String, on_change: EventHandler<String>) -> Elemen
         let sess = shared_session.read().clone();
         async move {
             let Some(s) = sess else { return Vec::new() };
-            s.persona_list().await.map(|v| parse_persona_list(&v)).unwrap_or_default()
+            s.persona_list()
+                .await
+                .map(|v| parse_persona_list(&v))
+                .unwrap_or_default()
         }
     });
 
@@ -81,9 +89,8 @@ pub fn PersonaPicker(current: String, on_change: EventHandler<String>) -> Elemen
         .as_ref()
         .map(|v| v.iter().map(|p| p.id.clone()).collect())
         .unwrap_or_default();
-    let current_is_known = current == PERSONA_OFF
-        || current.is_empty()
-        || known_ids.contains(&current);
+    let current_is_known =
+        current == PERSONA_OFF || current.is_empty() || known_ids.contains(&current);
 
     // Track whether the operator deliberately opened the custom-input.
     // Without this, picking "Custom…" then deleting the text would flip

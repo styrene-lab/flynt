@@ -82,16 +82,16 @@ button:active:not(:disabled) {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--dim);
+  background: var(--scrollbar-thumb, var(--dim));
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: var(--scrollbar-thumb-hover, var(--muted-foreground));
 }
 
 /* Selections */
 ::selection {
-  background: rgba(42, 180, 200, 0.25);
-  color:      var(--foreground);
+  background: var(--selection);
+  color:      var(--selection-foreground);
 }

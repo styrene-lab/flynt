@@ -147,6 +147,52 @@ For users who chose "Create local project" or "Open existing project" and want t
 - Exponential backoff on failures (up to 10 minutes)
 - Mobile enforces minimum 30-second interval
 
+### Sync Activity
+- Desktop toolbar sync status is clickable for Git projects.
+- The Sync Activity panel reports backend, remote, branch, local dirty files, HEAD, and ahead/behind counts when the remote tracking ref is available.
+- The panel keeps session-level run state: current phase, last start/finish timestamps, last outcome, and success/failure counts for the running app instance.
+- `Sync now` runs a manual auto-commit, pull, and push using the configured Git remote/branch.
+- Conflict files from the background sync loop are listed in the panel and can be opened from there when they are indexed markdown documents.
+- Non-Git providers do not expose Git diagnostics. iCloud and desktop cloud providers remain filesystem-sync backends from Flynt's point of view.
+
+### Config boundary
+- `.flynt/config.toml` is project-synced and contains project sync settings such as Git remote, branch, and auto-commit interval.
+- `.flynt-local/` is device-local and gitignored; it contains derived indexes and runtime UI state.
+- Operator/theme/provider credentials are device/operator scoped and are not treated as project content.
+
+### Note recovery
+- Desktop Notes has a `History` action for the active note.
+- `Cmd+P -> Show Note History` opens the same recovery surface.
+- History is Git-backed: it lists commits that touched the active note and previews the selected snapshot as a diff against the current note body.
+- Recovery is non-destructive. `Restore as copy` writes `Recovered/<note> <commit>.md` and opens that copy in a tab instead of overwriting the active note.
+- `Cmd+P -> Create Snapshot` auto-commits, creates a `snapshot-YYYYMMDD-HHMMSS` tag, pushes tags when possible, then opens Note History so the snapshot is part of the same recovery workflow.
+
+### Publication authoring
+- The active note Properties panel exposes publication controls for enabled, visibility, slug, and collections.
+- Publication edits update only the `[publication]` frontmatter table and preserve unrelated metadata/body content.
+- `Export preview` in Properties and `Cmd+P -> Export Publication Preview` run the local static export and show exported/skipped/error counts plus the output path.
+- Adapter boundaries are tracked in `design/publication-adapters.md`: local static folder first, GitHub Pages/Astro as delivery layers over the same manifest.
+
+### Bookmarks and saved searches
+- Project bookmarks are stored in `.flynt/bookmarks.toml` so they can travel with a synced project.
+- `Cmd+P -> Bookmark Current Note` saves the active note.
+- `Cmd+P -> Bookmark Current Search` saves the current search query.
+- The sidebar Bookmarks section opens note targets directly and restores saved searches by navigating to Search with the saved query populated.
+- The bookmark schema already reserves target types for headings, graph filters, canvas files, and drawings; the first UI pass exposes note and search actions.
+
+### Project Lenses
+- Project Lenses are Dataview-style saved views over existing indexed project data.
+- Lens definitions live in `.flynt/lenses/*.toml` and contain source, filter, column, sort, layout, and limit settings only.
+- Lenses do not persist query results, document snapshots, or duplicated metadata.
+- `Cmd+P -> Save Search as Lens` writes a search-backed lens definition and opens the Lenses view.
+- The first lens UI renders document/task sources as table or list layouts; the full builder remains a later pass.
+
+### Page previews
+- Hovering wikilinks in the note editor or rendered markdown shows a delayed note preview.
+- Sidebar note rows and search results use the same preview card.
+- Previews show title, path, and a capped body excerpt; heavy embeds are skipped.
+- Escape, mouseout, or moving away from a link dismisses the preview.
+
 ### Credential flow
 Git operations use `git2` with credential callbacks. For **HTTPS URLs** (recommended):
 1. Stored personal access token or OAuth token from `~/.config/omegon/auth.json`
@@ -171,7 +217,7 @@ Tokens entered during clone are persisted automatically. Tokens can also be mana
 | Daily notes | Supported (same date format) |
 | Templates | Supported (`.flynt/templates/`) |
 | Canvas/Excalidraw | Excalidraw drawings supported |
-| Dataview queries | Flynt query blocks (`TABLE`, `LIST`, `TASK`) |
+| Dataview queries | Flynt query blocks (`TABLE`, `LIST`, `TASK`) and Project Lenses |
 | Community plugins | Not supported |
 | YAML frontmatter | Read but not written (Flynt uses TOML `+++`) |
 | Vim mode | Not yet |
@@ -224,7 +270,7 @@ Future flow (with StyreneIdentity):
 3. **No crash reporting** — testers should report issues via Slack/GitHub with console logs
 4. **No mobile onboarding** — project must be pre-configured
 5. **SSH keys (if used) must be in ssh-agent** — passphrase-protected keys need `ssh-add` first. Using HTTPS with a personal access token avoids this entirely.
-6. **Single theme** — "alpharius" is the only theme
+6. **Theme import is desktop-only** — Flynt ships Alpharius, Light, and bundled upstream tweak.cn presets. Operators can import tweak.cn JSON themes, public theme URLs, registry slugs, or theme IDs from Settings → Appearance. Mobile still uses its own basic stylesheet.
 7. **No Vim mode** — CodeMirror 6 without Vim extension
 8. **Commit author is "Flynt <flynt@local>"** — not yet linked to user identity (StyreneIdentity planned)
 9. **iOS is read-heavy** — editing works but is basic (no CM6 on mobile, plain textarea)

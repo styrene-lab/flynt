@@ -6,8 +6,8 @@
 //! same outcome. Designed for extraction into a shared `omegon-config` crate
 //! when Auspex needs the same surface.
 
-use std::collections::HashMap;
 use flynt_core::models::{FlyntOperatorSettings, OmegonProfile, OmegonProfileModel};
+use std::collections::HashMap;
 
 /// Merged view of all Omegon configuration.
 /// Authoritative source for what the agent should be running with.
@@ -45,9 +45,10 @@ impl UnifiedOmegonConfig {
             .get("model")
             .cloned()
             .or_else(|| {
-                profile.last_used_model.as_ref().map(|m| {
-                    format!("{}:{}", m.provider, m.model_id)
-                })
+                profile
+                    .last_used_model
+                    .as_ref()
+                    .map(|m| format!("{}:{}", m.provider, m.model_id))
             })
             .unwrap_or_else(|| "anthropic:claude-sonnet-4-6".into());
 
@@ -83,15 +84,17 @@ impl UnifiedOmegonConfig {
     }
 
     /// Save to both persistence layers. Returns updated copies.
-    pub fn save_to(
-        &self,
-        profile: &mut OmegonProfile,
-        operator: &mut FlyntOperatorSettings,
-    ) {
+    pub fn save_to(&self, profile: &mut OmegonProfile, operator: &mut FlyntOperatorSettings) {
         // Session-level → acp_config (authoritative for next session)
-        operator.acp_config.insert("model".into(), self.model.clone());
-        operator.acp_config.insert("thinking".into(), self.thinking.clone());
-        operator.acp_config.insert("posture".into(), self.posture.clone());
+        operator
+            .acp_config
+            .insert("model".into(), self.model.clone());
+        operator
+            .acp_config
+            .insert("thinking".into(), self.thinking.clone());
+        operator
+            .acp_config
+            .insert("posture".into(), self.posture.clone());
 
         // Also mirror model/thinking to profile (for cold starts / CLI use)
         if let Some((provider, model_id)) = self.model.split_once(':') {
@@ -157,7 +160,9 @@ mod tests {
             ..Default::default()
         };
         let mut operator = FlyntOperatorSettings::default();
-        operator.acp_config.insert("model".into(), "openai:gpt-5.4".into());
+        operator
+            .acp_config
+            .insert("model".into(), "openai:gpt-5.4".into());
         operator.acp_config.insert("thinking".into(), "low".into());
 
         let config = UnifiedOmegonConfig::load(&profile, &operator);
@@ -208,7 +213,10 @@ mod tests {
         config.save_to(&mut profile, &mut operator);
 
         // acp_config gets session-level
-        assert_eq!(operator.acp_config.get("model").unwrap(), "anthropic:claude-opus-4-7");
+        assert_eq!(
+            operator.acp_config.get("model").unwrap(),
+            "anthropic:claude-opus-4-7"
+        );
         assert_eq!(operator.acp_config.get("thinking").unwrap(), "high");
 
         // profile gets mirrored model + profile-only fields

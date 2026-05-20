@@ -1,16 +1,19 @@
 use crate::datum::{Entity, EntityKind};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::{Path, PathBuf}};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 use uuid::Uuid;
 
 // ── Re-export task types from flynt-models ──────────────────────────────────
 // These are the canonical definitions. flynt-core re-exports for backward compat.
-pub use flynt_models::task::{
-    BoardId, DecayRate, DocumentId, ExecutionSpec, Priority, Task, TaskId, TaskPatch, TaskStatus,
-};
 pub use flynt_models::engagement::{
     Engagement, EngagementId, EngagementStatus, Partnership, PartnershipId, RepoBinding,
+};
+pub use flynt_models::task::{
+    BoardId, DecayRate, DocumentId, ExecutionSpec, Priority, Task, TaskId, TaskPatch, TaskStatus,
 };
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
@@ -23,7 +26,9 @@ pub enum MetadataProtection {
 }
 
 impl Default for MetadataProtection {
-    fn default() -> Self { Self::PlaintextIndexed }
+    fn default() -> Self {
+        Self::PlaintextIndexed
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -38,7 +43,9 @@ pub enum MetadataValue {
 }
 
 impl Default for MetadataValue {
-    fn default() -> Self { Self::Null }
+    fn default() -> Self {
+        Self::Null
+    }
 }
 
 pub type MetadataMap = BTreeMap<String, MetadataValue>;
@@ -190,6 +197,209 @@ pub struct WikiLink {
     pub anchor: Option<String>,
 }
 
+// ── Bookmarks ───────────────────────────────────────────────────────────────
+
+/// Portable project bookmarks stored in `.flynt/bookmarks.toml`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BookmarkFile {
+    #[serde(default = "BookmarkFile::default_version")]
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bookmarks: Vec<Bookmark>,
+}
+
+impl Default for BookmarkFile {
+    fn default() -> Self {
+        Self {
+            version: Self::default_version(),
+            bookmarks: Vec::new(),
+        }
+    }
+}
+
+impl BookmarkFile {
+    fn default_version() -> u32 {
+        1
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub id: String,
+    pub title: String,
+    pub target: BookmarkTarget,
+    #[serde(default = "default_bookmark_created_at")]
+    pub created_at: DateTime<Utc>,
+}
+
+fn default_bookmark_created_at() -> DateTime<Utc> {
+    Utc::now()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BookmarkTarget {
+    Note {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        document_id: Option<DocumentId>,
+        path: PathBuf,
+    },
+    Heading {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        document_id: Option<DocumentId>,
+        path: PathBuf,
+        anchor: String,
+    },
+    Search {
+        query: String,
+    },
+    Graph {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<String>,
+    },
+    Canvas {
+        path: PathBuf,
+    },
+    Drawing {
+        path: PathBuf,
+    },
+}
+
+impl BookmarkTarget {
+    pub fn stable_key(&self) -> String {
+        match self {
+            Self::Note { document_id, path } => document_id
+                .as_ref()
+                .map(|id| format!("note:id:{}", id.0))
+                .unwrap_or_else(|| format!("note:path:{}", path.to_string_lossy())),
+            Self::Heading {
+                document_id,
+                path,
+                anchor,
+            } => document_id
+                .as_ref()
+                .map(|id| format!("heading:id:{}#{anchor}", id.0))
+                .unwrap_or_else(|| format!("heading:path:{}#{anchor}", path.to_string_lossy())),
+            Self::Search { query } => format!("search:{}", query.trim()),
+            Self::Graph { filter } => format!("graph:{}", filter.as_deref().unwrap_or_default()),
+            Self::Canvas { path } => format!("canvas:{}", path.to_string_lossy()),
+            Self::Drawing { path } => format!("drawing:{}", path.to_string_lossy()),
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Note { .. } => "Note",
+            Self::Heading { .. } => "Heading",
+            Self::Search { .. } => "Search",
+            Self::Graph { .. } => "Graph",
+            Self::Canvas { .. } => "Canvas",
+            Self::Drawing { .. } => "Drawing",
+        }
+    }
+}
+
+// ── Project Lenses ──────────────────────────────────────────────────────────
+
+/// A saved, portable view over existing indexed project data.
+///
+/// Project lenses persist query/display definitions only. They do not store
+/// document/task snapshots, query results, or duplicate metadata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectLens {
+    pub title: String,
+    #[serde(default)]
+    pub source: LensSource,
+    #[serde(default)]
+    pub layout: LensLayout,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<LensFilter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<LensColumn>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sort: Vec<LensSort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+impl Default for ProjectLens {
+    fn default() -> Self {
+        Self {
+            title: "Untitled Lens".into(),
+            source: LensSource::default(),
+            layout: LensLayout::default(),
+            filters: Vec::new(),
+            columns: default_lens_columns(),
+            sort: Vec::new(),
+            limit: Some(100),
+        }
+    }
+}
+
+fn default_lens_columns() -> Vec<LensColumn> {
+    vec![LensColumn {
+        field: "title".into(),
+        label: None,
+    }]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensSource {
+    #[default]
+    Documents,
+    Tasks,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensLayout {
+    #[default]
+    Table,
+    List,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LensFilter {
+    pub field: String,
+    #[serde(default)]
+    pub op: LensFilterOp,
+    #[serde(default)]
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensFilterOp {
+    #[default]
+    Equals,
+    Contains,
+    NotEquals,
+    Exists,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LensColumn {
+    pub field: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LensSort {
+    pub field: String,
+    #[serde(default)]
+    pub direction: LensSortDirection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LensSortDirection {
+    #[default]
+    Asc,
+    Desc,
+}
+
 // ── Kanban Task ───────────────────────────────────────────────────────────────
 
 // Task, Priority, TaskStatus, DecayRate, TaskId, BoardId, DocumentId
@@ -234,7 +444,12 @@ pub enum NotificationKind {
 }
 
 impl Notification {
-    pub fn new(kind: NotificationKind, title: impl Into<String>, body: impl Into<String>, source_project: impl Into<String>) -> Self {
+    pub fn new(
+        kind: NotificationKind,
+        title: impl Into<String>,
+        body: impl Into<String>,
+        source_project: impl Into<String>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             kind,
@@ -283,8 +498,14 @@ impl Board {
             id: BoardId::new(),
             name: name.into(),
             columns: vec![
-                Column { name: "Active".into(), wip_limit: None },
-                Column { name: "Archive".into(), wip_limit: None },
+                Column {
+                    name: "Active".into(),
+                    wip_limit: None,
+                },
+                Column {
+                    name: "Archive".into(),
+                    wip_limit: None,
+                },
             ],
             created_at: Utc::now(),
         }
@@ -307,11 +528,26 @@ impl Board {
             id: BoardId::new(),
             name: name.into(),
             columns: vec![
-                Column { name: "Backlog".into(), wip_limit: None },
-                Column { name: "Scheduled".into(), wip_limit: None },
-                Column { name: "Running".into(), wip_limit: Some(3) },
-                Column { name: "Done".into(), wip_limit: None },
-                Column { name: "Failed".into(), wip_limit: None },
+                Column {
+                    name: "Backlog".into(),
+                    wip_limit: None,
+                },
+                Column {
+                    name: "Scheduled".into(),
+                    wip_limit: None,
+                },
+                Column {
+                    name: "Running".into(),
+                    wip_limit: Some(3),
+                },
+                Column {
+                    name: "Done".into(),
+                    wip_limit: None,
+                },
+                Column {
+                    name: "Failed".into(),
+                    wip_limit: None,
+                },
             ],
             created_at: Utc::now(),
         }
@@ -393,7 +629,9 @@ pub enum FileTier {
 }
 
 impl IndexingConfig {
-    fn default_write_frontmatter() -> bool { true }
+    fn default_write_frontmatter() -> bool {
+        true
+    }
 
     /// Returns the longest-prefix-matching scope for `rel_path`, if any.
     pub fn scope_for_path(&self, rel_path: &Path) -> Option<&IndexScope> {
@@ -421,7 +659,10 @@ impl IndexingConfig {
 
 impl Default for IndexingConfig {
     fn default() -> Self {
-        Self { write_frontmatter: true, scopes: Vec::new() }
+        Self {
+            write_frontmatter: true,
+            scopes: Vec::new(),
+        }
     }
 }
 
@@ -450,9 +691,15 @@ pub struct VisualizationConfig {
 }
 
 impl VisualizationConfig {
-    fn default_true() -> bool { true }
-    fn default_d2_theme() -> u32 { 200 }
-    fn default_d2_layout() -> String { "elk".into() }
+    fn default_true() -> bool {
+        true
+    }
+    fn default_d2_theme() -> u32 {
+        200
+    }
+    fn default_d2_layout() -> String {
+        "elk".into()
+    }
 }
 
 impl Default for VisualizationConfig {
@@ -590,7 +837,10 @@ fn parse_version_key(v: &str) -> (u32, u32, u32, String) {
     } else {
         (bare, String::new())
     };
-    let parts: Vec<u32> = version_part.split('.').filter_map(|s| s.parse().ok()).collect();
+    let parts: Vec<u32> = version_part
+        .split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
     (
         parts.first().copied().unwrap_or(0),
         parts.get(1).copied().unwrap_or(0),
@@ -624,13 +874,17 @@ fn resolve_from_versions_dir(
         OmegonChannel::Pinned(version) => {
             // Exact match (with or without v prefix)
             let bare = version.strip_prefix('v').unwrap_or(version);
-            entries.iter().find(|e| {
-                let e_bare = e.strip_prefix('v').unwrap_or(e);
-                e_bare == bare
-            }).cloned()
+            entries
+                .iter()
+                .find(|e| {
+                    let e_bare = e.strip_prefix('v').unwrap_or(e);
+                    e_bare == bare
+                })
+                .cloned()
         }
         OmegonChannel::Stable => {
-            let mut stable: Vec<&String> = entries.iter()
+            let mut stable: Vec<&String> = entries
+                .iter()
                 .filter(|v| {
                     let bare = v.strip_prefix('v').unwrap_or(v);
                     !bare.contains("-rc.") && !bare.contains("-nightly.")
@@ -640,30 +894,26 @@ fn resolve_from_versions_dir(
             stable.first().cloned().cloned()
         }
         OmegonChannel::Rc => {
-            let mut rcs: Vec<&String> = entries.iter()
-                .filter(|v| v.contains("-rc."))
-                .collect();
+            let mut rcs: Vec<&String> = entries.iter().filter(|v| v.contains("-rc.")).collect();
             sort_versions_newest_first(&mut rcs);
-            rcs.first().cloned().cloned()
-                .or_else(|| {
-                    let mut stable: Vec<&String> = entries.iter()
-                        .filter(|v| !v.contains("-nightly."))
-                        .collect();
-                    sort_versions_newest_first(&mut stable);
-                    stable.first().cloned().cloned()
-                })
+            rcs.first().cloned().cloned().or_else(|| {
+                let mut stable: Vec<&String> = entries
+                    .iter()
+                    .filter(|v| !v.contains("-nightly."))
+                    .collect();
+                sort_versions_newest_first(&mut stable);
+                stable.first().cloned().cloned()
+            })
         }
         OmegonChannel::Nightly => {
-            let mut nightlies: Vec<&String> = entries.iter()
-                .filter(|v| v.contains("-nightly."))
-                .collect();
+            let mut nightlies: Vec<&String> =
+                entries.iter().filter(|v| v.contains("-nightly.")).collect();
             sort_versions_newest_first(&mut nightlies);
-            nightlies.first().cloned().cloned()
-                .or_else(|| {
-                    let mut all: Vec<&String> = entries.iter().collect();
-                    sort_versions_newest_first(&mut all);
-                    all.first().cloned().cloned()
-                })
+            nightlies.first().cloned().cloned().or_else(|| {
+                let mut all: Vec<&String> = entries.iter().collect();
+                sort_versions_newest_first(&mut all);
+                all.first().cloned().cloned()
+            })
         }
     };
 
@@ -682,12 +932,17 @@ pub struct AppearanceConfig {
 
 impl Default for AppearanceConfig {
     fn default() -> Self {
-        Self { theme: Self::default_theme(), font_size: FontSizePreset::default() }
+        Self {
+            theme: Self::default_theme(),
+            font_size: FontSizePreset::default(),
+        }
     }
 }
 
 impl AppearanceConfig {
-    fn default_theme() -> String { "alpharius".into() }
+    fn default_theme() -> String {
+        "alpharius".into()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -702,10 +957,20 @@ pub enum FontSizePreset {
 
 impl FontSizePreset {
     pub fn label(self) -> &'static str {
-        match self { Self::Small => "S", Self::Medium => "M", Self::Large => "L", Self::XLarge => "XL" }
+        match self {
+            Self::Small => "S",
+            Self::Medium => "M",
+            Self::Large => "L",
+            Self::XLarge => "XL",
+        }
     }
     pub fn css_class(self) -> &'static str {
-        match self { Self::Small => "font-sm", Self::Medium => "font-md", Self::Large => "font-lg", Self::XLarge => "font-xl" }
+        match self {
+            Self::Small => "font-sm",
+            Self::Medium => "font-md",
+            Self::Large => "font-lg",
+            Self::XLarge => "font-xl",
+        }
     }
 }
 
@@ -780,6 +1045,34 @@ pub struct OmegonProfileModel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportedUiTheme {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default)]
+    pub vars: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiThemeSettings {
+    pub active_theme: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_themes: Vec<ImportedUiTheme>,
+}
+
+impl Default for UiThemeSettings {
+    fn default() -> Self {
+        Self {
+            active_theme: "alpharius".into(),
+            imported_themes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FlyntOperatorSettings {
     pub active_persona: String,
     pub enabled_skills: Vec<String>,
@@ -797,6 +1090,9 @@ pub struct FlyntOperatorSettings {
     /// Per-project agent daemon configuration — model, posture, vox channels.
     #[serde(default)]
     pub agent_daemon: crate::daemon::AgentDaemonConfig,
+    /// Operator-selected UI theme plus any imported tweak.cn themes.
+    #[serde(default)]
+    pub ui_theme: UiThemeSettings,
     /// Design canvas settings — default theme, grid, asset bootstrap state.
     /// Phase 1+2 ship the field with defaults; Phase 4 fills it in.
     #[serde(default)]
@@ -814,6 +1110,7 @@ impl Default for FlyntOperatorSettings {
             vox: VoxSettings::default(),
             acp_config: std::collections::HashMap::new(),
             agent_daemon: crate::daemon::AgentDaemonConfig::default(),
+            ui_theme: UiThemeSettings::default(),
             canvas: crate::canvas::CanvasSettings::default(),
         }
     }
@@ -975,7 +1272,12 @@ mod tests {
 
     #[test]
     fn notification_new_has_correct_fields() {
-        let n = Notification::new(NotificationKind::DueDate, "Due", "Task is due", "my-project");
+        let n = Notification::new(
+            NotificationKind::DueDate,
+            "Due",
+            "Task is due",
+            "my-project",
+        );
         assert_eq!(n.kind, NotificationKind::DueDate);
         assert_eq!(n.title, "Due");
         assert_eq!(n.body, "Task is due");
@@ -1016,8 +1318,10 @@ mod tests {
         assert_eq!(board.columns.len(), 2);
         assert_eq!(board.columns[0].name, "Active");
         assert_eq!(board.columns[1].name, "Archive");
-        assert!(board.columns.iter().all(|c| c.wip_limit.is_none()),
-                "minimalist columns don't impose WIP limits");
+        assert!(
+            board.columns.iter().all(|c| c.wip_limit.is_none()),
+            "minimalist columns don't impose WIP limits"
+        );
     }
 
     // ── Task constructors ───────────────────────────────────────────
@@ -1065,8 +1369,14 @@ mod tests {
     fn parse_version_key_basic() {
         assert_eq!(super::parse_version_key("v0.17.0"), (0, 17, 0, "".into()));
         assert_eq!(super::parse_version_key("0.16.1"), (0, 16, 1, "".into()));
-        assert_eq!(super::parse_version_key("v0.17.0-rc.1"), (0, 17, 0, "rc.1".into()));
-        assert_eq!(super::parse_version_key("v1.2.3-nightly.20260425"), (1, 2, 3, "nightly.20260425".into()));
+        assert_eq!(
+            super::parse_version_key("v0.17.0-rc.1"),
+            (0, 17, 0, "rc.1".into())
+        );
+        assert_eq!(
+            super::parse_version_key("v1.2.3-nightly.20260425"),
+            (1, 2, 3, "nightly.20260425".into())
+        );
     }
 
     #[test]
@@ -1079,7 +1389,13 @@ mod tests {
             &"v0.17.0-rc.1".to_string(),
         ];
         // Borrow checker: need owned strings
-        let owned: Vec<String> = vec!["v0.9.0".into(), "v0.17.0".into(), "v0.16.1".into(), "v1.0.0".into(), "v0.17.0-rc.1".into()];
+        let owned: Vec<String> = vec![
+            "v0.9.0".into(),
+            "v0.17.0".into(),
+            "v0.16.1".into(),
+            "v1.0.0".into(),
+            "v0.17.0-rc.1".into(),
+        ];
         let mut refs: Vec<&String> = owned.iter().collect();
         super::sort_versions_newest_first(&mut refs);
         let names: Vec<&str> = refs.iter().map(|s| s.as_str()).collect();
@@ -1125,11 +1441,13 @@ mod tests {
         std::fs::write(tmp.path().join("v0.16.1/omegon"), "bin").unwrap();
         std::fs::write(tmp.path().join("v0.17.0-rc.1/omegon"), "bin").unwrap();
 
-        let result = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Pinned("0.16.1".into()));
+        let result =
+            super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Pinned("0.16.1".into()));
         assert!(result.is_some());
         assert!(result.unwrap().ends_with("v0.16.1/omegon"));
 
-        let missing = super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Pinned("0.15.0".into()));
+        let missing =
+            super::resolve_from_versions_dir(tmp.path(), &OmegonChannel::Pinned("0.15.0".into()));
         assert!(missing.is_none());
     }
 
@@ -1166,7 +1484,11 @@ mod tests {
 
     #[test]
     fn omegon_channel_serde_roundtrip() {
-        for channel in [OmegonChannel::Stable, OmegonChannel::Rc, OmegonChannel::Nightly] {
+        for channel in [
+            OmegonChannel::Stable,
+            OmegonChannel::Rc,
+            OmegonChannel::Nightly,
+        ] {
             let json = serde_json::to_string(&channel).unwrap();
             let parsed: OmegonChannel = serde_json::from_str(&json).unwrap();
             assert_eq!(channel, parsed);
@@ -1181,13 +1503,22 @@ mod tests {
 
     #[test]
     fn no_scopes_uses_project_wide_default() {
-        let cfg = IndexingConfig { write_frontmatter: true, scopes: vec![] };
+        let cfg = IndexingConfig {
+            write_frontmatter: true,
+            scopes: vec![],
+        };
         assert!(cfg.should_write_frontmatter(Path::new("README.md")));
         assert_eq!(cfg.file_tier(Path::new("README.md")), FileTier::Managed);
 
-        let cfg = IndexingConfig { write_frontmatter: false, scopes: vec![] };
+        let cfg = IndexingConfig {
+            write_frontmatter: false,
+            scopes: vec![],
+        };
         assert!(!cfg.should_write_frontmatter(Path::new("README.md")));
-        assert_eq!(cfg.file_tier(Path::new("README.md")), FileTier::Discoverable);
+        assert_eq!(
+            cfg.file_tier(Path::new("README.md")),
+            FileTier::Discoverable
+        );
     }
 
     #[test]
@@ -1357,12 +1688,7 @@ backend = "none"
 
     #[test]
     fn notification_writes_new_field_name_only() {
-        let n = Notification::new(
-            NotificationKind::DueDate,
-            "t",
-            "b",
-            "team-notes",
-        );
+        let n = Notification::new(NotificationKind::DueDate, "t", "b", "team-notes");
         let serialized = serde_json::to_string(&n).unwrap();
         assert!(serialized.contains("\"source_project\":\"team-notes\""));
         assert!(!serialized.contains("source_vault"));

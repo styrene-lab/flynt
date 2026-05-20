@@ -9,7 +9,10 @@ use std::path::Path;
 
 #[cfg(target_os = "ios")]
 unsafe extern "C" {
-    fn github_oauth_start(client_id: *const std::ffi::c_char, callback_scheme: *const std::ffi::c_char);
+    fn github_oauth_start(
+        client_id: *const std::ffi::c_char,
+        callback_scheme: *const std::ffi::c_char,
+    );
     fn github_oauth_get_token() -> *mut std::ffi::c_char;
     fn github_oauth_clear_token();
 }
@@ -36,7 +39,9 @@ pub fn get_token() -> Option<String> {
         let token = unsafe { std::ffi::CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned();
-        unsafe extern "C" { fn free(ptr: *mut std::ffi::c_void); }
+        unsafe extern "C" {
+            fn free(ptr: *mut std::ffi::c_void);
+        }
         unsafe { free(ptr as *mut std::ffi::c_void) };
         Some(token)
     }
@@ -49,16 +54,13 @@ pub fn get_token() -> Option<String> {
 /// Clear the stored GitHub token (sign out).
 pub fn clear_token() {
     #[cfg(target_os = "ios")]
-    unsafe { github_oauth_clear_token() }
+    unsafe {
+        github_oauth_clear_token()
+    }
 }
 
 /// Clone a remote repository using a GitHub token for HTTPS authentication.
-pub fn clone_with_token(
-    url: &str,
-    branch: &str,
-    dest: &Path,
-    token: &str,
-) -> Result<()> {
+pub fn clone_with_token(url: &str, branch: &str, dest: &Path, token: &str) -> Result<()> {
     flynt_store::sync::GitSync::clone_repo_with_token(url, branch, dest, token)?;
     Ok(())
 }

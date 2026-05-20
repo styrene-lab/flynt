@@ -42,50 +42,69 @@ pub fn parse_extensions_list(value: &serde_json::Value) -> Vec<ExtensionData> {
     let Some(extensions) = value["extensions"].as_array() else {
         return Vec::new();
     };
-    extensions.iter().filter_map(|ext| {
-        let name = ext["name"].as_str()?.to_string();
-        let version = ext["version"].as_str().unwrap_or("?").to_string();
-        let description = ext["description"].as_str().unwrap_or("").to_string();
-        let enabled = ext["enabled"].as_bool().unwrap_or(true);
+    extensions
+        .iter()
+        .filter_map(|ext| {
+            let name = ext["name"].as_str()?.to_string();
+            let version = ext["version"].as_str().unwrap_or("?").to_string();
+            let description = ext["description"].as_str().unwrap_or("").to_string();
+            let enabled = ext["enabled"].as_bool().unwrap_or(true);
 
-        let config_fields = ext["config_schema"].as_object()
-            .map(|schema| {
-                schema.iter().map(|(key, field)| {
-                    ConfigFieldEntry {
-                        key: key.clone(),
-                        field_type: field["type"].as_str().unwrap_or("string").to_string(),
-                        label: field["label"].as_str().unwrap_or(key).to_string(),
-                        description: field["description"].as_str().unwrap_or("").to_string(),
-                        required: field["required"].as_bool().unwrap_or(false),
-                        default: field["default"].as_str().map(String::from),
-                        placeholder: field["placeholder"].as_str().map(String::from),
-                        values: field["values"].as_array()
-                            .map(|v| v.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-                            .unwrap_or_default(),
-                        current_value: field["current_value"].as_str().map(String::from),
-                    }
-                }).collect()
-            })
-            .unwrap_or_default();
+            let config_fields = ext["config_schema"]
+                .as_object()
+                .map(|schema| {
+                    schema
+                        .iter()
+                        .map(|(key, field)| ConfigFieldEntry {
+                            key: key.clone(),
+                            field_type: field["type"].as_str().unwrap_or("string").to_string(),
+                            label: field["label"].as_str().unwrap_or(key).to_string(),
+                            description: field["description"].as_str().unwrap_or("").to_string(),
+                            required: field["required"].as_bool().unwrap_or(false),
+                            default: field["default"].as_str().map(String::from),
+                            placeholder: field["placeholder"].as_str().map(String::from),
+                            values: field["values"]
+                                .as_array()
+                                .map(|v| {
+                                    v.iter()
+                                        .filter_map(|s| s.as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                            current_value: field["current_value"].as_str().map(String::from),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
 
-        let parse_secrets = |key: &str| -> Vec<SecretEntry> {
-            ext["secrets"][key].as_array()
-                .map(|arr| arr.iter().filter_map(|s| {
-                    Some(SecretEntry {
-                        name: s["name"].as_str()?.to_string(),
-                        resolved: s["resolved"].as_bool().unwrap_or(false),
-                        source: s["source"].as_str().map(String::from),
+            let parse_secrets = |key: &str| -> Vec<SecretEntry> {
+                ext["secrets"][key]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| {
+                                Some(SecretEntry {
+                                    name: s["name"].as_str()?.to_string(),
+                                    resolved: s["resolved"].as_bool().unwrap_or(false),
+                                    source: s["source"].as_str().map(String::from),
+                                })
+                            })
+                            .collect()
                     })
-                }).collect())
-                .unwrap_or_default()
-        };
+                    .unwrap_or_default()
+            };
 
-        Some(ExtensionData {
-            name, version, description, enabled, config_fields,
-            required_secrets: parse_secrets("required"),
-            optional_secrets: parse_secrets("optional"),
+            Some(ExtensionData {
+                name,
+                version,
+                description,
+                enabled,
+                config_fields,
+                required_secrets: parse_secrets("required"),
+                optional_secrets: parse_secrets("optional"),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 /// Renders config fields + secret status for a single extension.
@@ -149,7 +168,9 @@ fn ExtensionConfigField(
     field: ConfigFieldEntry,
     session: Signal<Option<Rc<AcpSession>>>,
 ) -> Element {
-    let initial = field.current_value.clone()
+    let initial = field
+        .current_value
+        .clone()
         .or_else(|| field.default.clone())
         .unwrap_or_default();
     let mut value = use_signal(|| initial);

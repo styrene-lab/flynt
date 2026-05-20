@@ -29,7 +29,8 @@ pub fn probe_identity() -> IdentityStatus {
             tier: "None".into(),
             label: "No identity configured".into(),
             path: styrene_identity::file_signer::FileSigner::default_path()
-                .display().to_string(),
+                .display()
+                .to_string(),
         },
     }
 }
@@ -68,7 +69,8 @@ pub fn has_keychain_identity() -> bool {
 pub fn create_keychain_identity() -> Result<()> {
     use styrene_identity::keychain_signer::KeychainSigner;
     let signer = KeychainSigner::default();
-    signer.create()
+    signer
+        .create()
         .map_err(|e| anyhow::anyhow!("Keychain identity creation failed: {e}"))
 }
 
@@ -81,15 +83,14 @@ pub fn create_keychain_identity() -> Result<()> {
 /// Triggers Face ID / Touch ID.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn unlock_keychain_identity() -> Result<UnlockedIdentity> {
-    use security_framework::passwords::{generic_password, PasswordOptions};
+    use security_framework::passwords::{PasswordOptions, generic_password};
     use styrene_identity::keychain_signer;
 
-    let data = generic_password(
-        PasswordOptions::new_generic_password(
-            keychain_signer::SERVICE,
-            keychain_signer::ACCOUNT,
-        ),
-    ).map_err(|e| {
+    let data = generic_password(PasswordOptions::new_generic_password(
+        keychain_signer::SERVICE,
+        keychain_signer::ACCOUNT,
+    ))
+    .map_err(|e| {
         let code = e.code();
         if code == -25293 || code == -128 {
             anyhow::anyhow!("Biometric authentication cancelled")
@@ -121,7 +122,8 @@ pub fn unlock_keychain_identity() -> Result<UnlockedIdentity> {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn delete_keychain_identity() -> Result<()> {
     use styrene_identity::keychain_signer::KeychainSigner;
-    KeychainSigner::default().delete()
+    KeychainSigner::default()
+        .delete()
         .map_err(|e| anyhow::anyhow!("Keychain identity deletion failed: {e}"))
 }
 
@@ -145,7 +147,8 @@ pub fn create_identity(passphrase: &str) -> Result<PathBuf> {
     let pp = passphrase.as_bytes().to_vec();
     let provider = ClosurePassphraseProvider::new(move || Ok(pp.clone()));
     let signer = FileSigner::new(&path, Box::new(provider));
-    signer.generate(passphrase.as_bytes())
+    signer
+        .generate(passphrase.as_bytes())
         .map_err(|e| anyhow::anyhow!("Failed to create identity: {e}"))?;
 
     Ok(path)
@@ -165,14 +168,17 @@ pub struct UnlockedIdentity {
 }
 
 /// Derive all public keys from a root secret.
-fn derive_unlocked_identity(root_secret: &styrene_identity::signer::RootSecret) -> Result<UnlockedIdentity> {
+fn derive_unlocked_identity(
+    root_secret: &styrene_identity::signer::RootSecret,
+) -> Result<UnlockedIdentity> {
     let identity_hash = styrene_identity::identity_hash(root_secret);
     let deriver = KeyDeriver::new(root_secret.as_bytes());
 
     let git_seed = deriver.derive(KeyPurpose::Signing);
     let git_signing_pubkey = styrene_identity::format::ssh_pubkey(&git_seed, "flynt-signing");
 
-    let auth_seed = deriver.derive_ssh_user_key("git-auth")
+    let auth_seed = deriver
+        .derive_ssh_user_key("git-auth")
         .map_err(|e| anyhow::anyhow!("SSH key derivation failed: {e}"))?;
     let ssh_auth_pubkey = styrene_identity::format::ssh_pubkey(&auth_seed, "flynt@styrene");
     let ssh_fingerprint = styrene_identity::format::ssh_pubkey_fingerprint(&auth_seed);
@@ -199,7 +205,9 @@ pub fn unlock_identity(passphrase: &str) -> Result<UnlockedIdentity> {
         Ok(s) => s,
         Err(_) => {
             std::thread::sleep(std::time::Duration::from_secs(2));
-            return Err(anyhow::anyhow!("Failed to unlock identity — wrong passphrase?"));
+            return Err(anyhow::anyhow!(
+                "Failed to unlock identity — wrong passphrase?"
+            ));
         }
     };
 
@@ -224,7 +232,8 @@ pub fn configure_git_signing(
 
     let repo = git2::Repository::open(project_root)
         .map_err(|e| anyhow::anyhow!("Failed to open git repo: {e}"))?;
-    let mut config = repo.config()
+    let mut config = repo
+        .config()
         .map_err(|e| anyhow::anyhow!("Failed to open git config: {e}"))?;
 
     config.set_str("commit.gpgsign", "true")?;
@@ -260,9 +269,12 @@ mod tests {
         git2::Repository::init(tmp.path()).unwrap();
 
         configure_git_signing(
-            tmp.path(), "ssh-ed25519 AAAA test@host",
-            Some("Test User"), Some("test@example.com"),
-        ).unwrap();
+            tmp.path(),
+            "ssh-ed25519 AAAA test@host",
+            Some("Test User"),
+            Some("test@example.com"),
+        )
+        .unwrap();
 
         let config = std::fs::read_to_string(tmp.path().join(".git/config")).unwrap();
         assert!(config.contains("gpgsign"));

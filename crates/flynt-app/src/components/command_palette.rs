@@ -6,9 +6,16 @@
 
 use crate::acp::AcpSession;
 use crate::bootstrap::AppContext;
-use crate::state::{Route, TabState};
-use flynt_core::store::ProjectStore;
+use crate::state::{
+    BookmarkRefresh, NoteHistoryCommand, NoteInspectorCommand, NoteInspectorTarget,
+    PublicationPreviewCommand, Route, TabState,
+};
 use dioxus::prelude::*;
+use flynt_core::models::{
+    BookmarkTarget, LensColumn, LensFilter, LensFilterOp, LensLayout, LensSort, LensSortDirection,
+    LensSource, ProjectLens,
+};
+use flynt_core::store::ProjectStore;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -34,7 +41,9 @@ fn convert_active_doc_to_task(
     doc_id: &flynt_core::models::DocumentId,
 ) -> anyhow::Result<()> {
     use flynt_core::store::ProjectStore;
-    let doc = project.store.get_document(doc_id)?
+    let doc = project
+        .store
+        .get_document(doc_id)?
         .ok_or_else(|| anyhow::anyhow!("active document not found in store"))?;
 
     if doc.frontmatter.kind.is_some() {
@@ -48,18 +57,23 @@ fn convert_active_doc_to_task(
     // find. `ensure_default_board` runs at Project::open so this is
     // never empty in practice — but be defensive.
     let boards = project.store.list_boards()?;
-    let target_board = boards.iter()
+    let target_board = boards
+        .iter()
         .find(|b| b.name == "Default")
         .or_else(|| boards.first())
         .ok_or_else(|| anyhow::anyhow!("no boards exist — cannot convert to task"))?;
-    let first_column = target_board.columns.first()
+    let first_column = target_board
+        .columns
+        .first()
         .map(|c| c.name.clone())
         .unwrap_or_else(|| "Active".into());
 
     // The title we land in [data].title: prefer H1 from body, else the
     // existing doc title (which itself fell back through the
     // extract_data_title chain), else the filename stem.
-    let body_h1 = doc.content.lines()
+    let body_h1 = doc
+        .content
+        .lines()
         .find_map(|l| l.strip_prefix("# ").map(|s| s.trim().to_string()))
         .filter(|s| !s.is_empty());
     let task_title = body_h1.unwrap_or_else(|| doc.title.clone());
@@ -73,7 +87,11 @@ fn convert_active_doc_to_task(
     // means we share the toml_edit code path with the picker writes
     // and don't risk producing a subtly different format.
     project.set_data_field(&doc.path, "title", toml_edit::Value::from(task_title))?;
-    project.set_data_field(&doc.path, "board", toml_edit::Value::from(target_board.id.0.to_string()))?;
+    project.set_data_field(
+        &doc.path,
+        "board",
+        toml_edit::Value::from(target_board.id.0.to_string()),
+    )?;
     project.set_data_field(&doc.path, "column", toml_edit::Value::from(first_column))?;
     project.set_data_field(&doc.path, "status", toml_edit::Value::from("todo"))?;
     project.set_data_field(&doc.path, "priority", toml_edit::Value::from(2_i64))?;
@@ -82,7 +100,9 @@ fn convert_active_doc_to_task(
 }
 
 fn fuzzy_match(haystack: &str, needle: &str) -> bool {
-    if needle.is_empty() { return true; }
+    if needle.is_empty() {
+        return true;
+    }
     let mut hi = haystack.chars();
     for nc in needle.chars() {
         loop {
@@ -103,13 +123,171 @@ fn execute_command(
     tab_state: &mut Signal<TabState>,
     active_route: &mut Signal<Route>,
     settings_open: &mut Signal<crate::state::SettingsOpen>,
+    note_inspector: &mut Signal<NoteInspectorCommand>,
+    note_history: &mut Signal<NoteHistoryCommand>,
+    publication_preview: &mut Signal<PublicationPreviewCommand>,
+    bookmark_refresh: &mut Signal<BookmarkRefresh>,
+    search_query: &Signal<String>,
 ) {
     match id {
         "view-notes" => *active_route.write() = Route::Notes,
         "view-board" => *active_route.write() = Route::Kanban,
+        "view-lenses" => *active_route.write() = Route::Lenses,
         "view-graph" => *active_route.write() = Route::Graph,
         "view-settings" => *settings_open.write() = crate::state::SettingsOpen(true),
         "view-welcome" => *active_route.write() = Route::Welcome,
+        "note-inspector-toggle" => {
+            let next_version = note_inspector.read().version.wrapping_add(1);
+            *note_inspector.write() = NoteInspectorCommand {
+                version: next_version,
+                target: NoteInspectorTarget::Toggle,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "note-inspector-links" => {
+            let next_version = note_inspector.read().version.wrapping_add(1);
+            *note_inspector.write() = NoteInspectorCommand {
+                version: next_version,
+                target: NoteInspectorTarget::Links,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "note-inspector-outline" => {
+            let next_version = note_inspector.read().version.wrapping_add(1);
+            *note_inspector.write() = NoteInspectorCommand {
+                version: next_version,
+                target: NoteInspectorTarget::Outline,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "note-inspector-properties" => {
+            let next_version = note_inspector.read().version.wrapping_add(1);
+            *note_inspector.write() = NoteInspectorCommand {
+                version: next_version,
+                target: NoteInspectorTarget::Properties,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "note-history" => {
+            let next_version = note_history.read().version.wrapping_add(1);
+            *note_history.write() = NoteHistoryCommand {
+                version: next_version,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "publish-preview" => {
+            let next_version = publication_preview.read().version.wrapping_add(1);
+            *publication_preview.write() = PublicationPreviewCommand {
+                version: next_version,
+            };
+            *active_route.write() = Route::Notes;
+        }
+        "bookmark-current-note" => {
+            let c = ctx;
+            let active = tab_state.read().active_id().cloned();
+            let mut refresh = *bookmark_refresh;
+            spawn(async move {
+                let Some(doc_id) = active else {
+                    tracing::warn!("Bookmark Current Note: no active document");
+                    return;
+                };
+                let project = c.project();
+                let result = tokio::task::spawn_blocking(move || {
+                    let doc = project
+                        .store
+                        .get_document(&doc_id)?
+                        .ok_or_else(|| anyhow::anyhow!("active document not found"))?;
+                    project.add_bookmark(
+                        doc.title.clone(),
+                        BookmarkTarget::Note {
+                            document_id: Some(doc.id),
+                            path: doc.path,
+                        },
+                    )
+                })
+                .await;
+                match result {
+                    Ok(Ok(_)) => {
+                        let next = refresh.read().0.wrapping_add(1);
+                        refresh.write().0 = next;
+                    }
+                    Ok(Err(e)) => tracing::warn!("Bookmark Current Note: {e}"),
+                    Err(e) => tracing::warn!("Bookmark Current Note task failed: {e}"),
+                }
+            });
+        }
+        "bookmark-current-search" => {
+            let query = search_query.read().trim().to_string();
+            if query.is_empty() {
+                tracing::warn!("Bookmark Current Search: search query is empty");
+                return;
+            }
+            let c = ctx;
+            let mut refresh = *bookmark_refresh;
+            spawn(async move {
+                let project = c.project();
+                let title = format!("Search: {query}");
+                let target = BookmarkTarget::Search {
+                    query: query.clone(),
+                };
+                let result =
+                    tokio::task::spawn_blocking(move || project.add_bookmark(title, target)).await;
+                match result {
+                    Ok(Ok(_)) => {
+                        let next = refresh.read().0.wrapping_add(1);
+                        refresh.write().0 = next;
+                    }
+                    Ok(Err(e)) => tracing::warn!("Bookmark Current Search: {e}"),
+                    Err(e) => tracing::warn!("Bookmark Current Search task failed: {e}"),
+                }
+            });
+        }
+        "save-search-as-lens" => {
+            let query = search_query.read().trim().to_string();
+            if query.is_empty() {
+                tracing::warn!("Save Search as Lens: search query is empty");
+                return;
+            }
+            let c = ctx;
+            let mut ar = *active_route;
+            spawn(async move {
+                let project = c.project();
+                let lens = ProjectLens {
+                    title: format!("Search: {query}"),
+                    source: LensSource::Documents,
+                    layout: LensLayout::Table,
+                    filters: vec![LensFilter {
+                        field: "search".into(),
+                        op: LensFilterOp::Contains,
+                        value: query,
+                    }],
+                    columns: vec![
+                        LensColumn {
+                            field: "title".into(),
+                            label: None,
+                        },
+                        LensColumn {
+                            field: "path".into(),
+                            label: None,
+                        },
+                        LensColumn {
+                            field: "updated_at".into(),
+                            label: Some("Updated".into()),
+                        },
+                    ],
+                    sort: vec![LensSort {
+                        field: "updated_at".into(),
+                        direction: LensSortDirection::Desc,
+                    }],
+                    limit: Some(100),
+                };
+                match tokio::task::spawn_blocking(move || project.save_lens(&lens)).await {
+                    Ok(Ok(_)) => *ar.write() = Route::Lenses,
+                    Ok(Err(e)) => tracing::warn!("Save Search as Lens: {e}"),
+                    Err(e) => tracing::warn!("Save Search as Lens task failed: {e}"),
+                }
+            });
+        }
         "new-note" => {
             let c = ctx;
             let mut ts = *tab_state;
@@ -124,23 +302,24 @@ fn execute_command(
                 let content = format!("+++\ntitle = \"{title}\"\ntags = []\n+++\n\n");
                 if project.save_document_content(&path, &content).is_ok() {
                     let _ = project.reindex();
-                    if let Ok(Some(doc)) = project.store.find_document_by_slug(&title.to_lowercase()) {
+                    if let Ok(Some(doc)) =
+                        project.store.find_document_by_slug(&title.to_lowercase())
+                    {
                         ts.write().open(doc.id, title);
                         *ar.write() = Route::Notes;
                     }
                 }
             });
         }
-        "icloud-project" => {
-            match flynt_store::sync::icloud::create_icloud_project("Flynt") {
-                Ok(root) => {
-                    let _ = crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_project(&root);
-                }
-                Err(e) => {
-                    tracing::error!("iCloud project creation failed: {e}");
-                }
+        "icloud-project" => match flynt_store::sync::icloud::create_icloud_project("Flynt") {
+            Ok(root) => {
+                let _ =
+                    crate::bootstrap::OmegonRuntimeContext::spawn_new_instance_for_project(&root);
             }
-        }
+            Err(e) => {
+                tracing::error!("iCloud project creation failed: {e}");
+            }
+        },
         other if other.starts_with("template:") => {
             if let Some(tmpl_name) = other.strip_prefix("template:") {
                 let templates = flynt_core::templates::list_templates(&ctx.project().root);
@@ -148,7 +327,8 @@ fn execute_command(
                     let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                     let title = format!("{} {ts_suffix}", tmpl.name);
                     let project_name = ctx.project().config.project_name.clone();
-                    let content = flynt_core::templates::expand(&tmpl.content, &title, &project_name);
+                    let content =
+                        flynt_core::templates::expand(&tmpl.content, &title, &project_name);
                     let filename = format!("{title}.md");
                     let path = std::path::PathBuf::from(&filename);
                     let c = ctx;
@@ -158,7 +338,9 @@ fn execute_command(
                         let project = c.project();
                         if project.save_document_content(&path, &content).is_ok() {
                             let _ = project.reindex();
-                            if let Ok(Some(doc)) = project.store.find_document_by_slug(&title.to_lowercase()) {
+                            if let Ok(Some(doc)) =
+                                project.store.find_document_by_slug(&title.to_lowercase())
+                            {
                                 ts.write().open(doc.id, title);
                                 *ar.write() = Route::Notes;
                             }
@@ -192,7 +374,8 @@ fn execute_command(
                 let project = c.project();
                 let ts_suffix = chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string();
                 let name = format!("Drawing {ts_suffix}");
-                if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&project.root, &name) {
+                if let Ok(_md_path) = crate::views::excalidraw::create_drawing(&project.root, &name)
+                {
                     let _ = project.reindex();
                     let slug = name.to_lowercase();
                     if let Ok(Some(doc)) = project.store.find_document_by_slug(&slug) {
@@ -237,13 +420,21 @@ fn execute_command(
                 if !abs.exists() {
                     let templates = flynt_core::templates::list_templates(&project.root);
                     let tmpl = templates.iter().find(|t| t.name.to_lowercase() == "daily");
-                    let content = flynt_core::daily::daily_note_content(date, tmpl.map(|t| t.content.as_str()));
-                    if let Some(parent) = abs.parent() { let _ = std::fs::create_dir_all(parent); }
+                    let content = flynt_core::daily::daily_note_content(
+                        date,
+                        tmpl.map(|t| t.content.as_str()),
+                    );
+                    if let Some(parent) = abs.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
                     let _ = project.save_document_content(&path, &content);
                     let _ = project.reindex();
                 }
                 let title = date.format("%A, %B %-d, %Y").to_string();
-                if let Ok(Some(doc)) = project.store.find_document_by_slug(&date.format("%Y-%m-%d").to_string()) {
+                if let Ok(Some(doc)) = project
+                    .store
+                    .find_document_by_slug(&date.format("%Y-%m-%d").to_string())
+                {
                     ts.write().open(doc.id, title);
                     *ar.write() = Route::Notes;
                 }
@@ -253,7 +444,9 @@ fn execute_command(
             let c = ctx;
             spawn(async move {
                 let project = c.project();
-                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } = &project.config.sync {
+                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } =
+                    &project.config.sync
+                {
                     let git = flynt_store::sync::git::GitSync::new(
                         project.root.clone(),
                         remote.clone(),
@@ -270,19 +463,33 @@ fn execute_command(
         }
         "create-tag" => {
             let c = ctx;
+            let mut nh = *note_history;
+            let mut ar = *active_route;
             spawn(async move {
                 let project = c.project();
-                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } = &project.config.sync {
+                if let flynt_core::models::SyncConfig::Git { remote, branch, .. } =
+                    &project.config.sync
+                {
                     let git = flynt_store::sync::git::GitSync::new(
-                        project.root.clone(), remote.clone(), branch.clone(),
+                        project.root.clone(),
+                        remote.clone(),
+                        branch.clone(),
                     );
                     // Auto-commit first so the tag captures current state
                     let _ = git.auto_commit("[flynt] snapshot");
-                    let tag_name = format!("snapshot-{}", chrono::Local::now().format("%Y%m%d-%H%M%S%3f"));
+                    let tag_name = format!(
+                        "snapshot-{}",
+                        chrono::Local::now().format("%Y%m%d-%H%M%S%3f")
+                    );
                     match git.create_tag(&tag_name, Some("Flynt project snapshot")) {
                         Ok(()) => {
                             let _ = git.push_tags();
                             tracing::info!("Created snapshot: {tag_name}");
+                            let next_version = nh.read().version.wrapping_add(1);
+                            *nh.write() = NoteHistoryCommand {
+                                version: next_version,
+                            };
+                            *ar.write() = Route::Notes;
                         }
                         Err(e) => tracing::warn!("Snapshot failed: {e}"),
                     }
@@ -322,7 +529,9 @@ fn execute_command(
         other if other.starts_with("open:") => {
             if let Some(uuid_str) = other.strip_prefix("open:") {
                 if let Ok(uuid) = uuid_str.parse::<uuid::Uuid>() {
-                    tab_state.write().open(flynt_core::models::DocumentId(uuid), label.to_string());
+                    tab_state
+                        .write()
+                        .open(flynt_core::models::DocumentId(uuid), label.to_string());
                     *active_route.write() = Route::Notes;
                 }
             }
@@ -337,6 +546,11 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
     let mut tab_state = use_context::<Signal<TabState>>();
     let mut active_route = use_context::<Signal<Route>>();
     let mut settings_open = use_context::<Signal<crate::state::SettingsOpen>>();
+    let mut note_inspector = use_context::<Signal<NoteInspectorCommand>>();
+    let mut note_history = use_context::<Signal<NoteHistoryCommand>>();
+    let mut publication_preview = use_context::<Signal<PublicationPreviewCommand>>();
+    let mut bookmark_refresh = use_context::<Signal<BookmarkRefresh>>();
+    let search_query = use_context::<Signal<String>>();
 
     let mut query = use_signal(String::new);
     let mut selected = use_signal(|| 0usize);
@@ -347,22 +561,136 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
     let all_commands = use_memo(move || {
         let _ = *open.read(); // reactive dependency — recompute when palette opens/closes
         let mut all: Vec<Cmd> = vec![
-            Cmd { id: "view-notes".into(), label: "Notes".into(), category: "Navigate".into() },
-            Cmd { id: "view-board".into(), label: "Tasks".into(), category: "Navigate".into() },
-            Cmd { id: "view-graph".into(), label: "Graph".into(), category: "Navigate".into() },
-            Cmd { id: "view-settings".into(), label: "Settings".into(), category: "Navigate".into() },
-            Cmd { id: "view-welcome".into(), label: "Welcome".into(), category: "Navigate".into() },
-            Cmd { id: "new-note".into(), label: "New Note".into(), category: "Create".into() },
-            Cmd { id: "new-board".into(), label: "New Board".into(), category: "Create".into() },
-            Cmd { id: "daily-note".into(), label: "Today's Note".into(), category: "Create".into() },
-        Cmd { id: "new-drawing".into(), label: "New Drawing".into(), category: "Create".into() },
-        Cmd { id: "new-canvas".into(), label: "New Canvas".into(), category: "Create".into() },
-        Cmd { id: "insert-drawing".into(), label: "Insert Drawing Here".into(), category: "Create".into() },
-            Cmd { id: "toggle-agent".into(), label: "Toggle Agent Panel".into(), category: "View".into() },
-            Cmd { id: "sync-now".into(), label: "Sync Now".into(), category: "Action".into() },
-            Cmd { id: "create-tag".into(), label: "Create Snapshot".into(), category: "Action".into() },
-        Cmd { id: "icloud-project".into(), label: "Create Project in iCloud".into(), category: "Create".into() },
-        Cmd { id: "convert-to-task".into(), label: "Convert to Task".into(), category: "Action".into() },
+            Cmd {
+                id: "view-notes".into(),
+                label: "Notes".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
+                id: "view-board".into(),
+                label: "Tasks".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
+                id: "view-lenses".into(),
+                label: "Lenses".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
+                id: "view-graph".into(),
+                label: "Graph".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
+                id: "view-settings".into(),
+                label: "Settings".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
+                id: "view-welcome".into(),
+                label: "Welcome".into(),
+                category: "Navigate".into(),
+            },
+            Cmd {
+                id: "note-inspector-toggle".into(),
+                label: "Toggle Note Context".into(),
+                category: "View".into(),
+            },
+            Cmd {
+                id: "note-inspector-links".into(),
+                label: "Show Backlinks".into(),
+                category: "View".into(),
+            },
+            Cmd {
+                id: "note-inspector-outline".into(),
+                label: "Show Outline".into(),
+                category: "View".into(),
+            },
+            Cmd {
+                id: "note-inspector-properties".into(),
+                label: "Show Properties".into(),
+                category: "View".into(),
+            },
+            Cmd {
+                id: "note-history".into(),
+                label: "Show Note History".into(),
+                category: "View".into(),
+            },
+            Cmd {
+                id: "publish-preview".into(),
+                label: "Export Publication Preview".into(),
+                category: "Publish".into(),
+            },
+            Cmd {
+                id: "bookmark-current-note".into(),
+                label: "Bookmark Current Note".into(),
+                category: "Bookmark".into(),
+            },
+            Cmd {
+                id: "bookmark-current-search".into(),
+                label: "Bookmark Current Search".into(),
+                category: "Bookmark".into(),
+            },
+            Cmd {
+                id: "save-search-as-lens".into(),
+                label: "Save Search as Lens".into(),
+                category: "Lens".into(),
+            },
+            Cmd {
+                id: "new-note".into(),
+                label: "New Note".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "new-board".into(),
+                label: "New Board".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "daily-note".into(),
+                label: "Today's Note".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "new-drawing".into(),
+                label: "New Drawing".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "new-canvas".into(),
+                label: "New Canvas".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "insert-drawing".into(),
+                label: "Insert Drawing Here".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "toggle-agent".into(),
+                label: "Toggle Agent Panel".into(),
+                category: "View".into(),
+            },
+            Cmd {
+                id: "sync-now".into(),
+                label: "Sync Now".into(),
+                category: "Action".into(),
+            },
+            Cmd {
+                id: "create-tag".into(),
+                label: "Create Snapshot".into(),
+                category: "Action".into(),
+            },
+            Cmd {
+                id: "icloud-project".into(),
+                label: "Create Project in iCloud".into(),
+                category: "Create".into(),
+            },
+            Cmd {
+                id: "convert-to-task".into(),
+                label: "Convert to Task".into(),
+                category: "Action".into(),
+            },
         ];
         let templates = flynt_core::templates::list_templates(&ctx.project().root);
         for tmpl in &templates {
@@ -465,7 +793,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                     }
                                     Key::Enter => {
                                         if let Some(cmd) = filtered.get(sel) {
-                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open);
+                                            execute_command(&cmd.id, &cmd.label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview, &mut bookmark_refresh, &search_query);
                                             close();
                                         }
                                     }
@@ -484,7 +812,7 @@ pub fn CommandPalette(mut open: Signal<bool>, mode: Signal<PaletteMode>) -> Elem
                                             key: "{i}-{cmd_id}",
                                             class: if i == sel { "palette-item selected" } else { "palette-item" },
                                             onclick: move |_| {
-                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open);
+                                                execute_command(&cmd_id, &cmd_label, ctx, &mut tab_state, &mut active_route, &mut settings_open, &mut note_inspector, &mut note_history, &mut publication_preview, &mut bookmark_refresh, &search_query);
                                                 close();
                                             },
                                             span { class: "palette-category", "{cmd.category}" }

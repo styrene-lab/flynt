@@ -1,6 +1,6 @@
 use crate::models::{Frontmatter, WikiLink};
-use comrak::{Arena, Options, parse_document};
 use comrak::nodes::NodeValue;
+use comrak::{Arena, Options, parse_document};
 
 /// Extract frontmatter + wikilinks from raw markdown source.
 /// Returns `(body_without_frontmatter, frontmatter, links)`.
@@ -56,8 +56,10 @@ fn extract_wikilinks(body: &str) -> Vec<WikiLink> {
             NodeValue::Link(link) => {
                 let url = &link.url;
                 // Skip external URLs and anchors-only
-                if url.starts_with("http://") || url.starts_with("https://")
-                    || url.starts_with("mailto:") || url.starts_with('#')
+                if url.starts_with("http://")
+                    || url.starts_with("https://")
+                    || url.starts_with("mailto:")
+                    || url.starts_with('#')
                     || url.is_empty()
                 {
                     continue;
@@ -66,26 +68,38 @@ fn extract_wikilinks(body: &str) -> Vec<WikiLink> {
                 let path = std::path::Path::new(url.split('#').next().unwrap_or(url));
                 // Only include links to markdown files or extensionless refs
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if !ext.is_empty() && ext != "md" { continue; }
+                if !ext.is_empty() && ext != "md" {
+                    continue;
+                }
                 // Use the file stem as the target slug (like wikilinks do)
-                let target = path.file_stem()
+                let target = path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("")
                     .to_string();
-                if target.is_empty() { continue; }
+                if target.is_empty() {
+                    continue;
+                }
                 let anchor = url.find('#').map(|i| url[i + 1..].to_string());
                 // Extract display text from child text nodes
-                let display: String = node.descendants()
+                let display: String = node
+                    .descendants()
                     .filter_map(|child| {
                         if let NodeValue::Text(ref t) = child.data.borrow().value {
                             Some(t.clone())
-                        } else { None }
+                        } else {
+                            None
+                        }
                     })
                     .collect::<Vec<_>>()
                     .join("");
                 links.push(WikiLink {
                     target,
-                    display: if display.is_empty() { None } else { Some(display) },
+                    display: if display.is_empty() {
+                        None
+                    } else {
+                        Some(display)
+                    },
                     anchor,
                 });
             }
@@ -114,13 +128,20 @@ fn scan_wikilinks(text: &str) -> Vec<WikiLink> {
 
         // Split anchor: [[target#heading]]
         let (target, anchor) = if let Some(hash) = target_part.find('#') {
-            (target_part[..hash].to_string(), Some(target_part[hash + 1..].to_string()))
+            (
+                target_part[..hash].to_string(),
+                Some(target_part[hash + 1..].to_string()),
+            )
         } else {
             (target_part.to_string(), None)
         };
 
         if !target.is_empty() {
-            links.push(WikiLink { target, display, anchor });
+            links.push(WikiLink {
+                target,
+                display,
+                anchor,
+            });
         }
     }
     links
@@ -189,7 +210,8 @@ mod tests {
 
     #[test]
     fn body_containing_triple_plus_not_treated_as_frontmatter() {
-        let raw = "+++\ntitle = \"Real\"\n+++\n\nSome text\n\n+++\nthis is body not frontmatter\n+++\n";
+        let raw =
+            "+++\ntitle = \"Real\"\n+++\n\nSome text\n\n+++\nthis is body not frontmatter\n+++\n";
         let (body, fm, _) = parse_document_source(raw);
         assert_eq!(fm.title.as_deref(), Some("Real"));
         assert!(body.contains("this is body not frontmatter"));
@@ -250,8 +272,12 @@ mod tests {
 
     #[test]
     fn extracts_local_markdown_link() {
-        let (_, _, links) = parse_document_source("See [design doc](../docs/provider-landscape.md) for details.");
-        assert!(links.iter().any(|l| l.target == "provider-landscape"), "links: {links:?}");
+        let (_, _, links) =
+            parse_document_source("See [design doc](../docs/provider-landscape.md) for details.");
+        assert!(
+            links.iter().any(|l| l.target == "provider-landscape"),
+            "links: {links:?}"
+        );
     }
 
     #[test]
@@ -270,20 +296,25 @@ mod tests {
     #[test]
     fn ignores_image_links() {
         let (_, _, links) = parse_document_source("See [photo](image.png).");
-        assert!(links.is_empty(), "should not extract image links: {links:?}");
+        assert!(
+            links.is_empty(),
+            "should not extract image links: {links:?}"
+        );
     }
 
     #[test]
     fn extracts_extensionless_local_link() {
         let (_, _, links) = parse_document_source("See [roadmap](../roadmap) here.");
-        assert!(links.iter().any(|l| l.target == "roadmap"), "links: {links:?}");
+        assert!(
+            links.iter().any(|l| l.target == "roadmap"),
+            "links: {links:?}"
+        );
     }
 
     #[test]
     fn extracts_mixed_wikilinks_and_md_links() {
-        let (_, _, links) = parse_document_source(
-            "See [[alpha]] and [beta doc](beta.md) and [[gamma]]."
-        );
+        let (_, _, links) =
+            parse_document_source("See [[alpha]] and [beta doc](beta.md) and [[gamma]].");
         assert_eq!(links.len(), 3);
         assert!(links.iter().any(|l| l.target == "alpha"));
         assert!(links.iter().any(|l| l.target == "beta"));

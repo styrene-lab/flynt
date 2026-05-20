@@ -74,7 +74,9 @@ struct FrontmatterData {
     schema_version: u32,
 }
 
-fn default_schema_version() -> u32 { SCHEMA_VERSION }
+fn default_schema_version() -> u32 {
+    SCHEMA_VERSION
+}
 
 // ── Serialization ───────────────────────────────────────────────────────────
 
@@ -117,8 +119,7 @@ pub fn save_flow(path: &Path, flow: &Flow, id: Option<Uuid>) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create parent dir for {}", path.display()))?;
     }
-    std::fs::write(path, raw)
-        .with_context(|| format!("write flow file {}", path.display()))?;
+    std::fs::write(path, raw).with_context(|| format!("write flow file {}", path.display()))?;
     Ok(())
 }
 
@@ -144,8 +145,8 @@ pub fn parse_flow(raw: &str) -> Result<FlowDocument> {
     let body = &rest[end + 4..];
     let body = body.strip_prefix('\n').unwrap_or(body);
 
-    let fm: Frontmatter = toml::from_str(fm_toml)
-        .context("invalid TOML frontmatter in flow file")?;
+    let fm: Frontmatter =
+        toml::from_str(fm_toml).context("invalid TOML frontmatter in flow file")?;
 
     if fm.kind != "flow" {
         anyhow::bail!("expected kind = \"flow\", got kind = \"{}\"", fm.kind);

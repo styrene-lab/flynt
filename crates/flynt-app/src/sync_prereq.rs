@@ -64,12 +64,10 @@ pub fn evaluate_icloud(project_root: &Path) -> SyncBackendStatus {
         );
     }
     let Ok(home) = std::env::var("HOME") else {
-        return SyncBackendStatus::Blocked(
-            "Can't resolve $HOME to find iCloud Drive.".to_string(),
-        );
+        return SyncBackendStatus::Blocked("Can't resolve $HOME to find iCloud Drive.".to_string());
     };
-    let icloud_root = std::path::PathBuf::from(&home)
-        .join("Library/Mobile Documents/com~apple~CloudDocs");
+    let icloud_root =
+        std::path::PathBuf::from(&home).join("Library/Mobile Documents/com~apple~CloudDocs");
     if project_root.starts_with(&icloud_root) {
         SyncBackendStatus::Available
     } else {
@@ -103,12 +101,12 @@ pub fn evaluate_git() -> SyncBackendStatus {
 
     // Any provider credentials? If none, allow selection but warn —
     // operator can complete setup inside the Git config rows below.
-    let any_provider_ready = flynt_core::providers::PROVIDERS
-        .iter()
-        .any(|p| matches!(
+    let any_provider_ready = flynt_core::providers::PROVIDERS.iter().any(|p| {
+        matches!(
             flynt_core::providers::probe_provider(p),
             flynt_core::providers::CredentialStatus::Authenticated { .. }
-        ));
+        )
+    });
     if !any_provider_ready {
         return SyncBackendStatus::Warning(
             "No git provider credentials are configured yet. You can still pick this and set up credentials below, but pushes will fail until a token is in place.".to_string(),
@@ -166,13 +164,26 @@ mod tests {
         let missing = PathBuf::from("/definitely/does/not/exist/omegon-binary");
         let status = evaluate_daemon(&missing);
         assert!(status.is_blocked());
-        assert!(status.explanation().unwrap().contains("Omegon binary not found"));
+        assert!(
+            status
+                .explanation()
+                .unwrap()
+                .contains("Omegon binary not found")
+        );
     }
 
     #[test]
     fn status_explanation_is_some_when_not_available() {
-        assert!(SyncBackendStatus::Warning("x".into()).explanation().is_some());
-        assert!(SyncBackendStatus::Blocked("y".into()).explanation().is_some());
+        assert!(
+            SyncBackendStatus::Warning("x".into())
+                .explanation()
+                .is_some()
+        );
+        assert!(
+            SyncBackendStatus::Blocked("y".into())
+                .explanation()
+                .is_some()
+        );
         assert!(SyncBackendStatus::Available.explanation().is_none());
     }
 }

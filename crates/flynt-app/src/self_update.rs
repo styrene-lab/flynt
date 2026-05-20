@@ -516,8 +516,8 @@ fn candidate_is_update(
 #[cfg(test)]
 mod tests {
     use super::{
-        candidate_is_update, normalize_version, parse_version_key, verify_artifact_bytes,
-        version_is_newer, ReleaseArtifact, UpdateChannel, VersionKey,
+        ReleaseArtifact, UpdateChannel, VersionKey, candidate_is_update, normalize_version,
+        parse_version_key, verify_artifact_bytes, version_is_newer,
     };
 
     #[test]

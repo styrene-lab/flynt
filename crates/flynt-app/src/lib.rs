@@ -12,5 +12,6 @@ pub mod push_pipeline;
 pub mod self_update;
 pub mod state;
 pub mod sync_prereq;
+pub mod theme;
 pub mod ui_state;
 pub mod views;

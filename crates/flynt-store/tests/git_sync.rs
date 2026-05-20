@@ -39,11 +39,14 @@ fn setup_local_remote() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
     let file = local_path.join("init.md");
     fs::write(&file, "# Init\n").unwrap();
     let mut index = repo.index().unwrap();
-    index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None).unwrap();
+    index
+        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+        .unwrap();
     index.write().unwrap();
     let tree_oid = index.write_tree().unwrap();
     let tree = repo.find_tree(tree_oid).unwrap();
-    repo.commit(Some("HEAD"), &sig(), &sig(), "initial", &tree, &[]).unwrap();
+    repo.commit(Some("HEAD"), &sig(), &sig(), "initial", &tree, &[])
+        .unwrap();
 
     // Push to remote
     let mut remote = repo.find_remote("origin").unwrap();
@@ -69,12 +72,15 @@ fn commit_file(repo_path: &Path, filename: &str, content: &str, message: &str) {
     fs::write(repo_path.join(filename), content).unwrap();
     let repo = Repository::open(repo_path).unwrap();
     let mut index = repo.index().unwrap();
-    index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None).unwrap();
+    index
+        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+        .unwrap();
     index.write().unwrap();
     let tree_oid = index.write_tree().unwrap();
     let tree = repo.find_tree(tree_oid).unwrap();
     let parent = repo.head().unwrap().peel_to_commit().unwrap();
-    repo.commit(Some("HEAD"), &sig(), &sig(), message, &tree, &[&parent]).unwrap();
+    repo.commit(Some("HEAD"), &sig(), &sig(), message, &tree, &[&parent])
+        .unwrap();
 }
 
 // ── Status ──────────────────────────────────────────────────────────────────
@@ -136,7 +142,63 @@ fn auto_commit_noop_when_clean() {
     sync.auto_commit("should not create commit").unwrap();
 
     let after = repo.head().unwrap().peel_to_commit().unwrap().id();
-    assert_eq!(before, after, "no commit should be created when tree is clean");
+    assert_eq!(
+        before, after,
+        "no commit should be created when tree is clean"
+    );
+}
+
+#[test]
+fn file_history_lists_commits_for_one_path() {
+    let (_tmp, local, _remote) = setup_local_remote();
+    commit_file(&local, "note.md", "first\n", "add note");
+    commit_file(&local, "other.md", "other\n", "add other");
+    commit_file(&local, "note.md", "second\n", "edit note");
+
+    let sync = git_sync(&local);
+    let history = sync.list_file_history(Path::new("note.md"), 10).unwrap();
+
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].summary, "edit note");
+    assert_eq!(history[1].summary, "add note");
+    assert!(history.iter().all(|entry| entry.short_commit.len() == 7));
+}
+
+#[test]
+fn file_history_reads_snapshot_at_commit() {
+    let (_tmp, local, _remote) = setup_local_remote();
+    commit_file(&local, "note.md", "first\n", "add note");
+    let sync = git_sync(&local);
+    let first = sync.list_file_history(Path::new("note.md"), 1).unwrap()[0]
+        .commit
+        .clone();
+    commit_file(&local, "note.md", "second\n", "edit note");
+
+    let snapshot = sync
+        .read_file_at_commit(Path::new("note.md"), &first)
+        .unwrap();
+
+    assert_eq!(snapshot.path, Path::new("note.md"));
+    assert_eq!(snapshot.content, "first\n");
+}
+
+#[test]
+fn diagnostic_reports_dirty_files_and_ahead_counts() {
+    let (_tmp, local, _remote) = setup_local_remote();
+    commit_file(&local, "committed.md", "committed\n", "local commit");
+    fs::write(local.join("dirty.md"), "dirty\n").unwrap();
+
+    let sync = git_sync(&local);
+    let diagnostic = sync.diagnostic().unwrap();
+
+    assert_eq!(diagnostic.backend, "git");
+    assert_eq!(diagnostic.remote, "origin");
+    assert_eq!(diagnostic.branch, "main");
+    assert_eq!(diagnostic.ahead, Some(1));
+    assert_eq!(diagnostic.behind, Some(0));
+    assert!(diagnostic.remote_ref_available);
+    assert!(diagnostic.dirty_files.iter().any(|file| file == "dirty.md"));
+    assert!(diagnostic.head.is_some());
 }
 
 #[test]
@@ -168,13 +230,18 @@ fn pull_fast_forward() {
     commit_file(&second, "from-second.md", "# Second\n", "from second");
     let repo2 = Repository::open(&second).unwrap();
     let mut remote2 = repo2.find_remote("origin").unwrap();
-    remote2.push(&["refs/heads/main:refs/heads/main"], None).unwrap();
+    remote2
+        .push(&["refs/heads/main:refs/heads/main"], None)
+        .unwrap();
 
     // Pull into local — should fast-forward
     let result = sync.pull().unwrap();
     assert_eq!(result.files_pulled, 1);
     assert!(result.conflicts.is_empty());
-    assert!(local.join("from-second.md").exists(), "pulled file should exist");
+    assert!(
+        local.join("from-second.md").exists(),
+        "pulled file should exist"
+    );
 }
 
 #[test]
@@ -201,12 +268,17 @@ fn pull_detects_merge_conflict() {
     // Push from second
     let repo2 = Repository::open(&second).unwrap();
     let mut remote2 = repo2.find_remote("origin").unwrap();
-    remote2.push(&["refs/heads/main:refs/heads/main"], None).unwrap();
+    remote2
+        .push(&["refs/heads/main:refs/heads/main"], None)
+        .unwrap();
 
     // Pull into local — should detect conflict
     let sync = git_sync(&local);
     let result = sync.pull().unwrap();
-    assert!(!result.conflicts.is_empty(), "should detect conflict on init.md");
+    assert!(
+        !result.conflicts.is_empty(),
+        "should detect conflict on init.md"
+    );
     assert!(result.conflicts.iter().any(|c| c.contains("init.md")));
 }
 
@@ -225,13 +297,18 @@ fn pull_non_conflicting_merge() {
     // Push from second
     let repo2 = Repository::open(&second).unwrap();
     let mut remote2 = repo2.find_remote("origin").unwrap();
-    remote2.push(&["refs/heads/main:refs/heads/main"], None).unwrap();
+    remote2
+        .push(&["refs/heads/main:refs/heads/main"], None)
+        .unwrap();
 
     // Pull into local — should merge cleanly
     let sync = git_sync(&local);
     let result = sync.pull().unwrap();
     assert!(result.conflicts.is_empty(), "no conflicts expected");
-    assert!(local.join("remote-only.md").exists(), "merged file should exist");
+    assert!(
+        local.join("remote-only.md").exists(),
+        "merged file should exist"
+    );
 }
 
 // ── Push ────────────────────────────────────────────────────────────────────
@@ -246,7 +323,10 @@ fn push_sends_commits_to_remote() {
 
     // Verify the file appears in a fresh clone
     let verify = clone_second(&tmp, &remote);
-    assert!(verify.join("pushed.md").exists(), "pushed file should be in remote");
+    assert!(
+        verify.join("pushed.md").exists(),
+        "pushed file should be in remote"
+    );
 }
 
 #[test]
@@ -258,7 +338,9 @@ fn push_fails_when_behind_remote() {
     commit_file(&second, "ahead.md", "# Ahead\n", "ahead");
     let repo2 = Repository::open(&second).unwrap();
     let mut remote2 = repo2.find_remote("origin").unwrap();
-    remote2.push(&["refs/heads/main:refs/heads/main"], None).unwrap();
+    remote2
+        .push(&["refs/heads/main:refs/heads/main"], None)
+        .unwrap();
 
     // Now local is behind — push should fail (non-fast-forward)
     commit_file(&local, "behind.md", "# Behind\n", "behind");
@@ -299,12 +381,17 @@ fn sync_aborts_on_conflict() {
 
     let repo2 = Repository::open(&second).unwrap();
     let mut remote2 = repo2.find_remote("origin").unwrap();
-    remote2.push(&["refs/heads/main:refs/heads/main"], None).unwrap();
+    remote2
+        .push(&["refs/heads/main:refs/heads/main"], None)
+        .unwrap();
 
     let sync = git_sync(&local);
     let result = sync.sync().unwrap();
     assert!(!result.conflicts.is_empty(), "sync should report conflicts");
-    assert_eq!(result.files_pushed, 0, "should not push when conflicts exist");
+    assert_eq!(
+        result.files_pushed, 0,
+        "should not push when conflicts exist"
+    );
 }
 
 // ── Clone ───────────────────────────────────────────────────────────────────
@@ -346,7 +433,10 @@ fn clone_repo_cleans_up_on_failure() {
 
     assert!(!dest.exists());
     let _ = GitSync::clone_repo("/nonexistent/path.git", "main", &dest);
-    assert!(!dest.exists(), "failed clone should clean up dest directory");
+    assert!(
+        !dest.exists(),
+        "failed clone should clean up dest directory"
+    );
 }
 
 #[test]
@@ -393,15 +483,21 @@ fn pull_fails_when_remote_missing() {
     fs::write(path.join("file.md"), "# File\n").unwrap();
     let repo = Repository::open(&path).unwrap();
     let mut index = repo.index().unwrap();
-    index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None).unwrap();
+    index
+        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+        .unwrap();
     index.write().unwrap();
     let tree_oid = index.write_tree().unwrap();
     let tree = repo.find_tree(tree_oid).unwrap();
-    repo.commit(Some("HEAD"), &sig(), &sig(), "init", &tree, &[]).unwrap();
+    repo.commit(Some("HEAD"), &sig(), &sig(), "init", &tree, &[])
+        .unwrap();
 
     let sync = GitSync::new(path, "origin", "main");
     let result = sync.pull();
-    assert!(result.is_err(), "pull should fail when remote 'origin' doesn't exist");
+    assert!(
+        result.is_err(),
+        "pull should fail when remote 'origin' doesn't exist"
+    );
 }
 
 #[test]
@@ -416,15 +512,21 @@ fn push_fails_when_remote_missing() {
     fs::write(path.join("file.md"), "# File\n").unwrap();
     let repo = Repository::open(&path).unwrap();
     let mut index = repo.index().unwrap();
-    index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None).unwrap();
+    index
+        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+        .unwrap();
     index.write().unwrap();
     let tree_oid = index.write_tree().unwrap();
     let tree = repo.find_tree(tree_oid).unwrap();
-    repo.commit(Some("HEAD"), &sig(), &sig(), "init", &tree, &[]).unwrap();
+    repo.commit(Some("HEAD"), &sig(), &sig(), "init", &tree, &[])
+        .unwrap();
 
     let sync = GitSync::new(path, "origin", "main");
     let result = sync.push();
-    assert!(result.is_err(), "push should fail when remote 'origin' doesn't exist");
+    assert!(
+        result.is_err(),
+        "push should fail when remote 'origin' doesn't exist"
+    );
 }
 
 // ── Status edge: empty repo (no commits) ────────────────────────────────────
@@ -440,5 +542,9 @@ fn status_empty_repo_is_idle() {
 
     let sync = GitSync::new(path, "origin", "main");
     let status = sync.status().unwrap();
-    assert_eq!(status, SyncStatus::Idle, "empty repo with no HEAD should be idle");
+    assert_eq!(
+        status,
+        SyncStatus::Idle,
+        "empty repo with no HEAD should be idle"
+    );
 }

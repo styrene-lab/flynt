@@ -55,7 +55,11 @@ impl GitHubForgeClient {
             .user_agent(USER_AGENT)
             .build()
             .expect("failed to build reqwest client");
-        Self { http, endpoint, token }
+        Self {
+            http,
+            endpoint,
+            token,
+        }
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
@@ -75,12 +79,19 @@ impl GitHubForgeClient {
         if let Some(remaining) = resp.headers().get("x-ratelimit-remaining")
             && let Ok(n) = remaining.to_str().unwrap_or("?").parse::<u32>()
         {
-            if n < 100 { warn!(remaining = n, "GitHub rate limit running low"); }
-            else { debug!(remaining = n, "GitHub rate limit"); }
+            if n < 100 {
+                warn!(remaining = n, "GitHub rate limit running low");
+            } else {
+                debug!(remaining = n, "GitHub rate limit");
+            }
         }
         let status = resp.status();
         if status == reqwest::StatusCode::FORBIDDEN
-            && resp.headers().get("x-ratelimit-remaining").and_then(|v| v.to_str().ok()) == Some("0")
+            && resp
+                .headers()
+                .get("x-ratelimit-remaining")
+                .and_then(|v| v.to_str().ok())
+                == Some("0")
         {
             let reset = resp
                 .headers()
@@ -138,10 +149,14 @@ impl GitHubForgeClient {
         let expected_host = "api.github.com";
 
         let mut req = self.request(reqwest::Method::GET, initial_path);
-        for (k, v) in query { req = req.query(&[(*k, *v)]); }
+        for (k, v) in query {
+            req = req.query(&[(*k, *v)]);
+        }
         req = req.query(&[("per_page", per_page.as_str())]);
 
-        let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+        let resp = self
+            .check_response(req.send().await.map_err(reqwest_err)?)
+            .await?;
         let mut next = Self::next_page_url(resp.headers(), expected_host);
         let items: Vec<T> = resp.json().await.map_err(reqwest_err)?;
         all.extend(items);
@@ -149,19 +164,29 @@ impl GitHubForgeClient {
         let mut pages = 1usize;
         while let Some(url) = next {
             if pages >= MAX_PAGES {
-                warn!(max_pages = MAX_PAGES, total = all.len(), "pagination capped");
+                warn!(
+                    max_pages = MAX_PAGES,
+                    total = all.len(),
+                    "pagination capped"
+                );
                 break;
             }
-            let mut req = self.http.get(&url)
+            let mut req = self
+                .http
+                .get(&url)
                 .header(ACCEPT, "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", GITHUB_API_VERSION);
             if let Some(token) = self.token.resolve() {
                 req = req.header(AUTHORIZATION, format!("Bearer {token}"));
             }
-            let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+            let resp = self
+                .check_response(req.send().await.map_err(reqwest_err)?)
+                .await?;
             next = Self::next_page_url(resp.headers(), expected_host);
             let items: Vec<T> = resp.json().await.map_err(reqwest_err)?;
-            if items.is_empty() { break; }
+            if items.is_empty() {
+                break;
+            }
             all.extend(items);
             pages += 1;
         }
@@ -175,8 +200,12 @@ fn reqwest_err(e: reqwest::Error) -> ForgeError {
 
 #[async_trait]
 impl ForgeClient for GitHubForgeClient {
-    fn kind(&self) -> ForgeKind { ForgeKind::GitHub }
-    fn endpoint(&self) -> &ForgeEndpoint { &self.endpoint }
+    fn kind(&self) -> ForgeKind {
+        ForgeKind::GitHub
+    }
+    fn endpoint(&self) -> &ForgeEndpoint {
+        &self.endpoint
+    }
 
     async fn list_issues(
         &self,
@@ -186,10 +215,13 @@ impl ForgeClient for GitHubForgeClient {
     ) -> ForgeResult<Vec<ForgeIssue>> {
         let mut query: Vec<(&str, &str)> = Vec::new();
         if let Some(state) = &opts.state {
-            query.push(("state", match state {
-                IssueState::Open => "open",
-                IssueState::Closed => "closed",
-            }));
+            query.push((
+                "state",
+                match state {
+                    IssueState::Open => "open",
+                    IssueState::Closed => "closed",
+                },
+            ));
         }
 
         // Single-page mode if caller pinned page or per_page; otherwise
@@ -199,13 +231,21 @@ impl ForgeClient for GitHubForgeClient {
                 reqwest::Method::GET,
                 &format!("/repos/{owner}/{repo}/issues"),
             );
-            for (k, v) in &query { req = req.query(&[(*k, *v)]); }
-            if let Some(page) = opts.page { req = req.query(&[("page", page.to_string())]); }
-            if let Some(per) = opts.per_page { req = req.query(&[("per_page", per.to_string())]); }
+            for (k, v) in &query {
+                req = req.query(&[(*k, *v)]);
+            }
+            if let Some(page) = opts.page {
+                req = req.query(&[("page", page.to_string())]);
+            }
+            if let Some(per) = opts.per_page {
+                req = req.query(&[("per_page", per.to_string())]);
+            }
             if !opts.labels.is_empty() {
                 req = req.query(&[("labels", opts.labels.join(","))]);
             }
-            let resp = self.check_response(req.send().await.map_err(reqwest_err)?).await?;
+            let resp = self
+                .check_response(req.send().await.map_err(reqwest_err)?)
+                .await?;
             let issues: Vec<GhIssue> = resp.json().await.map_err(reqwest_err)?;
             return Ok(issues
                 .into_iter()
@@ -254,11 +294,14 @@ impl ForgeClient for GitHubForgeClient {
         });
         let resp = self
             .check_response(
-                self.request(reqwest::Method::POST, &format!("/repos/{owner}/{repo}/issues"))
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(reqwest_err)?,
+                self.request(
+                    reqwest::Method::POST,
+                    &format!("/repos/{owner}/{repo}/issues"),
+                )
+                .json(&body)
+                .send()
+                .await
+                .map_err(reqwest_err)?,
             )
             .await?;
         let created: GhIssue = resp.json().await.map_err(reqwest_err)?;
@@ -273,20 +316,34 @@ impl ForgeClient for GitHubForgeClient {
         update: &UpdateIssue,
     ) -> ForgeResult<ForgeIssue> {
         let mut body = serde_json::Map::new();
-        if let Some(t) = &update.title { body.insert("title".into(), serde_json::Value::String(t.clone())); }
-        if let Some(b) = &update.body { body.insert("body".into(), serde_json::Value::String(b.clone())); }
+        if let Some(t) = &update.title {
+            body.insert("title".into(), serde_json::Value::String(t.clone()));
+        }
+        if let Some(b) = &update.body {
+            body.insert("body".into(), serde_json::Value::String(b.clone()));
+        }
         if let Some(s) = &update.state {
-            body.insert("state".into(), serde_json::Value::String(
-                match s {
-                    IssueState::Open => "open",
-                    IssueState::Closed => "closed",
-                }.into()
-            ));
+            body.insert(
+                "state".into(),
+                serde_json::Value::String(
+                    match s {
+                        IssueState::Open => "open",
+                        IssueState::Closed => "closed",
+                    }
+                    .into(),
+                ),
+            );
         }
         if let Some(labels) = &update.labels {
-            body.insert("labels".into(), serde_json::Value::Array(
-                labels.iter().map(|l| serde_json::Value::String(l.clone())).collect()
-            ));
+            body.insert(
+                "labels".into(),
+                serde_json::Value::Array(
+                    labels
+                        .iter()
+                        .map(|l| serde_json::Value::String(l.clone()))
+                        .collect(),
+                ),
+            );
         }
         let resp = self
             .check_response(
@@ -310,7 +367,11 @@ impl ForgeClient for GitHubForgeClient {
             .await?;
         Ok(labels
             .into_iter()
-            .map(|l| ForgeLabel { name: l.name, color: l.color, description: l.description })
+            .map(|l| ForgeLabel {
+                name: l.name,
+                color: l.color,
+                description: l.description,
+            })
             .collect())
     }
 
@@ -323,7 +384,11 @@ impl ForgeClient for GitHubForgeClient {
             .map(|m| ForgeMilestone {
                 title: m.title,
                 description: m.description,
-                state: if m.state == "closed" { IssueState::Closed } else { IssueState::Open },
+                state: if m.state == "closed" {
+                    IssueState::Closed
+                } else {
+                    IssueState::Open
+                },
                 due_date: m.due_on,
             })
             .collect())
@@ -332,12 +397,13 @@ impl ForgeClient for GitHubForgeClient {
     async fn list_repos(&self, org: &str) -> ForgeResult<Vec<ForgeRepo>> {
         // Try org first, fall back to user (covers both cases without a
         // pre-flight check).
-        let repos: Vec<GhRepo> = match self
-            .get_all_pages(&format!("/orgs/{org}/repos"), &[])
-            .await
+        let repos: Vec<GhRepo> = match self.get_all_pages(&format!("/orgs/{org}/repos"), &[]).await
         {
             Ok(r) => r,
-            Err(_) => self.get_all_pages(&format!("/users/{org}/repos"), &[]).await?,
+            Err(_) => {
+                self.get_all_pages(&format!("/users/{org}/repos"), &[])
+                    .await?
+            }
         };
         Ok(repos.into_iter().map(GhRepo::into_forge_repo).collect())
     }
@@ -369,7 +435,10 @@ impl ForgeClient for GitHubForgeClient {
     ) -> ForgeResult<ForgeWebhook> {
         let mut config = serde_json::Map::new();
         config.insert("url".into(), serde_json::Value::String(hook.url.clone()));
-        config.insert("content_type".into(), serde_json::Value::String("json".into()));
+        config.insert(
+            "content_type".into(),
+            serde_json::Value::String("json".into()),
+        );
         if let Some(s) = &hook.secret {
             config.insert("secret".into(), serde_json::Value::String(s.clone()));
         }
@@ -380,11 +449,14 @@ impl ForgeClient for GitHubForgeClient {
         });
         let resp = self
             .check_response(
-                self.request(reqwest::Method::POST, &format!("/repos/{owner}/{repo}/hooks"))
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(reqwest_err)?,
+                self.request(
+                    reqwest::Method::POST,
+                    &format!("/repos/{owner}/{repo}/hooks"),
+                )
+                .json(&body)
+                .send()
+                .await
+                .map_err(reqwest_err)?,
             )
             .await?;
         let created: GhWebhook = resp.json().await.map_err(reqwest_err)?;
@@ -424,7 +496,11 @@ impl GhIssue {
             number: self.number,
             title: self.title,
             body: self.body.unwrap_or_default(),
-            state: if self.state == "closed" { IssueState::Closed } else { IssueState::Open },
+            state: if self.state == "closed" {
+                IssueState::Closed
+            } else {
+                IssueState::Open
+            },
             labels: self.labels.into_iter().map(|l| l.name).collect(),
             milestone: self.milestone.map(|m| m.title),
             assignees: self.assignees.into_iter().map(|u| u.login).collect(),

@@ -9,6 +9,49 @@ pub struct ThemeName(pub String);
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct RenameTrigger(pub u64);
 
+/// One-shot command bus for the active note context inspector. The
+/// command palette bumps `version`; NotesView consumes the newest value
+/// without requiring the palette to know about note-view internals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteInspectorTarget {
+    Toggle,
+    Links,
+    Outline,
+    Properties,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoteInspectorCommand {
+    pub version: u64,
+    pub target: NoteInspectorTarget,
+}
+
+impl Default for NoteInspectorCommand {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            target: NoteInspectorTarget::Toggle,
+        }
+    }
+}
+
+/// One-shot command bus for active note history/recovery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct NoteHistoryCommand {
+    pub version: u64,
+}
+
+/// One-shot command bus for publication preview/export.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PublicationPreviewCommand {
+    pub version: u64,
+}
+
+/// Bumped after bookmark writes so sidebar/bookmark panels can reload the
+/// project-local `.flynt/bookmarks.toml` file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct BookmarkRefresh(pub u64);
+
 /// Whether the settings modal is currently open. Settings used to be
 /// a top-level Route, but that meant entering settings replaced the
 /// whole main content area (including the project sidebar and tab
@@ -25,6 +68,7 @@ pub enum Route {
     #[default]
     Notes,
     Search,
+    Lenses,
     Kanban,
     Graph,
 }
@@ -160,6 +204,23 @@ pub enum SyncStatus {
     Idle,
     Syncing,
     Conflict(usize),
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum SyncRunOutcome {
+    Success,
+    Error(String),
+    Conflict(Vec<String>),
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct SyncActivityState {
+    pub current_phase: Option<String>,
+    pub last_started_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_outcome: Option<SyncRunOutcome>,
+    pub successful_runs: u64,
+    pub failed_runs: u64,
 }
 
 /// Open tabs — the core of multi-document editing.

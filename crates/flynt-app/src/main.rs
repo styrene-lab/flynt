@@ -92,10 +92,7 @@ fn percent_decode(s: &str) -> String {
         if b == b'%' {
             let h1 = bytes.next().unwrap_or(b'0');
             let h2 = bytes.next().unwrap_or(b'0');
-            if let Ok(c) = u8::from_str_radix(
-                std::str::from_utf8(&[h1, h2]).unwrap_or("00"),
-                16,
-            ) {
+            if let Ok(c) = u8::from_str_radix(std::str::from_utf8(&[h1, h2]).unwrap_or("00"), 16) {
                 out.push(c as char);
                 continue;
             }
@@ -107,16 +104,16 @@ fn percent_decode(s: &str) -> String {
 
 fn mime_type(path: &std::path::Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {
-        Some("png")              => "image/png",
+        Some("png") => "image/png",
         Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("gif")              => "image/gif",
-        Some("svg")              => "image/svg+xml",
-        Some("webp")             => "image/webp",
-        Some("pdf")              => "application/pdf",
-        Some("mp4")              => "video/mp4",
-        Some("css")              => "text/css",
-        Some("js")               => "application/javascript",
-        Some("html")             => "text/html",
-        _                        => "application/octet-stream",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        Some("pdf") => "application/pdf",
+        Some("mp4") => "video/mp4",
+        Some("css") => "text/css",
+        Some("js") => "application/javascript",
+        Some("html") => "text/html",
+        _ => "application/octet-stream",
     }
 }

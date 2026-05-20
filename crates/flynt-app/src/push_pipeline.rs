@@ -23,10 +23,10 @@
 use anyhow::{Context, Result};
 use flynt_core::store::ProjectStore;
 use flynt_forge::{
-    mapping::{self, mapper_for_kind, MappingConfig},
-    push::{projected_local_hash, push_task, PushDebouncer, PushInput, SyncStatus},
-    store::SyncStore,
     ForgejoForgeClient, GitHubForgeClient, GitlabForgeClient,
+    mapping::{self, MappingConfig, mapper_for_kind},
+    push::{PushDebouncer, PushInput, SyncStatus, projected_local_hash, push_task},
+    store::SyncStore,
 };
 use flynt_models::engagement::Engagement;
 use flynt_models::task::TaskId;
@@ -90,9 +90,7 @@ impl PushPipeline {
         if let Some(parent) = sync_db_path.parent() {
             std::fs::create_dir_all(parent).context("create .flynt dir")?;
         }
-        let sync_store = Arc::new(
-            SyncStore::open(&sync_db_path).context("open forge-sync.db")?,
-        );
+        let sync_store = Arc::new(SyncStore::open(&sync_db_path).context("open forge-sync.db")?);
 
         let mapping = mapping::load(&project.root).unwrap_or_else(|err| {
             tracing::warn!(error = %err, "forge-mapping.toml unreadable; using defaults");
@@ -200,9 +198,7 @@ impl PushPipeline {
             Err(e) => {
                 tracing::warn!(error = %e, task = %task_id, "push pipeline error");
                 SyncStatus::PushFailed {
-                    issue_number: self
-                        .existing_map_for(task_id)
-                        .map(|m| m.forge_issue_number),
+                    issue_number: self.existing_map_for(task_id).map(|m| m.forge_issue_number),
                     error: e.to_string(),
                 }
             }
@@ -225,7 +221,9 @@ impl PushPipeline {
             .store
             .get_engagement(&engagement_id)?
             .ok_or_else(|| {
-                anyhow::anyhow!("task {task_id} references engagement {engagement_id:?} which doesn't exist")
+                anyhow::anyhow!(
+                    "task {task_id} references engagement {engagement_id:?} which doesn't exist"
+                )
             })?;
 
         let existing_map = self.existing_map_for(task_id);
@@ -362,7 +360,9 @@ impl PushPipeline {
         updated.last_synced = chrono::Utc::now();
         updated.last_hash = Some(new_hash);
         updated.forge_url = Some(issue.url.clone());
-        self.sync_store.upsert(&updated).context("sync_store.upsert")?;
+        self.sync_store
+            .upsert(&updated)
+            .context("sync_store.upsert")?;
 
         // Clear the cached projected hash so the next save (or the
         // next try_push) compares against fresh data.
@@ -420,7 +420,9 @@ impl PushPipeline {
         updated.last_synced = chrono::Utc::now();
         updated.last_hash = Some(realigned);
         updated.forge_url = Some(current.url.clone());
-        self.sync_store.upsert(&updated).context("sync_store.upsert")?;
+        self.sync_store
+            .upsert(&updated)
+            .context("sync_store.upsert")?;
 
         // Clear projection cache so the upcoming push doesn't
         // short-circuit thinking local hasn't changed.
@@ -503,9 +505,18 @@ fn build_client(eng: &Engagement) -> Result<Box<dyn ForgeClient>> {
         Arc::new(move || std::env::var(&secret_name).ok());
 
     match eng.forge.kind {
-        ForgeKind::GitHub => Ok(Box::new(GitHubForgeClient::new(eng.forge.clone(), resolver))),
-        ForgeKind::Forgejo => Ok(Box::new(ForgejoForgeClient::new(eng.forge.clone(), resolver))),
-        ForgeKind::GitLab => Ok(Box::new(GitlabForgeClient::new(eng.forge.clone(), resolver))),
+        ForgeKind::GitHub => Ok(Box::new(GitHubForgeClient::new(
+            eng.forge.clone(),
+            resolver,
+        ))),
+        ForgeKind::Forgejo => Ok(Box::new(ForgejoForgeClient::new(
+            eng.forge.clone(),
+            resolver,
+        ))),
+        ForgeKind::GitLab => Ok(Box::new(GitlabForgeClient::new(
+            eng.forge.clone(),
+            resolver,
+        ))),
     }
 }
 
@@ -527,7 +538,10 @@ mod tests {
         let project = Arc::new(Project::open(tmp.path()).unwrap());
         let pipeline = PushPipeline::new(project).unwrap();
         let unknown = Uuid::new_v4();
-        assert!(matches!(pipeline.status_for(unknown), SyncStatus::LocalOnly));
+        assert!(matches!(
+            pipeline.status_for(unknown),
+            SyncStatus::LocalOnly
+        ));
     }
 
     #[tokio::test]
@@ -582,16 +596,34 @@ mod tests {
             h.insert(task_id, "fake-hash".into());
         }
         assert_eq!(pipeline.debouncer.pending_count(), 1);
-        assert!(pipeline.last_push_hashes.read().unwrap().contains_key(&task_id));
-        assert!(!matches!(pipeline.status_for(task_id), SyncStatus::LocalOnly));
+        assert!(
+            pipeline
+                .last_push_hashes
+                .read()
+                .unwrap()
+                .contains_key(&task_id)
+        );
+        assert!(!matches!(
+            pipeline.status_for(task_id),
+            SyncStatus::LocalOnly
+        ));
 
         pipeline.on_task_deleted(task_id);
 
         assert_eq!(pipeline.debouncer.pending_count(), 0, "debouncer cleared");
-        assert!(!pipeline.last_push_hashes.read().unwrap().contains_key(&task_id),
-                "hash cache cleared");
+        assert!(
+            !pipeline
+                .last_push_hashes
+                .read()
+                .unwrap()
+                .contains_key(&task_id),
+            "hash cache cleared"
+        );
         // Status reverts to LocalOnly because the map entry is gone.
-        assert!(matches!(pipeline.status_for(task_id), SyncStatus::LocalOnly));
+        assert!(matches!(
+            pipeline.status_for(task_id),
+            SyncStatus::LocalOnly
+        ));
     }
 
     #[tokio::test]
@@ -601,7 +633,10 @@ mod tests {
         let pipeline = PushPipeline::new(project).unwrap();
         // No task in the store — pull should surface a clean error
         // rather than panic.
-        let err = pipeline.resolve_pull_theirs(Uuid::new_v4()).await.unwrap_err();
+        let err = pipeline
+            .resolve_pull_theirs(Uuid::new_v4())
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("not found"), "{err}");
     }
 
@@ -610,7 +645,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let project = Arc::new(Project::open(tmp.path()).unwrap());
         let pipeline = PushPipeline::new(project).unwrap();
-        let err = pipeline.resolve_force_push(Uuid::new_v4()).await.unwrap_err();
+        let err = pipeline
+            .resolve_force_push(Uuid::new_v4())
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("not found"), "{err}");
     }
 
@@ -641,5 +679,4 @@ mod tests {
         pipeline.shutdown(); // second call doesn't panic
         assert!(pipeline.shutdown_flag.load(Ordering::SeqCst));
     }
-
 }

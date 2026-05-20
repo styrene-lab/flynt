@@ -1,9 +1,13 @@
 use crate::{
     bootstrap::{AppContext, OmegonRuntimeContext},
-    state::{Route, TabState},
+    components::{NotePreview, NotePreviewCard},
+    state::{BookmarkRefresh, Route, TabState},
 };
 use dioxus::prelude::*;
-use flynt_core::{models::DocumentMeta, store::ProjectStore};
+use flynt_core::{
+    models::{Bookmark, BookmarkTarget, Document, DocumentMeta},
+    store::ProjectStore,
+};
 use rfd::FileDialog;
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -98,6 +102,8 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                 }
             }
 
+            BookmarksPanel { active_route }
+
             // ── Nav (pinned bottom) ───────────────────────────
             div { class: "sidebar-nav",
                 button {
@@ -113,6 +119,12 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_BOARD }
                 }
                 button {
+                    class: if *active_route.read() == Route::Lenses   { "nav-btn active" } else { "nav-btn" },
+                    title: "Lenses",
+                    onclick: move |_| *active_route.write() = Route::Lenses,
+                    span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_LENS }
+                }
+                button {
                     class: if *active_route.read() == Route::Graph    { "nav-btn active" } else { "nav-btn" },
                     title: "Graph",
                     onclick: move |_| *active_route.write() = Route::Graph,
@@ -125,6 +137,152 @@ pub fn Sidebar(mut active_route: Signal<Route>) -> Element {
                     span { class: "nav-icon", dangerous_inner_html: crate::icons::ICON_SETTINGS }
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn BookmarksPanel(mut active_route: Signal<Route>) -> Element {
+    let ctx = use_context::<AppContext>();
+    let refresh = use_context::<Signal<BookmarkRefresh>>();
+    let mut bookmark_refresh = use_context::<Signal<BookmarkRefresh>>();
+    let mut tab_state = use_context::<Signal<TabState>>();
+    let mut search_query = use_context::<Signal<String>>();
+    let mut collapsed = use_signal(|| false);
+
+    let mut bookmarks: Signal<Vec<Bookmark>> = use_signal(Vec::new);
+    use_effect(move || {
+        let _ = refresh.read().0;
+        let project = ctx.project();
+        let list = project
+            .load_bookmarks()
+            .map(|file| file.bookmarks)
+            .unwrap_or_default();
+        bookmarks.set(list);
+    });
+
+    let count = bookmarks.read().len();
+    rsx! {
+        section { class: "bookmarks-panel",
+            button {
+                class: "bookmarks-header",
+                onclick: move |_| {
+                    let next = !*collapsed.read();
+                    collapsed.set(next);
+                },
+                span { class: "bookmarks-header-title", "Bookmarks" }
+                span { class: "bookmarks-count", "{count}" }
+                span { class: "bookmarks-chevron", if *collapsed.read() { "\u{25B8}" } else { "\u{25BE}" } }
+            }
+            if !*collapsed.read() {
+                div { class: "bookmarks-list",
+                    if bookmarks.read().is_empty() {
+                        div { class: "bookmarks-empty", "No bookmarks yet" }
+                    } else {
+                        for bookmark in bookmarks.read().iter().cloned() {
+                            {
+                                let id = bookmark.id.clone();
+                                let target_label = bookmark.target.label();
+                                let target = bookmark.target.clone();
+                                let title = bookmark.title.clone();
+                                rsx! {
+                                    div { key: "{id}", class: "bookmark-row-wrap",
+                                        button {
+                                            class: "bookmark-row",
+                                            title: "{target_label}: {title}",
+                                            onclick: move |_| {
+                                                open_bookmark_target(
+                                                    &ctx,
+                                                    &target,
+                                                    &title,
+                                                    &mut tab_state,
+                                                    &mut active_route,
+                                                    &mut search_query,
+                                                );
+                                            },
+                                            span { class: "bookmark-kind", "{target_icon(&bookmark.target)}" }
+                                            span { class: "bookmark-main",
+                                                span { class: "bookmark-title", "{bookmark.title}" }
+                                                span { class: "bookmark-target muted", "{target_label}" }
+                                            }
+                                        }
+                                        button {
+                                            class: "bookmark-remove",
+                                            title: "Remove bookmark",
+                                            onclick: move |e| {
+                                                e.stop_propagation();
+                                                let project = ctx.project();
+                                                let remove_id = id.clone();
+                                                spawn(async move {
+                                                    let _ = tokio::task::spawn_blocking(move || {
+                                                        project.remove_bookmark(&remove_id)
+                                                    }).await;
+                                                    let next = bookmark_refresh.read().0.wrapping_add(1);
+                                                    bookmark_refresh.write().0 = next;
+                                                });
+                                            },
+                                            "\u{00D7}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn target_icon(target: &BookmarkTarget) -> &'static str {
+    match target {
+        BookmarkTarget::Note { .. } => "\u{25C7}",
+        BookmarkTarget::Heading { .. } => "#",
+        BookmarkTarget::Search { .. } => "\u{2315}",
+        BookmarkTarget::Graph { .. } => "\u{25CE}",
+        BookmarkTarget::Canvas { .. } => "\u{25A1}",
+        BookmarkTarget::Drawing { .. } => "\u{270E}",
+    }
+}
+
+fn open_bookmark_target(
+    ctx: &AppContext,
+    target: &BookmarkTarget,
+    title: &str,
+    tab_state: &mut Signal<TabState>,
+    active_route: &mut Signal<Route>,
+    search_query: &mut Signal<String>,
+) {
+    match target {
+        BookmarkTarget::Note { document_id, path }
+        | BookmarkTarget::Heading {
+            document_id, path, ..
+        } => {
+            let project = ctx.project();
+            let doc: Option<Document> = document_id
+                .as_ref()
+                .and_then(|id| project.store.get_document(id).ok().flatten())
+                .or_else(|| project.store.get_document_by_path(path).ok().flatten());
+            if let Some(doc) = doc {
+                tab_state.write().open(doc.id.clone(), doc.title.clone());
+            } else {
+                tracing::warn!("Bookmark target not found: {title}");
+            }
+            *active_route.write() = Route::Notes;
+        }
+        BookmarkTarget::Search { query } => {
+            *search_query.write() = query.clone();
+            *active_route.write() = Route::Search;
+        }
+        BookmarkTarget::Graph { .. } => {
+            *active_route.write() = Route::Graph;
+        }
+        BookmarkTarget::Canvas { path } | BookmarkTarget::Drawing { path } => {
+            let project = ctx.project();
+            if let Ok(Some(doc)) = project.store.get_document_by_path(path) {
+                tab_state.write().open(doc.id, doc.title);
+            }
+            *active_route.write() = Route::Notes;
         }
     }
 }
@@ -299,6 +457,7 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
     let indent = depth as f32 * 12.0;
 
     let mut ctx_menu: Signal<Option<(f64, f64)>> = use_signal(|| None);
+    let mut preview: Signal<Option<NotePreview>> = use_signal(|| None);
 
     // Task files live under Tasks/ — they're real notes but get a
     // subtle visual cue (different icon + class) so the operator can
@@ -312,12 +471,26 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
     rsx! {
         button {
             class: match (is_active, is_task) {
-                (true, true)   => "tree-item tree-file tree-file-task active",
-                (true, false)  => "tree-item tree-file active",
-                (false, true)  => "tree-item tree-file tree-file-task",
-                (false, false) => "tree-item tree-file",
+                (true, true)   => "tree-item tree-file tree-file-task note-preview-anchor active",
+                (true, false)  => "tree-item tree-file note-preview-anchor active",
+                (false, true)  => "tree-item tree-file tree-file-task note-preview-anchor",
+                (false, false) => "tree-item tree-file note-preview-anchor",
             },
             style: "padding-left: {indent + 20.0}px;",
+            onmouseenter: move |_| {
+                if preview.peek().is_some() {
+                    return;
+                }
+                let project = ctx.project();
+                let id = meta.id.clone();
+                spawn(async move {
+                    if let Ok(Some(preview_data)) = tokio::task::spawn_blocking(move || {
+                        NotePreview::load_by_id(&project, &id)
+                    }).await {
+                        preview.set(Some(preview_data));
+                    }
+                });
+            },
             onclick: move |_| {
                     if let Ok(Some(doc)) = ctx.project().store.get_document(&id) {
                         let _ = document::eval(&crate::views::notes::cm6_fast_swap_js(&doc.content));
@@ -338,6 +511,11 @@ fn TreeFile(meta: DocumentMeta, depth: u32) -> Element {
                 if is_task { "\u{2611}" } else { "\u{25C7}" }
             }
             span { class: "tree-name", "{meta.title}" }
+            if let Some(preview_data) = preview.read().clone() {
+                div { class: "note-preview-inline",
+                    NotePreviewCard { preview: preview_data }
+                }
+            }
         }
 
         if let Some((x, y)) = *ctx_menu.read() {

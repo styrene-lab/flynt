@@ -1,7 +1,7 @@
 use anyhow::Result;
 use flynt_core::{
     models::*,
-    store::{DocumentMetadataFilter, TaskFilter, ProjectStore},
+    store::{DocumentMetadataFilter, ProjectStore, TaskFilter},
 };
 use rusqlite::{Connection, params};
 use std::{path::Path, sync::Mutex};
@@ -21,7 +21,9 @@ impl SqliteStore {
         for migration in MIGRATIONS {
             let _ = conn.execute_batch(migration); // ignore "duplicate column" errors
         }
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Read the on-disk file path for a task (project-relative). None when
@@ -29,11 +31,14 @@ impl SqliteStore {
     /// at Project::open populates these for legacy sqlite-only tasks.
     pub fn task_file_path(&self, task_id: &TaskId) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
-        let path: Option<String> = conn.query_row(
-            "SELECT task_file_path FROM tasks WHERE id = ?1",
-            params![task_id.0.to_string()],
-            |row| row.get(0),
-        ).ok().flatten();
+        let path: Option<String> = conn
+            .query_row(
+                "SELECT task_file_path FROM tasks WHERE id = ?1",
+                params![task_id.0.to_string()],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
         Ok(path)
     }
 
@@ -52,9 +57,7 @@ impl SqliteStore {
     /// Used by the migration sweep to find legacy sqlite-only rows.
     pub fn tasks_without_file(&self) -> Result<Vec<TaskId>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id FROM tasks WHERE task_file_path IS NULL",
-        )?;
+        let mut stmt = conn.prepare("SELECT id FROM tasks WHERE task_file_path IS NULL")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut out = Vec::new();
         for r in rows {
@@ -225,7 +228,9 @@ impl ProjectStore for SqliteStore {
             "SELECT id, path, title, content, frontmatter, created_at, updated_at FROM documents WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
-        let Some(row) = rows.next()? else { return Ok(None) };
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
         Ok(Some(row_to_document(&conn, row)?))
     }
 
@@ -236,7 +241,9 @@ impl ProjectStore for SqliteStore {
             "SELECT id, path, title, content, frontmatter, created_at, updated_at FROM documents WHERE path = ?1",
         )?;
         let mut rows = stmt.query(params![path_str.as_ref()])?;
-        let Some(row) = rows.next()? else { return Ok(None) };
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
         Ok(Some(row_to_document(&conn, row)?))
     }
 
@@ -247,7 +254,11 @@ impl ProjectStore for SqliteStore {
         let rows = stmt.query_map([], |row| {
             let fm_json: String = row.get(3)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
+                id: DocumentId(
+                    row.get::<_, String>(0)?
+                        .parse()
+                        .map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?,
+                ),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
                 tags: serde_json::from_str::<Frontmatter>(&fm_json)
@@ -255,7 +266,10 @@ impl ProjectStore for SqliteStore {
                     .tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
-                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                updated_at: row
+                    .get::<_, String>(4)?
+                    .parse()
+                    .unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -264,7 +278,7 @@ impl ProjectStore for SqliteStore {
     fn find_document_by_slug(&self, slug: &str) -> Result<Option<DocumentMeta>> {
         // Decode %20 etc. and normalise to lowercase for matching
         let decoded = slug.replace("%20", " ");
-        let needle  = decoded.to_lowercase();
+        let needle = decoded.to_lowercase();
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT id, path, title, frontmatter, updated_at FROM documents
@@ -275,19 +289,31 @@ impl ProjectStore for SqliteStore {
         let mut rows = stmt.query_map(params![needle], |row| {
             let fm_json: String = row.get(3)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))? ),
+                id: DocumentId(
+                    row.get::<_, String>(0)?
+                        .parse()
+                        .map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?,
+                ),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
-                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json)
+                    .unwrap_or_default()
+                    .tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
-                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                updated_at: row
+                    .get::<_, String>(4)?
+                    .parse()
+                    .unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.next().transpose()?)
     }
 
-    fn list_documents_by_metadata(&self, filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>> {
+    fn list_documents_by_metadata(
+        &self,
+        filter: &DocumentMetadataFilter,
+    ) -> Result<Vec<DocumentMeta>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT d.id, d.path, d.title, d.frontmatter, d.updated_at
@@ -299,13 +325,22 @@ impl ProjectStore for SqliteStore {
         let rows = stmt.query_map(params![filter.field, filter.value], |row| {
             let fm_json: String = row.get(3)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
+                id: DocumentId(
+                    row.get::<_, String>(0)?
+                        .parse()
+                        .map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?,
+                ),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
-                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json)
+                    .unwrap_or_default()
+                    .tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
-                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                updated_at: row
+                    .get::<_, String>(4)?
+                    .parse()
+                    .unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -313,7 +348,7 @@ impl ProjectStore for SqliteStore {
 
     fn save_document(&self, doc: &Document) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let fm   = serde_json::to_string(&doc.frontmatter)?;
+        let fm = serde_json::to_string(&doc.frontmatter)?;
         let path = doc.path.to_string_lossy().to_string();
         let id = doc.id.0.to_string();
         conn.execute(
@@ -354,16 +389,23 @@ impl ProjectStore for SqliteStore {
             ],
         )?;
         // Refresh outgoing links
-        conn.execute("DELETE FROM document_links WHERE source_id = ?1", params![doc.id.0.to_string()])?;
+        conn.execute(
+            "DELETE FROM document_links WHERE source_id = ?1",
+            params![doc.id.0.to_string()],
+        )?;
         for link in &doc.outgoing_links {
             conn.execute(
                 "INSERT OR IGNORE INTO document_links (source_id, target) VALUES (?1, ?2)",
                 params![doc.id.0.to_string(), link.target],
             )?;
         }
-        conn.execute("DELETE FROM document_metadata WHERE document_id = ?1", params![doc.id.0.to_string()])?;
+        conn.execute(
+            "DELETE FROM document_metadata WHERE document_id = ?1",
+            params![doc.id.0.to_string()],
+        )?;
         for (key, field) in frontmatter_metadata_fields(&doc.frontmatter) {
-            if let Some((value_type, string_value)) = string_indexable_metadata_value(&field.value) {
+            if let Some((value_type, string_value)) = string_indexable_metadata_value(&field.value)
+            {
                 conn.execute(
                     "INSERT OR REPLACE INTO document_metadata (document_id, key, value_type, string_value, protection) VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![
@@ -394,15 +436,24 @@ impl ProjectStore for SqliteStore {
             .filter(|t| !t.is_empty())
             .map(|t| {
                 // Escape any FTS5 special chars that aren't alphanumeric
-                let safe: String = t.chars()
-                    .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { ' ' })
+                let safe: String = t
+                    .chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '-' || c == '_' {
+                            c
+                        } else {
+                            ' '
+                        }
+                    })
                     .collect();
                 format!("{}*", safe.trim())
             })
             .filter(|t| t.len() > 1)
             .collect::<Vec<_>>()
             .join(" ");
-        if fts_query.is_empty() { return Ok(vec![]); }
+        if fts_query.is_empty() {
+            return Ok(vec![]);
+        }
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"SELECT d.id, d.path, d.title, snippet(documents_fts, 1, '<mark>', '</mark>', '…', 32)
@@ -423,7 +474,10 @@ impl ProjectStore for SqliteStore {
         Ok(results.collect::<rusqlite::Result<_>>()?)
     }
 
-    fn list_entities_by_kind(&self, kind: &flynt_core::datum::EntityKind) -> Result<Vec<DocumentMeta>> {
+    fn list_entities_by_kind(
+        &self,
+        kind: &flynt_core::datum::EntityKind,
+    ) -> Result<Vec<DocumentMeta>> {
         let conn = self.conn.lock().unwrap();
         let kind_str = kind.as_str();
         // Query frontmatter JSON for the kind field
@@ -435,13 +489,22 @@ impl ProjectStore for SqliteStore {
         let rows = stmt.query_map(params![kind_str], |row| {
             let fm_json: String = row.get(3)?;
             Ok(DocumentMeta {
-                id: DocumentId(row.get::<_, String>(0)?.parse().map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?),
+                id: DocumentId(
+                    row.get::<_, String>(0)?
+                        .parse()
+                        .map_err(|e| rusqlite::Error::InvalidParameterName(format!("{e}")))?,
+                ),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
-                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json)
+                    .unwrap_or_default()
+                    .tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
-                updated_at: row.get::<_, String>(4)?.parse().unwrap_or_else(|_| chrono::Utc::now()),
+                updated_at: row
+                    .get::<_, String>(4)?
+                    .parse()
+                    .unwrap_or_else(|_| chrono::Utc::now()),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -467,7 +530,9 @@ impl ProjectStore for SqliteStore {
                 id: DocumentId(row.get::<_, String>(0)?.parse().unwrap_or_default()),
                 path: row.get::<_, String>(1)?.into(),
                 title: row.get(2)?,
-                tags: serde_json::from_str::<Frontmatter>(&fm_json).unwrap_or_default().tags,
+                tags: serde_json::from_str::<Frontmatter>(&fm_json)
+                    .unwrap_or_default()
+                    .tags,
                 metadata: document_metadata_fields_from_frontmatter_json(&fm_json),
                 entity_kind: entity_kind_from_frontmatter_json(&fm_json),
                 updated_at: updated_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
@@ -482,7 +547,9 @@ impl ProjectStore for SqliteStore {
             "SELECT id, board_id, column_name, title, description, priority, status, tags, document_refs, due_date, position, created_at, updated_at, decay, last_touched_at, external_refs, design_node_id, execution, openspec_change, engagement_id FROM tasks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
-        let Some(row) = rows.next()? else { return Ok(None) };
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
         Ok(Some(row_to_task(row)?))
     }
 
@@ -596,21 +663,51 @@ impl ProjectStore for SqliteStore {
             None => return Ok(false),
         };
 
-        if let Some(v) = &patch.column { task.column = v.clone(); }
-        if let Some(v) = &patch.title { task.title = v.clone(); }
-        if let Some(v) = &patch.description { task.description = v.clone(); }
-        if let Some(v) = patch.priority.clone() { task.priority = v; }
-        if let Some(v) = patch.status.clone() { task.status = v; }
-        if let Some(v) = &patch.tags { task.tags = v.clone(); }
-        if let Some(v) = patch.due_date { task.due_date = v; }
-        if let Some(v) = &patch.external_refs { task.external_refs = v.clone(); }
-        if let Some(v) = &patch.document_refs { task.document_refs = v.clone(); }
-        if let Some(v) = patch.position { task.position = v; }
-        if let Some(v) = patch.decay.clone() { task.decay = v; }
-        if let Some(v) = patch.design_node_id { task.design_node_id = v; }
-        if let Some(v) = &patch.openspec_change { task.openspec_change = v.clone(); }
-        if let Some(v) = &patch.engagement_id { task.engagement_id = v.clone(); }
-        if let Some(v) = &patch.execution { task.execution = v.clone(); }
+        if let Some(v) = &patch.column {
+            task.column = v.clone();
+        }
+        if let Some(v) = &patch.title {
+            task.title = v.clone();
+        }
+        if let Some(v) = &patch.description {
+            task.description = v.clone();
+        }
+        if let Some(v) = patch.priority.clone() {
+            task.priority = v;
+        }
+        if let Some(v) = patch.status.clone() {
+            task.status = v;
+        }
+        if let Some(v) = &patch.tags {
+            task.tags = v.clone();
+        }
+        if let Some(v) = patch.due_date {
+            task.due_date = v;
+        }
+        if let Some(v) = &patch.external_refs {
+            task.external_refs = v.clone();
+        }
+        if let Some(v) = &patch.document_refs {
+            task.document_refs = v.clone();
+        }
+        if let Some(v) = patch.position {
+            task.position = v;
+        }
+        if let Some(v) = patch.decay.clone() {
+            task.decay = v;
+        }
+        if let Some(v) = patch.design_node_id {
+            task.design_node_id = v;
+        }
+        if let Some(v) = &patch.openspec_change {
+            task.openspec_change = v.clone();
+        }
+        if let Some(v) = &patch.engagement_id {
+            task.engagement_id = v.clone();
+        }
+        if let Some(v) = &patch.execution {
+            task.execution = v.clone();
+        }
         task.updated_at = chrono::Utc::now();
 
         self.save_task(&task)?;
@@ -618,20 +715,21 @@ impl ProjectStore for SqliteStore {
     }
 
     fn delete_task(&self, id: &TaskId) -> Result<()> {
-        self.conn.lock().unwrap().execute(
-            "DELETE FROM tasks WHERE id = ?1",
-            params![id.0.to_string()],
-        )?;
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM tasks WHERE id = ?1", params![id.0.to_string()])?;
         Ok(())
     }
 
     fn get_board(&self, id: &BoardId) -> Result<Option<Board>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, columns, created_at FROM boards WHERE id = ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, columns, created_at FROM boards WHERE id = ?1")?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
-        let Some(row) = rows.next()? else { return Ok(None) };
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
         Ok(Some(row_to_board(row)?))
     }
 
@@ -685,7 +783,9 @@ impl ProjectStore for SqliteStore {
              FROM engagements WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id.0.to_string()])?;
-        let Some(row) = rows.next()? else { return Ok(None) };
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
         Ok(Some(row_to_engagement(row)?))
     }
 
@@ -729,10 +829,7 @@ impl ProjectStore for SqliteStore {
         Ok(())
     }
 
-    fn delete_engagement(
-        &self,
-        id: &flynt_models::engagement::EngagementId,
-    ) -> Result<bool> {
+    fn delete_engagement(&self, id: &flynt_models::engagement::EngagementId) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
         let n = conn.execute(
             "DELETE FROM engagements WHERE id = ?1",
@@ -744,7 +841,6 @@ impl ProjectStore for SqliteStore {
         // decision (cascade vs orphan) the caller may want to override.
         Ok(n > 0)
     }
-
 }
 
 // ── Row deserializers ─────────────────────────────────────────────────────────
@@ -756,7 +852,8 @@ fn row_to_document(conn: &Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resu
     let path_str: String = row.get(1)?;
     let source_id: String = row.get(0)?;
     let frontmatter: Frontmatter = serde_json::from_str(&fm_json).unwrap_or_default();
-    let mut link_stmt = conn.prepare("SELECT target FROM document_links WHERE source_id = ?1 ORDER BY target ASC")?;
+    let mut link_stmt =
+        conn.prepare("SELECT target FROM document_links WHERE source_id = ?1 ORDER BY target ASC")?;
     let outgoing_links = link_stmt
         .query_map(params![source_id], |row| {
             let target: String = row.get(0)?;
@@ -792,7 +889,9 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     let decay: Option<String> = row.get(13)?;
     let last_touched: Option<String> = row.get(14)?;
     let parse_uuid = |s: String| -> rusqlite::Result<uuid::Uuid> {
-        s.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+        s.parse().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })
     };
     let parse_dt = |s: String| -> chrono::DateTime<chrono::Utc> {
         s.parse().unwrap_or_else(|_| chrono::Utc::now())
@@ -811,7 +910,9 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         position: row.get(10)?,
         created_at: parse_dt(created_at),
         updated_at: parse_dt(updated_at),
-        decay: decay.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+        decay: decay
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default(),
         last_touched_at: last_touched.and_then(|s| s.parse().ok()),
         external_refs: {
             let json: String = row.get(15)?;
@@ -872,14 +973,18 @@ fn row_to_board(row: &rusqlite::Row<'_>) -> rusqlite::Result<Board> {
     let created_at: String = row.get(3)?;
     let id: String = row.get(0)?;
     Ok(Board {
-        id: BoardId(id.parse().map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?),
+        id: BoardId(id.parse().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
         name: row.get(1)?,
         columns: serde_json::from_str(&cols_json).unwrap_or_default(),
         created_at: created_at.parse().unwrap_or_else(|_| chrono::Utc::now()),
     })
 }
 
-fn entity_kind_from_frontmatter_json(frontmatter_json: &str) -> Option<flynt_core::datum::EntityKind> {
+fn entity_kind_from_frontmatter_json(
+    frontmatter_json: &str,
+) -> Option<flynt_core::datum::EntityKind> {
     serde_json::from_str::<Frontmatter>(frontmatter_json)
         .ok()?
         .kind
@@ -980,9 +1085,18 @@ mod tests {
     fn seed_board(store: &SqliteStore) -> BoardId {
         let mut board = flynt_core::models::Board::default_sprint("Sentry");
         board.columns = vec![
-            flynt_core::models::Column { name: "Backlog".into(), wip_limit: None },
-            flynt_core::models::Column { name: "Scheduled".into(), wip_limit: None },
-            flynt_core::models::Column { name: "Running".into(), wip_limit: Some(1) },
+            flynt_core::models::Column {
+                name: "Backlog".into(),
+                wip_limit: None,
+            },
+            flynt_core::models::Column {
+                name: "Scheduled".into(),
+                wip_limit: None,
+            },
+            flynt_core::models::Column {
+                name: "Running".into(),
+                wip_limit: Some(1),
+            },
         ];
         let bid = board.id.clone();
         store.save_board(&board).unwrap();
@@ -1027,13 +1141,19 @@ mod tests {
         let store = SqliteStore::open(&db).unwrap();
         let loaded = store.get_task(&task_id).unwrap().expect("task exists");
         assert_eq!(loaded.tags, vec!["sentry", "recurring"]);
-        assert_eq!(loaded.external_refs, vec!["cron:0 */4 * * *", "webhook:gh-pr"]);
+        assert_eq!(
+            loaded.external_refs,
+            vec!["cron:0 */4 * * *", "webhook:gh-pr"]
+        );
         assert!(loaded.design_node_id.is_some());
         assert_eq!(loaded.openspec_change.as_deref(), Some("auth-rewrite"));
         let exec = loaded.execution.expect("execution preserved");
         assert_eq!(exec.model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
         assert_eq!(exec.max_turns, Some(20));
-        assert_eq!(exec.env.get("API_TOKEN").map(String::as_str), Some("redacted"));
+        assert_eq!(
+            exec.env.get("API_TOKEN").map(String::as_str),
+            Some("redacted")
+        );
     }
 
     #[test]
@@ -1093,7 +1213,10 @@ mod tests {
         // not have eaten task data.
         drop(conn);
         let store = SqliteStore::open(&db).unwrap();
-        assert!(store.get_task(&task_id).unwrap().is_some(), "task survives v9");
+        assert!(
+            store.get_task(&task_id).unwrap().is_some(),
+            "task survives v9"
+        );
     }
 
     #[test]
@@ -1121,7 +1244,8 @@ mod tests {
                     deleted_at  TEXT NOT NULL,
                     committed   INTEGER NOT NULL DEFAULT 0
                 );"#,
-            ).unwrap();
+            )
+            .unwrap();
             // Apply v1..v8 only (everything before the v9 DROP block).
             for m in MIGRATIONS.iter().take_while(|m| !m.contains("DROP")) {
                 let _ = conn.execute_batch(m);
@@ -1145,7 +1269,8 @@ mod tests {
                 "INSERT INTO project_deletions (entity_id, entity_kind, project_id, deleted_at)
                  VALUES (?1, 'task', ?2, ?3)",
                 rusqlite::params![uuid::Uuid::new_v4().to_string(), project_id, now],
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         // Now open via SqliteStore (which runs the full migration chain
@@ -1157,10 +1282,12 @@ mod tests {
         assert_eq!(boards.len(), 1, "board survives v9");
         assert_eq!(boards[0].name, "Sprint");
 
-        let tasks = store.list_tasks(&TaskFilter {
-            board_id: Some(boards[0].id.clone()),
-            ..Default::default()
-        }).unwrap();
+        let tasks = store
+            .list_tasks(&TaskFilter {
+                board_id: Some(boards[0].id.clone()),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(tasks.len(), 1, "task survives v9");
         assert_eq!(tasks[0].title, "Pre-v9 task");
 
@@ -1171,7 +1298,10 @@ mod tests {
             [],
             |r| r.get(0),
         ).unwrap();
-        assert_eq!(table_count, 0, "project_deletions dropped even when populated");
+        assert_eq!(
+            table_count, 0,
+            "project_deletions dropped even when populated"
+        );
     }
 
     #[test]
@@ -1216,7 +1346,10 @@ mod tests {
         // Reopen multiple times — exercises migration idempotency.
         for _ in 0..3 {
             let store = SqliteStore::open(&db).unwrap();
-            let loaded = store.get_task(&task_id).unwrap().expect("task survives reopens");
+            let loaded = store
+                .get_task(&task_id)
+                .unwrap()
+                .expect("task survives reopens");
             assert_eq!(loaded.openspec_change.as_deref(), Some("change-x"));
         }
     }
@@ -1235,7 +1368,10 @@ mod tests {
         t.tags = vec!["a".into(), "b".into()];
         t.priority = Priority::High;
         t.openspec_change = Some("change-x".into());
-        t.execution = Some(ExecutionSpec { model: Some("m".into()), ..Default::default() });
+        t.execution = Some(ExecutionSpec {
+            model: Some("m".into()),
+            ..Default::default()
+        });
         store.save_task(&t).unwrap();
 
         let patch = TaskPatch {
@@ -1274,17 +1410,19 @@ mod tests {
         };
 
         let _a = mk("Scheduled", &["sentry", "recurring"], TaskStatus::Todo);
-        let _b = mk("Scheduled", &["sentry"],              TaskStatus::Todo);
-        let _c = mk("Scheduled", &["recurring"],           TaskStatus::Todo);
-        let _d = mk("Backlog",   &["sentry", "recurring"], TaskStatus::InProgress);
+        let _b = mk("Scheduled", &["sentry"], TaskStatus::Todo);
+        let _c = mk("Scheduled", &["recurring"], TaskStatus::Todo);
+        let _d = mk("Backlog", &["sentry", "recurring"], TaskStatus::InProgress);
 
-        let intersection = store.list_tasks(&TaskFilter {
-            board_id: Some(board_id),
-            column: Some("Scheduled".into()),
-            tags: vec!["sentry".into(), "recurring".into()],
-            status: Some(TaskStatus::Todo),
-            ..Default::default()
-        }).unwrap();
+        let intersection = store
+            .list_tasks(&TaskFilter {
+                board_id: Some(board_id),
+                column: Some("Scheduled".into()),
+                tags: vec!["sentry".into(), "recurring".into()],
+                status: Some(TaskStatus::Todo),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(intersection.len(), 1, "only A matches all four predicates");
         assert_eq!(intersection[0].tags, vec!["sentry", "recurring"]);
     }
@@ -1300,7 +1438,10 @@ mod tests {
         t.id = task_id.clone();
         t.design_node_id = Some(uuid::Uuid::new_v4());
         t.openspec_change = Some("change-x".into());
-        t.execution = Some(ExecutionSpec { model: Some("m".into()), ..Default::default() });
+        t.execution = Some(ExecutionSpec {
+            model: Some("m".into()),
+            ..Default::default()
+        });
         store.save_task(&t).unwrap();
 
         let patch = TaskPatch {
@@ -1346,7 +1487,10 @@ mod tests {
         let result = store.update_task(&task_id, &patch).unwrap();
         assert!(result);
         let after = store.get_task(&task_id).unwrap().unwrap();
-        assert_eq!(after.updated_at, original_ts, "empty patch must not bump updated_at");
+        assert_eq!(
+            after.updated_at, original_ts,
+            "empty patch must not bump updated_at"
+        );
     }
 
     #[test]
@@ -1379,12 +1523,16 @@ mod tests {
         b1.engagement_id = Some(eid_b.clone());
         let unscoped = Task::new(board_id.clone(), "Backlog", "Unscoped");
 
-        for t in [&a1, &a2, &b1, &unscoped] { store.save_task(t).unwrap(); }
+        for t in [&a1, &a2, &b1, &unscoped] {
+            store.save_task(t).unwrap();
+        }
 
-        let only_a = store.list_tasks(&TaskFilter {
-            engagement_id: Some(eid_a),
-            ..Default::default()
-        }).unwrap();
+        let only_a = store
+            .list_tasks(&TaskFilter {
+                engagement_id: Some(eid_a),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(only_a.len(), 2, "expected only the two A-engagement tasks");
         assert!(only_a.iter().all(|t| t.title == "A1" || t.title == "A2"));
     }
@@ -1417,7 +1565,14 @@ mod tests {
             ..Default::default()
         };
         store.update_task(&task_id, &patch).unwrap();
-        assert!(store.get_task(&task_id).unwrap().unwrap().engagement_id.is_none());
+        assert!(
+            store
+                .get_task(&task_id)
+                .unwrap()
+                .unwrap()
+                .engagement_id
+                .is_none()
+        );
     }
 
     // ── Engagement table persistence (migration v7) ────────────────────────
@@ -1445,21 +1600,32 @@ mod tests {
         let (_tmp, store) = fresh_store();
         let e = sample_engagement();
         store.save_engagement(&e).unwrap();
-        let loaded = store.get_engagement(&e.id).unwrap().expect("engagement should load");
+        let loaded = store
+            .get_engagement(&e.id)
+            .unwrap()
+            .expect("engagement should load");
         assert_eq!(loaded.id, e.id);
         assert_eq!(loaded.name, "Q2 Migration");
-        assert_eq!(loaded.description.as_deref(), Some("Audit + migration of legacy auth path"));
+        assert_eq!(
+            loaded.description.as_deref(),
+            Some("Audit + migration of legacy auth path")
+        );
         assert_eq!(loaded.repos.len(), 2);
         assert_eq!(loaded.repos[0].full_name(), "anthropics/claude-code");
         assert_eq!(loaded.forge.kind, styrene_forge::ForgeKind::GitHub);
-        assert!(matches!(loaded.status, flynt_models::engagement::EngagementStatus::Active));
+        assert!(matches!(
+            loaded.status,
+            flynt_models::engagement::EngagementStatus::Active
+        ));
     }
 
     #[test]
     fn list_engagements_returns_sorted_by_name() {
         let (_tmp, store) = fresh_store();
-        let mut a = sample_engagement(); a.name = "Beta".into();
-        let mut b = sample_engagement(); b.name = "Alpha".into();
+        let mut a = sample_engagement();
+        a.name = "Beta".into();
+        let mut b = sample_engagement();
+        b.name = "Alpha".into();
         store.save_engagement(&a).unwrap();
         store.save_engagement(&b).unwrap();
         let list = store.list_engagements().unwrap();
@@ -1497,8 +1663,17 @@ mod tests {
 
         assert!(store.delete_engagement(&eid).unwrap());
         let after = store.get_task(&t.id).unwrap().unwrap();
-        assert_eq!(after.engagement_id, Some(eid), "task should still carry the dangling id");
-        assert!(store.get_engagement(&after.engagement_id.unwrap()).unwrap().is_none());
+        assert_eq!(
+            after.engagement_id,
+            Some(eid),
+            "task should still carry the dangling id"
+        );
+        assert!(
+            store
+                .get_engagement(&after.engagement_id.unwrap())
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

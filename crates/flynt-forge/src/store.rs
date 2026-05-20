@@ -47,31 +47,33 @@ impl SyncStore {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)
             .with_context(|| format!("open forge sync db at {}", path.display()))?;
-        conn.execute_batch(SCHEMA).context("apply forge sync schema")?;
-        Ok(Self { conn: Mutex::new(conn) })
+        conn.execute_batch(SCHEMA)
+            .context("apply forge sync schema")?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// In-memory store, primarily for tests. Schema is applied.
     pub fn in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory().context("open :memory: forge sync db")?;
         conn.execute_batch(SCHEMA)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Look up by forge identifier. Returns `Ok(None)` if no mapping exists.
-    pub fn get_by_issue(
-        &self,
-        org: &str,
-        repo: &str,
-        number: u64,
-    ) -> Result<Option<IssueMap>> {
+    pub fn get_by_issue(&self, org: &str, repo: &str, number: u64) -> Result<Option<IssueMap>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT local_id, board_id, forge_org, forge_repo, forge_issue_number, last_synced, last_hash, forge_url
              FROM issue_maps WHERE forge_org = ?1 AND forge_repo = ?2 AND forge_issue_number = ?3",
         )?;
         let mut rows = stmt.query(params![org, repo, number as i64])?;
-        let Some(row) = rows.next()? else { return Ok(None) };
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
         Ok(Some(row_to_map(row)?))
     }
 
@@ -180,7 +182,9 @@ mod tests {
             forge_issue_number: number,
             last_synced: Utc::now(),
             last_hash: Some("abc123".into()),
-            forge_url: Some(format!("https://github.com/anthropics/test/issues/{number}")),
+            forge_url: Some(format!(
+                "https://github.com/anthropics/test/issues/{number}"
+            )),
         }
     }
 
@@ -202,7 +206,11 @@ mod tests {
         store.upsert(&sample_map(local, 10)).unwrap();
         store.upsert(&sample_map(local, 11)).unwrap();
         let by_local = store.list_by_local(&local).unwrap();
-        assert_eq!(by_local.len(), 1, "second upsert should replace, not duplicate");
+        assert_eq!(
+            by_local.len(),
+            1,
+            "second upsert should replace, not duplicate"
+        );
         assert_eq!(by_local[0].forge_issue_number, 11);
     }
 
@@ -243,13 +251,19 @@ mod tests {
         assert!(err.is_err(), "expected UNIQUE violation, got: {err:?}");
 
         // Original mapping still intact.
-        let got = store.get_by_issue("anthropics", "test", 42).unwrap().unwrap();
+        let got = store
+            .get_by_issue("anthropics", "test", 42)
+            .unwrap()
+            .unwrap();
         assert_eq!(got.local_id, local_a);
 
         // Rebind path: delete first, then upsert succeeds.
         store.delete_by_local(&local_a).unwrap();
         store.upsert(&conflict).unwrap();
-        let got = store.get_by_issue("anthropics", "test", 42).unwrap().unwrap();
+        let got = store
+            .get_by_issue("anthropics", "test", 42)
+            .unwrap()
+            .unwrap();
         assert_eq!(got.local_id, local_b);
     }
 
@@ -263,7 +277,10 @@ mod tests {
             store.upsert(&sample_map(local, 5)).unwrap();
         }
         let reopened = SyncStore::open(&path).unwrap();
-        let got = reopened.get_by_issue("anthropics", "test", 5).unwrap().unwrap();
+        let got = reopened
+            .get_by_issue("anthropics", "test", 5)
+            .unwrap()
+            .unwrap();
         assert_eq!(got.local_id, local);
     }
 }

@@ -3,10 +3,10 @@
 //! Templates live in `.flynt/templates/` as markdown files.
 //! Variables: {{title}}, {{date}}, {{time}}, {{year}}, {{month}}, {{day}}, {{weekday}}, {{project}}.
 
-use std::path::{Path, PathBuf};
-use std::fs;
-use chrono::Local;
 use anyhow::Result;
+use chrono::Local;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// A template definition.
 #[derive(Debug, Clone)]
@@ -19,18 +19,25 @@ pub struct Template {
 /// List all templates in the project's .flynt/templates/ directory.
 pub fn list_templates(project_root: &Path) -> Vec<Template> {
     let dir = project_root.join(".flynt/templates");
-    if !dir.exists() { return vec![]; }
+    if !dir.exists() {
+        return vec![];
+    }
 
     let mut templates = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().map(|e| e == "md").unwrap_or(false) {
-                let name = path.file_stem()
+                let name = path
+                    .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 if let Ok(content) = fs::read_to_string(&path) {
-                    templates.push(Template { name, path, content });
+                    templates.push(Template {
+                        name,
+                        path,
+                        content,
+                    });
                 }
             }
         }
@@ -56,20 +63,27 @@ pub fn expand(template: &str, title: &str, project_name: &str) -> String {
 /// Create the default templates if the templates directory doesn't exist.
 pub fn ensure_default_templates(project_root: &Path) -> Result<()> {
     let dir = project_root.join(".flynt/templates");
-    if dir.exists() { return Ok(()); }
+    if dir.exists() {
+        return Ok(());
+    }
 
     fs::create_dir_all(&dir)?;
 
-    fs::write(dir.join("Note.md"), r#"+++
+    fs::write(
+        dir.join("Note.md"),
+        r#"+++
 title = "{{title}}"
 tags = []
 +++
 
 # {{title}}
 
-"#)?;
+"#,
+    )?;
 
-    fs::write(dir.join("Daily.md"), r#"+++
+    fs::write(
+        dir.join("Daily.md"),
+        r#"+++
 title = "{{title}}"
 tags = ["daily"]
 date = "{{date}}"
@@ -83,9 +97,12 @@ date = "{{date}}"
 
 ## Notes
 
-"#)?;
+"#,
+    )?;
 
-    fs::write(dir.join("Meeting.md"), r#"+++
+    fs::write(
+        dir.join("Meeting.md"),
+        r#"+++
 title = "{{title}}"
 tags = ["meeting"]
 date = "{{date}}"
@@ -105,7 +122,8 @@ date = "{{date}}"
 ## Action Items
 
 - [ ]
-"#)?;
+"#,
+    )?;
 
     Ok(())
 }

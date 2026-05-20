@@ -21,18 +21,36 @@ pub struct TaskId(pub Uuid);
 pub struct BoardId(pub Uuid);
 
 impl DocumentId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
 }
 impl TaskId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
 }
 impl BoardId {
-    pub fn new() -> Self { Self(Uuid::new_v4()) }
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
 }
 
-impl Default for DocumentId { fn default() -> Self { Self::new() } }
-impl Default for TaskId { fn default() -> Self { Self::new() } }
-impl Default for BoardId { fn default() -> Self { Self::new() } }
+impl Default for DocumentId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Default for TaskId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Default for BoardId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ── Priority ────────────────────────────────────────────────────────────────
 
@@ -77,7 +95,9 @@ pub enum DecayRate {
 }
 
 impl Default for DecayRate {
-    fn default() -> Self { Self::Natural }
+    fn default() -> Self {
+        Self::Natural
+    }
 }
 
 impl DecayRate {
@@ -267,10 +287,14 @@ impl Task {
     /// fields populate. Used by Flynt's UI to surface sentry-aware chips
     /// only when there's something to show.
     pub fn is_sentry_managed(&self) -> bool {
-        self.execution.as_ref().map(|e| !e.is_empty()).unwrap_or(false)
-            || self.external_refs.iter().any(|r| {
-                r.starts_with("cron:") || r.starts_with("webhook:")
-            })
+        self.execution
+            .as_ref()
+            .map(|e| !e.is_empty())
+            .unwrap_or(false)
+            || self
+                .external_refs
+                .iter()
+                .any(|r| r.starts_with("cron:") || r.starts_with("webhook:"))
     }
 
     /// Extract the cron expression from external_refs if any (just the
@@ -289,11 +313,7 @@ impl Task {
             .find_map(|r| r.strip_prefix("webhook:"))
     }
 
-    pub fn new(
-        board_id: BoardId,
-        column: impl Into<String>,
-        title: impl Into<String>,
-    ) -> Self {
+    pub fn new(board_id: BoardId, column: impl Into<String>, title: impl Into<String>) -> Self {
         let now = Utc::now();
         Self {
             id: TaskId::new(),

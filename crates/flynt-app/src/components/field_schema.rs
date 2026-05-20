@@ -37,9 +37,7 @@ pub enum FieldKind {
     },
     /// Free-form string. Optional autocomplete pulls from prior
     /// values across the project (tag names, etc.).
-    FreeText {
-        autocomplete_from: Option<String>,
-    },
+    FreeText { autocomplete_from: Option<String> },
     /// ISO date string. Picker uses native `<input type="date">` for
     /// v1; calendar widget can come later.
     Date,
@@ -79,96 +77,122 @@ pub struct FieldDescriptor {
 /// primary lifecycle pill), then priority, then organizational fields,
 /// then optional fields, then tags. Design-node + engagement are at
 /// the end because they're navigational rather than editorial.
-pub fn task_field_schemas(active_board: Option<uuid::Uuid>) -> HashMap<&'static str, FieldDescriptor> {
+pub fn task_field_schemas(
+    active_board: Option<uuid::Uuid>,
+) -> HashMap<&'static str, FieldDescriptor> {
     let mut schemas = HashMap::new();
 
-    schemas.insert("status", FieldDescriptor {
-        key: "status".into(),
-        label: "Status".into(),
-        kind: FieldKind::Enum {
-            values: vec![
-                "todo".into(),
-                "in_progress".into(),
-                "review".into(),
-                "done".into(),
-                "archived".into(),
-            ],
+    schemas.insert(
+        "status",
+        FieldDescriptor {
+            key: "status".into(),
+            label: "Status".into(),
+            kind: FieldKind::Enum {
+                values: vec![
+                    "todo".into(),
+                    "in_progress".into(),
+                    "review".into(),
+                    "done".into(),
+                    "archived".into(),
+                ],
+            },
         },
-    });
+    );
 
-    schemas.insert("priority", FieldDescriptor {
-        key: "priority".into(),
-        label: "Priority".into(),
-        // Priority is stored as int (1-4) but the picker shows labels.
-        // The picker's value-mapping layer translates "low" ↔ 1, etc.
-        kind: FieldKind::Enum {
-            values: vec![
-                "low".into(),
-                "medium".into(),
-                "high".into(),
-                "critical".into(),
-            ],
+    schemas.insert(
+        "priority",
+        FieldDescriptor {
+            key: "priority".into(),
+            label: "Priority".into(),
+            // Priority is stored as int (1-4) but the picker shows labels.
+            // The picker's value-mapping layer translates "low" ↔ 1, etc.
+            kind: FieldKind::Enum {
+                values: vec![
+                    "low".into(),
+                    "medium".into(),
+                    "high".into(),
+                    "critical".into(),
+                ],
+            },
         },
-    });
+    );
 
-    schemas.insert("column", FieldDescriptor {
-        key: "column".into(),
-        label: "Column".into(),
-        kind: FieldKind::Lookup {
-            // Falls back to the nil UUID when no board is active. The
-            // picker handles this by showing an empty list — operator
-            // sees "no columns yet" rather than a crash.
-            source: LookupSource::Columns(active_board.unwrap_or(uuid::Uuid::nil())),
-            // Columns are bare strings, not entities — the lookup
-            // source synthesizes descriptors with `name == value`.
-            display: String::new(),
+    schemas.insert(
+        "column",
+        FieldDescriptor {
+            key: "column".into(),
+            label: "Column".into(),
+            kind: FieldKind::Lookup {
+                // Falls back to the nil UUID when no board is active. The
+                // picker handles this by showing an empty list — operator
+                // sees "no columns yet" rather than a crash.
+                source: LookupSource::Columns(active_board.unwrap_or(uuid::Uuid::nil())),
+                // Columns are bare strings, not entities — the lookup
+                // source synthesizes descriptors with `name == value`.
+                display: String::new(),
+            },
         },
-    });
+    );
 
-    schemas.insert("board", FieldDescriptor {
-        key: "board".into(),
-        label: "Board".into(),
-        kind: FieldKind::Lookup {
-            source: LookupSource::Boards,
-            display: "name".into(),
+    schemas.insert(
+        "board",
+        FieldDescriptor {
+            key: "board".into(),
+            label: "Board".into(),
+            kind: FieldKind::Lookup {
+                source: LookupSource::Boards,
+                display: "name".into(),
+            },
         },
-    });
+    );
 
-    schemas.insert("due_date", FieldDescriptor {
-        key: "due_date".into(),
-        label: "Due".into(),
-        kind: FieldKind::Date,
-    });
-
-    schemas.insert("tags", FieldDescriptor {
-        key: "tags".into(),
-        label: "Tags".into(),
-        kind: FieldKind::FreeText {
-            autocomplete_from: Some("tags".into()),
+    schemas.insert(
+        "due_date",
+        FieldDescriptor {
+            key: "due_date".into(),
+            label: "Due".into(),
+            kind: FieldKind::Date,
         },
-    });
+    );
 
-    schemas.insert("engagement", FieldDescriptor {
-        key: "engagement".into(),
-        label: "Engagement".into(),
-        kind: FieldKind::Lookup {
-            source: LookupSource::Engagements,
-            display: "name".into(),
+    schemas.insert(
+        "tags",
+        FieldDescriptor {
+            key: "tags".into(),
+            label: "Tags".into(),
+            kind: FieldKind::FreeText {
+                autocomplete_from: Some("tags".into()),
+            },
         },
-    });
+    );
 
-    schemas.insert("decay", FieldDescriptor {
-        key: "decay".into(),
-        label: "Decay".into(),
-        kind: FieldKind::Enum {
-            values: vec![
-                "none".into(),
-                "slow".into(),
-                "natural".into(),
-                "fast".into(),
-            ],
+    schemas.insert(
+        "engagement",
+        FieldDescriptor {
+            key: "engagement".into(),
+            label: "Engagement".into(),
+            kind: FieldKind::Lookup {
+                source: LookupSource::Engagements,
+                display: "name".into(),
+            },
         },
-    });
+    );
+
+    schemas.insert(
+        "decay",
+        FieldDescriptor {
+            key: "decay".into(),
+            label: "Decay".into(),
+            kind: FieldKind::Enum {
+                values: vec![
+                    "none".into(),
+                    "slow".into(),
+                    "natural".into(),
+                    "fast".into(),
+                ],
+            },
+        },
+    );
 
     schemas
 }
@@ -205,7 +229,16 @@ mod tests {
         // renders. If we add a new pill, add the schema entry first
         // — this test fires when the two drift.
         let schemas = task_field_schemas(None);
-        for key in ["status", "priority", "column", "board", "due_date", "tags", "engagement", "decay"] {
+        for key in [
+            "status",
+            "priority",
+            "column",
+            "board",
+            "due_date",
+            "tags",
+            "engagement",
+            "decay",
+        ] {
             assert!(schemas.contains_key(key), "missing schema for {key}");
         }
     }
@@ -234,7 +267,10 @@ mod tests {
         let schemas = task_field_schemas(Some(board_id));
         let col = &schemas["column"];
         match &col.kind {
-            FieldKind::Lookup { source: LookupSource::Columns(id), .. } => {
+            FieldKind::Lookup {
+                source: LookupSource::Columns(id),
+                ..
+            } => {
                 assert_eq!(*id, board_id);
             }
             _ => panic!("column should be a Columns(_) lookup, got {:?}", col.kind),

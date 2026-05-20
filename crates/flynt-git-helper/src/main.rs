@@ -65,9 +65,13 @@ fn handle_get() -> Result<()> {
     if fields.get("protocol").map(String::as_str) != Some("https") {
         return Ok(());
     }
-    let Some(host) = fields.get("host") else { return Ok(()); };
+    let Some(host) = fields.get("host") else {
+        return Ok(());
+    };
 
-    let Some(token) = lookup_token(host) else { return Ok(()); };
+    let Some(token) = lookup_token(host) else {
+        return Ok(());
+    };
 
     let mut out = io::stdout().lock();
     writeln!(out, "username=x-access-token")?;
@@ -140,7 +144,8 @@ mod tests {
 
     fn with_env<F: FnOnce()>(pairs: &[(&str, Option<&str>)], f: F) {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let snapshot: Vec<(String, Option<String>)> = pairs.iter()
+        let snapshot: Vec<(String, Option<String>)> = pairs
+            .iter()
             .map(|(k, _)| (k.to_string(), std::env::var(k).ok()))
             .collect();
         // SAFETY: ENV_LOCK serializes all env mutation in this module.
@@ -194,9 +199,10 @@ mod tests {
         // AWS CodeCommit + many self-hosted forges have hyphens.
         // Our env-var derivation must convert '-' as well as '.'.
         with_env(
-            &[
-                ("FLYNT_GIT_CODECOMMIT_US_EAST_1_AMAZONAWS_COM_TOKEN", Some("aws-token")),
-            ],
+            &[(
+                "FLYNT_GIT_CODECOMMIT_US_EAST_1_AMAZONAWS_COM_TOKEN",
+                Some("aws-token"),
+            )],
             || {
                 assert_eq!(
                     lookup_token("git-codecommit.us-east-1.amazonaws.com").as_deref(),
@@ -208,14 +214,12 @@ mod tests {
 
     #[test]
     fn lookup_strips_port_before_resolving() {
-        with_env(
-            &[
-                ("FLYNT_LOCALHOST_TOKEN", Some("local-token")),
-            ],
-            || {
-                assert_eq!(lookup_token("localhost:3000").as_deref(), Some("local-token"));
-            },
-        );
+        with_env(&[("FLYNT_LOCALHOST_TOKEN", Some("local-token"))], || {
+            assert_eq!(
+                lookup_token("localhost:3000").as_deref(),
+                Some("local-token")
+            );
+        });
     }
 
     #[test]

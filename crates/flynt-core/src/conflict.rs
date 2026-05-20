@@ -32,8 +32,12 @@ pub fn parse_conflicts(content: &str) -> Vec<ConflictRegion> {
             .trim()
             .to_string();
 
-        let Some(separator) = after_marker.find("=======") else { break };
-        let Some(end_marker) = after_marker.find(">>>>>>>") else { break };
+        let Some(separator) = after_marker.find("=======") else {
+            break;
+        };
+        let Some(end_marker) = after_marker.find(">>>>>>>") else {
+            break;
+        };
 
         let ours_start = after_marker.find('\n').map(|i| i + 1).unwrap_or(0);
         let ours = after_marker[ours_start..separator].to_string();
@@ -56,7 +60,9 @@ pub fn parse_conflicts(content: &str) -> Vec<ConflictRegion> {
             theirs_label,
         });
 
-        let end_line = after_marker[end_marker..].find('\n').unwrap_or(after_marker.len() - end_marker);
+        let end_line = after_marker[end_marker..]
+            .find('\n')
+            .unwrap_or(after_marker.len() - end_marker);
         remaining = &after_marker[end_marker + end_line..];
     }
 
@@ -91,18 +97,40 @@ fn resolve_with(content: &str, picker: impl Fn(&ConflictRegion) -> String) -> St
             return result;
         };
 
-        let ours_label = after_marker.lines().next().unwrap_or("").trim_start_matches('<').trim().to_string();
+        let ours_label = after_marker
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('<')
+            .trim()
+            .to_string();
         let ours_start = after_marker.find('\n').map(|i| i + 1).unwrap_or(0);
         let ours = after_marker[ours_start..separator].trim_end().to_string();
         let theirs_start = separator + "=======\n".len();
-        let theirs = after_marker[theirs_start..end_marker].trim_end().to_string();
-        let theirs_label = after_marker[end_marker..].lines().next().unwrap_or("").trim_start_matches('>').trim().to_string();
+        let theirs = after_marker[theirs_start..end_marker]
+            .trim_end()
+            .to_string();
+        let theirs_label = after_marker[end_marker..]
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('>')
+            .trim()
+            .to_string();
 
-        let region = ConflictRegion { ours, theirs, ours_label, theirs_label };
+        let region = ConflictRegion {
+            ours,
+            theirs,
+            ours_label,
+            theirs_label,
+        };
         result.push_str(&picker(&region));
         result.push('\n');
 
-        let end_line = after_marker[end_marker..].find('\n').map(|i| i + 1).unwrap_or(after_marker.len() - end_marker);
+        let end_line = after_marker[end_marker..]
+            .find('\n')
+            .map(|i| i + 1)
+            .unwrap_or(after_marker.len() - end_marker);
         remaining = &after_marker[end_marker + end_line..];
     }
 
@@ -119,7 +147,9 @@ mod tests {
     #[test]
     fn detects_conflicts() {
         assert!(has_conflict_markers(CONFLICTED));
-        assert!(!has_conflict_markers("# Normal note\n\nNo conflicts here.\n"));
+        assert!(!has_conflict_markers(
+            "# Normal note\n\nNo conflicts here.\n"
+        ));
     }
 
     #[test]

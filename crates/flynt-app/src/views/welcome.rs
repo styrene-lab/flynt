@@ -16,8 +16,8 @@ pub fn WelcomeView(
     let has_cloud = !cloud_providers.is_empty();
     // Auto-expand git section if no cloud providers available
     let mut show_git_options = use_signal(move || !has_cloud);
-    let has_existing_project = launcher_profile.last_project_root.is_some()
-        || !launcher_profile.known_projects.is_empty();
+    let has_existing_project =
+        launcher_profile.last_project_root.is_some() || !launcher_profile.known_projects.is_empty();
 
     rsx! {
         div { class: "view-welcome",

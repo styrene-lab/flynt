@@ -1,7 +1,7 @@
-use flynt_core::store::ProjectStore;
+use crate::bootstrap::MobileRuntime;
 use comrak::{Options, markdown_to_html};
 use dioxus::prelude::*;
-use crate::bootstrap::MobileRuntime;
+use flynt_core::store::ProjectStore;
 
 fn render_md(content: &str) -> String {
     let mut opts = Options::default();
@@ -14,17 +14,9 @@ fn render_md(content: &str) -> String {
 }
 
 #[component]
-pub fn NotesList(
-    on_select: EventHandler<String>,
-) -> Element {
+pub fn NotesList(on_select: EventHandler<String>) -> Element {
     let rt = use_context::<Signal<MobileRuntime>>();
-    let docs = use_memo(move || {
-        rt.read()
-            .project
-            .store
-            .list_documents()
-            .unwrap_or_default()
-    });
+    let docs = use_memo(move || rt.read().project.store.list_documents().unwrap_or_default());
 
     rsx! {
         div { class: "notes-list",
@@ -55,10 +47,7 @@ pub fn NotesList(
 }
 
 #[component]
-pub fn NoteDetail(
-    doc_id: String,
-    on_back: EventHandler<()>,
-) -> Element {
+pub fn NoteDetail(doc_id: String, on_back: EventHandler<()>) -> Element {
     let rt = use_context::<Signal<MobileRuntime>>();
 
     let content = use_memo(move || {

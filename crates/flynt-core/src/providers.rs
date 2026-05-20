@@ -5,11 +5,7 @@
 //! flows without requiring the user to use the terminal.
 
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 // ── Provider catalogue ──────────────────────────────────────────────────────
 
@@ -146,7 +142,9 @@ pub struct AuthStore {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StoredCredential {
-    ApiKey { key: String },
+    ApiKey {
+        key: String,
+    },
     Oauth {
         access: String,
         #[serde(default)]
@@ -168,7 +166,9 @@ pub fn auth_json_path() -> PathBuf {
         .map(PathBuf::from)
         .ok()
         .or_else(|| {
-            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config"))
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
         })
         .unwrap_or_else(|| PathBuf::from("."));
     config_dir.join("omegon").join("auth.json")
@@ -189,9 +189,7 @@ pub fn save_auth_store(store: &AuthStore) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    with_auth_json_lock(&path, || {
-        atomic_write_auth_json(&path, store)
-    })
+    with_auth_json_lock(&path, || atomic_write_auth_json(&path, store))
 }
 
 /// Atomic write: serialize to .tmp, set perms, rename over original.
@@ -230,7 +228,10 @@ fn with_auth_json_lock<T>(
             Err(e) => return Err(e.into()),
         }
     }
-    anyhow::bail!("Timed out waiting for auth.json lock: {}", lock_path.display())
+    anyhow::bail!(
+        "Timed out waiting for auth.json lock: {}",
+        lock_path.display()
+    )
 }
 
 fn set_auth_file_permissions(path: &std::path::Path) -> anyhow::Result<()> {
@@ -295,7 +296,9 @@ pub fn save_api_key(provider_id: &str, key: &str) -> anyhow::Result<()> {
     let mut store = load_auth_store();
     store.providers.insert(
         provider_id.to_string(),
-        StoredCredential::ApiKey { key: key.to_string() },
+        StoredCredential::ApiKey {
+            key: key.to_string(),
+        },
     );
     save_auth_store(&store)
 }
@@ -309,9 +312,15 @@ pub fn remove_credential(provider_id: &str) -> anyhow::Result<()> {
 
 /// Build the command to start an OAuth login flow.
 /// Uses the centralized binary resolver from LocalRuntimeConfig.
-pub fn oauth_login_command(config: &crate::models::LocalRuntimeConfig, provider_id: &str) -> (String, Vec<String>) {
+pub fn oauth_login_command(
+    config: &crate::models::LocalRuntimeConfig,
+    provider_id: &str,
+) -> (String, Vec<String>) {
     let binary = crate::models::resolve_omegon_binary(config);
-    (binary.to_string_lossy().into_owned(), vec!["auth".into(), "login".into(), provider_id.into()])
+    (
+        binary.to_string_lossy().into_owned(),
+        vec!["auth".into(), "login".into(), provider_id.into()],
+    )
 }
 
 // ── URL-to-provider mapping ────────────────────────────────────────────────
@@ -326,7 +335,10 @@ const HOST_TO_PROVIDER: &[(&str, &str)] = &[
 /// Resolve a git remote URL to a provider ID.
 /// Handles HTTPS (`https://github.com/…`) and SSH (`git@github.com:…`) formats.
 pub fn provider_for_url(url: &str) -> Option<&'static str> {
-    let host = if let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")) {
+    let host = if let Some(rest) = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    {
         rest.split('/').next()
     } else if url.contains('@') && url.contains(':') {
         // SSH: git@github.com:user/repo.git
@@ -399,9 +411,7 @@ pub fn save_auth_store_to(path: &std::path::Path, store: &AuthStore) -> anyhow::
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    with_auth_json_lock(path, || {
-        atomic_write_auth_json(path, store)
-    })
+    with_auth_json_lock(path, || atomic_write_auth_json(path, store))
 }
 
 #[cfg(test)]
@@ -414,20 +424,28 @@ mod tests {
         let path = tmp.path().join("auth.json");
 
         let mut store = AuthStore::default();
-        store.providers.insert("github".into(), StoredCredential::ApiKey {
-            key: "ghp_test123".into(),
-        });
-        store.providers.insert("anthropic".into(), StoredCredential::Oauth {
-            access: "sk-ant-test".into(),
-            refresh: Some("refresh-tok".into()),
-            expires: Some(9999999999999),
-        });
+        store.providers.insert(
+            "github".into(),
+            StoredCredential::ApiKey {
+                key: "ghp_test123".into(),
+            },
+        );
+        store.providers.insert(
+            "anthropic".into(),
+            StoredCredential::Oauth {
+                access: "sk-ant-test".into(),
+                refresh: Some("refresh-tok".into()),
+                expires: Some(9999999999999),
+            },
+        );
 
         save_auth_store_to(&path, &store).unwrap();
 
         let loaded = load_auth_store_from(&path);
         assert_eq!(loaded.providers.len(), 2);
-        assert!(matches!(loaded.providers.get("github"), Some(StoredCredential::ApiKey { key }) if key == "ghp_test123"));
+        assert!(
+            matches!(loaded.providers.get("github"), Some(StoredCredential::ApiKey { key }) if key == "ghp_test123")
+        );
     }
 
     #[test]
@@ -466,7 +484,10 @@ mod tests {
         // so just verify the probe logic doesn't panic
         let status = probe_provider(info);
         // Should be either Authenticated (if env var set) or Missing
-        assert!(matches!(status, CredentialStatus::Authenticated { .. } | CredentialStatus::Missing));
+        assert!(matches!(
+            status,
+            CredentialStatus::Authenticated { .. } | CredentialStatus::Missing
+        ));
     }
 
     #[test]
@@ -481,24 +502,48 @@ mod tests {
 
     #[test]
     fn provider_for_url_https() {
-        assert_eq!(provider_for_url("https://github.com/user/repo.git"), Some("github"));
-        assert_eq!(provider_for_url("https://codeberg.org/user/repo.git"), Some("forgejo"));
-        assert_eq!(provider_for_url("https://gitlab.com/user/repo.git"), Some("gitlab"));
+        assert_eq!(
+            provider_for_url("https://github.com/user/repo.git"),
+            Some("github")
+        );
+        assert_eq!(
+            provider_for_url("https://codeberg.org/user/repo.git"),
+            Some("forgejo")
+        );
+        assert_eq!(
+            provider_for_url("https://gitlab.com/user/repo.git"),
+            Some("gitlab")
+        );
         assert_eq!(provider_for_url("https://example.com/user/repo.git"), None);
     }
 
     #[test]
     fn provider_for_url_ssh() {
-        assert_eq!(provider_for_url("git@github.com:user/repo.git"), Some("github"));
-        assert_eq!(provider_for_url("git@codeberg.org:user/repo.git"), Some("forgejo"));
-        assert_eq!(provider_for_url("git@gitlab.com:user/repo.git"), Some("gitlab"));
+        assert_eq!(
+            provider_for_url("git@github.com:user/repo.git"),
+            Some("github")
+        );
+        assert_eq!(
+            provider_for_url("git@codeberg.org:user/repo.git"),
+            Some("forgejo")
+        );
+        assert_eq!(
+            provider_for_url("git@gitlab.com:user/repo.git"),
+            Some("gitlab")
+        );
         assert_eq!(provider_for_url("git@selfhosted.dev:user/repo.git"), None);
     }
 
     #[test]
     fn provider_for_url_case_insensitive() {
-        assert_eq!(provider_for_url("https://GitHub.com/user/repo"), Some("github"));
-        assert_eq!(provider_for_url("https://GITLAB.COM/user/repo"), Some("gitlab"));
+        assert_eq!(
+            provider_for_url("https://GitHub.com/user/repo"),
+            Some("github")
+        );
+        assert_eq!(
+            provider_for_url("https://GITLAB.COM/user/repo"),
+            Some("gitlab")
+        );
     }
 
     #[test]

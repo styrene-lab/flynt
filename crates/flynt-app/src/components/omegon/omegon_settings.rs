@@ -5,11 +5,11 @@
 //! fields (model, thinking, posture) apply immediately to the live ACP
 //! session via `set_config()`.
 
-use std::rc::Rc;
+use super::config_bridge::UnifiedOmegonConfig;
 use crate::acp::{AcpSession, ConfigOption};
 use crate::bootstrap::AppContext;
-use super::config_bridge::UnifiedOmegonConfig;
 use dioxus::prelude::*;
+use std::rc::Rc;
 
 #[component]
 pub fn OmegonSettingsSection() -> Element {
@@ -27,12 +27,33 @@ pub fn OmegonSettingsSection() -> Element {
     // Sync model/thinking/posture from the live ACP session whenever
     // config_options changes (i.e. when the rail dropdowns are used).
     let opts = config_options.read();
-    let live_model = opts.iter().find(|o| o.id == "model").map(|o| o.current_value.clone());
-    let live_thinking = opts.iter().find(|o| o.id == "thinking").map(|o| o.current_value.clone());
-    let live_posture = opts.iter().find(|o| o.id == "posture").map(|o| o.current_value.clone());
-    if let Some(ref m) = live_model { if *m != config.read().model { config.write().model = m.clone(); } }
-    if let Some(ref t) = live_thinking { if *t != config.read().thinking { config.write().thinking = t.clone(); } }
-    if let Some(ref p) = live_posture { if *p != config.read().posture { config.write().posture = p.clone(); } }
+    let live_model = opts
+        .iter()
+        .find(|o| o.id == "model")
+        .map(|o| o.current_value.clone());
+    let live_thinking = opts
+        .iter()
+        .find(|o| o.id == "thinking")
+        .map(|o| o.current_value.clone());
+    let live_posture = opts
+        .iter()
+        .find(|o| o.id == "posture")
+        .map(|o| o.current_value.clone());
+    if let Some(ref m) = live_model {
+        if *m != config.read().model {
+            config.write().model = m.clone();
+        }
+    }
+    if let Some(ref t) = live_thinking {
+        if *t != config.read().thinking {
+            config.write().thinking = t.clone();
+        }
+    }
+    if let Some(ref p) = live_posture {
+        if *p != config.read().posture {
+            config.write().posture = p.clone();
+        }
+    }
 
     let mut save_msg: Signal<Option<(&str, &str)>> = use_signal(|| None);
     let mut show_advanced = use_signal(|| false);
@@ -40,20 +61,32 @@ pub fn OmegonSettingsSection() -> Element {
     let model_options: Vec<(String, String)> = opts
         .iter()
         .find(|o| o.id == "model")
-        .map(|o| o.options.iter().map(|v| (v.value.clone(), v.name.clone())).collect())
+        .map(|o| {
+            o.options
+                .iter()
+                .map(|v| (v.value.clone(), v.name.clone()))
+                .collect()
+        })
         .unwrap_or_default();
 
     let thinking_options: Vec<(String, String)> = opts
         .iter()
         .find(|o| o.id == "thinking")
-        .map(|o| o.options.iter().map(|v| (v.value.clone(), v.name.clone())).collect())
-        .unwrap_or_else(|| vec![
-            ("off".into(), "Off".into()),
-            ("minimal".into(), "Minimal".into()),
-            ("low".into(), "Low".into()),
-            ("medium".into(), "Medium".into()),
-            ("high".into(), "High".into()),
-        ]);
+        .map(|o| {
+            o.options
+                .iter()
+                .map(|v| (v.value.clone(), v.name.clone()))
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            vec![
+                ("off".into(), "Off".into()),
+                ("minimal".into(), "Minimal".into()),
+                ("low".into(), "Low".into()),
+                ("medium".into(), "Medium".into()),
+                ("high".into(), "High".into()),
+            ]
+        });
 
     let save_handler = move |_| {
         let cfg = config.read().clone();

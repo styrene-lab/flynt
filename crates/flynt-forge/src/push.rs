@@ -45,7 +45,7 @@ use uuid::Uuid;
 
 use crate::mapping::{MappingConfig, ProviderState, TaskFieldMapper};
 use crate::store::SyncStore;
-use crate::sync::{content_hash, IssueMap};
+use crate::sync::{IssueMap, content_hash};
 
 /// Deterministic hash of "what we would push for this task right now."
 ///
@@ -66,7 +66,10 @@ pub fn projected_local_hash(
     mapper: &dyn TaskFieldMapper,
 ) -> String {
     let create = mapper.task_to_issue_create(task, cfg);
-    let state = match cfg.status_to_state.for_status(task_status_to_str(task.status)) {
+    let state = match cfg
+        .status_to_state
+        .for_status(task_status_to_str(task.status))
+    {
         ProviderState::Open => "open",
         ProviderState::Closed => "closed",
     };
@@ -92,17 +95,26 @@ pub enum SyncStatus {
     /// and no IssueMap exists yet. Pure local state.
     LocalOnly,
     /// IssueMap exists and `last_synced` is current. Nothing to do.
-    Synced { issue_number: u64, url: Option<String> },
+    Synced {
+        issue_number: u64,
+        url: Option<String>,
+    },
     /// Edit happened locally; debounce timer running.
     PendingPush { issue_number: Option<u64> },
     /// Push in flight.
     Pushing,
     /// Push attempted but failed (network, auth, validation).
     /// Contains the error message for the operator pill click-through.
-    PushFailed { issue_number: Option<u64>, error: String },
+    PushFailed {
+        issue_number: Option<u64>,
+        error: String,
+    },
     /// Upstream changed since our last sync. Push blocked until the
     /// operator resolves via pull-theirs or force-push.
-    Conflict { issue_number: u64, url: Option<String> },
+    Conflict {
+        issue_number: u64,
+        url: Option<String>,
+    },
 }
 
 /// One push attempt. Caller passes the inputs; we never read globals.
@@ -187,10 +199,7 @@ async fn create_and_record(input: PushInput<'_>) -> Result<SyncStatus> {
     })
 }
 
-async fn update_with_conflict_check(
-    input: PushInput<'_>,
-    map: IssueMap,
-) -> Result<SyncStatus> {
+async fn update_with_conflict_check(input: PushInput<'_>, map: IssueMap) -> Result<SyncStatus> {
     // GET upstream. Treat 404 specially — the issue was deleted on
     // the forge side. Returning generic PushFailed would surface as
     // a transient error and retry next edit; the operator needs to
@@ -233,7 +242,7 @@ async fn update_with_conflict_check(
             return Ok(SyncStatus::Conflict {
                 issue_number: map.forge_issue_number,
                 url: map.forge_url.clone(),
-            })
+            });
         }
     };
     if stored != current_hash {
@@ -244,7 +253,9 @@ async fn update_with_conflict_check(
     }
 
     // Clean: build the update from current + task, push, record.
-    let update = input.mapper.task_to_issue_update(input.task, &current, input.mapping);
+    let update = input
+        .mapper
+        .task_to_issue_update(input.task, &current, input.mapping);
 
     // If the update has no fields set, there's literally nothing to
     // push — every flynt field already matches upstream. Common after
@@ -266,7 +277,12 @@ async fn update_with_conflict_check(
 
     let new_issue = input
         .client
-        .update_issue(&map.forge_org, &map.forge_repo, map.forge_issue_number, &update)
+        .update_issue(
+            &map.forge_org,
+            &map.forge_repo,
+            map.forge_issue_number,
+            &update,
+        )
         .await
         .context("update_issue")?;
 
@@ -280,7 +296,10 @@ async fn update_with_conflict_check(
     updated.last_synced = Utc::now();
     updated.last_hash = Some(new_hash);
     updated.forge_url = Some(new_issue.url.clone());
-    input.sync_store.upsert(&updated).context("sync_store.upsert")?;
+    input
+        .sync_store
+        .upsert(&updated)
+        .context("sync_store.upsert")?;
 
     Ok(SyncStatus::Synced {
         issue_number: new_issue.number,
@@ -381,8 +400,8 @@ mod tests {
     use flynt_models::task::{BoardId, Priority, Task, TaskId, TaskStatus};
     use std::sync::Arc;
     use styrene_forge::{
-        CreateIssue, ForgeClient, ForgeIssue, ForgeKind, ForgeLabel, ForgeMilestone,
-        ForgeRepo, ForgeResult, IssueState, ListOpts, UpdateIssue,
+        CreateIssue, ForgeClient, ForgeIssue, ForgeKind, ForgeLabel, ForgeMilestone, ForgeRepo,
+        ForgeResult, IssueState, ListOpts, UpdateIssue,
     };
 
     // ── Mock forge client ────────────────────────────────────────────
@@ -413,20 +432,37 @@ mod tests {
 
     #[async_trait]
     impl ForgeClient for MockClient {
-        fn kind(&self) -> ForgeKind { ForgeKind::GitHub }
-        fn endpoint(&self) -> &styrene_forge::ForgeEndpoint { &self.endpoint }
+        fn kind(&self) -> ForgeKind {
+            ForgeKind::GitHub
+        }
+        fn endpoint(&self) -> &styrene_forge::ForgeEndpoint {
+            &self.endpoint
+        }
 
-        async fn list_issues(&self, _o: &str, _r: &str, _o2: &ListOpts) -> ForgeResult<Vec<ForgeIssue>> {
+        async fn list_issues(
+            &self,
+            _o: &str,
+            _r: &str,
+            _o2: &ListOpts,
+        ) -> ForgeResult<Vec<ForgeIssue>> {
             Ok(self.issues.lock().unwrap().values().cloned().collect())
         }
 
         async fn get_issue(&self, _o: &str, _r: &str, n: u64) -> ForgeResult<ForgeIssue> {
-            self.issues.lock().unwrap()
-                .get(&n).cloned()
+            self.issues
+                .lock()
+                .unwrap()
+                .get(&n)
+                .cloned()
                 .ok_or_else(|| styrene_forge::ForgeError::NotFound("issue".into()))
         }
 
-        async fn create_issue(&self, _o: &str, _r: &str, c: &CreateIssue) -> ForgeResult<ForgeIssue> {
+        async fn create_issue(
+            &self,
+            _o: &str,
+            _r: &str,
+            c: &CreateIssue,
+        ) -> ForgeResult<ForgeIssue> {
             let mut n = self.next_number.lock().unwrap();
             let number = *n;
             *n += 1;
@@ -448,28 +484,66 @@ mod tests {
             Ok(issue)
         }
 
-        async fn update_issue(&self, _o: &str, _r: &str, n: u64, u: &UpdateIssue) -> ForgeResult<ForgeIssue> {
+        async fn update_issue(
+            &self,
+            _o: &str,
+            _r: &str,
+            n: u64,
+            u: &UpdateIssue,
+        ) -> ForgeResult<ForgeIssue> {
             let mut issues = self.issues.lock().unwrap();
-            let issue = issues.get_mut(&n)
+            let issue = issues
+                .get_mut(&n)
                 .ok_or_else(|| styrene_forge::ForgeError::NotFound("issue".into()))?;
-            if let Some(t) = &u.title { issue.title = t.clone(); }
-            if let Some(b) = &u.body { issue.body = b.clone(); }
-            if let Some(s) = u.state { issue.state = s; }
-            if let Some(l) = &u.labels { issue.labels = l.clone(); }
-            if let Some(m) = &u.milestone { issue.milestone = Some(m.clone()); }
-            if let Some(a) = &u.assignees { issue.assignees = a.clone(); }
+            if let Some(t) = &u.title {
+                issue.title = t.clone();
+            }
+            if let Some(b) = &u.body {
+                issue.body = b.clone();
+            }
+            if let Some(s) = u.state {
+                issue.state = s;
+            }
+            if let Some(l) = &u.labels {
+                issue.labels = l.clone();
+            }
+            if let Some(m) = &u.milestone {
+                issue.milestone = Some(m.clone());
+            }
+            if let Some(a) = &u.assignees {
+                issue.assignees = a.clone();
+            }
             issue.updated_at = Utc::now();
             Ok(issue.clone())
         }
 
-        async fn list_labels(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeLabel>> { Ok(vec![]) }
-        async fn list_milestones(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeMilestone>> { Ok(vec![]) }
-        async fn list_repos(&self, _: &str) -> ForgeResult<Vec<ForgeRepo>> { Ok(vec![]) }
-        async fn create_repo(&self, _: &str, _: &styrene_forge::CreateRepo) -> ForgeResult<ForgeRepo> {
-            Err(styrene_forge::ForgeError::NotFound("not implemented".into()))
+        async fn list_labels(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeLabel>> {
+            Ok(vec![])
         }
-        async fn create_webhook(&self, _: &str, _: &str, _: &styrene_forge::CreateWebhook) -> ForgeResult<styrene_forge::ForgeWebhook> {
-            Err(styrene_forge::ForgeError::NotFound("not implemented".into()))
+        async fn list_milestones(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeMilestone>> {
+            Ok(vec![])
+        }
+        async fn list_repos(&self, _: &str) -> ForgeResult<Vec<ForgeRepo>> {
+            Ok(vec![])
+        }
+        async fn create_repo(
+            &self,
+            _: &str,
+            _: &styrene_forge::CreateRepo,
+        ) -> ForgeResult<ForgeRepo> {
+            Err(styrene_forge::ForgeError::NotFound(
+                "not implemented".into(),
+            ))
+        }
+        async fn create_webhook(
+            &self,
+            _: &str,
+            _: &str,
+            _: &styrene_forge::CreateWebhook,
+        ) -> ForgeResult<styrene_forge::ForgeWebhook> {
+            Err(styrene_forge::ForgeError::NotFound(
+                "not implemented".into(),
+            ))
         }
     }
 
@@ -521,11 +595,14 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: None,
             auto_create: false,
-        }).await;
+        })
+        .await;
 
         assert_eq!(status, SyncStatus::LocalOnly);
-        assert!(client.issues.lock().unwrap().is_empty(),
-                "didn't create when auto_create = false");
+        assert!(
+            client.issues.lock().unwrap().is_empty(),
+            "didn't create when auto_create = false"
+        );
     }
 
     #[tokio::test]
@@ -545,7 +622,8 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: None,
             auto_create: true,
-        }).await;
+        })
+        .await;
 
         match status {
             SyncStatus::Synced { issue_number, .. } => assert_eq!(issue_number, 1),
@@ -590,7 +668,12 @@ mod tests {
             forge_repo: "repo".into(),
             forge_issue_number: 42,
             last_synced: Utc::now(),
-            last_hash: Some(content_hash(&issue.title, &issue.body, "open", &issue.labels)),
+            last_hash: Some(content_hash(
+                &issue.title,
+                &issue.body,
+                "open",
+                &issue.labels,
+            )),
             forge_url: Some(issue.url.clone()),
         };
         store.upsert(&map).unwrap();
@@ -606,7 +689,8 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: Some(map),
             auto_create: false,
-        }).await;
+        })
+        .await;
 
         match status {
             SyncStatus::Synced { issue_number, .. } => assert_eq!(issue_number, 42),
@@ -661,7 +745,8 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: Some(map),
             auto_create: false,
-        }).await;
+        })
+        .await;
 
         match status {
             SyncStatus::Conflict { issue_number, .. } => assert_eq!(issue_number, 42),
@@ -700,13 +785,19 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: Some(map),
             auto_create: false,
-        }).await;
+        })
+        .await;
 
         match status {
-            SyncStatus::PushFailed { issue_number, error } => {
+            SyncStatus::PushFailed {
+                issue_number,
+                error,
+            } => {
                 assert_eq!(issue_number, Some(42));
-                assert!(error.contains("no longer exists"),
-                        "informative error mentions deletion: {error}");
+                assert!(
+                    error.contains("no longer exists"),
+                    "informative error mentions deletion: {error}"
+                );
             }
             other => panic!("expected PushFailed with dead-link message, got {other:?}"),
         }
@@ -754,7 +845,8 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: Some(map),
             auto_create: false,
-        }).await;
+        })
+        .await;
 
         assert!(matches!(status, SyncStatus::Conflict { .. }));
     }
@@ -794,7 +886,12 @@ mod tests {
             forge_repo: "repo".into(),
             forge_issue_number: 1,
             last_synced: Utc::now(),
-            last_hash: Some(content_hash(&issue.title, &issue.body, "open", &issue.labels)),
+            last_hash: Some(content_hash(
+                &issue.title,
+                &issue.body,
+                "open",
+                &issue.labels,
+            )),
             forge_url: Some(issue.url.clone()),
         };
 
@@ -807,12 +904,15 @@ mod tests {
             target_binding: ("org".into(), "repo".into()),
             existing_map: Some(map),
             auto_create: false,
-        }).await;
+        })
+        .await;
 
         assert!(matches!(status, SyncStatus::Synced { .. }));
         let after = client.issues.lock().unwrap().get(&1).cloned().unwrap();
-        assert_eq!(after.updated_at, before_updated,
-                   "no update_issue call — upstream timestamp unchanged");
+        assert_eq!(
+            after.updated_at, before_updated,
+            "no update_issue call — upstream timestamp unchanged"
+        );
     }
 
     // ── projected_local_hash ─────────────────────────────────────────────
@@ -864,7 +964,10 @@ mod tests {
         task.column = "Archive".into();
         task.position = 42;
         let after = projected_local_hash(&task, &cfg, &mapper);
-        assert_eq!(before, after, "column/position aren't pushed; hash must match");
+        assert_eq!(
+            before, after,
+            "column/position aren't pushed; hash must match"
+        );
     }
 
     // ── PushDebouncer ────────────────────────────────────────────────────

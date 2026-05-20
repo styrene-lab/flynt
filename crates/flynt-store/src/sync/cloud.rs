@@ -20,10 +20,18 @@ pub struct CloudProvider {
 pub fn detect_providers() -> Vec<CloudProvider> {
     let mut providers = Vec::new();
 
-    if let Some(p) = detect_icloud() { providers.push(p); }
-    if let Some(p) = detect_google_drive() { providers.push(p); }
-    if let Some(p) = detect_dropbox() { providers.push(p); }
-    if let Some(p) = detect_onedrive() { providers.push(p); }
+    if let Some(p) = detect_icloud() {
+        providers.push(p);
+    }
+    if let Some(p) = detect_google_drive() {
+        providers.push(p);
+    }
+    if let Some(p) = detect_dropbox() {
+        providers.push(p);
+    }
+    if let Some(p) = detect_onedrive() {
+        providers.push(p);
+    }
 
     providers
 }
@@ -40,7 +48,11 @@ pub fn create_cloud_project(
 ) -> anyhow::Result<PathBuf> {
     let project_root = project_path_for_provider(provider, project_name);
     if project_root.exists() {
-        anyhow::bail!("Project '{}' already exists in {}", project_name, provider.label);
+        anyhow::bail!(
+            "Project '{}' already exists in {}",
+            project_name,
+            provider.label
+        );
     }
     std::fs::create_dir_all(project_root.join(".flynt"))?;
 
@@ -179,10 +191,7 @@ fn detect_onedrive() -> Option<CloudProvider> {
     }
 
     // Linux / fallback
-    for candidate in [
-        home.join("OneDrive"),
-        home.join("onedrive"),
-    ] {
+    for candidate in [home.join("OneDrive"), home.join("onedrive")] {
         if candidate.is_dir() {
             return Some(CloudProvider {
                 id: "onedrive",

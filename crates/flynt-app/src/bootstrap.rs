@@ -429,13 +429,20 @@ impl OmegonRuntimeContext {
     }
 
     pub fn export_publication_preview(project: &Project) -> anyhow::Result<PathBuf> {
-        let target = publication_output_path(project);
-        std::fs::create_dir_all(&target)?;
-        let report = project.export_publication_tree(&target)?;
+        let (target, report) = Self::export_publication_preview_report(project)?;
         if !report.errors.is_empty() {
             anyhow::bail!(report.errors.join("; "));
         }
         Ok(target)
+    }
+
+    pub fn export_publication_preview_report(
+        project: &Project,
+    ) -> anyhow::Result<(PathBuf, flynt_store::project::PublicationExportReport)> {
+        let target = publication_output_path(project);
+        std::fs::create_dir_all(&target)?;
+        let report = project.export_publication_tree(&target)?;
+        Ok((target, report))
     }
 
     pub fn publication_target(project: &Project) -> Option<PublicationTarget> {
@@ -616,8 +623,8 @@ impl OmegonRuntimeContext {
 #[cfg(test)]
 mod tests {
     use super::{
-        publication_output_path, KnownProject, LauncherProfile, OmegonRuntimeContext,
-        PendingProjectSetup,
+        KnownProject, LauncherProfile, OmegonRuntimeContext, PendingProjectSetup,
+        publication_output_path,
     };
     use crate::self_update::UpdateChannel;
     use flynt_core::{
@@ -975,16 +982,29 @@ pub(crate) fn runtime_state_for_project_root(project_root: PathBuf) -> RuntimeSt
                             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
                             if ext == "md" {
                                 match p.strip_prefix(&project_clone.root) {
-                                    Ok(rel) => match project_clone.store.get_document_by_path(rel) {
-                                        Ok(Some(doc)) => {
-                                            if let Err(e) = project_clone.store.delete_document(&doc.id) {
-                                                warn!("Remove deleted document from index failed for {}: {e}", rel.display());
+                                    Ok(rel) => {
+                                        match project_clone.store.get_document_by_path(rel) {
+                                            Ok(Some(doc)) => {
+                                                if let Err(e) =
+                                                    project_clone.store.delete_document(&doc.id)
+                                                {
+                                                    warn!(
+                                                        "Remove deleted document from index failed for {}: {e}",
+                                                        rel.display()
+                                                    );
+                                                }
                                             }
+                                            Ok(None) => {}
+                                            Err(e) => warn!(
+                                                "Lookup deleted document failed for {}: {e}",
+                                                rel.display()
+                                            ),
                                         }
-                                        Ok(None) => {}
-                                        Err(e) => warn!("Lookup deleted document failed for {}: {e}", rel.display()),
-                                    },
-                                    Err(e) => warn!("Deleted path outside project root {}: {e}", p.display()),
+                                    }
+                                    Err(e) => warn!(
+                                        "Deleted path outside project root {}: {e}",
+                                        p.display()
+                                    ),
                                 }
                             }
                             None

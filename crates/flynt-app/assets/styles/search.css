@@ -31,7 +31,7 @@
   outline:      none;
   font-size:    1rem;
   font-family:  inherit;
-  color:        var(--fg);
+  color:        var(--foreground);
   padding:      0;
 }
 
@@ -80,7 +80,7 @@
 
 .search-empty-msg {
   font-size:  0.95rem;
-  color:      var(--fg);
+  color:      var(--foreground);
   margin:     0;
 }
 
@@ -187,7 +187,7 @@
 .src-title {
   font-size:     0.92rem;
   font-weight:   500;
-  color:         var(--fg);
+  color:         var(--foreground);
   white-space:   nowrap;
   overflow:      hidden;
   text-overflow: ellipsis;
@@ -214,7 +214,7 @@
 }
 
 .src-excerpt mark {
-  background:    rgba(42, 180, 200, 0.22);
+  background:    color-mix(in srgb, var(--primary) 22%, transparent);
   color:         var(--primary-bright);
   border-radius: 2px;
   padding:       0 2px;
@@ -230,7 +230,7 @@
   background:    var(--card);
   border:        1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow:    0 8px 32px rgba(0,0,0,0.45);
+  box-shadow:    var(--shadow-lg);
   overflow-y:    auto;
   max-height:    360px;
   z-index:       100;
@@ -266,7 +266,7 @@
 .search-overlay-title {
   font-size:   0.88rem;
   font-weight: 500;
-  color:       var(--fg);
+  color:       var(--foreground);
 }
 
 .search-overlay-path {

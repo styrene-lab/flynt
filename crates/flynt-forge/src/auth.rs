@@ -72,7 +72,9 @@ pub struct StaticToken {
 
 impl StaticToken {
     pub fn new(token: impl Into<String>) -> Self {
-        Self { token: Some(token.into()) }
+        Self {
+            token: Some(token.into()),
+        }
     }
 
     /// Anonymous resolver — returns no token. Use for public-only flows.

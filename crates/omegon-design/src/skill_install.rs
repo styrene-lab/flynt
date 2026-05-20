@@ -19,8 +19,7 @@ pub const SKILL_BYTES: &[u8] = include_bytes!("../assets/SKILL.md");
 /// it (the user opts in by copying it into their project), but exposing it
 /// here lets the `design_load_style_guide` tool surface a "no guide
 /// configured — here's a starter you can copy" hint.
-pub const STYLE_GUIDE_TEMPLATE_BYTES: &[u8] =
-    include_bytes!("../assets/style-guide-template.md");
+pub const STYLE_GUIDE_TEMPLATE_BYTES: &[u8] = include_bytes!("../assets/style-guide-template.md");
 
 fn skill_dir() -> Result<PathBuf> {
     let home = dirs::home_dir().context("could not resolve home dir")?;
@@ -39,8 +38,7 @@ pub fn install_bundled_skill() -> Result<()> {
         return Ok(());
     }
 
-    std::fs::write(&path, SKILL_BYTES)
-        .with_context(|| format!("write {}", path.display()))?;
+    std::fs::write(&path, SKILL_BYTES).with_context(|| format!("write {}", path.display()))?;
     tracing::info!("flynt-design skill installed at {}", path.display());
     Ok(())
 }

@@ -1,6 +1,6 @@
+use crate::bootstrap::MobileRuntime;
 use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
-use crate::bootstrap::MobileRuntime;
 
 #[component]
 pub fn AgentView() -> Element {
@@ -8,13 +8,24 @@ pub fn AgentView() -> Element {
     let mut input = use_signal(String::new);
     let mut messages: Signal<Vec<(bool, String)>> = use_signal(Vec::new);
     let mut status = use_signal(|| "disconnected".to_string());
-    let mut ws_tx: Signal<Option<futures_util::stream::SplitSink<
-        tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        tokio_tungstenite::tungstenite::Message
-    >>> = use_signal(|| None);
+    let mut ws_tx: Signal<
+        Option<
+            futures_util::stream::SplitSink<
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                tokio_tungstenite::tungstenite::Message,
+            >,
+        >,
+    > = use_signal(|| None);
 
-    let server_host = rt.read().project.config.local_runtime
-        .omegon_serve_host.clone()
+    let server_host = rt
+        .read()
+        .project
+        .config
+        .local_runtime
+        .omegon_serve_host
+        .clone()
         .unwrap_or_else(|| "127.0.0.1:7842".to_string());
     let server_host_display = server_host.clone();
 
@@ -27,7 +38,10 @@ pub fn AgentView() -> Element {
             // Fetch token
             let token = match fetch_token(&host).await {
                 Ok(t) => t,
-                Err(e) => { *status.write() = format!("error: {e}"); return; }
+                Err(e) => {
+                    *status.write() = format!("error: {e}");
+                    return;
+                }
             };
 
             // Connect WebSocket
@@ -42,7 +56,8 @@ pub fn AgentView() -> Element {
                     spawn(async move {
                         while let Some(Ok(msg)) = read.next().await {
                             if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-                                if let Ok(event) = serde_json::from_str::<serde_json::Value>(&*text) {
+                                if let Ok(event) = serde_json::from_str::<serde_json::Value>(&*text)
+                                {
                                     let event_type = event["type"].as_str().unwrap_or("");
                                     match event_type {
                                         "message_chunk" => {
@@ -60,17 +75,30 @@ pub fn AgentView() -> Element {
                                             messages.write().push((false, format!("» {name}")));
                                         }
                                         "tool_end" => {
-                                            let icon = if event["is_error"].as_bool().unwrap_or(false) { "x" } else { "ok" };
+                                            let icon =
+                                                if event["is_error"].as_bool().unwrap_or(false) {
+                                                    "x"
+                                                } else {
+                                                    "ok"
+                                                };
                                             let result = event["result"].as_str().unwrap_or("");
-                                            let short = if result.len() > 100 { &result[..100] } else { result };
-                                            messages.write().push((false, format!("{icon} {short}")));
+                                            let short = if result.len() > 100 {
+                                                &result[..100]
+                                            } else {
+                                                result
+                                            };
+                                            messages
+                                                .write()
+                                                .push((false, format!("{icon} {short}")));
                                         }
                                         "agent_end" => {
                                             // Turn complete — ensure next message_chunk starts fresh
                                         }
                                         "system_notification" => {
                                             if let Some(msg) = event["message"].as_str() {
-                                                messages.write().push((false, format!("[sys] {msg}")));
+                                                messages
+                                                    .write()
+                                                    .push((false, format!("[sys] {msg}")));
                                             }
                                         }
                                         _ => {}
@@ -81,15 +109,21 @@ pub fn AgentView() -> Element {
                         *status.write() = "disconnected".to_string();
                     });
                 }
-                Err(e) => { *status.write() = format!("failed: {e}"); }
+                Err(e) => {
+                    *status.write() = format!("failed: {e}");
+                }
             }
         });
     });
 
     let status_text = status.read().clone();
-    let status_class = if status_text == "connected" { "agent-mobile-status connected" }
-        else if status_text.starts_with("error") || status_text.starts_with("failed") { "agent-mobile-status error" }
-        else { "agent-mobile-status" };
+    let status_class = if status_text == "connected" {
+        "agent-mobile-status connected"
+    } else if status_text.starts_with("error") || status_text.starts_with("failed") {
+        "agent-mobile-status error"
+    } else {
+        "agent-mobile-status"
+    };
 
     rsx! {
         div { class: "agent-mobile",
@@ -158,13 +192,20 @@ pub fn AgentView() -> Element {
 async fn fetch_token(host: &str) -> Result<String, String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(host)
-        .await.map_err(|e| format!("connect: {e}"))?;
+        .await
+        .map_err(|e| format!("connect: {e}"))?;
 
     let req = format!("GET /api/startup HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-    stream.write_all(req.as_bytes()).await.map_err(|e| format!("write: {e}"))?;
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .map_err(|e| format!("write: {e}"))?;
 
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.map_err(|e| format!("read: {e}"))?;
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("read: {e}"))?;
     let body = String::from_utf8_lossy(&buf);
 
     if let Some(pos) = body.find("\r\n\r\n") {

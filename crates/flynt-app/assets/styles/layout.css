@@ -91,7 +91,7 @@
 
 .toolbar-search {
   width:         100%;
-  background:    var(--surface);
+  background:    var(--card);
   border:        1px solid var(--border);
   border-radius: var(--radius);
   padding:       4px var(--space-3);
@@ -103,7 +103,7 @@
 
 .toolbar-search:focus {
   border-color: var(--ring);
-  box-shadow:   0 0 0 2px rgba(42, 180, 200, 0.2);
+  box-shadow:   0 0 0 2px color-mix(in srgb, var(--ring) 22%, transparent);
   outline:      none;
 }
 
@@ -149,9 +149,16 @@
   font-size: var(--font-size-xs);
   padding:   1px var(--space-1);
   border-radius: var(--radius-sm);
+  border:    1px solid transparent;
+  background: transparent;
+  cursor:    pointer;
+}
+.sync-badge:hover {
+  background: var(--accent);
+  border-color: var(--border);
 }
 .sync-badge.synced {
-  color:     rgb(34, 197, 94);
+  color:     var(--success);
   opacity:   0.6;
 }
 .sync-badge.syncing {
@@ -160,7 +167,179 @@
 }
 .sync-badge.conflict {
   color:      var(--warning);
-  background: rgba(234, 179, 8, 0.1);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+.sync-activity-popover {
+  position: absolute;
+  top:      calc(var(--toolbar-height) - 4px);
+  right:    var(--space-4);
+  z-index:  60;
+  width:    min(420px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - var(--toolbar-height) - 24px));
+  display:        flex;
+  flex-direction: column;
+  overflow:       hidden;
+  background:     var(--card);
+  border:         1px solid var(--border);
+  border-radius:  var(--radius);
+  box-shadow:     var(--shadow-lg);
+  color:          var(--foreground);
+  -webkit-app-region: no-drag;
+}
+
+.sync-activity-header {
+  display:         flex;
+  align-items:     flex-start;
+  justify-content: space-between;
+  gap:             var(--space-3);
+  padding:         var(--space-3);
+  border-bottom:   1px solid var(--border);
+}
+
+.sync-activity-title {
+  color:       var(--primary-bright);
+  font-size:   var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.sync-activity-subtitle {
+  margin-top: 2px;
+  color:      var(--muted-foreground);
+  font-size:  var(--font-size-xs);
+  line-height: 1.35;
+}
+
+.sync-activity-actions {
+  display:     flex;
+  gap:         var(--space-2);
+  padding:     var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.sync-activity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.sync-activity-run-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.sync-activity-cell,
+.sync-activity-section {
+  min-width: 0;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: var(--space-2);
+}
+
+.sync-activity-section {
+  margin: 0 var(--space-3) var(--space-3);
+}
+
+.sync-activity-label,
+.sync-activity-section-title {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sync-activity-value,
+.sync-activity-mono {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-activity-value.outcome.ok {
+  color: var(--success);
+}
+
+.sync-activity-value.outcome.warning {
+  color: var(--warning);
+}
+
+.sync-activity-value.outcome.error {
+  color: var(--error);
+}
+
+.sync-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sync-activity-file {
+  overflow: hidden;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-activity-file.button {
+  width: 100%;
+  border: 1px solid transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sync-activity-file.button:hover {
+  border-color: var(--border);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.sync-activity-empty,
+.sync-activity-message,
+.sync-activity-warning,
+.sync-activity-error {
+  margin: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.sync-activity-message {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+
+.sync-activity-warning {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--border));
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.sync-activity-error {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 32%, var(--border));
+  background: color-mix(in srgb, var(--error) 8%, transparent);
 }
 
 .update-pill {
@@ -179,24 +358,24 @@
 
 .update-badge.available {
   color:        var(--primary);
-  background:   rgba(42, 180, 200, 0.12);
-  border-color: rgba(42, 180, 200, 0.2);
+  background:   color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
 }
 
 .update-badge.available:hover {
-  background: rgba(42, 180, 200, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .update-badge.available.verified {
-  color:        rgb(34, 197, 94);
-  background:   rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.22);
+  color:        var(--success);
+  background:   color-mix(in srgb, var(--success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--success) 24%, transparent);
 }
 
 .update-badge.available.unverified {
   color:        var(--warning);
-  background:   rgba(234, 179, 8, 0.1);
-  border-color: rgba(234, 179, 8, 0.22);
+  background:   color-mix(in srgb, var(--warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 24%, transparent);
 }
 
 .update-badge.unknown {

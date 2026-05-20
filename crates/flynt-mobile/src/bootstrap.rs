@@ -1,6 +1,6 @@
 use anyhow::Result;
 use flynt_core::models::SyncConfig;
-use flynt_store::{sync::AutoSyncHandle, project::Project};
+use flynt_store::{project::Project, sync::AutoSyncHandle};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tracing::{info, warn};
 
@@ -12,7 +12,9 @@ pub fn project_root() -> PathBuf {
 }
 
 /// Alias for use from onboarding view.
-pub fn default_project_root() -> PathBuf { project_root() }
+pub fn default_project_root() -> PathBuf {
+    project_root()
+}
 
 /// Check if a project has been initialized (has at least a .flynt directory or any .md files).
 pub fn has_project() -> bool {

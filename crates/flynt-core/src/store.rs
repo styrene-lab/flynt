@@ -1,8 +1,6 @@
 use crate::{
     datum::EntityKind,
-    models::{
-        Board, BoardId, Document, DocumentId, DocumentMeta, SearchResult, Task, TaskId,
-    },
+    models::{Board, BoardId, Document, DocumentId, DocumentMeta, SearchResult, Task, TaskId},
 };
 use anyhow::Result;
 use std::path::Path;
@@ -41,7 +39,10 @@ pub trait ProjectStore: Send + Sync {
     /// Find a document whose title or filename slug loosely matches `slug`.
     fn find_document_by_slug(&self, slug: &str) -> Result<Option<DocumentMeta>>;
     fn list_documents(&self) -> Result<Vec<DocumentMeta>>;
-    fn list_documents_by_metadata(&self, filter: &DocumentMetadataFilter) -> Result<Vec<DocumentMeta>>;
+    fn list_documents_by_metadata(
+        &self,
+        filter: &DocumentMetadataFilter,
+    ) -> Result<Vec<DocumentMeta>>;
     fn save_document(&self, doc: &Document) -> Result<()>;
     fn delete_document(&self, id: &DocumentId) -> Result<()>;
     fn search_documents(&self, query: &str) -> Result<Vec<SearchResult>>;

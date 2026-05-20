@@ -1,7 +1,9 @@
 use anyhow::Result;
 use flynt_core::sync::{SyncBackend, SyncResult, SyncStatus};
-use git2::{Cred, FetchOptions, IndexAddOption, PushOptions, RemoteCallbacks, Repository};
-use std::path::PathBuf;
+use git2::{
+    Cred, DiffOptions, FetchOptions, IndexAddOption, Oid, PushOptions, RemoteCallbacks, Repository,
+};
+use std::path::{Path, PathBuf};
 use tracing::debug;
 
 use super::util;
@@ -12,13 +14,62 @@ pub struct GitSync {
     pub branch: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileHistoryEntry {
+    pub commit: String,
+    pub short_commit: String,
+    pub summary: String,
+    pub author: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSnapshot {
+    pub commit: String,
+    pub path: PathBuf,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncDiagnostic {
+    pub backend: String,
+    pub remote: String,
+    pub branch: String,
+    pub head: Option<String>,
+    pub dirty_files: Vec<String>,
+    pub ahead: Option<usize>,
+    pub behind: Option<usize>,
+    pub remote_ref_available: bool,
+}
+
 impl GitSync {
-    pub fn new(project_root: PathBuf, remote: impl Into<String>, branch: impl Into<String>) -> Self {
-        Self { project_root, remote: remote.into(), branch: branch.into() }
+    pub fn new(
+        project_root: PathBuf,
+        remote: impl Into<String>,
+        branch: impl Into<String>,
+    ) -> Self {
+        Self {
+            project_root,
+            remote: remote.into(),
+            branch: branch.into(),
+        }
     }
 
     fn open_repo(&self) -> Result<Repository> {
         util::open_repo(&self.project_root)
+    }
+
+    fn normalize_repo_path(path: &Path) -> Result<PathBuf> {
+        if path.is_absolute() {
+            anyhow::bail!("git history paths must be relative to the project root");
+        }
+        if path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            anyhow::bail!("git history paths cannot contain parent-directory components");
+        }
+        Ok(path.to_path_buf())
     }
 
     /// Build credential callbacks that handle SSH agent, SSH key files, and HTTPS.
@@ -107,6 +158,136 @@ impl GitSync {
         opts.remote_callbacks(Self::credential_callbacks());
         opts
     }
+}
+
+// ── File History ────────────────────────────────────────────────────────────
+
+impl GitSync {
+    /// List commits that changed a project-relative file path, newest first.
+    pub fn list_file_history(
+        &self,
+        rel_path: &Path,
+        limit: usize,
+    ) -> Result<Vec<FileHistoryEntry>> {
+        let rel_path = Self::normalize_repo_path(rel_path)?;
+        let repo = self.open_repo()?;
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head()?;
+        revwalk.set_sorting(git2::Sort::TIME)?;
+
+        let mut entries = Vec::new();
+        for oid in revwalk {
+            let oid = oid?;
+            let commit = repo.find_commit(oid)?;
+            if !commit_touched_path(&repo, &commit, &rel_path)? {
+                continue;
+            }
+            let author = commit.author();
+            let author_name = author.name().unwrap_or("unknown").to_string();
+            let timestamp =
+                chrono::DateTime::from_timestamp(commit.time().seconds(), 0).unwrap_or_default();
+            let commit_id = oid.to_string();
+            entries.push(FileHistoryEntry {
+                short_commit: commit_id.chars().take(7).collect(),
+                commit: commit_id,
+                summary: commit.summary().unwrap_or("(no message)").to_string(),
+                author: author_name,
+                timestamp,
+            });
+            if entries.len() >= limit {
+                break;
+            }
+        }
+        Ok(entries)
+    }
+
+    /// Read a project-relative file as it existed at `commit`.
+    pub fn read_file_at_commit(&self, rel_path: &Path, commit: &str) -> Result<FileSnapshot> {
+        let rel_path = Self::normalize_repo_path(rel_path)?;
+        let repo = self.open_repo()?;
+        let oid = Oid::from_str(commit)?;
+        let commit_obj = repo.find_commit(oid)?;
+        let tree = commit_obj.tree()?;
+        let entry = tree.get_path(&rel_path)?;
+        let blob = entry.to_object(&repo)?.peel_to_blob()?;
+        let content = std::str::from_utf8(blob.content())?.to_string();
+        Ok(FileSnapshot {
+            commit: oid.to_string(),
+            path: rel_path,
+            content,
+        })
+    }
+
+    /// Inspect local Git sync state without mutating the repository.
+    pub fn diagnostic(&self) -> Result<SyncDiagnostic> {
+        let repo = self.open_repo()?;
+        let statuses = repo.statuses(None)?;
+        let mut dirty_files = statuses
+            .iter()
+            .filter_map(|status| {
+                let st = status.status();
+                if st.is_empty() || st.contains(git2::Status::IGNORED) {
+                    return None;
+                }
+                status.path().map(str::to_string)
+            })
+            .collect::<Vec<_>>();
+        dirty_files.sort();
+        dirty_files.dedup();
+
+        let head_commit = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
+        let head = head_commit.as_ref().map(|commit| commit.id().to_string());
+        let remote_ref = format!("refs/remotes/{}/{}", self.remote, self.branch);
+        let remote_commit = repo
+            .find_reference(&remote_ref)
+            .ok()
+            .and_then(|reference| reference.peel_to_commit().ok());
+        let (ahead, behind, remote_ref_available) =
+            match (head_commit.as_ref(), remote_commit.as_ref()) {
+                (Some(local), Some(remote)) => {
+                    let (ahead, behind) = repo.graph_ahead_behind(local.id(), remote.id())?;
+                    (Some(ahead), Some(behind), true)
+                }
+                (_, Some(_)) => (None, None, true),
+                _ => (None, None, false),
+            };
+
+        Ok(SyncDiagnostic {
+            backend: "git".into(),
+            remote: self.remote.clone(),
+            branch: self.branch.clone(),
+            head,
+            dirty_files,
+            ahead,
+            behind,
+            remote_ref_available,
+        })
+    }
+}
+
+fn commit_touched_path(
+    repo: &Repository,
+    commit: &git2::Commit<'_>,
+    rel_path: &Path,
+) -> Result<bool> {
+    let tree = commit.tree()?;
+    let mut opts = DiffOptions::new();
+    opts.pathspec(rel_path);
+
+    if commit.parent_count() == 0 {
+        let diff = repo.diff_tree_to_tree(None, Some(&tree), Some(&mut opts))?;
+        return Ok(diff.deltas().len() > 0);
+    }
+
+    for parent_idx in 0..commit.parent_count() {
+        let parent = commit.parent(parent_idx)?;
+        let parent_tree = parent.tree()?;
+        let diff = repo.diff_tree_to_tree(Some(&parent_tree), Some(&tree), Some(&mut opts))?;
+        if diff.deltas().len() > 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 impl GitSync {
@@ -211,10 +392,10 @@ impl GitSync {
             let name = String::from_utf8_lossy(raw_name)
                 .trim_start_matches("refs/tags/")
                 .to_string();
-            let timestamp = repo.find_commit(oid)
+            let timestamp = repo
+                .find_commit(oid)
                 .map(|c| {
-                    chrono::DateTime::from_timestamp(c.time().seconds(), 0)
-                        .unwrap_or_default()
+                    chrono::DateTime::from_timestamp(c.time().seconds(), 0).unwrap_or_default()
                 })
                 .or_else(|_| {
                     // Annotated tag — dereference to commit
@@ -226,8 +407,15 @@ impl GitSync {
                     })
                 })
                 .unwrap_or_default();
-            let message = repo.find_tag(oid).ok().map(|t| t.message().unwrap_or("").to_string());
-            tags.push(ProjectTag { name, message, timestamp });
+            let message = repo
+                .find_tag(oid)
+                .ok()
+                .map(|t| t.message().unwrap_or("").to_string());
+            tags.push(ProjectTag {
+                name,
+                message,
+                timestamp,
+            });
             true
         })?;
         tags.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -252,7 +440,9 @@ impl GitSync {
 }
 
 impl SyncBackend for GitSync {
-    fn name(&self) -> &str { "git" }
+    fn name(&self) -> &str {
+        "git"
+    }
 
     fn status(&self) -> Result<SyncStatus> {
         let repo = self.open_repo()?;
@@ -273,7 +463,8 @@ impl SyncBackend for GitSync {
         let remote_ref = format!("refs/remotes/{}/{}", self.remote, self.branch);
         if let (Ok(local), Ok(remote)) = (
             head.peel_to_commit(),
-            repo.find_reference(&remote_ref).and_then(|r| r.peel_to_commit()),
+            repo.find_reference(&remote_ref)
+                .and_then(|r| r.peel_to_commit()),
         ) {
             if local.id() != remote.id() {
                 return Ok(SyncStatus::Syncing); // ahead of remote
@@ -288,15 +479,17 @@ impl SyncBackend for GitSync {
         remote.fetch(&[&self.branch], Some(&mut Self::fetch_options()), None)?;
 
         let remote_ref = format!("refs/remotes/{}/{}", self.remote, self.branch);
-        let fetch_commit = repo
-            .find_reference(&remote_ref)?
-            .peel_to_commit()?;
+        let fetch_commit = repo.find_reference(&remote_ref)?.peel_to_commit()?;
         let fetch_annotated = repo.find_annotated_commit(fetch_commit.id())?;
 
         let (analysis, _) = repo.merge_analysis(&[&fetch_annotated])?;
 
         if analysis.is_up_to_date() {
-            return Ok(SyncResult { files_pulled: 0, files_pushed: 0, conflicts: vec![] });
+            return Ok(SyncResult {
+                files_pulled: 0,
+                files_pushed: 0,
+                conflicts: vec![],
+            });
         }
 
         if analysis.is_fast_forward() {
@@ -305,7 +498,11 @@ impl SyncBackend for GitSync {
             reference.set_target(fetch_commit.id(), "fast-forward")?;
             repo.set_head(&refname)?;
             repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
-            return Ok(SyncResult { files_pulled: 1, files_pushed: 0, conflicts: vec![] });
+            return Ok(SyncResult {
+                files_pulled: 1,
+                files_pushed: 0,
+                conflicts: vec![],
+            });
         }
 
         // Non-fast-forward: attempt merge, detect conflicts
@@ -319,10 +516,18 @@ impl SyncBackend for GitSync {
                 .filter_map(|e| String::from_utf8(e.path).ok())
                 .collect();
             repo.cleanup_state()?;
-            return Ok(SyncResult { files_pulled: 0, files_pushed: 0, conflicts });
+            return Ok(SyncResult {
+                files_pulled: 0,
+                files_pushed: 0,
+                conflicts,
+            });
         }
         repo.cleanup_state()?;
-        Ok(SyncResult { files_pulled: 1, files_pushed: 0, conflicts: vec![] })
+        Ok(SyncResult {
+            files_pulled: 1,
+            files_pushed: 0,
+            conflicts: vec![],
+        })
     }
 
     fn push(&self) -> Result<SyncResult> {
@@ -330,7 +535,11 @@ impl SyncBackend for GitSync {
         let mut remote = repo.find_remote(&self.remote)?;
         let refspec = format!("refs/heads/{}:refs/heads/{}", self.branch, self.branch);
         remote.push(&[&refspec], Some(&mut Self::push_options()))?;
-        Ok(SyncResult { files_pulled: 0, files_pushed: 1, conflicts: vec![] })
+        Ok(SyncResult {
+            files_pulled: 0,
+            files_pushed: 1,
+            conflicts: vec![],
+        })
     }
 
     fn sync(&self) -> Result<SyncResult> {
@@ -389,7 +598,8 @@ mod tag_tests {
         let sig = git2::Signature::now("Test", "test@test.com").unwrap();
         let tree_id = repo.index().unwrap().write_tree().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
 
         (tmp, repo_path)
     }
@@ -414,10 +624,20 @@ mod tag_tests {
         let git = GitSync::new(repo_path, "origin", "main");
 
         git.create_tag("deleteme", None).unwrap();
-        assert!(git.list_tags().unwrap().iter().any(|t| t.name == "deleteme"));
+        assert!(
+            git.list_tags()
+                .unwrap()
+                .iter()
+                .any(|t| t.name == "deleteme")
+        );
 
         git.delete_tag("deleteme").unwrap();
-        assert!(!git.list_tags().unwrap().iter().any(|t| t.name == "deleteme"));
+        assert!(
+            !git.list_tags()
+                .unwrap()
+                .iter()
+                .any(|t| t.name == "deleteme")
+        );
     }
 
     #[test]

@@ -1,10 +1,13 @@
-use crate::{bootstrap::AppContext, state::{Route, TabState}};
+use crate::{
+    bootstrap::AppContext,
+    state::{Route, TabState},
+};
+use dioxus::prelude::*;
 use flynt_core::{
-    graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind, GraphPayload},
+    graph::{GraphEdgeKind, GraphNodeKind, GraphPayload, build_graph_payload},
     models::DocumentId,
     store::ProjectStore,
 };
-use dioxus::prelude::*;
 use std::str::FromStr;
 
 // ── Full filter + display state ─────────────────────────────────────────────
@@ -112,7 +115,9 @@ pub fn GraphView() -> Element {
             old.cancel();
         }
         let json = graph_json.read().clone();
-        if json.is_empty() { return; }
+        if json.is_empty() {
+            return;
+        }
         let js = format!("{GRAPH_JS}\nflyntGraph({json});");
         let mut eval = document::eval(&js);
         let click_ctx = ctx_click.clone();
@@ -127,7 +132,9 @@ pub fn GraphView() -> Element {
                             let result: Result<Option<flynt_core::models::Document>, _> =
                                 tokio::task::spawn_blocking(move || {
                                     project.store.get_document(&doc_id)
-                                }).await.unwrap_or(Ok(None));
+                                })
+                                .await
+                                .unwrap_or(Ok(None));
                             if let Ok(Some(doc)) = result {
                                 tab_state.write().open(doc.id, doc.title);
                                 *active_route.write() = Route::Notes;
@@ -386,25 +393,25 @@ pub fn GraphView() -> Element {
                         div {
                             class: "graph-legend",
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #2ab4c8" } "Document"
+                                div { class: "graph-legend-dot graph-kind-document" } "Document"
                             }
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #e0a030" } "Repo"
+                                div { class: "graph-legend-dot graph-kind-repo" } "Repo"
                             }
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #c06090" } "Link"
+                                div { class: "graph-legend-dot graph-kind-link" } "Link"
                             }
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #c86418" } "Task"
+                                div { class: "graph-legend-dot graph-kind-task" } "Task"
                             }
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #1ab878" } "Board"
+                                div { class: "graph-legend-dot graph-kind-board" } "Board"
                             }
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #8860d0" } "Memory"
+                                div { class: "graph-legend-dot graph-kind-memory" } "Memory"
                             }
                             div { class: "graph-legend-item",
-                                div { class: "graph-legend-dot", style: "background: #1a8898" } "Comms"
+                                div { class: "graph-legend-dot graph-kind-communication" } "Comms"
                             }
                         }
                         div { id: "graph-tooltip", class: "graph-tooltip" }
@@ -426,7 +433,10 @@ fn filter_graph<'a>(
     payload: &'a GraphPayload,
     s: &GraphSettings,
     local_center: Option<&str>,
-) -> (Vec<&'a flynt_core::graph::GraphNode>, Vec<&'a flynt_core::graph::GraphEdge>) {
+) -> (
+    Vec<&'a flynt_core::graph::GraphNode>,
+    Vec<&'a flynt_core::graph::GraphEdge>,
+) {
     // Compute degree
     let mut degree: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
     for edge in &payload.edges {
@@ -462,84 +472,112 @@ fn filter_graph<'a>(
         visited
     });
 
-    let mut nodes: Vec<_> = payload.nodes.iter().filter(|n| {
-        // Local graph restriction
-        if let Some(ref ids) = local_ids {
-            if !ids.contains(n.id.as_str()) { return false; }
-        }
-        // Kind filter — also match by folder for design_node and scenario
-        if let Some(ref k) = s.kind {
-            let kind_match = &n.kind == k;
-            let folder_match = match k {
-                GraphNodeKind::DesignNode => {
-                    let g = n.group.to_lowercase();
-                    g == "design" || g == "openspec" || g.starts_with("design")
+    let mut nodes: Vec<_> = payload
+        .nodes
+        .iter()
+        .filter(|n| {
+            // Local graph restriction
+            if let Some(ref ids) = local_ids {
+                if !ids.contains(n.id.as_str()) {
+                    return false;
                 }
-                GraphNodeKind::Scenario => {
-                    let g = n.group.to_lowercase();
-                    g == "openspec" || g.starts_with("spec")
+            }
+            // Kind filter — also match by folder for design_node and scenario
+            if let Some(ref k) = s.kind {
+                let kind_match = &n.kind == k;
+                let folder_match = match k {
+                    GraphNodeKind::DesignNode => {
+                        let g = n.group.to_lowercase();
+                        g == "design" || g == "openspec" || g.starts_with("design")
+                    }
+                    GraphNodeKind::Scenario => {
+                        let g = n.group.to_lowercase();
+                        g == "openspec" || g.starts_with("spec")
+                    }
+                    _ => false,
+                };
+                if !kind_match && !folder_match {
+                    return false;
                 }
-                _ => false,
-            };
-            if !kind_match && !folder_match { return false; }
-        }
-        // Group filter
-        if let Some(ref g) = s.group {
-            if &n.group != g { return false; }
-        }
-        // Tag filter
-        if let Some(ref tag) = s.tag {
-            if !n.tags.contains(tag) { return false; }
-        }
-        // Orphan filter
-        if !s.show_orphans {
-            let deg = degree.get(n.id.as_str()).copied().unwrap_or(0);
-            if deg == 0 { return false; }
-        }
-        // Degree filter
-        if s.min_degree > 0 {
-            let deg = degree.get(n.id.as_str()).copied().unwrap_or(0);
-            if deg < s.min_degree { return false; }
-        }
-        true
-    }).collect();
+            }
+            // Group filter
+            if let Some(ref g) = s.group {
+                if &n.group != g {
+                    return false;
+                }
+            }
+            // Tag filter
+            if let Some(ref tag) = s.tag {
+                if !n.tags.contains(tag) {
+                    return false;
+                }
+            }
+            // Orphan filter
+            if !s.show_orphans {
+                let deg = degree.get(n.id.as_str()).copied().unwrap_or(0);
+                if deg == 0 {
+                    return false;
+                }
+            }
+            // Degree filter
+            if s.min_degree > 0 {
+                let deg = degree.get(n.id.as_str()).copied().unwrap_or(0);
+                if deg < s.min_degree {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
 
     let ids: std::collections::HashSet<_> = nodes.iter().map(|n| n.id.as_str()).collect();
 
     // When filters are active, also include edges where at least one end is in
     // the filtered set, and pull in the neighbor node so the edge can render.
     let has_filter = s.kind.is_some() || s.group.is_some() || s.tag.is_some();
-    let all_ids: std::collections::HashMap<&str, &flynt_core::graph::GraphNode> = payload.nodes.iter()
-        .map(|n| (n.id.as_str(), n)).collect();
+    let all_ids: std::collections::HashMap<&str, &flynt_core::graph::GraphNode> =
+        payload.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
 
     let mut neighbor_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
-    let edges: Vec<_> = payload.edges.iter().filter(|e| {
-        let edge_allowed = match e.kind {
-            GraphEdgeKind::Wikilink => s.show_wikilinks,
-            GraphEdgeKind::TaskMembership => s.show_task_links,
-            GraphEdgeKind::SemanticSupport => s.show_semantic,
-            GraphEdgeKind::Dependency => true,
-            GraphEdgeKind::ParentChild => true,
-            GraphEdgeKind::Validates => true,
-        };
-        if !edge_allowed { return false; }
+    let edges: Vec<_> = payload
+        .edges
+        .iter()
+        .filter(|e| {
+            let edge_allowed = match e.kind {
+                GraphEdgeKind::Wikilink => s.show_wikilinks,
+                GraphEdgeKind::TaskMembership => s.show_task_links,
+                GraphEdgeKind::SemanticSupport => s.show_semantic,
+                GraphEdgeKind::Dependency => true,
+                GraphEdgeKind::ParentChild => true,
+                GraphEdgeKind::Validates => true,
+            };
+            if !edge_allowed {
+                return false;
+            }
 
-        let src_in = ids.contains(e.source.as_str());
-        let tgt_in = ids.contains(e.target.as_str());
+            let src_in = ids.contains(e.source.as_str());
+            let tgt_in = ids.contains(e.target.as_str());
 
-        if src_in && tgt_in { return true; }
+            if src_in && tgt_in {
+                return true;
+            }
 
-        // Cross-boundary: include if at least one end is a filtered node
-        if has_filter && (src_in || tgt_in) {
-            // Track the external neighbor so we can add it to the node list
-            if !src_in { neighbor_ids.insert(e.source.as_str()); }
-            if !tgt_in { neighbor_ids.insert(e.target.as_str()); }
-            return true;
-        }
+            // Cross-boundary: include if at least one end is a filtered node
+            if has_filter && (src_in || tgt_in) {
+                // Track the external neighbor so we can add it to the node list
+                if !src_in {
+                    neighbor_ids.insert(e.source.as_str());
+                }
+                if !tgt_in {
+                    neighbor_ids.insert(e.target.as_str());
+                }
+                return true;
+            }
 
-        false
-    }).collect();
+            false
+        })
+        .collect();
 
     // Add neighbor nodes that were pulled in by cross-boundary edges
     if !neighbor_ids.is_empty() {
@@ -573,15 +611,22 @@ fn graph_to_json(
             n.status.as_deref().unwrap_or(""),
         )
     }).collect();
-    let edges_json: Vec<String> = edges.iter().map(|e| {
-        format!(
-            r#"{{"source":"{}","target":"{}","kind":"{}"}}"#,
-            escape_json(&e.source),
-            escape_json(&e.target),
-            format_edge_kind(&e.kind),
-        )
-    }).collect();
-    let hl_json: Vec<String> = s.highlight_ids.iter().map(|id| format!("\"{}\"", escape_json(id))).collect();
+    let edges_json: Vec<String> = edges
+        .iter()
+        .map(|e| {
+            format!(
+                r#"{{"source":"{}","target":"{}","kind":"{}"}}"#,
+                escape_json(&e.source),
+                escape_json(&e.target),
+                format_edge_kind(&e.kind),
+            )
+        })
+        .collect();
+    let hl_json: Vec<String> = s
+        .highlight_ids
+        .iter()
+        .map(|id| format!("\"{}\"", escape_json(id)))
+        .collect();
     // Pass search term for JS-side highlighting
     let search_esc = escape_json(&s.search);
     format!(
@@ -643,7 +688,7 @@ function flyntGraph(data) {
   if (!c) return;
   c.innerHTML = '';
   if (!data.nodes.length) {
-    c.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted-foreground);font-size:14px;gap:8px;opacity:0.7"><span style="font-size:32px">&#9675;</span><span>No notes to graph yet.</span><span style="font-size:12px">Create some notes and link them with [[wikilinks]] to see the knowledge graph.</span></div>';
+    c.innerHTML = '<div class="graph-empty"><span class="graph-empty-icon">&#9675;</span><span>No notes to graph yet.</span><span class="graph-empty-hint">Create some notes and link them with [[wikilinks]] to see the knowledge graph.</span></div>';
     return;
   }
 
@@ -663,11 +708,25 @@ function flyntGraph(data) {
   var DAMP = 0.82;
   var alpha = 1.0;
 
+  var css = getComputedStyle(document.documentElement);
+  function token(name, fallback) {
+    var v = css.getPropertyValue(name).trim();
+    return v || fallback;
+  }
   var C = {
-    document:'#2ab4c8', task:'#c86418', board:'#1ab878',
-    repo:'#e0a030', link:'#c06090', memory:'#8860d0', communication:'#1a8898'
+    document: token('--graph-node', 'currentColor'),
+    task: token('--warning', 'currentColor'),
+    board: token('--success', 'currentColor'),
+    repo: token('--chart-tertiary', token('--graph-node-muted', 'currentColor')),
+    link: token('--chart-quinary', token('--graph-edge-active', 'currentColor')),
+    memory: token('--chart-quaternary', token('--graph-node-active', 'currentColor')),
+    communication: token('--chart-secondary', token('--primary-muted', 'currentColor'))
   };
-  var EC = { 'wikilink':'rgba(42,180,200,0.5)', 'task-membership':'rgba(200,100,24,0.5)', 'semantic-support':'rgba(136,96,208,0.5)' };
+  var EC = {
+    'wikilink': token('--graph-edge-active', 'currentColor'),
+    'task-membership': token('--warning', 'currentColor'),
+    'semantic-support': token('--chart-quaternary', token('--graph-edge', 'currentColor'))
+  };
 
   var groupHues = {}, hueStep = 0;
   data.nodes.forEach(function(n) {
@@ -677,8 +736,8 @@ function flyntGraph(data) {
     }
   });
   function nodeColor(n) {
-    if (n.kind !== 'document') return C[n.kind] || '#2ab4c8';
-    if (n.group && groupHues[n.group] !== undefined) return 'hsl(' + groupHues[n.group] + ',60%,55%)';
+    if (n.kind !== 'document') return C[n.kind] || C.document;
+    if (n.group && groupHues[n.group] !== undefined) return 'hsl(' + groupHues[n.group] + ' 60% 55%)';
     return C.document;
   }
 
@@ -770,7 +829,7 @@ function flyntGraph(data) {
     ci.setAttribute('r',n.hl?n.r*1.5:n.r);
     ci.setAttribute('fill',nodeColor(n));
     ci.setAttribute('fill-opacity',n.hl?'1':searchTerm&&!n.hl?'0.25':'0.85');
-    ci.setAttribute('stroke',n.hl?'#fff':nodeColor(n));
+    ci.setAttribute('stroke',n.hl?'var(--graph-label-active)':nodeColor(n));
     ci.setAttribute('stroke-width',n.hl?'2.5':'1.5');
     ci.setAttribute('stroke-opacity',n.hl?'1':'0.3');
     gr.appendChild(ci);
@@ -783,7 +842,7 @@ function flyntGraph(data) {
       tx.textContent=label;
       tx.setAttribute('dx',(n.hl?n.r*1.5:n.r)+4);
       tx.setAttribute('dy',4);
-      tx.setAttribute('fill',n.hl?'#fff':'var(--graph-label)');
+      tx.setAttribute('fill',n.hl?'var(--graph-label-active)':'var(--graph-label)');
       tx.setAttribute('font-size',n.hl?'12':'10');
       tx.setAttribute('font-weight',n.hl?'600':'400');
       tx.setAttribute('font-family','-apple-system,BlinkMacSystemFont,sans-serif');
@@ -924,8 +983,12 @@ fn fuzzy_match(haystack: &str, needle: &str) -> Option<usize> {
     }
     let hay: Vec<char> = haystack.chars().collect();
     let need: Vec<char> = needle.chars().collect();
-    if need.is_empty() { return Some(0); }
-    if need.len() > hay.len() { return None; }
+    if need.is_empty() {
+        return Some(0);
+    }
+    if need.len() > hay.len() {
+        return None;
+    }
 
     let mut hi = 0;
     let mut first_match = None;
@@ -934,7 +997,9 @@ fn fuzzy_match(haystack: &str, needle: &str) -> Option<usize> {
         let mut found = false;
         while hi < hay.len() {
             if hay[hi] == nc {
-                if first_match.is_none() { first_match = Some(hi); }
+                if first_match.is_none() {
+                    first_match = Some(hi);
+                }
                 last_match = hi;
                 hi += 1;
                 found = true;
@@ -942,7 +1007,9 @@ fn fuzzy_match(haystack: &str, needle: &str) -> Option<usize> {
             }
             hi += 1;
         }
-        if !found { return None; }
+        if !found {
+            return None;
+        }
     }
     Some(last_match - first_match.unwrap_or(0))
 }
@@ -965,14 +1032,19 @@ fn CollapsibleFilterSection(
     let filtered: Vec<&String> = if search_val.is_empty() {
         items.iter().collect()
     } else {
-        let mut scored: Vec<(&String, usize)> = items.iter()
+        let mut scored: Vec<(&String, usize)> = items
+            .iter()
             .filter_map(|t| fuzzy_match(&t.to_lowercase(), &search_val).map(|score| (t, score)))
             .collect();
         scored.sort_by_key(|(_, score)| *score);
         scored.into_iter().map(|(t, _)| t).collect()
     };
 
-    let visible_count = if *show_all.read() { filtered.len() } else { filtered.len().min(MAX_VISIBLE_ITEMS) };
+    let visible_count = if *show_all.read() {
+        filtered.len()
+    } else {
+        filtered.len().min(MAX_VISIBLE_ITEMS)
+    };
     let has_more = filtered.len() > MAX_VISIBLE_ITEMS && !*show_all.read();
 
     rsx! {

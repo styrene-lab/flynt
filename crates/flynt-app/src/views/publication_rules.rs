@@ -1,5 +1,5 @@
-use flynt_core::models::{PublicationRule, PublicationVisibility};
 use dioxus::prelude::*;
+use flynt_core::models::{PublicationRule, PublicationVisibility};
 
 #[component]
 pub fn PublicationRulesEditor(

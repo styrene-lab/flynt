@@ -11,8 +11,8 @@ use std::rc::Rc;
 use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, ExtRequest, InitializeRequest,
     NewSessionRequest, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigId,
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions,
     SessionConfigValueId, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, TextContent,
 };
@@ -73,10 +73,18 @@ pub struct PlanItem {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlanStatus { Pending, InProgress, Completed }
+pub enum PlanStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlanPriority { Low, Medium, High }
+pub enum PlanPriority {
+    Low,
+    Medium,
+    High,
+}
 
 /// A slash command advertised by the agent.
 #[derive(Debug, Clone, PartialEq)]
@@ -177,7 +185,10 @@ impl Client for FlyntAcpClient {
         &self,
         args: SessionNotification,
     ) -> agent_client_protocol::Result<()> {
-        tracing::debug!("ACP session_notification received: {:?}", std::mem::discriminant(&args.update));
+        tracing::debug!(
+            "ACP session_notification received: {:?}",
+            std::mem::discriminant(&args.update)
+        );
         let tx = self.tx.borrow();
         match args.update {
             SessionUpdate::AgentMessageChunk(chunk) => {
@@ -203,20 +214,25 @@ impl Client for FlyntAcpClient {
                 // and terminal-embed variants get rendered by the
                 // host-delegated paths once we advertise those
                 // capabilities; for now we surface text only.
-                let output = update.fields.content.as_ref().map(|blocks| {
-                    let mut out = String::new();
-                    for block in blocks {
-                        if let agent_client_protocol::ToolCallContent::Content(c) = block {
-                            if let ContentBlock::Text(t) = &c.content {
-                                if !out.is_empty() {
-                                    out.push('\n');
+                let output = update
+                    .fields
+                    .content
+                    .as_ref()
+                    .map(|blocks| {
+                        let mut out = String::new();
+                        for block in blocks {
+                            if let agent_client_protocol::ToolCallContent::Content(c) = block {
+                                if let ContentBlock::Text(t) = &c.content {
+                                    if !out.is_empty() {
+                                        out.push('\n');
+                                    }
+                                    out.push_str(&t.text);
                                 }
-                                out.push_str(&t.text);
                             }
                         }
-                    }
-                    out
-                }).filter(|s| !s.is_empty());
+                        out
+                    })
+                    .filter(|s| !s.is_empty());
 
                 let _ = tx.send(AcpEvent::ToolCallUpdated {
                     id: update.tool_call_id.to_string(),
@@ -230,21 +246,31 @@ impl Client for FlyntAcpClient {
                 });
             }
             SessionUpdate::Plan(plan) => {
-                let items: Vec<PlanItem> = plan.entries.into_iter().map(|e| PlanItem {
-                    content: e.content,
-                    status: match e.status {
-                        agent_client_protocol::PlanEntryStatus::Pending => PlanStatus::Pending,
-                        agent_client_protocol::PlanEntryStatus::InProgress => PlanStatus::InProgress,
-                        agent_client_protocol::PlanEntryStatus::Completed => PlanStatus::Completed,
-                        _ => PlanStatus::Pending,
-                    },
-                    priority: match e.priority {
-                        agent_client_protocol::PlanEntryPriority::High => PlanPriority::High,
-                        agent_client_protocol::PlanEntryPriority::Medium => PlanPriority::Medium,
-                        agent_client_protocol::PlanEntryPriority::Low => PlanPriority::Low,
-                        _ => PlanPriority::Medium,
-                    },
-                }).collect();
+                let items: Vec<PlanItem> = plan
+                    .entries
+                    .into_iter()
+                    .map(|e| PlanItem {
+                        content: e.content,
+                        status: match e.status {
+                            agent_client_protocol::PlanEntryStatus::Pending => PlanStatus::Pending,
+                            agent_client_protocol::PlanEntryStatus::InProgress => {
+                                PlanStatus::InProgress
+                            }
+                            agent_client_protocol::PlanEntryStatus::Completed => {
+                                PlanStatus::Completed
+                            }
+                            _ => PlanStatus::Pending,
+                        },
+                        priority: match e.priority {
+                            agent_client_protocol::PlanEntryPriority::High => PlanPriority::High,
+                            agent_client_protocol::PlanEntryPriority::Medium => {
+                                PlanPriority::Medium
+                            }
+                            agent_client_protocol::PlanEntryPriority::Low => PlanPriority::Low,
+                            _ => PlanPriority::Medium,
+                        },
+                    })
+                    .collect();
                 let _ = tx.send(AcpEvent::PlanUpdated(items));
             }
             SessionUpdate::SessionInfoUpdate(info) => {
@@ -279,7 +305,10 @@ impl Client for FlyntAcpClient {
                 }
             }
             other => {
-                tracing::debug!("ACP unhandled session update: {:?}", std::mem::discriminant(&other));
+                tracing::debug!(
+                    "ACP unhandled session update: {:?}",
+                    std::mem::discriminant(&other)
+                );
             }
         }
         Ok(())
@@ -321,8 +350,14 @@ impl AcpSession {
         cmd.kill_on_drop(true);
         let mut child = cmd.spawn()?;
 
-        let child_stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
-        let child_stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout"))?;
+        let child_stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+        let child_stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdout"))?;
 
         let client = FlyntAcpClient {
             tx: Rc::new(RefCell::new(tx)),
@@ -332,7 +367,9 @@ impl AcpSession {
             client,
             child_stdin.compat_write(),
             child_stdout.compat(),
-            |fut| { dioxus::prelude::spawn(fut); },
+            |fut| {
+                dioxus::prelude::spawn(fut);
+            },
         );
 
         let io_err_tx = done_tx.clone();
@@ -344,7 +381,8 @@ impl AcpSession {
                 }
                 Err(e) => {
                     tracing::error!("ACP I/O error: {e}");
-                    let _ = io_err_tx.send(AcpEvent::Error(format!("ACP transport disconnected: {e}")));
+                    let _ =
+                        io_err_tx.send(AcpEvent::Error(format!("ACP transport disconnected: {e}")));
                 }
             }
         });
@@ -391,10 +429,14 @@ impl AcpSession {
     /// Trigger OAuth login by spawning `omegon auth login [provider]`.
     /// This opens the browser for the OAuth flow.
     pub async fn login(&self, omegon_binary: &PathBuf, provider: &str) {
-        let provider = if provider.is_empty() { "anthropic" } else { provider };
-        let _ = self.tx.send(AcpEvent::TextDelta(
-            format!("Opening {provider} login…\n"),
-        ));
+        let provider = if provider.is_empty() {
+            "anthropic"
+        } else {
+            provider
+        };
+        let _ = self
+            .tx
+            .send(AcpEvent::TextDelta(format!("Opening {provider} login…\n")));
 
         let result = tokio::process::Command::new(omegon_binary)
             .arg("auth")
@@ -428,14 +470,19 @@ impl AcpSession {
                 let _ = self.tx.send(AcpEvent::Error(msg));
             }
             Err(e) => {
-                let _ = self.tx.send(AcpEvent::Error(format!("Failed to run omegon auth login: {e}")));
+                let _ = self.tx.send(AcpEvent::Error(format!(
+                    "Failed to run omegon auth login: {e}"
+                )));
             }
         }
     }
 
     /// Send a user prompt.
     pub fn prompt(&self, text: &str) {
-        tracing::info!("AcpSession::prompt sending to Omegon ({} chars)", text.len());
+        tracing::info!(
+            "AcpSession::prompt sending to Omegon ({} chars)",
+            text.len()
+        );
         let req = PromptRequest::new(
             self.session_id.clone(),
             vec![ContentBlock::Text(TextContent::new(text))],
@@ -464,18 +511,21 @@ impl AcpSession {
             SessionConfigValueId::new(value),
         );
         if let Err(e) = self.conn.set_session_config_option(req).await {
-            let _ = self.tx.send(AcpEvent::Error(format!("Config change failed: {e}")));
+            let _ = self
+                .tx
+                .send(AcpEvent::Error(format!("Config change failed: {e}")));
         }
     }
 
     // ── Extension management ──────────────────────────────────────────
 
     async fn ext_call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
-        let raw_params = serde_json::value::RawValue::from_string(
-            serde_json::to_string(&params)?,
-        )?;
+        let raw_params = serde_json::value::RawValue::from_string(serde_json::to_string(&params)?)?;
         let req = ExtRequest::new(method, raw_params.into());
-        let resp = self.conn.ext_method(req).await
+        let resp = self
+            .conn
+            .ext_method(req)
+            .await
             .map_err(|e| anyhow::anyhow!("ext_method failed: {e}"))?;
         let value: serde_json::Value = serde_json::from_str(resp.0.get())?;
         if let Some(err) = value["error"].as_str() {
@@ -486,60 +536,99 @@ impl AcpSession {
 
     /// List all installed extensions with config schema, current values, and secret status.
     pub async fn extensions_list(&self) -> Result<serde_json::Value> {
-        self.ext_call("extensions/list", serde_json::json!({})).await
+        self.ext_call("extensions/list", serde_json::json!({}))
+            .await
     }
 
     /// Set a config value for an extension.
-    pub async fn extensions_config_set(&self, extension: &str, key: &str, value: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/config_set", serde_json::json!({
-            "extension": extension,
-            "key": key,
-            "value": value,
-        })).await
+    pub async fn extensions_config_set(
+        &self,
+        extension: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<serde_json::Value> {
+        self.ext_call(
+            "extensions/config_set",
+            serde_json::json!({
+                "extension": extension,
+                "key": key,
+                "value": value,
+            }),
+        )
+        .await
     }
 
     /// Store a secret in the OS keychain for an extension.
-    pub async fn extensions_secret_set(&self, extension: &str, name: &str, value: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/secret_set", serde_json::json!({
-            "extension": extension,
-            "name": name,
-            "value": value,
-        })).await
+    pub async fn extensions_secret_set(
+        &self,
+        extension: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<serde_json::Value> {
+        self.ext_call(
+            "extensions/secret_set",
+            serde_json::json!({
+                "extension": extension,
+                "name": name,
+                "value": value,
+            }),
+        )
+        .await
     }
 
     /// Delete a secret from the keychain.
     pub async fn extensions_secret_delete(&self, name: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/secret_delete", serde_json::json!({
-            "name": name,
-        })).await
+        self.ext_call(
+            "extensions/secret_delete",
+            serde_json::json!({
+                "name": name,
+            }),
+        )
+        .await
     }
 
     /// Enable an extension.
     pub async fn extensions_enable(&self, extension: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/enable", serde_json::json!({
-            "extension": extension,
-        })).await
+        self.ext_call(
+            "extensions/enable",
+            serde_json::json!({
+                "extension": extension,
+            }),
+        )
+        .await
     }
 
     /// Disable an extension.
     pub async fn extensions_disable(&self, extension: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/disable", serde_json::json!({
-            "extension": extension,
-        })).await
+        self.ext_call(
+            "extensions/disable",
+            serde_json::json!({
+                "extension": extension,
+            }),
+        )
+        .await
     }
 
     /// Install an extension from a local path, git URL, or tarball URI.
     pub async fn extensions_install(&self, uri: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/install", serde_json::json!({
-            "uri": uri,
-        })).await
+        self.ext_call(
+            "extensions/install",
+            serde_json::json!({
+                "uri": uri,
+            }),
+        )
+        .await
     }
 
     /// Remove an installed extension.
     pub async fn extensions_remove(&self, extension: &str) -> Result<serde_json::Value> {
-        self.ext_call("extensions/remove", serde_json::json!({
-            "extension": extension,
-        })).await
+        self.ext_call(
+            "extensions/remove",
+            serde_json::json!({
+                "extension": extension,
+            }),
+        )
+        .await
     }
 
     /// Update an extension (git pull + rebuild). Pass None to update all.
@@ -605,7 +694,8 @@ impl AcpSession {
 
     /// Get or set context class.
     pub async fn context_class(&self, class: Option<&str>) -> Result<serde_json::Value> {
-        self.control_call("context_class", class.unwrap_or("")).await
+        self.control_call("context_class", class.unwrap_or(""))
+            .await
     }
 
     /// Get or set runtime mode (slim/standard).
@@ -681,7 +771,8 @@ impl AcpSession {
 
     /// Install agents from the armory (or bundled fallback).
     pub async fn catalog_install(&self, offline: bool) -> Result<serde_json::Value> {
-        self.ext_call("catalog/install", serde_json::json!({ "offline": offline })).await
+        self.ext_call("catalog/install", serde_json::json!({ "offline": offline }))
+            .await
     }
 
     // ── Persona CRUD ───────────────────────────────────────────
@@ -709,23 +800,32 @@ impl AcpSession {
 
     /// Delete a persona by ID.
     pub async fn persona_delete(&self, id: &str) -> Result<serde_json::Value> {
-        self.ext_call("personas/delete", serde_json::json!({ "id": id })).await
+        self.ext_call("personas/delete", serde_json::json!({ "id": id }))
+            .await
     }
 
     // ── Skill CRUD ─────────────────────────────────────────────
 
     /// Create a custom skill.
     pub async fn skill_create(&self, name: &str, content: &str) -> Result<serde_json::Value> {
-        self.ext_call("skills/create", serde_json::json!({
-            "name": name,
-            "content": content,
-        })).await
+        self.ext_call(
+            "skills/create",
+            serde_json::json!({
+                "name": name,
+                "content": content,
+            }),
+        )
+        .await
     }
 
     /// Delete a skill by name.
     pub async fn skill_delete(&self, name: &str) -> Result<serde_json::Value> {
-        self.ext_call("skills/delete", serde_json::json!({
-            "name": name,
-        })).await
+        self.ext_call(
+            "skills/delete",
+            serde_json::json!({
+                "name": name,
+            }),
+        )
+        .await
     }
 }

@@ -5,8 +5,8 @@
 //! are load-bearing.
 
 use flynt_flow::{
-    load_flow, parse_flow, save_flow, serialize_flow, Flow, FlowEdge, FlowEndpoint, FlowMeta,
-    FlowNode, NodeKind, Socket, SocketDir, SCHEMA_VERSION,
+    Flow, FlowEdge, FlowEndpoint, FlowMeta, FlowNode, NodeKind, SCHEMA_VERSION, Socket, SocketDir,
+    load_flow, parse_flow, save_flow, serialize_flow,
 };
 use uuid::Uuid;
 
@@ -99,13 +99,15 @@ fn rejects_missing_frontmatter() {
 fn rejects_unclosed_frontmatter() {
     let raw = "+++\nid = \"550e8400-e29b-41d4-a716-446655440000\"\nkind = \"flow\"\n";
     let err = parse_flow(raw).unwrap_err().to_string();
-    assert!(err.contains("not closed") || err.contains("closing"), "{err}");
+    assert!(
+        err.contains("not closed") || err.contains("closing"),
+        "{err}"
+    );
 }
 
 #[test]
 fn empty_body_parses_as_empty_flow() {
-    let raw =
-        "+++\nid = \"550e8400-e29b-41d4-a716-446655440000\"\nkind = \"flow\"\n\n[data]\ntitle = \"Empty\"\nschema_version = 1\n+++\n";
+    let raw = "+++\nid = \"550e8400-e29b-41d4-a716-446655440000\"\nkind = \"flow\"\n\n[data]\ntitle = \"Empty\"\nschema_version = 1\n+++\n";
     let doc = parse_flow(raw).expect("empty body is valid");
     assert!(doc.flow.nodes.is_empty());
     assert!(doc.flow.edges.is_empty());
@@ -193,8 +195,14 @@ fn validate_flags_dangling_edges() {
     let ghost_node = Uuid::new_v4();
     flow.edges.push(FlowEdge {
         id: Uuid::new_v4(),
-        source: FlowEndpoint { node: ghost_node, socket: "out".into() },
-        target: FlowEndpoint { node: flow.nodes[0].id, socket: "in".into() },
+        source: FlowEndpoint {
+            node: ghost_node,
+            socket: "out".into(),
+        },
+        target: FlowEndpoint {
+            node: flow.nodes[0].id,
+            socket: "in".into(),
+        },
     });
     let report = flow.validate();
     assert_eq!(report.dangling_edges.len(), 1);
@@ -236,7 +244,10 @@ fn validate_flags_unknown_socket_names_on_typed_nodes() {
     };
     let report = flow.validate();
     assert_eq!(report.edges_with_unknown_sockets.len(), 1);
-    assert!(report.dangling_edges.is_empty(), "node exists, only the socket is wrong");
+    assert!(
+        report.dangling_edges.is_empty(),
+        "node exists, only the socket is wrong"
+    );
 }
 
 #[test]
@@ -271,8 +282,14 @@ fn validate_skips_socket_check_when_node_declares_no_sockets() {
         ],
         edges: vec![FlowEdge {
             id: Uuid::new_v4(),
-            source: FlowEndpoint { node: other_id, socket: "out".into() },
-            target: FlowEndpoint { node: note_id, socket: "anything".into() },
+            source: FlowEndpoint {
+                node: other_id,
+                socket: "out".into(),
+            },
+            target: FlowEndpoint {
+                node: note_id,
+                socket: "anything".into(),
+            },
         }],
     };
     let report = flow.validate();
@@ -320,7 +337,10 @@ fn frontmatter_title_with_newline_round_trips() {
     flow.meta.title = Some("Line 1\nLine 2\twith tab".into());
     let raw = serialize_flow(&flow, Uuid::new_v4());
     let doc = parse_flow(&raw).expect("escaped title parses back");
-    assert_eq!(doc.flow.meta.title.as_deref(), Some("Line 1\nLine 2\twith tab"));
+    assert_eq!(
+        doc.flow.meta.title.as_deref(),
+        Some("Line 1\nLine 2\twith tab")
+    );
 }
 
 #[test]
@@ -390,7 +410,11 @@ fn make_minimal_flow() -> Flow {
         kind: NodeKind::Input,
         position: (0.0, 0.0),
         data: serde_json::json!({}),
-        sockets: vec![Socket { name: "out".into(), direction: SocketDir::Output, ty: None }],
+        sockets: vec![Socket {
+            name: "out".into(),
+            direction: SocketDir::Output,
+            ty: None,
+        }],
     };
     let n2 = FlowNode {
         id: Uuid::new_v4(),
@@ -398,17 +422,34 @@ fn make_minimal_flow() -> Flow {
         position: (200.0, 0.0),
         data: serde_json::json!({ "name": "transform" }),
         sockets: vec![
-            Socket { name: "in".into(), direction: SocketDir::Input, ty: None },
-            Socket { name: "out".into(), direction: SocketDir::Output, ty: None },
+            Socket {
+                name: "in".into(),
+                direction: SocketDir::Input,
+                ty: None,
+            },
+            Socket {
+                name: "out".into(),
+                direction: SocketDir::Output,
+                ty: None,
+            },
         ],
     };
     let edge = FlowEdge {
         id: Uuid::new_v4(),
-        source: FlowEndpoint { node: n1.id, socket: "out".into() },
-        target: FlowEndpoint { node: n2.id, socket: "in".into() },
+        source: FlowEndpoint {
+            node: n1.id,
+            socket: "out".into(),
+        },
+        target: FlowEndpoint {
+            node: n2.id,
+            socket: "in".into(),
+        },
     };
     Flow {
-        meta: FlowMeta { title: Some("Minimal".into()), description: None },
+        meta: FlowMeta {
+            title: Some("Minimal".into()),
+            description: None,
+        },
         nodes: vec![n1, n2],
         edges: vec![edge],
     }

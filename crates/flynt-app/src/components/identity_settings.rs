@@ -1,6 +1,6 @@
-use flynt_core::identity;
-use dioxus::prelude::*;
 use crate::bootstrap::AppContext;
+use dioxus::prelude::*;
+use flynt_core::identity;
 
 #[component]
 pub fn IdentitySettingsSection() -> Element {

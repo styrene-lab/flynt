@@ -138,6 +138,25 @@ fn persist_config(ctx: &AppContext, config_id: &str, value: &str) {
     }
 }
 
+fn ensure_explicit_acp_defaults(
+    omegon: &crate::bootstrap::OmegonRuntimeContext,
+    mut settings: flynt_core::models::FlyntOperatorSettings,
+) -> flynt_core::models::FlyntOperatorSettings {
+    let profile = omegon.load_project_profile();
+    let config =
+        crate::components::omegon::config_bridge::UnifiedOmegonConfig::load(&profile, &settings);
+    let explicit_config = config.to_acp_config();
+
+    if settings.acp_config != explicit_config {
+        settings.acp_config = explicit_config;
+        if let Err(e) = omegon.save_operator_settings(&settings) {
+            tracing::warn!("Failed to persist explicit ACP defaults: {e}");
+        }
+    }
+
+    settings
+}
+
 fn is_transport_disconnect(msg: &str) -> bool {
     let lower = msg.to_lowercase();
     lower.contains("broken pipe")
@@ -190,7 +209,8 @@ fn reconnect_acp_session(
         *session_title.write() = None;
 
         let project = ctx.project_root();
-        let operator_settings = ctx.omegon().load_operator_settings();
+        let operator_settings =
+            ensure_explicit_acp_defaults(&ctx.omegon(), ctx.omegon().load_operator_settings());
         let saved_config = operator_settings.acp_config.clone();
         let agent_id = operator_settings.agent_id.clone();
 
@@ -252,10 +272,26 @@ fn start_event_loop(
     let mut config_options = config_options;
     let mut session_title = session_title;
     spawn(async move {
+        let mut pending_deltas = Vec::new();
+        let mut last_flush = std::time::Instant::now();
+
         loop {
+            let mut saw_event = false;
             loop {
                 match rx.try_recv() {
+                    Ok(AcpEvent::TextDelta(text)) => {
+                        tracing::info!("ACP TextDelta: {} bytes", text.len());
+                        push_pending_delta(&mut pending_deltas, PendingStreamDelta::Text(text));
+                        saw_event = true;
+                    }
+                    Ok(AcpEvent::ThoughtDelta(text)) => {
+                        tracing::info!("ACP ThoughtDelta: {} bytes", text.len());
+                        push_pending_delta(&mut pending_deltas, PendingStreamDelta::Thought(text));
+                        saw_event = true;
+                    }
                     Ok(event) => {
+                        flush_pending_deltas(&mut items, &mut agent_status, &mut pending_deltas);
+                        last_flush = std::time::Instant::now();
                         handle_acp_event(
                             event,
                             ctx.clone(),
@@ -267,17 +303,82 @@ fn start_event_loop(
                             session,
                             shared_session,
                         );
+                        saw_event = true;
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
+                        flush_pending_deltas(&mut items, &mut agent_status, &mut pending_deltas);
                         tracing::warn!("ACP event channel disconnected");
                         return;
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+
+            if last_flush.elapsed() >= std::time::Duration::from_millis(50) {
+                flush_pending_deltas(&mut items, &mut agent_status, &mut pending_deltas);
+                last_flush = std::time::Instant::now();
+            }
+
+            let sleep_ms = if saw_event { 8 } else { 16 };
+            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
         }
     });
+}
+
+enum PendingStreamDelta {
+    Text(String),
+    Thought(String),
+}
+
+fn push_pending_delta(pending: &mut Vec<PendingStreamDelta>, delta: PendingStreamDelta) {
+    match (pending.last_mut(), delta) {
+        (Some(PendingStreamDelta::Text(current)), PendingStreamDelta::Text(next))
+        | (Some(PendingStreamDelta::Thought(current)), PendingStreamDelta::Thought(next)) => {
+            current.push_str(&next);
+        }
+        (_, delta) => pending.push(delta),
+    }
+}
+
+fn flush_pending_deltas(
+    items: &mut Signal<Vec<ChatItem>>,
+    status: &mut Signal<AgentStatus>,
+    pending: &mut Vec<PendingStreamDelta>,
+) {
+    for delta in pending.drain(..) {
+        match delta {
+            PendingStreamDelta::Text(text) => append_assistant_text(items, text),
+            PendingStreamDelta::Thought(text) => {
+                *status.write() = AgentStatus::Thinking;
+                append_thought_text(items, text);
+            }
+        }
+    }
+}
+
+fn append_assistant_text(items: &mut Signal<Vec<ChatItem>>, text: String) {
+    let mut list = items.write();
+    if let Some(ChatItem::Message {
+        role: ChatRole::Assistant,
+        content,
+    }) = list.last_mut()
+    {
+        content.push_str(&text);
+    } else {
+        list.push(ChatItem::Message {
+            role: ChatRole::Assistant,
+            content: text,
+        });
+    }
+}
+
+fn append_thought_text(items: &mut Signal<Vec<ChatItem>>, text: String) {
+    let mut list = items.write();
+    if let Some(ChatItem::Thought { content }) = list.last_mut() {
+        content.push_str(&text);
+    } else {
+        list.push(ChatItem::Thought { content: text });
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -391,7 +492,8 @@ pub fn AgentRail() -> Element {
             project.display(),
             binary.display()
         );
-        let operator_settings = ctx.omegon().load_operator_settings();
+        let operator_settings =
+            ensure_explicit_acp_defaults(&ctx.omegon(), ctx.omegon().load_operator_settings());
         let saved_config = operator_settings.acp_config.clone();
         let agent_id = operator_settings.agent_id.clone();
 
@@ -476,9 +578,15 @@ pub fn AgentRail() -> Element {
                 // Observe DOM changes inside messages (new chat items, streaming
                 // delta appends, tool-call status updates) and auto-scroll only
                 // while the user is pinned.
-                const obs = new MutationObserver(() => {
-                    if (root.classList.contains('agent-pinned')) scrollToBottom();
-                });
+                let scrollFrame = 0;
+                function scheduleScrollToBottom() {
+                    if (!root.classList.contains('agent-pinned') || scrollFrame) return;
+                    scrollFrame = requestAnimationFrame(() => {
+                        scrollFrame = 0;
+                        if (root.classList.contains('agent-pinned')) scrollToBottom();
+                    });
+                }
+                const obs = new MutationObserver(scheduleScrollToBottom);
                 obs.observe(messages, { childList: true, subtree: true, characterData: true });
 
                 messages.addEventListener('scroll', syncPinClass, { passive: true });
@@ -623,6 +731,15 @@ pub fn AgentRail() -> Element {
                                     rsx! {
                                         div { key: "msg-{idx}", class: "agent-msg user",
                                             div { class: "agent-msg-role", "You" }
+                                            div { class: "agent-msg-content", "{content}" }
+                                        }
+                                    }
+                                } else if *agent_status.read() != AgentStatus::Idle
+                                    && idx + 1 == items.read().len()
+                                {
+                                    rsx! {
+                                        div { key: "msg-{idx}", class: "agent-msg assistant",
+                                            div { class: "agent-msg-role", "Omegon" }
                                             div { class: "agent-msg-content", "{content}" }
                                         }
                                     }
@@ -1062,11 +1179,7 @@ fn handle_acp_event(
             let disconnect_msg = output
                 .as_deref()
                 .filter(|msg| is_transport_disconnect(msg))
-                .or_else(|| {
-                    title
-                        .as_deref()
-                        .filter(|msg| is_transport_disconnect(msg))
-                })
+                .or_else(|| title.as_deref().filter(|msg| is_transport_disconnect(msg)))
                 .or_else(|| (!st.is_empty() && is_transport_disconnect(st)).then_some(st.as_str()));
 
             if let Some(msg) = disconnect_msg {
@@ -1200,13 +1313,17 @@ mod tests {
     #[test]
     fn detects_broken_pipe_transport_errors() {
         assert!(is_transport_disconnect("Broken pipe (os error 32)"));
-        assert!(is_transport_disconnect("ACP transport disconnected: connection closed"));
+        assert!(is_transport_disconnect(
+            "ACP transport disconnected: connection closed"
+        ));
         assert!(is_transport_disconnect("extension process not running"));
     }
 
     #[test]
     fn ignores_non_transport_errors() {
-        assert!(!is_transport_disconnect("Authentication error: token expired"));
+        assert!(!is_transport_disconnect(
+            "Authentication error: token expired"
+        ));
         assert!(!is_transport_disconnect("invalid params: missing path"));
     }
 }

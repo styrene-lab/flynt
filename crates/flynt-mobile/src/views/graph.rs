@@ -1,6 +1,6 @@
-use flynt_core::graph::{build_graph_payload, GraphEdgeKind, GraphNodeKind, GraphPayload};
-use dioxus::prelude::*;
 use crate::bootstrap::MobileRuntime;
+use dioxus::prelude::*;
+use flynt_core::graph::{GraphEdgeKind, GraphNodeKind, GraphPayload, build_graph_payload};
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq)]
@@ -21,62 +21,143 @@ struct GraphSettings {
 impl Default for GraphSettings {
     fn default() -> Self {
         Self {
-            kind: None, show_orphans: true,
-            show_wikilinks: true, show_task_links: true, show_semantic: true,
-            min_degree: 0, node_size: 1.0,
-            repel_force: 0.5, link_force: 0.5, link_distance: 0.5, center_force: 0.5,
+            kind: None,
+            show_orphans: true,
+            show_wikilinks: true,
+            show_task_links: true,
+            show_semantic: true,
+            min_degree: 0,
+            node_size: 1.0,
+            repel_force: 0.5,
+            link_force: 0.5,
+            link_distance: 0.5,
+            center_force: 0.5,
         }
     }
 }
 
 fn filter_and_serialize(payload: &GraphPayload, s: &GraphSettings) -> String {
     let mut degree: HashMap<&str, u32> = HashMap::new();
-    for e in &payload.edges { *degree.entry(&e.source).or_default() += 1; *degree.entry(&e.target).or_default() += 1; }
+    for e in &payload.edges {
+        *degree.entry(&e.source).or_default() += 1;
+        *degree.entry(&e.target).or_default() += 1;
+    }
 
-    let nodes: Vec<_> = payload.nodes.iter().filter(|n| {
-        if let Some(ref k) = s.kind { if &n.kind != k { return false; } }
-        if !s.show_orphans && degree.get(n.id.as_str()).copied().unwrap_or(0) == 0 { return false; }
-        if s.min_degree > 0 && degree.get(n.id.as_str()).copied().unwrap_or(0) < s.min_degree { return false; }
-        true
-    }).collect();
+    let nodes: Vec<_> = payload
+        .nodes
+        .iter()
+        .filter(|n| {
+            if let Some(ref k) = s.kind {
+                if &n.kind != k {
+                    return false;
+                }
+            }
+            if !s.show_orphans && degree.get(n.id.as_str()).copied().unwrap_or(0) == 0 {
+                return false;
+            }
+            if s.min_degree > 0 && degree.get(n.id.as_str()).copied().unwrap_or(0) < s.min_degree {
+                return false;
+            }
+            true
+        })
+        .collect();
 
     let ids: std::collections::HashSet<_> = nodes.iter().map(|n| n.id.as_str()).collect();
-    let edges: Vec<_> = payload.edges.iter().filter(|e| {
-        if !ids.contains(e.source.as_str()) || !ids.contains(e.target.as_str()) { return false; }
-        match e.kind {
-            GraphEdgeKind::Wikilink => s.show_wikilinks,
-            GraphEdgeKind::TaskMembership => s.show_task_links,
-            GraphEdgeKind::SemanticSupport => s.show_semantic,
-            GraphEdgeKind::Dependency => true,
-            GraphEdgeKind::ParentChild => true,
-            GraphEdgeKind::Validates => true,
-        }
-    }).collect();
+    let edges: Vec<_> = payload
+        .edges
+        .iter()
+        .filter(|e| {
+            if !ids.contains(e.source.as_str()) || !ids.contains(e.target.as_str()) {
+                return false;
+            }
+            match e.kind {
+                GraphEdgeKind::Wikilink => s.show_wikilinks,
+                GraphEdgeKind::TaskMembership => s.show_task_links,
+                GraphEdgeKind::SemanticSupport => s.show_semantic,
+                GraphEdgeKind::Dependency => true,
+                GraphEdgeKind::ParentChild => true,
+                GraphEdgeKind::Validates => true,
+            }
+        })
+        .collect();
 
-    let nj: Vec<String> = nodes.iter().map(|n| format!(
-        r#"{{"id":"{}","kind":"{}","title":"{}","group":"{}"}}"#,
-        esc(&n.id), kind_str(&n.kind), esc(&n.title), esc(&n.group)
-    )).collect();
-    let ej: Vec<String> = edges.iter().map(|e| format!(
-        r#"{{"source":"{}","target":"{}","kind":"{}"}}"#, esc(&e.source), esc(&e.target), edge_str(&e.kind)
-    )).collect();
+    let nj: Vec<String> = nodes
+        .iter()
+        .map(|n| {
+            format!(
+                r#"{{"id":"{}","kind":"{}","title":"{}","group":"{}"}}"#,
+                esc(&n.id),
+                kind_str(&n.kind),
+                esc(&n.title),
+                esc(&n.group)
+            )
+        })
+        .collect();
+    let ej: Vec<String> = edges
+        .iter()
+        .map(|e| {
+            format!(
+                r#"{{"source":"{}","target":"{}","kind":"{}"}}"#,
+                esc(&e.source),
+                esc(&e.target),
+                edge_str(&e.kind)
+            )
+        })
+        .collect();
     format!(
         r#"{{"nodes":[{}],"edges":[{}],"settings":{{"nodeSize":{},"linkThickness":1.0,"textFade":0.5,"arrows":false,"centerForce":{},"repelForce":{},"linkForce":{},"linkDistance":{}}}}}"#,
-        nj.join(","), ej.join(","), s.node_size, s.center_force, s.repel_force, s.link_force, s.link_distance
+        nj.join(","),
+        ej.join(","),
+        s.node_size,
+        s.center_force,
+        s.repel_force,
+        s.link_force,
+        s.link_distance
     )
 }
 
-fn esc(s: &str) -> String { s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n") }
+fn esc(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
 fn kind_str(k: &GraphNodeKind) -> &'static str {
-    match k { GraphNodeKind::Document=>"document", GraphNodeKind::Task=>"task", GraphNodeKind::Board=>"board",
-              GraphNodeKind::Repo=>"repo", GraphNodeKind::Link=>"link", GraphNodeKind::MemoryFact=>"memory", GraphNodeKind::Communication=>"communication", GraphNodeKind::DesignNode=>"design_node", GraphNodeKind::Scenario=>"scenario", GraphNodeKind::WorkspaceLease=>"workspace_lease" }
+    match k {
+        GraphNodeKind::Document => "document",
+        GraphNodeKind::Task => "task",
+        GraphNodeKind::Board => "board",
+        GraphNodeKind::Repo => "repo",
+        GraphNodeKind::Link => "link",
+        GraphNodeKind::MemoryFact => "memory",
+        GraphNodeKind::Communication => "communication",
+        GraphNodeKind::DesignNode => "design_node",
+        GraphNodeKind::Scenario => "scenario",
+        GraphNodeKind::WorkspaceLease => "workspace_lease",
+    }
 }
 fn edge_str(k: &GraphEdgeKind) -> &'static str {
-    match k { GraphEdgeKind::Wikilink=>"wikilink", GraphEdgeKind::TaskMembership=>"task-membership", GraphEdgeKind::SemanticSupport=>"semantic-support", GraphEdgeKind::Dependency=>"dependency", GraphEdgeKind::ParentChild=>"parent-child", GraphEdgeKind::Validates=>"validates" }
+    match k {
+        GraphEdgeKind::Wikilink => "wikilink",
+        GraphEdgeKind::TaskMembership => "task-membership",
+        GraphEdgeKind::SemanticSupport => "semantic-support",
+        GraphEdgeKind::Dependency => "dependency",
+        GraphEdgeKind::ParentChild => "parent-child",
+        GraphEdgeKind::Validates => "validates",
+    }
 }
 fn kind_label(k: &GraphNodeKind) -> &'static str {
-    match k { GraphNodeKind::Document=>"Doc", GraphNodeKind::Task=>"Task", GraphNodeKind::Board=>"Board",
-              GraphNodeKind::Repo=>"Repo", GraphNodeKind::Link=>"Link", GraphNodeKind::MemoryFact=>"Memory", GraphNodeKind::Communication=>"Comms", GraphNodeKind::DesignNode=>"Design", GraphNodeKind::Scenario=>"Spec", GraphNodeKind::WorkspaceLease=>"Lease" }
+    match k {
+        GraphNodeKind::Document => "Doc",
+        GraphNodeKind::Task => "Task",
+        GraphNodeKind::Board => "Board",
+        GraphNodeKind::Repo => "Repo",
+        GraphNodeKind::Link => "Link",
+        GraphNodeKind::MemoryFact => "Memory",
+        GraphNodeKind::Communication => "Comms",
+        GraphNodeKind::DesignNode => "Design",
+        GraphNodeKind::Scenario => "Spec",
+        GraphNodeKind::WorkspaceLease => "Lease",
+    }
 }
 
 #[component]
@@ -86,16 +167,18 @@ pub fn GraphView() -> Element {
     let mut panel_open = use_signal(|| false);
     let mut controls_open = use_signal(|| false);
 
-    let payload = use_memo(move || {
-        build_graph_payload(&*rt.read().project.store).ok()
-    });
+    let payload = use_memo(move || build_graph_payload(&*rt.read().project.store).ok());
 
     // Init graph once with full data
     let mut graph_inited = use_signal(|| false);
     use_effect(move || {
-        if *graph_inited.read() { return; }
+        if *graph_inited.read() {
+            return;
+        }
         if let Some(ref p) = *payload.read() {
-            if p.nodes.is_empty() { return; }
+            if p.nodes.is_empty() {
+                return;
+            }
             let s = settings.read().clone();
             let json = filter_and_serialize(p, &s);
             let js = format!("{GRAPH_JS}\nflyntGraph({json});");
@@ -107,7 +190,9 @@ pub fn GraphView() -> Element {
     // Push settings updates to live simulation (no rebuild)
     use_effect(move || {
         let s = settings.read().clone();
-        if !*graph_inited.read() { return; }
+        if !*graph_inited.read() {
+            return;
+        }
         if let Some(ref p) = *payload.read() {
             let json = filter_and_serialize(p, &s);
             let js = format!("window._flyntGraphUpdate&&window._flyntGraphUpdate({json});");
@@ -115,7 +200,12 @@ pub fn GraphView() -> Element {
         }
     });
 
-    if payload.read().as_ref().map(|p| p.nodes.is_empty()).unwrap_or(true) {
+    if payload
+        .read()
+        .as_ref()
+        .map(|p| p.nodes.is_empty())
+        .unwrap_or(true)
+    {
         return rsx! {
             div { class: "graph-mobile-empty",
                 p { class: "muted", "No graph data." }

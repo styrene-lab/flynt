@@ -101,7 +101,12 @@ pub fn SkillSettingsSection(
         }
     });
 
-    if available.read().as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+    if available
+        .read()
+        .as_ref()
+        .map(|v| v.is_empty())
+        .unwrap_or(true)
+    {
         return rsx! {
             section { class: "settings-section",
                 h2 { class: "settings-heading", "Skills" }

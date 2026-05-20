@@ -25,11 +25,10 @@
 use chrono::{DateTime, Utc};
 use flynt_core::{
     models::{BoardId, Task, TaskId},
-    store::{TaskFilter, ProjectStore},
+    store::{ProjectStore, TaskFilter},
 };
 use flynt_forge::{
-    GitHubForgeClient, IssueMap, ListOpts, SyncEngine, SyncOp, SyncStore,
-    TokenResolver, issue_hash,
+    GitHubForgeClient, IssueMap, ListOpts, SyncEngine, SyncOp, SyncStore, TokenResolver, issue_hash,
 };
 use flynt_models::engagement::{Engagement, EngagementId, RepoBinding};
 use flynt_store::project::Project;
@@ -58,7 +57,9 @@ pub struct SecretBag {
 }
 
 impl SecretBag {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Seed from environment. Currently honours `FLYNT_GITHUB_TOKEN`
     /// → key `GITHUB_TOKEN` so the github resolver can find it. Called
@@ -71,12 +72,17 @@ impl SecretBag {
     }
 
     pub fn set(&self, name: &str, value: &str) {
-        self.inner.write().unwrap().insert(name.to_string(), value.to_string());
+        self.inner
+            .write()
+            .unwrap()
+            .insert(name.to_string(), value.to_string());
     }
 
     pub fn merge(&self, kv: HashMap<String, String>) {
         let mut g = self.inner.write().unwrap();
-        for (k, v) in kv { g.insert(k, v); }
+        for (k, v) in kv {
+            g.insert(k, v);
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<String> {
@@ -293,17 +299,22 @@ pub fn tool_definitions() -> Vec<Value> {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn parse_eid(params: &Value) -> ExtResult<EngagementId> {
-    let s = params.get("engagement_id").and_then(|v| v.as_str())
+    let s = params
+        .get("engagement_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("engagement_id is required"))?;
-    let u = Uuid::parse_str(s)
-        .map_err(|_| ExtError::invalid_params("engagement_id: not a UUID"))?;
+    let u =
+        Uuid::parse_str(s).map_err(|_| ExtError::invalid_params("engagement_id: not a UUID"))?;
     Ok(EngagementId(u))
 }
 
 fn parse_repo(params: &Value) -> ExtResult<(String, String)> {
-    let raw = params.get("repo").and_then(|v| v.as_str())
+    let raw = params
+        .get("repo")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("repo is required (org/name)"))?;
-    let (org, name) = raw.split_once('/')
+    let (org, name) = raw
+        .split_once('/')
         .ok_or_else(|| ExtError::invalid_params("repo must be 'org/name'"))?;
     if org.is_empty() || name.is_empty() {
         return Err(ExtError::invalid_params("repo must be 'org/name'"));
@@ -312,15 +323,20 @@ fn parse_repo(params: &Value) -> ExtResult<(String, String)> {
 }
 
 fn load_engagement(project: &Project, eid: &EngagementId) -> ExtResult<Engagement> {
-    project.store.get_engagement(eid)
+    project
+        .store
+        .get_engagement(eid)
         .map_err(|e| ExtError::internal_error(e.to_string()))?
         .ok_or_else(|| ExtError::invalid_params(format!("engagement {} not found", eid.0)))
 }
 
 fn load_binding<'a>(eng: &'a Engagement, org: &str, repo: &str) -> ExtResult<&'a RepoBinding> {
-    eng.repos.iter()
+    eng.repos
+        .iter()
         .find(|b| b.forge_org == org && b.forge_repo == repo)
-        .ok_or_else(|| ExtError::invalid_params(format!("no binding for {org}/{repo} on this engagement")))
+        .ok_or_else(|| {
+            ExtError::invalid_params(format!("no binding for {org}/{repo} on this engagement"))
+        })
 }
 
 /// Build a forge client appropriate for the engagement. Today: GitHub
@@ -364,7 +380,11 @@ pub struct WorkLogEntry {
 }
 
 fn work_log_path(project: &Project, eid: &EngagementId) -> PathBuf {
-    project.root.join(".flynt").join("work-logs").join(format!("{}.jsonl", eid.0))
+    project
+        .root
+        .join(".flynt")
+        .join("work-logs")
+        .join(format!("{}.jsonl", eid.0))
 }
 
 fn append_work_log(project: &Project, eid: &EngagementId, entry: &WorkLogEntry) -> ExtResult<()> {
@@ -375,7 +395,10 @@ fn append_work_log(project: &Project, eid: &EngagementId, entry: &WorkLogEntry) 
     }
     use std::fs::OpenOptions;
     use std::io::Write;
-    let mut f = OpenOptions::new().create(true).append(true).open(&path)
+    let mut f = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
         .map_err(|e| ExtError::internal_error(format!("open work log: {e}")))?;
     let line = serde_json::to_string(entry)
         .map_err(|e| ExtError::internal_error(format!("serialize entry: {e}")))?;
@@ -385,7 +408,9 @@ fn append_work_log(project: &Project, eid: &EngagementId, entry: &WorkLogEntry) 
 
 fn read_work_log(project: &Project, eid: &EngagementId) -> Vec<WorkLogEntry> {
     let path = work_log_path(project, eid);
-    let Ok(text) = std::fs::read_to_string(&path) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
     text.lines()
         .filter_map(|l| serde_json::from_str::<WorkLogEntry>(l).ok())
         .collect()
@@ -404,28 +429,45 @@ pub fn bootstrap_secrets(secrets: &SecretBag, params: Value) -> ExtResult<Value>
 // ── engagement_* ────────────────────────────────────────────────────────────
 
 pub fn engagement_create(project: &Project, params: Value) -> ExtResult<Value> {
-    let name = params.get("name").and_then(|v| v.as_str())
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("name is required"))?
         .to_string();
 
-    let forge = params.get("forge")
+    let forge = params
+        .get("forge")
         .ok_or_else(|| ExtError::invalid_params("forge is required"))?;
-    let kind_str = forge.get("kind").and_then(|v| v.as_str())
+    let kind_str = forge
+        .get("kind")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("forge.kind is required"))?;
     let kind: ForgeKind = serde_json::from_value(json!(kind_str))
         .map_err(|e| ExtError::invalid_params(format!("forge.kind: {e}")))?;
-    let base_url = forge.get("base_url").and_then(|v| v.as_str())
+    let base_url = forge
+        .get("base_url")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("forge.base_url is required"))?
         .to_string();
     let endpoint = ForgeEndpoint {
-        id: forge.get("id").and_then(|v| v.as_str()).unwrap_or(kind_str).to_string(),
+        id: forge
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(kind_str)
+            .to_string(),
         kind,
         base_url,
-        token_secret: forge.get("token_secret").and_then(|v| v.as_str()).map(String::from),
+        token_secret: forge
+            .get("token_secret")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     };
 
     let mut e = Engagement::new(name, endpoint);
-    e.description = params.get("description").and_then(|v| v.as_str()).map(String::from);
+    e.description = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     if let Some(b) = params.get("auto_create_issues").and_then(|v| v.as_bool()) {
         e.auto_create_issues = b;
     }
@@ -436,25 +478,35 @@ pub fn engagement_create(project: &Project, params: Value) -> ExtResult<Value> {
     }
     if let Some(arr) = params.get("repos").and_then(|v| v.as_array()) {
         for r in arr {
-            let org = r.get("forge_org").and_then(|v| v.as_str())
+            let org = r
+                .get("forge_org")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| ExtError::invalid_params("repos[].forge_org is required"))?;
-            let name = r.get("forge_repo").and_then(|v| v.as_str())
+            let name = r
+                .get("forge_repo")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| ExtError::invalid_params("repos[].forge_repo is required"))?;
             // Reject empty strings up-front so downstream parse_repo
             // doesn't surface a confusing 'org/' or '/repo' error later.
             if org.trim().is_empty() || name.trim().is_empty() {
                 return Err(ExtError::invalid_params(
-                    "repos[].forge_org and forge_repo must be non-empty"
+                    "repos[].forge_org and forge_repo must be non-empty",
                 ));
             }
             let mut b = RepoBinding::new(org, name);
-            if let Some(v) = r.get("sync_issues").and_then(|v| v.as_bool()) { b.sync_issues = v; }
-            if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) { b.sync_prs = v; }
+            if let Some(v) = r.get("sync_issues").and_then(|v| v.as_bool()) {
+                b.sync_issues = v;
+            }
+            if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) {
+                b.sync_prs = v;
+            }
             e.repos.push(b);
         }
     }
 
-    project.store.save_engagement(&e)
+    project
+        .store
+        .save_engagement(&e)
         .map_err(|err| ExtError::internal_error(err.to_string()))?;
     Ok(serde_json::to_value(&e).unwrap_or(json!({})))
 }
@@ -477,7 +529,11 @@ pub fn engagement_update(project: &Project, params: Value) -> ExtResult<Value> {
             // "unset this."
             Value::Null => None,
             Value::String(s) => Some(s.clone()),
-            _ => return Err(ExtError::invalid_params("description must be string or null")),
+            _ => {
+                return Err(ExtError::invalid_params(
+                    "description must be string or null",
+                ));
+            }
         };
     }
     if let Some(v) = params.get("status").and_then(|v| v.as_str()) {
@@ -488,55 +544,85 @@ pub fn engagement_update(project: &Project, params: Value) -> ExtResult<Value> {
         e.auto_create_issues = v;
     }
     if let Some(forge) = params.get("forge") {
-        let kind_str = forge.get("kind").and_then(|v| v.as_str())
+        let kind_str = forge
+            .get("kind")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| ExtError::invalid_params("forge.kind is required when forge is set"))?;
         let kind: ForgeKind = serde_json::from_value(json!(kind_str))
             .map_err(|err| ExtError::invalid_params(format!("forge.kind: {err}")))?;
-        let base_url = forge.get("base_url").and_then(|v| v.as_str())
-            .ok_or_else(|| ExtError::invalid_params("forge.base_url is required when forge is set"))?
+        let base_url = forge
+            .get("base_url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                ExtError::invalid_params("forge.base_url is required when forge is set")
+            })?
             .to_string();
         e.forge = ForgeEndpoint {
-            id: forge.get("id").and_then(|v| v.as_str()).unwrap_or(kind_str).to_string(),
+            id: forge
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(kind_str)
+                .to_string(),
             kind,
             base_url,
-            token_secret: forge.get("token_secret").and_then(|v| v.as_str()).map(String::from),
+            token_secret: forge
+                .get("token_secret")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         };
     }
     if let Some(arr) = params.get("repos").and_then(|v| v.as_array()) {
         let mut new_repos = Vec::with_capacity(arr.len());
         for r in arr {
-            let org = r.get("forge_org").and_then(|v| v.as_str())
+            let org = r
+                .get("forge_org")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| ExtError::invalid_params("repos[].forge_org is required"))?;
-            let name = r.get("forge_repo").and_then(|v| v.as_str())
+            let name = r
+                .get("forge_repo")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| ExtError::invalid_params("repos[].forge_repo is required"))?;
             if org.trim().is_empty() || name.trim().is_empty() {
                 return Err(ExtError::invalid_params(
-                    "repos[].forge_org and forge_repo must be non-empty"
+                    "repos[].forge_org and forge_repo must be non-empty",
                 ));
             }
             let mut b = RepoBinding::new(org, name);
-            if let Some(v) = r.get("sync_issues").and_then(|v| v.as_bool()) { b.sync_issues = v; }
-            if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) { b.sync_prs = v; }
+            if let Some(v) = r.get("sync_issues").and_then(|v| v.as_bool()) {
+                b.sync_issues = v;
+            }
+            if let Some(v) = r.get("sync_prs").and_then(|v| v.as_bool()) {
+                b.sync_prs = v;
+            }
             new_repos.push(b);
         }
         e.repos = new_repos;
     }
 
-    project.store.save_engagement(&e)
+    project
+        .store
+        .save_engagement(&e)
         .map_err(|err| ExtError::internal_error(err.to_string()))?;
     Ok(serde_json::to_value(&e).unwrap_or(json!({})))
 }
 
 pub fn engagement_list(project: &Project, _params: Value) -> ExtResult<Value> {
-    let list = project.store.list_engagements()
+    let list = project
+        .store
+        .list_engagements()
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
-    let summary: Vec<Value> = list.iter().map(|e| json!({
-        "id": e.id.0.to_string(),
-        "name": e.name,
-        "status": e.status,
-        "forge_kind": format!("{:?}", e.forge.kind).to_lowercase(),
-        "repo_count": e.repos.len(),
-    })).collect();
+    let summary: Vec<Value> = list
+        .iter()
+        .map(|e| {
+            json!({
+                "id": e.id.0.to_string(),
+                "name": e.name,
+                "status": e.status,
+                "forge_kind": format!("{:?}", e.forge.kind).to_lowercase(),
+                "repo_count": e.repos.len(),
+            })
+        })
+        .collect();
     Ok(json!(summary))
 }
 
@@ -545,26 +631,34 @@ pub fn engagement_status(project: &Project, params: Value) -> ExtResult<Value> {
     let eng = load_engagement(project, &eid)?;
 
     // Task counts under this engagement.
-    let tasks = project.store.list_tasks(&TaskFilter {
-        engagement_id: Some(eid.clone()),
-        ..Default::default()
-    }).map_err(|e| ExtError::internal_error(e.to_string()))?;
+    let tasks = project
+        .store
+        .list_tasks(&TaskFilter {
+            engagement_id: Some(eid.clone()),
+            ..Default::default()
+        })
+        .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     // Per-repo last_synced timestamps (max across mappings).
     let store = sync_store_for(project).ok();
-    let per_repo: Vec<Value> = eng.repos.iter().map(|b| {
-        let last_synced = store.as_ref()
-            .and_then(|s| s.list_by_repo(&b.forge_org, &b.forge_repo).ok())
-            .and_then(|maps| maps.iter().map(|m| m.last_synced).max())
-            .map(|t| t.to_rfc3339());
-        json!({
-            "forge_org": b.forge_org,
-            "forge_repo": b.forge_repo,
-            "sync_issues": b.sync_issues,
-            "sync_prs": b.sync_prs,
-            "last_synced": last_synced,
+    let per_repo: Vec<Value> = eng
+        .repos
+        .iter()
+        .map(|b| {
+            let last_synced = store
+                .as_ref()
+                .and_then(|s| s.list_by_repo(&b.forge_org, &b.forge_repo).ok())
+                .and_then(|maps| maps.iter().map(|m| m.last_synced).max())
+                .map(|t| t.to_rfc3339());
+            json!({
+                "forge_org": b.forge_org,
+                "forge_repo": b.forge_repo,
+                "sync_issues": b.sync_issues,
+                "sync_prs": b.sync_prs,
+                "last_synced": last_synced,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(json!({
         "engagement": eng,
@@ -601,17 +695,28 @@ pub async fn forge_list_issues(
     load_binding(&eng, &org, &repo)?;
     let client = build_client(&eng, secrets)?;
     let opts = ListOpts {
-        state: params.get("state").and_then(|v| v.as_str()).and_then(|s| match s {
-            "open" => Some(IssueState::Open),
-            "closed" => Some(IssueState::Closed),
-            _ => None,
-        }),
-        labels: params.get("labels").and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        state: params
+            .get("state")
+            .and_then(|v| v.as_str())
+            .and_then(|s| match s {
+                "open" => Some(IssueState::Open),
+                "closed" => Some(IssueState::Closed),
+                _ => None,
+            }),
+        labels: params
+            .get("labels")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default(),
         ..Default::default()
     };
-    let issues = client.list_issues(&org, &repo, &opts).await
+    let issues = client
+        .list_issues(&org, &repo, &opts)
+        .await
         .map_err(|e| ExtError::internal_error(format!("forge: {e}")))?;
     Ok(serde_json::to_value(&issues).unwrap_or(json!([])))
 }
@@ -631,10 +736,13 @@ pub async fn forge_sync_issues(
     let client = build_client(&eng, secrets)?;
     let store = sync_store_for(project)?;
 
-    let existing = store.list_by_repo(&org, &repo)
+    let existing = store
+        .list_by_repo(&org, &repo)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
     let engine = SyncEngine::new(client.as_ref());
-    let ops = engine.pull_issues(&binding, &existing).await
+    let ops = engine
+        .pull_issues(&binding, &existing)
+        .await
         .map_err(|e| ExtError::internal_error(format!("sync: {e}")))?;
 
     materialize_sync_ops(project, &store, &eid, &board_id, &column, &org, &repo, &ops)
@@ -669,21 +777,28 @@ fn materialize_sync_ops(
                 // Use persist_task so the issue lands as a .md file
                 // under Tasks/<board>/<slug>.md (board has no
                 // project_id in the typical sync flow).
-                project.persist_task(&t)
+                project
+                    .persist_task(&t)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
-                store.upsert(&IssueMap {
-                    local_id: *local_id,
-                    board_id: board_id.0,
-                    forge_org: org.to_string(),
-                    forge_repo: repo.to_string(),
-                    forge_issue_number: issue.number,
-                    last_synced: Utc::now(),
-                    last_hash: Some(issue_hash(issue)),
-                    forge_url: Some(issue.url.clone()),
-                }).map_err(|e| ExtError::internal_error(e.to_string()))?;
+                store
+                    .upsert(&IssueMap {
+                        local_id: *local_id,
+                        board_id: board_id.0,
+                        forge_org: org.to_string(),
+                        forge_repo: repo.to_string(),
+                        forge_issue_number: issue.number,
+                        last_synced: Utc::now(),
+                        last_hash: Some(issue_hash(issue)),
+                        forge_url: Some(issue.url.clone()),
+                    })
+                    .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 created += 1;
             }
-            SyncOp::UpdateLocal { local_id, issue, new_hash } => {
+            SyncOp::UpdateLocal {
+                local_id,
+                issue,
+                new_hash,
+            } => {
                 // Task may have been deleted out-of-band — project.store
                 // returns Ok(false) in that case. Drop the orphaned
                 // IssueMap so next sync sees the issue as new and
@@ -696,23 +811,29 @@ fn materialize_sync_ops(
                 // update_any_task applies the patch + persists via the
                 // project path so the .md file gets refreshed (forge sync
                 // is the canonical path for issue→task updates).
-                let exists = project.update_any_task(&TaskId(*local_id), &patch)
+                let exists = project
+                    .update_any_task(&TaskId(*local_id), &patch)
                     .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 if !exists {
                     tracing::warn!(
                         local_id = %local_id, issue = issue.number,
                         "UpdateLocal target task missing — clearing orphan IssueMap"
                     );
-                    store.delete_by_local(local_id)
+                    store
+                        .delete_by_local(local_id)
                         .map_err(|e| ExtError::internal_error(e.to_string()))?;
                     orphans.push(issue.number);
                     continue;
                 }
-                if let Some(mut m) = store.get_by_issue(org, repo, issue.number)
-                    .map_err(|e| ExtError::internal_error(e.to_string()))? {
+                if let Some(mut m) = store
+                    .get_by_issue(org, repo, issue.number)
+                    .map_err(|e| ExtError::internal_error(e.to_string()))?
+                {
                     m.last_synced = Utc::now();
                     m.last_hash = Some(new_hash.clone());
-                    store.upsert(&m).map_err(|e| ExtError::internal_error(e.to_string()))?;
+                    store
+                        .upsert(&m)
+                        .map_err(|e| ExtError::internal_error(e.to_string()))?;
                 }
                 updated += 1;
             }
@@ -740,23 +861,42 @@ pub async fn forge_create_issue(
     let eng = load_engagement(project, &eid)?;
     let (org, repo) = parse_repo(&params)?;
     load_binding(&eng, &org, &repo)?;
-    let title = params.get("title").and_then(|v| v.as_str())
+    let title = params
+        .get("title")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("title is required"))?
         .to_string();
-    let body = params.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let labels: Vec<String> = params.get("labels").and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+    let body = params
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let labels: Vec<String> = params
+        .get("labels")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let (board_id, column) = resolve_board_column(project, &params)?;
 
     let client = build_client(&eng, secrets)?;
-    let issue = client.create_issue(&org, &repo, &ForgeCreateIssue {
-        title: title.clone(),
-        body: body.clone(),
-        labels: labels.clone(),
-        milestone: None,
-        assignees: Vec::new(),
-    }).await.map_err(|e| ExtError::internal_error(format!("forge: {e}")))?;
+    let issue = client
+        .create_issue(
+            &org,
+            &repo,
+            &ForgeCreateIssue {
+                title: title.clone(),
+                body: body.clone(),
+                labels: labels.clone(),
+                milestone: None,
+                assignees: Vec::new(),
+            },
+        )
+        .await
+        .map_err(|e| ExtError::internal_error(format!("forge: {e}")))?;
 
     // Refetch the issue via GET so the IssueMap stores the canonical
     // server-side state. GitHub normalizes whitespace + label metadata
@@ -777,20 +917,23 @@ pub async fn forge_create_issue(
     t.external_refs = vec![canonical.url.clone()];
     t.engagement_id = Some(eid.clone());
     // persist_task writes the .md file alongside sqlite.
-    project.persist_task(&t)
+    project
+        .persist_task(&t)
         .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     let store = sync_store_for(project)?;
-    store.upsert(&IssueMap {
-        local_id: t.id.0,
-        board_id: board_id.0,
-        forge_org: org.clone(),
-        forge_repo: repo.clone(),
-        forge_issue_number: canonical.number,
-        last_synced: Utc::now(),
-        last_hash: Some(issue_hash(&canonical)),
-        forge_url: Some(canonical.url.clone()),
-    }).map_err(|e| ExtError::internal_error(e.to_string()))?;
+    store
+        .upsert(&IssueMap {
+            local_id: t.id.0,
+            board_id: board_id.0,
+            forge_org: org.clone(),
+            forge_repo: repo.clone(),
+            forge_issue_number: canonical.number,
+            last_synced: Utc::now(),
+            last_hash: Some(issue_hash(&canonical)),
+            forge_url: Some(canonical.url.clone()),
+        })
+        .map_err(|e| ExtError::internal_error(e.to_string()))?;
 
     Ok(json!({
         "task_id": t.id.0.to_string(),
@@ -806,12 +949,19 @@ pub fn log_work(project: &Project, params: Value) -> ExtResult<Value> {
     // Validate engagement exists so we don't silently scribble logs for
     // a non-existent record.
     let _ = load_engagement(project, &eid)?;
-    let content = params.get("content").and_then(|v| v.as_str())
+    let content = params
+        .get("content")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("content is required"))?
         .to_string();
-    let category = params.get("category").and_then(|v| v.as_str())
-        .unwrap_or("development").to_string();
-    let task_id = params.get("task_id").and_then(|v| v.as_str())
+    let category = params
+        .get("category")
+        .and_then(|v| v.as_str())
+        .unwrap_or("development")
+        .to_string();
+    let task_id = params
+        .get("task_id")
+        .and_then(|v| v.as_str())
         .map(|s| Uuid::parse_str(s).map_err(|_| ExtError::invalid_params("task_id: not a UUID")))
         .transpose()?;
     let entry = WorkLogEntry {
@@ -875,7 +1025,9 @@ pub fn timeline(project: &Project, params: Value) -> ExtResult<Value> {
 // ── Utility: shared with extension.rs (board parsing) ───────────────────────
 
 fn parse_board_id(params: &Value) -> ExtResult<BoardId> {
-    let s = params.get("board_id").and_then(|v| v.as_str())
+    let s = params
+        .get("board_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| ExtError::invalid_params("board_id is required"))?;
     let u = Uuid::parse_str(s).map_err(|_| ExtError::invalid_params("board_id: not a UUID"))?;
     Ok(BoardId(u))
@@ -888,20 +1040,29 @@ fn parse_board_id(params: &Value) -> ExtResult<BoardId> {
 /// produce tasks the kanban will actually render.
 fn resolve_board_column(project: &Project, params: &Value) -> ExtResult<(BoardId, String)> {
     let board_id = parse_board_id(params)?;
-    let board = project.store.get_board(&board_id)
+    let board = project
+        .store
+        .get_board(&board_id)
         .map_err(|e| ExtError::internal_error(e.to_string()))?
         .ok_or_else(|| ExtError::invalid_params(format!("board {} not found", board_id.0)))?;
     let column = match params.get("column").and_then(|v| v.as_str()) {
         Some(c) => {
             if !board.columns.iter().any(|bc| bc.name == c) {
-                return Err(ExtError::invalid_params(
-                    format!("column '{c}' not on board (have: {})",
-                        board.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "))
-                ));
+                return Err(ExtError::invalid_params(format!(
+                    "column '{c}' not on board (have: {})",
+                    board
+                        .columns
+                        .iter()
+                        .map(|c| c.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
             }
             c.to_string()
         }
-        None => board.columns.first()
+        None => board
+            .columns
+            .first()
             .map(|c| c.name.clone())
             .unwrap_or_else(|| "Backlog".to_string()),
     };
@@ -941,7 +1102,11 @@ mod tests {
     fn engagement_create_then_list_then_status() {
         let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
-        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        let eid = created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
 
         let listed = engagement_list(&project, json!({})).unwrap();
         let arr = listed.as_array().unwrap();
@@ -959,14 +1124,22 @@ mod tests {
         // flip auto_create_issues without re-creating the engagement.
         let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
-        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        let eid = created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
         // Default is false (local-first).
         assert_eq!(created["auto_create_issues"], false);
 
-        let updated = engagement_update(&project, json!({
-            "engagement_id": eid.clone(),
-            "auto_create_issues": true
-        })).unwrap();
+        let updated = engagement_update(
+            &project,
+            json!({
+                "engagement_id": eid.clone(),
+                "auto_create_issues": true
+            }),
+        )
+        .unwrap();
         assert_eq!(updated["auto_create_issues"], true);
 
         // Persisted: reload via status.
@@ -979,15 +1152,26 @@ mod tests {
         // Partial patch: only touch the fields the caller passed.
         let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
-        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        let eid = created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
         let original_repos = created["repos"].clone();
 
-        let updated = engagement_update(&project, json!({
-            "engagement_id": eid,
-            "name": "Renamed"
-        })).unwrap();
+        let updated = engagement_update(
+            &project,
+            json!({
+                "engagement_id": eid,
+                "name": "Renamed"
+            }),
+        )
+        .unwrap();
         assert_eq!(updated["name"], "Renamed");
-        assert_eq!(updated["repos"], original_repos, "repos preserved when not in patch");
+        assert_eq!(
+            updated["repos"], original_repos,
+            "repos preserved when not in patch"
+        );
         assert_eq!(updated["description"], "test", "description preserved");
     }
 
@@ -995,14 +1179,22 @@ mod tests {
     fn engagement_update_replaces_repos_when_passed() {
         let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
-        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        let eid = created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
 
-        let updated = engagement_update(&project, json!({
-            "engagement_id": eid,
-            "repos": [
-                { "forge_org": "newco", "forge_repo": "newrepo" }
-            ]
-        })).unwrap();
+        let updated = engagement_update(
+            &project,
+            json!({
+                "engagement_id": eid,
+                "repos": [
+                    { "forge_org": "newco", "forge_repo": "newrepo" }
+                ]
+            }),
+        )
+        .unwrap();
         let repos = updated["repos"].as_array().unwrap();
         assert_eq!(repos.len(), 1);
         assert_eq!(repos[0]["forge_org"], "newco");
@@ -1013,13 +1205,21 @@ mod tests {
     fn engagement_update_clears_description_on_null() {
         let (_tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
-        let eid = created.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+        let eid = created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
         assert_eq!(created["description"], "test");
 
-        let updated = engagement_update(&project, json!({
-            "engagement_id": eid,
-            "description": null
-        })).unwrap();
+        let updated = engagement_update(
+            &project,
+            json!({
+                "engagement_id": eid,
+                "description": null
+            }),
+        )
+        .unwrap();
         assert!(updated["description"].is_null(), "null clears the field");
     }
 
@@ -1059,10 +1259,14 @@ mod tests {
     #[test]
     fn bootstrap_secrets_merges_into_bag() {
         let secrets = SecretBag::new();
-        let _ = bootstrap_secrets(&secrets, json!({
-            "GITHUB_TOKEN": "ghp_xyz",
-            "OTHER": "v"
-        })).unwrap();
+        let _ = bootstrap_secrets(
+            &secrets,
+            json!({
+                "GITHUB_TOKEN": "ghp_xyz",
+                "OTHER": "v"
+            }),
+        )
+        .unwrap();
         assert_eq!(secrets.get("GITHUB_TOKEN").as_deref(), Some("ghp_xyz"));
         assert_eq!(secrets.get("OTHER").as_deref(), Some("v"));
     }
@@ -1070,11 +1274,15 @@ mod tests {
     #[test]
     fn seed_from_env_reads_flynt_github_token() {
         // SAFETY: test process controls this env var and does not iterate env concurrently.
-        unsafe { std::env::set_var("FLYNT_GITHUB_TOKEN", "ghp_envseed"); }
+        unsafe {
+            std::env::set_var("FLYNT_GITHUB_TOKEN", "ghp_envseed");
+        }
         let secrets = SecretBag::new();
         secrets.seed_from_env();
         assert_eq!(secrets.get("GITHUB_TOKEN").as_deref(), Some("ghp_envseed"));
-        unsafe { std::env::remove_var("FLYNT_GITHUB_TOKEN"); }
+        unsafe {
+            std::env::remove_var("FLYNT_GITHUB_TOKEN");
+        }
     }
 
     #[test]
@@ -1083,16 +1291,24 @@ mod tests {
         let created = engagement_create(&project, engagement_create_params()).unwrap();
         let eid = created.get("id").and_then(|v| v.as_str()).unwrap();
 
-        log_work(&project, json!({
-            "engagement_id": eid,
-            "content": "Wrote forge tools",
-            "category": "development"
-        })).unwrap();
-        log_work(&project, json!({
-            "engagement_id": eid,
-            "content": "Reviewed PR",
-            "category": "review"
-        })).unwrap();
+        log_work(
+            &project,
+            json!({
+                "engagement_id": eid,
+                "content": "Wrote forge tools",
+                "category": "development"
+            }),
+        )
+        .unwrap();
+        log_work(
+            &project,
+            json!({
+                "engagement_id": eid,
+                "content": "Reviewed PR",
+                "category": "review"
+            }),
+        )
+        .unwrap();
 
         let tl = timeline(&project, json!({ "engagement_id": eid })).unwrap();
         let events = tl["events"].as_array().unwrap();
@@ -1106,10 +1322,14 @@ mod tests {
     fn log_work_rejects_missing_engagement() {
         let (_tmp, project) = fresh_project();
         let phantom = Uuid::new_v4().to_string();
-        let err = log_work(&project, json!({
-            "engagement_id": phantom,
-            "content": "x"
-        })).unwrap_err();
+        let err = log_work(
+            &project,
+            json!({
+                "engagement_id": phantom,
+                "content": "x"
+            }),
+        )
+        .unwrap_err();
         let _ = format!("{err:?}");
     }
 
@@ -1144,7 +1364,10 @@ mod tests {
         });
         let err = engagement_create(&project, bad).unwrap_err();
         let msg = format!("{err:?}");
-        assert!(msg.contains("non-empty"), "expected non-empty validation, got: {msg}");
+        assert!(
+            msg.contains("non-empty"),
+            "expected non-empty validation, got: {msg}"
+        );
     }
 
     #[test]
@@ -1161,10 +1384,14 @@ mod tests {
         let (_tmp, project) = fresh_project();
         let board = flynt_core::models::Board::default_sprint("Sprint");
         project.store.save_board(&board).unwrap();
-        let err = resolve_board_column(&project, &json!({
-            "board_id": board.id.0.to_string(),
-            "column": "Nonexistent"
-        })).unwrap_err();
+        let err = resolve_board_column(
+            &project,
+            &json!({
+                "board_id": board.id.0.to_string(),
+                "column": "Nonexistent"
+            }),
+        )
+        .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("not on board"), "got: {msg}");
     }
@@ -1176,9 +1403,13 @@ mod tests {
         let board_id_str = board.id.0.to_string();
         let first = board.columns[0].name.clone();
         project.store.save_board(&board).unwrap();
-        let (_bid, col) = resolve_board_column(&project, &json!({
-            "board_id": board_id_str
-        })).unwrap();
+        let (_bid, col) = resolve_board_column(
+            &project,
+            &json!({
+                "board_id": board_id_str
+            }),
+        )
+        .unwrap();
         assert_eq!(col, first);
     }
 
@@ -1187,9 +1418,9 @@ mod tests {
     fn fixture_for_sync() -> (TempDir, Arc<Project>, EngagementId, BoardId, SyncStore) {
         let (tmp, project) = fresh_project();
         let created = engagement_create(&project, engagement_create_params()).unwrap();
-        let eid = EngagementId(Uuid::parse_str(
-            created.get("id").and_then(|v| v.as_str()).unwrap()
-        ).unwrap());
+        let eid = EngagementId(
+            Uuid::parse_str(created.get("id").and_then(|v| v.as_str()).unwrap()).unwrap(),
+        );
         let board = flynt_core::models::Board::default_sprint("Sprint");
         let bid = board.id.clone();
         project.store.save_board(&board).unwrap();
@@ -1217,18 +1448,32 @@ mod tests {
     fn materialize_create_local_writes_task_and_issue_map() {
         let (_tmp, project, eid, bid, store) = fixture_for_sync();
         let local = Uuid::new_v4();
-        let ops = vec![SyncOp::CreateLocal { issue: fake_issue(7, "First"), local_id: local }];
+        let ops = vec![SyncOp::CreateLocal {
+            issue: fake_issue(7, "First"),
+            local_id: local,
+        }];
 
         let result = materialize_sync_ops(
-            &project, &store, &eid, &bid, "Backlog",
-            "anthropics", "claude-code", &ops,
-        ).unwrap();
+            &project,
+            &store,
+            &eid,
+            &bid,
+            "Backlog",
+            "anthropics",
+            "claude-code",
+            &ops,
+        )
+        .unwrap();
         assert_eq!(result["created"], 1);
         assert_eq!(result["updated"], 0);
         assert_eq!(result["orphans"].as_array().unwrap().len(), 0);
 
         // Task landed with engagement linkage.
-        let t = project.store.get_task(&TaskId(local)).unwrap().expect("task should exist");
+        let t = project
+            .store
+            .get_task(&TaskId(local))
+            .unwrap()
+            .expect("task should exist");
         assert_eq!(t.title, "First");
         assert_eq!(t.engagement_id, Some(eid.clone()));
         assert!(t.external_refs[0].contains("/issues/7"));
@@ -1246,24 +1491,46 @@ mod tests {
 
         // Seed: pretend we sync'd #9 once already.
         let _ = materialize_sync_ops(
-            &project, &store, &eid, &bid, "Backlog",
-            "anthropics", "claude-code",
-            &[SyncOp::CreateLocal { issue: fake_issue(9, "Original"), local_id: local }],
-        ).unwrap();
+            &project,
+            &store,
+            &eid,
+            &bid,
+            "Backlog",
+            "anthropics",
+            "claude-code",
+            &[SyncOp::CreateLocal {
+                issue: fake_issue(9, "Original"),
+                local_id: local,
+            }],
+        )
+        .unwrap();
 
         // Now an UpdateLocal arrives with a new title.
         let new_issue = fake_issue(9, "Updated");
         let new_hash = issue_hash(&new_issue);
         let result = materialize_sync_ops(
-            &project, &store, &eid, &bid, "Backlog",
-            "anthropics", "claude-code",
-            &[SyncOp::UpdateLocal { local_id: local, issue: new_issue, new_hash: new_hash.clone() }],
-        ).unwrap();
+            &project,
+            &store,
+            &eid,
+            &bid,
+            "Backlog",
+            "anthropics",
+            "claude-code",
+            &[SyncOp::UpdateLocal {
+                local_id: local,
+                issue: new_issue,
+                new_hash: new_hash.clone(),
+            }],
+        )
+        .unwrap();
         assert_eq!(result["updated"], 1);
         assert_eq!(result["orphans"].as_array().unwrap().len(), 0);
         let t = project.store.get_task(&TaskId(local)).unwrap().unwrap();
         assert_eq!(t.title, "Updated");
-        let m = store.get_by_issue("anthropics", "claude-code", 9).unwrap().unwrap();
+        let m = store
+            .get_by_issue("anthropics", "claude-code", 9)
+            .unwrap()
+            .unwrap();
         assert_eq!(m.last_hash.as_deref(), Some(new_hash.as_str()));
     }
 
@@ -1274,31 +1541,50 @@ mod tests {
 
         // Seed an IssueMap whose task was never created (simulates
         // a task that was deleted out-of-band between syncs).
-        store.upsert(&IssueMap {
-            local_id: local,
-            board_id: bid.0,
-            forge_org: "anthropics".into(),
-            forge_repo: "claude-code".into(),
-            forge_issue_number: 11,
-            last_synced: Utc::now(),
-            last_hash: Some("stale".into()),
-            forge_url: None,
-        }).unwrap();
+        store
+            .upsert(&IssueMap {
+                local_id: local,
+                board_id: bid.0,
+                forge_org: "anthropics".into(),
+                forge_repo: "claude-code".into(),
+                forge_issue_number: 11,
+                last_synced: Utc::now(),
+                last_hash: Some("stale".into()),
+                forge_url: None,
+            })
+            .unwrap();
 
         // UpdateLocal arrives — task is missing.
         let issue = fake_issue(11, "Updated");
         let result = materialize_sync_ops(
-            &project, &store, &eid, &bid, "Backlog",
-            "anthropics", "claude-code",
-            &[SyncOp::UpdateLocal { local_id: local, issue, new_hash: "new".into() }],
-        ).unwrap();
-        assert_eq!(result["updated"], 0, "missing task must not count as updated");
+            &project,
+            &store,
+            &eid,
+            &bid,
+            "Backlog",
+            "anthropics",
+            "claude-code",
+            &[SyncOp::UpdateLocal {
+                local_id: local,
+                issue,
+                new_hash: "new".into(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(
+            result["updated"], 0,
+            "missing task must not count as updated"
+        );
         let orphans = result["orphans"].as_array().unwrap();
         assert_eq!(orphans.len(), 1);
         assert_eq!(orphans[0], 11);
 
         // IssueMap was cleared — next sync would treat #11 as new.
-        assert!(store.get_by_issue("anthropics", "claude-code", 11).unwrap().is_none());
+        assert!(
+            store
+                .get_by_issue("anthropics", "claude-code", 11)
+                .unwrap()
+                .is_none()
+        );
     }
 }
-

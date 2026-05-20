@@ -1,5 +1,5 @@
-use flynt_core::manifest::ProjectManifest;
 use dioxus::prelude::*;
+use flynt_core::manifest::ProjectManifest;
 use std::path::PathBuf;
 
 #[derive(Clone, PartialEq)]

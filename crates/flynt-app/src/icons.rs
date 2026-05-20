@@ -10,6 +10,9 @@ pub const ICON_BOARD: &str = r#"<svg viewBox="0 0 24 24" fill="none" stroke="cur
 /// Web/nexus — knowledge graph
 pub const ICON_GRAPH: &str = r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><circle cx="19" cy="10" r="2"/><circle cx="5" cy="10" r="2"/><line x1="12" y1="7" x2="5" y2="10"/><line x1="12" y1="7" x2="19" y2="10"/><line x1="5" y1="12" x2="5" y2="17"/><line x1="19" y1="12" x2="19" y2="17"/><line x1="7" y1="19" x2="17" y2="19"/></svg>"#;
 
+/// Aperture/lens — saved project lenses
+pub const ICON_LENS: &str = r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 4v5"/><path d="M12 15v5"/><path d="M4 12h5"/><path d="M15 12h5"/><path d="M7.8 7.8l3.5 3.5"/><path d="M12.7 12.7l3.5 3.5"/></svg>"#;
+
 /// Omega symbol — Omegon agent
 pub const ICON_OMEGON: &str = r#"<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0-6.36 15.36l-1.5 1.5h4.5v-4.5l-1.56 1.56A7 7 0 1 1 19 12a7 7 0 0 1-2.08 5.01l-1.56-1.56v4.5h4.5l-1.5-1.5A9 9 0 0 0 12 3z"/></svg>"#;
 

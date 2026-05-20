@@ -38,8 +38,10 @@ fn process_tag(
     let tag_lower = tag.to_lowercase();
 
     // Self-closing tags
-    if tag_lower.starts_with("br") || tag_lower.starts_with("br/")
-        || tag_lower.starts_with("hr") || tag_lower.starts_with("hr/")
+    if tag_lower.starts_with("br")
+        || tag_lower.starts_with("br/")
+        || tag_lower.starts_with("hr")
+        || tag_lower.starts_with("hr/")
     {
         if tag_lower.starts_with("hr") {
             out.push_str("\n---\n\n");
@@ -192,14 +194,21 @@ fn process_tag(
     }
 
     // Div, span, section — pass through contents
-    if matches!(tag_lower.as_str(), "div" | "span" | "section" | "main" | "article") {
+    if matches!(
+        tag_lower.as_str(),
+        "div" | "span" | "section" | "main" | "article"
+    ) {
         let content = collect_inner_markdown(chars, &tag_lower, depth);
         out.push_str(&content);
         return;
     }
 
     // Unknown tags — collect and pass through content
-    let close_tag = tag_lower.split_whitespace().next().unwrap_or(&tag_lower).to_string();
+    let close_tag = tag_lower
+        .split_whitespace()
+        .next()
+        .unwrap_or(&tag_lower)
+        .to_string();
     let content = collect_inner_markdown(chars, &close_tag, depth);
     out.push_str(&content);
 }
@@ -234,7 +243,11 @@ fn collect_inner_markdown(
             Some(&'<') => {
                 let tag = read_tag(chars);
                 let tag_lower = tag.to_lowercase();
-                let tag_name = tag_lower.split_whitespace().next().unwrap_or("").trim_start_matches('/');
+                let tag_name = tag_lower
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches('/');
 
                 if tag_lower.starts_with('/') && tag_name == close_tag {
                     break;
@@ -264,7 +277,11 @@ fn collect_text_until_close(
             Some(&'<') => {
                 let tag = read_tag(chars);
                 let tag_lower = tag.to_lowercase();
-                let tag_name = tag_lower.split_whitespace().next().unwrap_or("").trim_start_matches('/');
+                let tag_name = tag_lower
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches('/');
 
                 if tag_lower.starts_with('/') && tag_name == close_tag {
                     nesting -= 1;
@@ -307,7 +324,11 @@ fn collect_list_items(
             Some(&'<') => {
                 let tag = read_tag(chars);
                 let tag_lower = tag.to_lowercase();
-                let tag_name = tag_lower.split_whitespace().next().unwrap_or("").trim_start_matches('/');
+                let tag_name = tag_lower
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches('/');
 
                 if tag_lower.starts_with('/') && tag_name == close_tag {
                     break;
@@ -395,7 +416,11 @@ fn convert_table(html: &str) -> String {
             Some(&'<') => {
                 let tag = read_tag(&mut chars);
                 let tag_lower = tag.to_lowercase();
-                let tag_name = tag_lower.split_whitespace().next().unwrap_or("").trim_start_matches('/');
+                let tag_name = tag_lower
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches('/');
 
                 match tag_name {
                     "thead" => is_header = true,
@@ -408,7 +433,8 @@ fn convert_table(html: &str) -> String {
                             rows.push(current_row.clone());
                             if is_header {
                                 // Add separator row after header
-                                let sep: Vec<String> = current_row.iter().map(|_| "---".to_string()).collect();
+                                let sep: Vec<String> =
+                                    current_row.iter().map(|_| "---".to_string()).collect();
                                 rows.push(sep);
                             }
                         }
@@ -421,7 +447,9 @@ fn convert_table(html: &str) -> String {
                     _ => {}
                 }
             }
-            Some(_) => { chars.next(); }
+            Some(_) => {
+                chars.next();
+            }
         }
     }
 
@@ -480,7 +508,10 @@ mod tests {
     #[test]
     fn paragraphs_and_inline() {
         let html = "<p>Hello <strong>bold</strong> and <em>italic</em> world.</p>";
-        assert_eq!(html_to_markdown(html), "Hello **bold** and *italic* world.\n");
+        assert_eq!(
+            html_to_markdown(html),
+            "Hello **bold** and *italic* world.\n"
+        );
     }
 
     #[test]
@@ -552,7 +583,10 @@ mod tests {
     #[test]
     fn image_external() {
         let html = r#"<img src="https://example.com/img.png" alt="example">"#;
-        assert_eq!(html_to_markdown(html), "![example](https://example.com/img.png)\n");
+        assert_eq!(
+            html_to_markdown(html),
+            "![example](https://example.com/img.png)\n"
+        );
     }
 
     #[test]
@@ -566,8 +600,14 @@ mod tests {
     fn task_list() {
         let html = r#"<ul><li><input type="checkbox" checked disabled> Done</li><li><input type="checkbox" disabled> Todo</li></ul>"#;
         let result = html_to_markdown(html);
-        assert!(result.contains("[x]") && result.contains("Done"), "got: {result}");
-        assert!(result.contains("[ ]") && result.contains("Todo"), "got: {result}");
+        assert!(
+            result.contains("[x]") && result.contains("Done"),
+            "got: {result}"
+        );
+        assert!(
+            result.contains("[ ]") && result.contains("Todo"),
+            "got: {result}"
+        );
     }
 
     #[test]

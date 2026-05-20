@@ -41,7 +41,9 @@ pub fn SyncStatusPill(task_id: Uuid) -> Element {
     // as the spawned task; component drop will end the task because
     // spawned tasks are scope-bound to Dioxus components.
     use_effect(move || {
-        let Some(pipeline) = ctx.push_pipeline() else { return };
+        let Some(pipeline) = ctx.push_pipeline() else {
+            return;
+        };
         let mut rx = pipeline.subscribe();
         spawn(async move {
             loop {

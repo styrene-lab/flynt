@@ -45,7 +45,12 @@ fn issue_state_str(s: IssueState) -> &'static str {
 }
 
 pub fn issue_hash(issue: &ForgeIssue) -> String {
-    content_hash(&issue.title, &issue.body, issue_state_str(issue.state), &issue.labels)
+    content_hash(
+        &issue.title,
+        &issue.body,
+        issue_state_str(issue.state),
+        &issue.labels,
+    )
 }
 
 // ── IssueMap ────────────────────────────────────────────────────────────────
@@ -87,13 +92,21 @@ pub enum SyncOp {
     CreateLocal { issue: ForgeIssue, local_id: Uuid },
     /// Forge issue's content changed — update the local task and
     /// refresh the stored hash.
-    UpdateLocal { local_id: Uuid, issue: ForgeIssue, new_hash: String },
+    UpdateLocal {
+        local_id: Uuid,
+        issue: ForgeIssue,
+        new_hash: String,
+    },
     /// We pushed a brand-new task to the forge; remember the assigned
     /// issue number.
     CreatedRemote { local_id: Uuid, issue_number: u64 },
     /// We pushed an update to an existing forge issue; refresh the
     /// stored hash.
-    UpdatedRemote { local_id: Uuid, issue_number: u64, new_hash: String },
+    UpdatedRemote {
+        local_id: Uuid,
+        issue_number: u64,
+        new_hash: String,
+    },
 }
 
 // ── SyncEngine ──────────────────────────────────────────────────────────────
@@ -103,7 +116,9 @@ pub struct SyncEngine<'a> {
 }
 
 impl<'a> SyncEngine<'a> {
-    pub fn new(client: &'a dyn ForgeClient) -> Self { Self { client } }
+    pub fn new(client: &'a dyn ForgeClient) -> Self {
+        Self { client }
+    }
 
     /// Pull issues from the forge and report changes.
     ///
@@ -120,7 +135,11 @@ impl<'a> SyncEngine<'a> {
     ) -> ForgeResult<Vec<SyncOp>> {
         let issues = self
             .client
-            .list_issues(&binding.forge_org, &binding.forge_repo, &ListOpts::default())
+            .list_issues(
+                &binding.forge_org,
+                &binding.forge_repo,
+                &ListOpts::default(),
+            )
             .await?;
 
         info!(forge = %binding.full_name(), count = issues.len(), "pulled issues from forge");
@@ -128,7 +147,10 @@ impl<'a> SyncEngine<'a> {
         let mut ops = Vec::new();
         for issue in issues {
             let hash = issue_hash(&issue);
-            match existing.iter().find(|m| m.forge_issue_number == issue.number) {
+            match existing
+                .iter()
+                .find(|m| m.forge_issue_number == issue.number)
+            {
                 Some(map) => {
                     if map.last_hash.as_deref() != Some(&hash) {
                         debug!(issue = issue.number, "issue changed since last sync");
@@ -140,7 +162,10 @@ impl<'a> SyncEngine<'a> {
                     }
                 }
                 None => {
-                    ops.push(SyncOp::CreateLocal { issue, local_id: Uuid::new_v4() });
+                    ops.push(SyncOp::CreateLocal {
+                        issue,
+                        local_id: Uuid::new_v4(),
+                    });
                 }
             }
         }
@@ -169,7 +194,12 @@ impl<'a> SyncEngine<'a> {
                     };
                     match self
                         .client
-                        .update_issue(&binding.forge_org, &binding.forge_repo, map.forge_issue_number, &update)
+                        .update_issue(
+                            &binding.forge_org,
+                            &binding.forge_repo,
+                            map.forge_issue_number,
+                            &update,
+                        )
                         .await
                     {
                         Ok(issue) => {
@@ -243,53 +273,105 @@ mod tests {
 
     #[async_trait]
     impl ForgeClient for MockClient {
-        fn kind(&self) -> ForgeKind { ForgeKind::GitHub }
-        fn endpoint(&self) -> &ForgeEndpoint { &self.endpoint }
+        fn kind(&self) -> ForgeKind {
+            ForgeKind::GitHub
+        }
+        fn endpoint(&self) -> &ForgeEndpoint {
+            &self.endpoint
+        }
 
-        async fn list_issues(&self, _: &str, _: &str, _: &ListOpts) -> ForgeResult<Vec<ForgeIssue>> {
+        async fn list_issues(
+            &self,
+            _: &str,
+            _: &str,
+            _: &ListOpts,
+        ) -> ForgeResult<Vec<ForgeIssue>> {
             Ok(self.issues.clone())
         }
         async fn get_issue(&self, _: &str, _: &str, n: u64) -> ForgeResult<ForgeIssue> {
-            self.issues.iter().find(|i| i.number == n).cloned()
+            self.issues
+                .iter()
+                .find(|i| i.number == n)
+                .cloned()
                 .ok_or_else(|| ForgeError::NotFound(format!("issue {n}")))
         }
         async fn create_issue(&self, _: &str, _: &str, c: &CreateIssue) -> ForgeResult<ForgeIssue> {
             self.created.lock().unwrap().push(c.clone());
             Ok(ForgeIssue {
-                number: 99, title: c.title.clone(), body: c.body.clone(),
-                state: IssueState::Open, labels: c.labels.clone(), milestone: None,
-                assignees: Vec::new(), created_at: Utc::now(), updated_at: Utc::now(),
-                closed_at: None, url: "http://mock/99".into(),
+                number: 99,
+                title: c.title.clone(),
+                body: c.body.clone(),
+                state: IssueState::Open,
+                labels: c.labels.clone(),
+                milestone: None,
+                assignees: Vec::new(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                closed_at: None,
+                url: "http://mock/99".into(),
             })
         }
-        async fn update_issue(&self, _: &str, _: &str, n: u64, u: &UpdateIssue) -> ForgeResult<ForgeIssue> {
+        async fn update_issue(
+            &self,
+            _: &str,
+            _: &str,
+            n: u64,
+            u: &UpdateIssue,
+        ) -> ForgeResult<ForgeIssue> {
             Ok(ForgeIssue {
                 number: n,
                 title: u.title.clone().unwrap_or_default(),
                 body: u.body.clone().unwrap_or_default(),
                 state: u.state.unwrap_or(IssueState::Open),
                 labels: u.labels.clone().unwrap_or_default(),
-                milestone: None, assignees: Vec::new(),
-                created_at: Utc::now(), updated_at: Utc::now(),
-                closed_at: None, url: format!("http://mock/{n}"),
+                milestone: None,
+                assignees: Vec::new(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                closed_at: None,
+                url: format!("http://mock/{n}"),
             })
         }
-        async fn list_labels(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeLabel>> { Ok(vec![]) }
-        async fn list_milestones(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeMilestone>> { Ok(vec![]) }
-        async fn list_repos(&self, _: &str) -> ForgeResult<Vec<ForgeRepo>> { Ok(vec![]) }
-        async fn create_repo(&self, _: &str, _: &CreateRepo) -> ForgeResult<ForgeRepo> {
-            Err(ForgeError::Api { status: 501, message: "not impl".into() })
+        async fn list_labels(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeLabel>> {
+            Ok(vec![])
         }
-        async fn create_webhook(&self, _: &str, _: &str, _: &CreateWebhook) -> ForgeResult<ForgeWebhook> {
-            Err(ForgeError::Api { status: 501, message: "not impl".into() })
+        async fn list_milestones(&self, _: &str, _: &str) -> ForgeResult<Vec<ForgeMilestone>> {
+            Ok(vec![])
+        }
+        async fn list_repos(&self, _: &str) -> ForgeResult<Vec<ForgeRepo>> {
+            Ok(vec![])
+        }
+        async fn create_repo(&self, _: &str, _: &CreateRepo) -> ForgeResult<ForgeRepo> {
+            Err(ForgeError::Api {
+                status: 501,
+                message: "not impl".into(),
+            })
+        }
+        async fn create_webhook(
+            &self,
+            _: &str,
+            _: &str,
+            _: &CreateWebhook,
+        ) -> ForgeResult<ForgeWebhook> {
+            Err(ForgeError::Api {
+                status: 501,
+                message: "not impl".into(),
+            })
         }
     }
 
     fn issue(number: u64, title: &str) -> ForgeIssue {
         ForgeIssue {
-            number, title: title.into(), body: "".into(), state: IssueState::Open,
-            labels: vec![], milestone: None, assignees: vec![],
-            created_at: Utc::now(), updated_at: Utc::now(), closed_at: None,
+            number,
+            title: title.into(),
+            body: "".into(),
+            state: IssueState::Open,
+            labels: vec![],
+            milestone: None,
+            assignees: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            closed_at: None,
             url: format!("http://mock/{number}"),
         }
     }
@@ -383,7 +465,13 @@ mod tests {
             .push_changes(
                 &binding(),
                 &[],
-                &[(local, "T".into(), "B".into(), IssueState::Open, vec!["bug".into()])],
+                &[(
+                    local,
+                    "T".into(),
+                    "B".into(),
+                    IssueState::Open,
+                    vec!["bug".into()],
+                )],
             )
             .await
             .unwrap();
