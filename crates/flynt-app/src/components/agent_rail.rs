@@ -138,6 +138,32 @@ fn persist_config(ctx: &AppContext, config_id: &str, value: &str) {
     }
 }
 
+fn ensure_explicit_acp_defaults(
+    omegon: &crate::bootstrap::OmegonRuntimeContext,
+    mut acp_config: std::collections::HashMap<String, String>,
+) -> std::collections::HashMap<String, String> {
+    let before = acp_config.clone();
+    acp_config
+        .entry("model".into())
+        .or_insert_with(|| "anthropic:claude-sonnet-4-6".into());
+    acp_config
+        .entry("thinking".into())
+        .or_insert_with(|| "minimal".into());
+    acp_config
+        .entry("posture".into())
+        .or_insert_with(|| "fabricator".into());
+
+    if acp_config != before {
+        let mut settings = omegon.load_operator_settings();
+        settings.acp_config = acp_config.clone();
+        if let Err(e) = omegon.save_operator_settings(&settings) {
+            tracing::warn!("Failed to persist explicit ACP defaults: {e}");
+        }
+    }
+
+    acp_config
+}
+
 fn is_transport_disconnect(msg: &str) -> bool {
     let lower = msg.to_lowercase();
     lower.contains("broken pipe")
@@ -191,7 +217,8 @@ fn reconnect_acp_session(
 
         let project = ctx.project_root();
         let operator_settings = ctx.omegon().load_operator_settings();
-        let saved_config = operator_settings.acp_config.clone();
+        let saved_config =
+            ensure_explicit_acp_defaults(&ctx.omegon(), operator_settings.acp_config);
         let agent_id = operator_settings.agent_id.clone();
 
         match AcpSession::connect(binary, project, agent_id).await {
@@ -392,7 +419,8 @@ pub fn AgentRail() -> Element {
             binary.display()
         );
         let operator_settings = ctx.omegon().load_operator_settings();
-        let saved_config = operator_settings.acp_config.clone();
+        let saved_config =
+            ensure_explicit_acp_defaults(&ctx.omegon(), operator_settings.acp_config);
         let agent_id = operator_settings.agent_id.clone();
 
         spawn(async move {
