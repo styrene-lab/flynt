@@ -140,28 +140,21 @@ fn persist_config(ctx: &AppContext, config_id: &str, value: &str) {
 
 fn ensure_explicit_acp_defaults(
     omegon: &crate::bootstrap::OmegonRuntimeContext,
-    mut acp_config: std::collections::HashMap<String, String>,
-) -> std::collections::HashMap<String, String> {
-    let before = acp_config.clone();
-    acp_config
-        .entry("model".into())
-        .or_insert_with(|| "anthropic:claude-sonnet-4-6".into());
-    acp_config
-        .entry("thinking".into())
-        .or_insert_with(|| "minimal".into());
-    acp_config
-        .entry("posture".into())
-        .or_insert_with(|| "fabricator".into());
+    mut settings: flynt_core::models::FlyntOperatorSettings,
+) -> flynt_core::models::FlyntOperatorSettings {
+    let profile = omegon.load_project_profile();
+    let config =
+        crate::components::omegon::config_bridge::UnifiedOmegonConfig::load(&profile, &settings);
+    let explicit_config = config.to_acp_config();
 
-    if acp_config != before {
-        let mut settings = omegon.load_operator_settings();
-        settings.acp_config = acp_config.clone();
+    if settings.acp_config != explicit_config {
+        settings.acp_config = explicit_config;
         if let Err(e) = omegon.save_operator_settings(&settings) {
             tracing::warn!("Failed to persist explicit ACP defaults: {e}");
         }
     }
 
-    acp_config
+    settings
 }
 
 fn is_transport_disconnect(msg: &str) -> bool {
@@ -216,9 +209,9 @@ fn reconnect_acp_session(
         *session_title.write() = None;
 
         let project = ctx.project_root();
-        let operator_settings = ctx.omegon().load_operator_settings();
-        let saved_config =
-            ensure_explicit_acp_defaults(&ctx.omegon(), operator_settings.acp_config);
+        let operator_settings =
+            ensure_explicit_acp_defaults(&ctx.omegon(), ctx.omegon().load_operator_settings());
+        let saved_config = operator_settings.acp_config.clone();
         let agent_id = operator_settings.agent_id.clone();
 
         match AcpSession::connect(binary, project, agent_id).await {
@@ -418,9 +411,9 @@ pub fn AgentRail() -> Element {
             project.display(),
             binary.display()
         );
-        let operator_settings = ctx.omegon().load_operator_settings();
-        let saved_config =
-            ensure_explicit_acp_defaults(&ctx.omegon(), operator_settings.acp_config);
+        let operator_settings =
+            ensure_explicit_acp_defaults(&ctx.omegon(), ctx.omegon().load_operator_settings());
+        let saved_config = operator_settings.acp_config.clone();
         let agent_id = operator_settings.agent_id.clone();
 
         spawn(async move {
