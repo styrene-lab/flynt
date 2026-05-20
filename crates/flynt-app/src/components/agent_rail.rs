@@ -272,10 +272,32 @@ fn start_event_loop(
     let mut config_options = config_options;
     let mut session_title = session_title;
     spawn(async move {
+        let mut pending_text = String::new();
+        let mut pending_thought = String::new();
+        let mut last_flush = std::time::Instant::now();
+
         loop {
+            let mut saw_event = false;
             loop {
                 match rx.try_recv() {
+                    Ok(AcpEvent::TextDelta(text)) => {
+                        tracing::info!("ACP TextDelta: {} bytes", text.len());
+                        pending_text.push_str(&text);
+                        saw_event = true;
+                    }
+                    Ok(AcpEvent::ThoughtDelta(text)) => {
+                        tracing::info!("ACP ThoughtDelta: {} bytes", text.len());
+                        pending_thought.push_str(&text);
+                        saw_event = true;
+                    }
                     Ok(event) => {
+                        flush_pending_deltas(
+                            &mut items,
+                            &mut agent_status,
+                            &mut pending_text,
+                            &mut pending_thought,
+                        );
+                        last_flush = std::time::Instant::now();
                         handle_acp_event(
                             event,
                             ctx.clone(),
@@ -287,17 +309,81 @@ fn start_event_loop(
                             session,
                             shared_session,
                         );
+                        saw_event = true;
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
+                        flush_pending_deltas(
+                            &mut items,
+                            &mut agent_status,
+                            &mut pending_text,
+                            &mut pending_thought,
+                        );
                         tracing::warn!("ACP event channel disconnected");
                         return;
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+
+            if last_flush.elapsed() >= std::time::Duration::from_millis(50) {
+                flush_pending_deltas(
+                    &mut items,
+                    &mut agent_status,
+                    &mut pending_text,
+                    &mut pending_thought,
+                );
+                last_flush = std::time::Instant::now();
+            }
+
+            let sleep_ms = if saw_event { 8 } else { 16 };
+            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
         }
     });
+}
+
+fn flush_pending_deltas(
+    items: &mut Signal<Vec<ChatItem>>,
+    status: &mut Signal<AgentStatus>,
+    pending_text: &mut String,
+    pending_thought: &mut String,
+) {
+    if !pending_text.is_empty() {
+        append_assistant_text(items, pending_text);
+    }
+
+    if !pending_thought.is_empty() {
+        *status.write() = AgentStatus::Thinking;
+        append_thought_text(items, pending_thought);
+    }
+}
+
+fn append_assistant_text(items: &mut Signal<Vec<ChatItem>>, text: &mut String) {
+    let mut list = items.write();
+    if let Some(ChatItem::Message {
+        role: ChatRole::Assistant,
+        content,
+    }) = list.last_mut()
+    {
+        content.push_str(text);
+    } else {
+        list.push(ChatItem::Message {
+            role: ChatRole::Assistant,
+            content: text.clone(),
+        });
+    }
+    text.clear();
+}
+
+fn append_thought_text(items: &mut Signal<Vec<ChatItem>>, text: &mut String) {
+    let mut list = items.write();
+    if let Some(ChatItem::Thought { content }) = list.last_mut() {
+        content.push_str(text);
+    } else {
+        list.push(ChatItem::Thought {
+            content: text.clone(),
+        });
+    }
+    text.clear();
 }
 
 #[derive(Clone, PartialEq)]
@@ -497,9 +583,15 @@ pub fn AgentRail() -> Element {
                 // Observe DOM changes inside messages (new chat items, streaming
                 // delta appends, tool-call status updates) and auto-scroll only
                 // while the user is pinned.
-                const obs = new MutationObserver(() => {
-                    if (root.classList.contains('agent-pinned')) scrollToBottom();
-                });
+                let scrollFrame = 0;
+                function scheduleScrollToBottom() {
+                    if (!root.classList.contains('agent-pinned') || scrollFrame) return;
+                    scrollFrame = requestAnimationFrame(() => {
+                        scrollFrame = 0;
+                        if (root.classList.contains('agent-pinned')) scrollToBottom();
+                    });
+                }
+                const obs = new MutationObserver(scheduleScrollToBottom);
                 obs.observe(messages, { childList: true, subtree: true, characterData: true });
 
                 messages.addEventListener('scroll', syncPinClass, { passive: true });
@@ -644,6 +736,15 @@ pub fn AgentRail() -> Element {
                                     rsx! {
                                         div { key: "msg-{idx}", class: "agent-msg user",
                                             div { class: "agent-msg-role", "You" }
+                                            div { class: "agent-msg-content", "{content}" }
+                                        }
+                                    }
+                                } else if *agent_status.read() != AgentStatus::Idle
+                                    && idx + 1 == items.read().len()
+                                {
+                                    rsx! {
+                                        div { key: "msg-{idx}", class: "agent-msg assistant",
+                                            div { class: "agent-msg-role", "Omegon" }
                                             div { class: "agent-msg-content", "{content}" }
                                         }
                                     }
