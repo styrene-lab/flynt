@@ -272,8 +272,7 @@ fn start_event_loop(
     let mut config_options = config_options;
     let mut session_title = session_title;
     spawn(async move {
-        let mut pending_text = String::new();
-        let mut pending_thought = String::new();
+        let mut pending_deltas = Vec::new();
         let mut last_flush = std::time::Instant::now();
 
         loop {
@@ -282,21 +281,16 @@ fn start_event_loop(
                 match rx.try_recv() {
                     Ok(AcpEvent::TextDelta(text)) => {
                         tracing::info!("ACP TextDelta: {} bytes", text.len());
-                        pending_text.push_str(&text);
+                        push_pending_delta(&mut pending_deltas, PendingStreamDelta::Text(text));
                         saw_event = true;
                     }
                     Ok(AcpEvent::ThoughtDelta(text)) => {
                         tracing::info!("ACP ThoughtDelta: {} bytes", text.len());
-                        pending_thought.push_str(&text);
+                        push_pending_delta(&mut pending_deltas, PendingStreamDelta::Thought(text));
                         saw_event = true;
                     }
                     Ok(event) => {
-                        flush_pending_deltas(
-                            &mut items,
-                            &mut agent_status,
-                            &mut pending_text,
-                            &mut pending_thought,
-                        );
+                        flush_pending_deltas(&mut items, &mut agent_status, &mut pending_deltas);
                         last_flush = std::time::Instant::now();
                         handle_acp_event(
                             event,
@@ -313,12 +307,7 @@ fn start_event_loop(
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
-                        flush_pending_deltas(
-                            &mut items,
-                            &mut agent_status,
-                            &mut pending_text,
-                            &mut pending_thought,
-                        );
+                        flush_pending_deltas(&mut items, &mut agent_status, &mut pending_deltas);
                         tracing::warn!("ACP event channel disconnected");
                         return;
                     }
@@ -326,12 +315,7 @@ fn start_event_loop(
             }
 
             if last_flush.elapsed() >= std::time::Duration::from_millis(50) {
-                flush_pending_deltas(
-                    &mut items,
-                    &mut agent_status,
-                    &mut pending_text,
-                    &mut pending_thought,
-                );
+                flush_pending_deltas(&mut items, &mut agent_status, &mut pending_deltas);
                 last_flush = std::time::Instant::now();
             }
 
@@ -341,49 +325,60 @@ fn start_event_loop(
     });
 }
 
-fn flush_pending_deltas(
-    items: &mut Signal<Vec<ChatItem>>,
-    status: &mut Signal<AgentStatus>,
-    pending_text: &mut String,
-    pending_thought: &mut String,
-) {
-    if !pending_text.is_empty() {
-        append_assistant_text(items, pending_text);
-    }
+enum PendingStreamDelta {
+    Text(String),
+    Thought(String),
+}
 
-    if !pending_thought.is_empty() {
-        *status.write() = AgentStatus::Thinking;
-        append_thought_text(items, pending_thought);
+fn push_pending_delta(pending: &mut Vec<PendingStreamDelta>, delta: PendingStreamDelta) {
+    match (pending.last_mut(), delta) {
+        (Some(PendingStreamDelta::Text(current)), PendingStreamDelta::Text(next))
+        | (Some(PendingStreamDelta::Thought(current)), PendingStreamDelta::Thought(next)) => {
+            current.push_str(&next);
+        }
+        (_, delta) => pending.push(delta),
     }
 }
 
-fn append_assistant_text(items: &mut Signal<Vec<ChatItem>>, text: &mut String) {
+fn flush_pending_deltas(
+    items: &mut Signal<Vec<ChatItem>>,
+    status: &mut Signal<AgentStatus>,
+    pending: &mut Vec<PendingStreamDelta>,
+) {
+    for delta in pending.drain(..) {
+        match delta {
+            PendingStreamDelta::Text(text) => append_assistant_text(items, text),
+            PendingStreamDelta::Thought(text) => {
+                *status.write() = AgentStatus::Thinking;
+                append_thought_text(items, text);
+            }
+        }
+    }
+}
+
+fn append_assistant_text(items: &mut Signal<Vec<ChatItem>>, text: String) {
     let mut list = items.write();
     if let Some(ChatItem::Message {
         role: ChatRole::Assistant,
         content,
     }) = list.last_mut()
     {
-        content.push_str(text);
+        content.push_str(&text);
     } else {
         list.push(ChatItem::Message {
             role: ChatRole::Assistant,
-            content: text.clone(),
+            content: text,
         });
     }
-    text.clear();
 }
 
-fn append_thought_text(items: &mut Signal<Vec<ChatItem>>, text: &mut String) {
+fn append_thought_text(items: &mut Signal<Vec<ChatItem>>, text: String) {
     let mut list = items.write();
     if let Some(ChatItem::Thought { content }) = list.last_mut() {
-        content.push_str(text);
+        content.push_str(&text);
     } else {
-        list.push(ChatItem::Thought {
-            content: text.clone(),
-        });
+        list.push(ChatItem::Thought { content: text });
     }
-    text.clear();
 }
 
 #[derive(Clone, PartialEq)]

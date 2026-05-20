@@ -72,6 +72,13 @@ rather than best-effort. CI must fail if no Developer ID Installer identity is
 available, because the release should not publish without
 `Flynt-0.10.0-macos.pkg`.
 
+## Patch Release Notes
+
+The `v0.10.8` patch release focuses on embedded Omegon rail responsiveness,
+especially under WSL/WSLg and other high-latency WebView rendering paths. It
+ships only client-side rendering changes: ACP protocol behavior, project data,
+and release artifacts remain compatible with `0.10.x`.
+
 ## Local macOS Release Validation
 
 Local DMG validation:

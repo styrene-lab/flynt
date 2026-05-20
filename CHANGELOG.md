@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.8 — 2026-05-20
+
+### Fixed
+- **Embedded Omegon streaming performance** — agent text/thought deltas are now
+  batched before updating the chat rail, reducing Dioxus re-renders and WebView
+  repaint pressure while responses stream.
+- **Agent chat scroll smoothness** — sticky-bottom scrolling is coalesced through
+  `requestAnimationFrame` instead of forcing layout on every DOM mutation.
+- **WSL responsiveness while the agent is busy** — the actively streaming
+  assistant message renders as plain text until completion, then switches to the
+  existing markdown renderer once the response is idle.
+- **Streaming order preservation** — adversarial review found that separate text
+  and thought buffers could reorder interleaved ACP deltas at flush boundaries;
+  batching now preserves delta order while still coalescing adjacent chunks.
+
 ## 0.10.5 — 2026-05-16
 
 ### Added
